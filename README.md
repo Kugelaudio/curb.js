@@ -27,6 +27,13 @@ knows and what it can do, as React components.
 - **See every turn.** The dev preview shows exactly what the model saw, every
   tool call and every audio clip.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/how-it-works-dark.svg">
+    <img alt="How curb.js works: the caller talks to curb.js, which handles the voice and turns your React app into the agent's context. Speech-to-text, LLM and text-to-speech are swappable." src=".github/assets/how-it-works-light.svg" width="760">
+  </picture>
+</p>
+
 > **Don't want to run infrastructure?** KugelAudio hosts curb agents for you,
 > with phone numbers, scaling and call logs included.
 > [Deploy on KugelAudio →](https://kugelaudio.com) · [How hosting works](#hosting)
@@ -74,6 +81,13 @@ export default function Counter() {
 
 Whatever the component renders is what the agent knows and can do right now.
 `place_order` only exists once there is a drink in the order.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/state-changes-dark.svg">
+    <img alt="When the order is empty the agent can only add a drink. Once it has a drink, place_order appears." src=".github/assets/state-changes-light.svg" width="760">
+  </picture>
+</p>
 
 ## Quickstart
 
