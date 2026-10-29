@@ -1,0 +1,8 @@
+{
+  "envelope": 1,
+  "producer": "sess_a",
+  "seq": 1,
+  "class": "lifecycle",
+  "at": 1759000000000,
+  "body": { "event": "ended", "reason": "drained" }
+}

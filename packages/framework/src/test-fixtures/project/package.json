@@ -1,0 +1,8 @@
+{
+  "name": "curb-framework-test-project",
+  "private": true,
+  "type": "module",
+  "curb": {
+    "requiredRuntimeSecrets": []
+  }
+}

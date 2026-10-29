@@ -1,0 +1,8 @@
+{
+  "envelope": 14,
+  "producer": "sess_a",
+  "seq": 3,
+  "class": "conversation",
+  "at": 1759000012345,
+  "body": { "type": "turn", "seq": 3, "at": 1759000012345, "speaker": "caller", "text": "I'd like to report a claim.", "final": true }
+}

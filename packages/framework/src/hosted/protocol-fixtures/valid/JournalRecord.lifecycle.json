@@ -1,0 +1,8 @@
+{
+  "envelope": 40,
+  "producer": "runner",
+  "seq": 6,
+  "class": "lifecycle",
+  "at": 1759000200000,
+  "body": { "event": "ended", "reason": "drained" }
+}

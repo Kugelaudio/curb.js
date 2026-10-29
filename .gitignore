@@ -1,0 +1,11 @@
+.data/
+dist
+node_modules
+# Generated Vite dependency cache (including caches beside example projects).
+.vite/
+.framework/
+.env
+
+# MCP OAuth token stores — NEVER commit (contain live access tokens)
+.mcp-auth/
+

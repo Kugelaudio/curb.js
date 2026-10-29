@@ -1,0 +1,35 @@
+{
+  "name": "agent-framework-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "new": "create-curb-app",
+    "dev": "npm run dev --workspace examples/insurance-agent",
+    "check": "npm run check --workspace examples/insurance-agent",
+    "test": "npm test --workspace packages/framework --workspace packages/create-framework-app --workspace packages/create-kugelaudio",
+    "build": "npm run build --workspace packages/framework",
+    "smoke:self-host": "node scripts/self-host-smoke.mjs",
+    "check:independence": "node scripts/check-independence.mjs",
+    "publish:cdn": "node scripts/publish-cdn.mjs",
+    "server": "cd examples/insurance-agent && curb server",
+    "conversations": "cd examples/insurance-agent && curb conversations"
+  },
+  "overrides": {
+    "@livekit/agents-plugin-silero": {
+      "onnxruntime-node": "^1.30.0"
+    }
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "onnxruntime-node": true,
+    "@livekit/local-inference": true,
+    "protobufjs": true,
+    "fsevents": true,
+    "sharp": true
+  },
+  "license": "Apache-2.0"
+}

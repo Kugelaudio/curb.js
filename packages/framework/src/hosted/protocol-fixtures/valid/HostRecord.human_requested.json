@@ -1,0 +1,16 @@
+{
+  "envelope": 22,
+  "producer": "sess_a",
+  "seq": 7,
+  "class": "host",
+  "at": 1759000050000,
+  "body": {
+    "type": "host",
+    "seq": 7,
+    "at": 1759000050000,
+    "id": "msg_agent_0007",
+    "name": "human.requested",
+    "payload": { "summary": "Caller asks for a supervisor." },
+    "expectsReply": true
+  }
+}

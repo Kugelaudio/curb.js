@@ -1,0 +1,100 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "@xyflow/react/dist/style.css";
+
+@theme inline {
+    --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    /* No monospace anywhere in the preview: code, ids, tool arguments and numbers use Inter
+       too, so `font-mono` (streamdown's code, any library's) resolves to it. */
+    --font-mono: var(--font-sans);
+    --font-heading: var(--font-sans);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-success: var(--success);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Design tokens: a near-white page, white
+   cards, near-black text and buttons. Red (terracotta) only for errors
+   and warnings; green only for "fine" (connected, in use, no problems). The one colour of
+   its own is the agent's sphere. */
+:root {
+    --background: hsl(0 0% 98%);
+    --foreground: hsl(60 3% 8%);
+    --card: hsl(0 0% 100%);
+    --card-foreground: hsl(60 3% 8%);
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: hsl(60 3% 8%);
+    --primary: hsl(60 3% 8%);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: hsl(60 3% 93%);
+    --secondary-foreground: hsl(60 3% 8%);
+    --muted: hsl(60 3% 93%);
+    --muted-foreground: hsl(50 4% 42%);
+    --accent: hsl(60 3% 95%);
+    --accent-foreground: hsl(60 3% 8%);
+    --destructive: hsl(12 64% 44%);
+    --success: hsl(142 71% 45%);
+    --border: hsl(40 4% 86%);
+    --input: hsl(40 4% 86%);
+    --ring: hsl(50 4% 42%);
+    --radius: 0.75rem;
+    --agent-sphere: radial-gradient(circle at 35% 30%, oklch(0.74 0.12 268), oklch(0.45 0.16 268));
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  html {
+    @apply font-sans;
+  }
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: inherit;
+  }
+  /* Everything you can press shows the pointer. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
+  }
+}

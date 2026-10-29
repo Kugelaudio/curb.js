@@ -1,0 +1,8 @@
+{
+  "envelope": 31,
+  "producer": "sess_a",
+  "seq": 9,
+  "class": "conversation",
+  "at": 1759000099000,
+  "body": { "type": "event", "seq": 9, "at": 1759000099000, "kind": "curb.ended", "payload": { "reason": "completed" } }
+}

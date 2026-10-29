@@ -1,0 +1,316 @@
+/* What Tailwind utilities do not cover: the agent's sphere, authored prose rendered as
+   markdown, the procedure block's stepper (src/blocks/procedure/preview.tsx) and the
+   graph canvas. Everything else is styled where it is rendered. */
+
+/* --- The agent's sphere: the preview's one colour ------------------------------------ */
+
+.agent-sphere {
+  display: inline-block;
+  flex: none;
+  border-radius: 9999px;
+  background: var(--agent-sphere);
+}
+
+.agent-sphere[data-size="xl"] {
+  box-shadow: 0 18px 40px -18px oklch(0.45 0.16 268 / 0.55);
+}
+
+.agent-sphere[data-live] {
+  box-shadow:
+    0 0 0 5px oklch(0.6 0.13 268 / 0.16),
+    0 0 0 11px oklch(0.6 0.13 268 / 0.07);
+}
+
+.agent-sphere[data-live="speaking"] {
+  animation: agent-sphere-speaking 1.6s ease-in-out infinite;
+}
+
+@keyframes agent-sphere-speaking {
+  50% {
+    box-shadow:
+      0 0 0 7px oklch(0.6 0.13 268 / 0.2),
+      0 0 0 15px oklch(0.6 0.13 268 / 0.08);
+  }
+}
+
+/* --- "Thinking": the agent is preparing a reply --------------------------------------- */
+
+.agent-thinking {
+  background: linear-gradient(90deg, var(--muted-foreground) 35%, var(--border) 50%, var(--muted-foreground) 65%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: agent-thinking 1.8s linear infinite;
+}
+
+@keyframes agent-thinking {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-sphere[data-live="speaking"],
+  .agent-thinking {
+    animation: none;
+  }
+  .agent-thinking {
+    color: var(--muted-foreground);
+  }
+}
+
+/* --- Authored prose as the markdown it is (prose.tsx, messages, documents) ------------ */
+
+.markdown-message {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown-message pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.markdown-message pre code {
+  overflow-wrap: normal;
+  white-space: pre;
+}
+
+/* A line break inside a paragraph stays a line break: the model reads it as one. */
+.prose-view p {
+  white-space: pre-line;
+}
+
+.markdown-message :is(h1, h2, h3, h4, p, ul, ol, pre, blockquote, table):first-child {
+  margin-top: 0;
+}
+
+.markdown-message :is(h1, h2, h3, h4, p, ul, ol, pre, blockquote, table):last-child {
+  margin-bottom: 0;
+}
+
+.markdown-message :is(h1, h2, h3, h4) {
+  margin: 1.1em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.markdown-message h1 {
+  font-size: 1.25em;
+}
+
+.markdown-message h2 {
+  font-size: 1.07em;
+}
+
+.markdown-message :is(h3, h4) {
+  font-size: 1em;
+}
+
+.markdown-message p {
+  margin: 0.5em 0;
+}
+
+.markdown-message :is(ul, ol) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+
+.markdown-message ul {
+  list-style: disc;
+}
+
+.markdown-message ol {
+  list-style: decimal;
+}
+
+.markdown-message li::marker {
+  color: var(--muted-foreground);
+}
+
+.markdown-message code {
+  padding: 0.05em 0.35em;
+  border-radius: 6px;
+  background: var(--accent);
+  font-size: 0.92em;
+}
+
+.markdown-message pre {
+  margin: 0.6em 0;
+  padding: 0.7em 0.85em;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--accent);
+}
+
+.markdown-message pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown-message blockquote {
+  margin: 0.6em 0;
+  padding-left: 0.85em;
+  border-left: 2px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.markdown-message hr {
+  margin: 0.9em 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.markdown-message a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* --- The procedure block's stepper (src/blocks/procedure/preview.tsx) ----------------- */
+
+.ctx-text-error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: 0.8125rem;
+}
+
+.ctx-procedure {
+  margin: 0.25rem 0;
+}
+
+.ctx-procedure-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.ctx-procedure-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ctx-procedure-step {
+  position: relative;
+  display: flex;
+  gap: 0.75rem;
+  padding-bottom: 1.05rem;
+}
+
+.ctx-procedure-step:last-child {
+  padding-bottom: 0;
+}
+
+/* The line between two markers. */
+.ctx-procedure-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 1.6rem;
+  bottom: 0.2rem;
+  left: 0.7rem;
+  width: 1px;
+  background: var(--border);
+}
+
+.ctx-procedure-marker {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.ctx-procedure-marker svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.ctx-procedure-step[data-status="current"] .ctx-procedure-marker {
+  border-color: var(--foreground);
+  background: var(--foreground);
+  color: var(--card);
+}
+
+.ctx-procedure-step[data-status="completed"] .ctx-procedure-marker {
+  background: var(--accent);
+}
+
+.ctx-procedure-step-body {
+  min-width: 0;
+  padding-top: 0.1rem;
+}
+
+.ctx-procedure-step-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.ctx-procedure-step[data-status="completed"] .ctx-procedure-step-title,
+.ctx-procedure-step[data-status="locked"] .ctx-procedure-step-title {
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+.ctx-procedure-step-text {
+  margin: 0.25rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.ctx-procedure-next {
+  display: inline-flex;
+  align-items: center;
+  height: 2rem;
+  margin-top: 0.6rem;
+  padding: 0 0.85rem;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--foreground);
+  color: var(--card);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.ctx-procedure-next:hover {
+  background: color-mix(in oklab, var(--foreground) 85%, transparent);
+}
+
+/* --- The graph canvas ----------------------------------------------------------------- */
+
+.agent-graph .react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.agent-graph .react-flow__controls-button {
+  border-bottom-color: var(--border);
+  background: var(--card);
+}
+
+.agent-graph .react-flow__attribution {
+  background: transparent;
+}

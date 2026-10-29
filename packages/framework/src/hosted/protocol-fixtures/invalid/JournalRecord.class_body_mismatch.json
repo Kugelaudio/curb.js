@@ -1,0 +1,1 @@
+{ "envelope": 3, "producer": "runner", "seq": 1, "class": "lifecycle", "at": 1759000000000, "body": { "type": "turn", "seq": 1, "at": 1, "speaker": "caller", "text": "hi", "final": true } }

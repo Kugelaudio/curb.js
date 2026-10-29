@@ -1,0 +1,8 @@
+{
+  "envelope": 0,
+  "producer": "sess_a",
+  "seq": 1,
+  "class": "conversation",
+  "at": 1759000000000,
+  "body": { "type": "turn", "seq": 1, "at": 1759000000000, "speaker": "caller", "text": "hi", "final": true }
+}

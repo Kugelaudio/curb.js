@@ -1,0 +1,1 @@
+{ "event": "ready", "address": "10.0.0.5:7071", "maxSessions": 1, "warmupMs": 950 }

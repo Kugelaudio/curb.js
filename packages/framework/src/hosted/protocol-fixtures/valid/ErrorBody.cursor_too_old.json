@@ -1,0 +1,1 @@
+{ "error": "cursor_too_old", "detail": "cannot resume from envelope 0", "requested": 0, "oldestRetained": 2 }

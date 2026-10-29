@@ -1,0 +1,21 @@
+{
+  "name": "create-kugelaudio",
+  "version": "1.0.0",
+  "description": "Create a KugelAudio voice agent: npm create kugelaudio my-agent",
+  "license": "Apache-2.0",
+  "homepage": "https://kugelaudio.com",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "create-kugelaudio": "./bin/create-kugelaudio.js"
+  },
+  "files": [
+    "bin",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\""
+  }
+}

@@ -1,0 +1,1 @@
+{ "error": "not_adjustable", "detail": "the host may not change llm; <Agent adjustable> lets it change tts.voice", "path": "llm" }

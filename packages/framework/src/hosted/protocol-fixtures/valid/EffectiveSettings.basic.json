@@ -1,0 +1,1 @@
+{ "tts": { "provider": "kugelaudio", "voice": 17, "language": "de" }, "stt": { "provider": "azure", "language": "de" }, "llm": { "provider": "anthropic", "model": "claude-haiku-4-5" } }

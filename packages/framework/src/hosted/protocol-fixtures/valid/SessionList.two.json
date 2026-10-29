@@ -1,0 +1,6 @@
+{
+  "sessions": [
+    { "sessionId": "sess_a", "state": "connected", "startedAtMs": 1759000000000 },
+    { "sessionId": "sess_b", "state": "starting", "startedAtMs": 1759000004200 }
+  ]
+}

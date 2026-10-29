@@ -1,0 +1,7 @@
+{
+  "sessionId": "sess_golden",
+  "realtimeUrl": "wss://rtc.example.com",
+  "realtimeToken": "eyJhbGciOiJIUzI1NiJ9.room",
+  "clientContext": { "event": "webinar-11-04" },
+  "experiments": { "greeting": "casual", "pacing": "slow" }
+}

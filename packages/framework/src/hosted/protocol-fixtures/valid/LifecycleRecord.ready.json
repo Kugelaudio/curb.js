@@ -1,0 +1,8 @@
+{
+  "envelope": 1,
+  "producer": "runner",
+  "seq": 1,
+  "class": "lifecycle",
+  "at": 1759000000000,
+  "body": { "event": "ready", "address": "0.0.0.0:7071", "maxSessions": 2, "warmupMs": 1840 }
+}

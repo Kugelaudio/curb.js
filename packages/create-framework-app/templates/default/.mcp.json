@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "kugelaudio": { "type": "http", "url": "https://www.kugelaudio.com/mcp" },
+    "kugelaudio-docs": { "type": "http", "url": "https://docs.kugelaudio.com/mcp" }
+  }
+}

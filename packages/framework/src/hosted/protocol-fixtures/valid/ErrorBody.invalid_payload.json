@@ -1,0 +1,5 @@
+{
+  "error": "invalid_payload",
+  "detail": "the payload of \"claim-submitted\" does not match its schema: claimId: Invalid input: expected string, received number",
+  "issues": [{ "path": ["claimId"], "message": "Invalid input: expected string, received number" }]
+}

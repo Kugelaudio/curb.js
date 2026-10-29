@@ -1,0 +1,7 @@
+{
+  "sessionId": "sess_01J9Z3K4",
+  "realtimeUrl": "wss://rtc.example.com",
+  "realtimeToken": "eyJhbGciOiJIUzI1NiJ9.room",
+  "deploymentId": "dep_7f3a",
+  "configurationVersion": 12
+}

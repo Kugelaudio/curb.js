@@ -1,0 +1,6 @@
+{
+  "sessionId": "sess_01J9Z3K4",
+  "realtimeUrl": "wss://rtc.example.com",
+  "realtimeToken": "eyJhbGciOiJIUzI1NiJ9.room",
+  "clientContext": { "event": "webinar-11-04", "ref": "newsletter" }
+}

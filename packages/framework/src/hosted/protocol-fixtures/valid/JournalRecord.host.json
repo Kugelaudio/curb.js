@@ -1,0 +1,17 @@
+{
+  "envelope": 23,
+  "producer": "sess_a",
+  "seq": 8,
+  "class": "host",
+  "at": 1759000051000,
+  "body": {
+    "type": "host",
+    "seq": 8,
+    "at": 1759000051000,
+    "id": "msg_agent_0008",
+    "name": "crm.note_added",
+    "payload": { "note": "Policy number confirmed." },
+    "expectsReply": false,
+    "inReplyTo": "msg_host_0002"
+  }
+}

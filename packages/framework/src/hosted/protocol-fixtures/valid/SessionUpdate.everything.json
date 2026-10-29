@@ -1,0 +1,1 @@
+{ "tts": { "voice": "17", "model": "kugel-3" }, "stt": { "language": "de" }, "llm": { "provider": "openai-compatible", "model": "llama3.3", "baseURL": "http://127.0.0.1:11434/v1" } }

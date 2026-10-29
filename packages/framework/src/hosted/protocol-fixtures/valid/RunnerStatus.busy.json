@@ -1,0 +1,9 @@
+{
+  "protocolVersion": 1,
+  "deploymentId": "dep_7f3a",
+  "configurationVersion": 12,
+  "maxSessions": 2,
+  "activeSessions": 1,
+  "draining": false,
+  "sessions": [{ "sessionId": "sess_a", "state": "connected", "startedAtMs": 1759000000000 }]
+}

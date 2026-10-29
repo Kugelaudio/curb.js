@@ -1,0 +1,73 @@
+/**
+ * Handed-off mode: while a transferred call's target is in the room, the agent stays in the
+ * room but neither listens nor speaks; when the target leaves and the caller is still there,
+ * the agent takes the call back.
+ *
+ * The platform dials the transfer target into the call's LiveKit room as a second SIP
+ * participant whose identity starts with {@link TRANSFER_TARGET_IDENTITY_PREFIX}. The caller
+ * and the target hear each other through the room; the agent's job is to get out of the way.
+ *
+ * Extracted from `startLivekitVoiceAgent` so the rule is testable without a LiveKit room.
+ */
+
+import { isCaller, type CallParticipant } from "./call-opening.js";
+
+/** The LiveKit identity of a transfer target starts with this (`sip_` + its caller ID). */
+export const TRANSFER_TARGET_IDENTITY_PREFIX = "sip_transfer-";
+
+/** The system note the model gets when the transfer target left and the caller stayed. Kept
+ * out of the visible transcript while still giving the model a normal turn. */
+export const TRANSFER_ENDED_PROMPT =
+  "(The person you transferred this call to has left the call. The caller is still on the line and hears you again. Tell them in one short line that the other person has left, and ask whether you can help with anything else. Do not call skip_turn.)";
+
+export function isTransferTarget(participant: Pick<CallParticipant, "identity">): boolean {
+  return participant.identity.startsWith(TRANSFER_TARGET_IDENTITY_PREFIX);
+}
+
+/** The participants that are the caller's side of the call: callers, never a transfer target. */
+export function callerSide(participants: Iterable<CallParticipant>): CallParticipant[] {
+  return [...participants].filter((participant) => isCaller(participant) && !isTransferTarget(participant));
+}
+
+export type TransferHandoffOptions = {
+  /** The room's remote participants right now. */
+  participants: () => Iterable<CallParticipant>;
+  /** Stop listening and speaking. */
+  pause: () => void;
+  /** Listen and speak again, then give the model {@link TRANSFER_ENDED_PROMPT}. */
+  resume: () => void;
+  log: (message: string) => void;
+};
+
+export type TransferHandoff = {
+  /** True while a transfer target is on the call and the agent stays quiet. */
+  handedOff(): boolean;
+  onParticipantJoined(participant: CallParticipant): void;
+  onParticipantLeft(participant: CallParticipant): void;
+};
+
+export function createTransferHandoff(options: TransferHandoffOptions): TransferHandoff {
+  let handedOff = false;
+  return {
+    handedOff: () => handedOff,
+    onParticipantJoined: (participant) => {
+      if (!isTransferTarget(participant) || handedOff) return;
+      handedOff = true;
+      options.log(`transfer target ${participant.identity} joined: handed off, the agent stops listening and speaking`);
+      options.pause();
+    },
+    onParticipantLeft: (participant) => {
+      if (!isTransferTarget(participant) || !handedOff) return;
+      // The leaving participant may still be listed while its event runs.
+      const others = [...options.participants()].filter((other) => other.identity !== participant.identity);
+      if (others.some(isTransferTarget)) return;
+      if (callerSide(others).length === 0) {
+        options.log(`transfer target ${participant.identity} left and no caller remains: staying handed off`);
+        return;
+      }
+      handedOff = false;
+      options.log(`transfer target ${participant.identity} left while the caller stays: the agent resumes`);
+      options.resume();
+    },
+  };
+}

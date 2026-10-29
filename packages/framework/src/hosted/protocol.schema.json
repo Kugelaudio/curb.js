@@ -1,0 +1,967 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Curb host protocol v1",
+  "$defs": {
+    "Health": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "protocolVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "required": [
+        "ok",
+        "protocolVersion",
+        "versions"
+      ]
+    },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "unauthorized",
+        "unknown_version",
+        "not_found",
+        "invalid_request",
+        "session_not_found",
+        "runner_at_capacity",
+        "generation_mismatch",
+        "runner_draining",
+        "start_failed",
+        "runner_takes_no_calls",
+        "cursor_too_old",
+        "no_journal",
+        "internal",
+        "no_handler",
+        "invalid_payload",
+        "handler_failed",
+        "not_adjustable",
+        "invalid_settings"
+      ]
+    },
+    "ErrorBody": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "requested": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "oldestRetained": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "path": {
+          "type": "string"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "message"
+            ]
+          }
+        }
+      },
+      "required": [
+        "error"
+      ]
+    },
+    "StartCallRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "realtimeUrl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "realtimeToken": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deploymentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configurationVersion": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "clientContext": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "inbound",
+            "outbound"
+          ]
+        },
+        "experiments": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "sessionId",
+        "realtimeUrl",
+        "realtimeToken"
+      ]
+    },
+    "StartCallResponse": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sessionId",
+        "accepted"
+      ]
+    },
+    "StopCallResponse": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stopped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sessionId",
+        "stopped"
+      ]
+    },
+    "DrainResponse": {
+      "type": "object",
+      "properties": {
+        "draining": {
+          "type": "boolean",
+          "const": true
+        },
+        "activeSessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "draining",
+        "activeSessions"
+      ]
+    },
+    "CallState": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "connected",
+        "ending",
+        "ended"
+      ]
+    },
+    "LiveCall": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "$ref": "#/$defs/CallState"
+        },
+        "startedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "sessionId",
+        "state",
+        "startedAtMs"
+      ]
+    },
+    "SessionList": {
+      "type": "object",
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LiveCall"
+          }
+        }
+      },
+      "required": [
+        "sessions"
+      ]
+    },
+    "RunnerStatus": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "deploymentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configurationVersion": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxSessions": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "activeSessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "draining": {
+          "type": "boolean"
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LiveCall"
+          }
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "maxSessions",
+        "activeSessions",
+        "draining",
+        "sessions"
+      ]
+    },
+    "AdjustablePath": {
+      "type": "string",
+      "enum": [
+        "tts.voice",
+        "tts.model",
+        "stt.language",
+        "llm"
+      ]
+    },
+    "SessionUpdate": {
+      "type": "object",
+      "properties": {
+        "tts": {
+          "type": "object",
+          "properties": {
+            "voice": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              ]
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "stt": {
+          "type": "object",
+          "properties": {
+            "language": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "llm": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "baseURL": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ]
+        }
+      }
+    },
+    "EffectiveSettings": {
+      "type": "object",
+      "properties": {
+        "tts": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "voice": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              ]
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "language": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "provider"
+          ]
+        },
+        "stt": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "language": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "provider"
+          ]
+        },
+        "llm": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ]
+        }
+      },
+      "required": [
+        "tts",
+        "stt",
+        "llm"
+      ]
+    },
+    "SessionUpdateResponse": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "settings": {
+          "$ref": "#/$defs/EffectiveSettings"
+        }
+      },
+      "required": [
+        "sessionId",
+        "settings"
+      ]
+    },
+    "HostMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "inReplyTo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "payload"
+      ]
+    },
+    "HostMessageResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "delivered": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "delivered"
+      ]
+    },
+    "ConversationTurn": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "turn"
+        },
+        "seq": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "speaker": {
+          "type": "string",
+          "enum": [
+            "caller",
+            "agent"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "final": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "seq",
+        "at",
+        "speaker",
+        "text",
+        "final"
+      ]
+    },
+    "ConversationEvent": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "event"
+        },
+        "seq": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^curb\\.\\S+$"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "type",
+        "seq",
+        "at",
+        "kind",
+        "payload"
+      ]
+    },
+    "ConversationBody": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ConversationTurn"
+        },
+        {
+          "$ref": "#/$defs/ConversationEvent"
+        }
+      ]
+    },
+    "HostRecordBody": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "host"
+        },
+        "seq": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "expectsReply": {
+          "type": "boolean"
+        },
+        "inReplyTo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "type",
+        "seq",
+        "at",
+        "id",
+        "name",
+        "payload",
+        "expectsReply"
+      ]
+    },
+    "LifecycleReady": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "ready"
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxSessions": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "warmupMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "event",
+        "address",
+        "maxSessions",
+        "warmupMs"
+      ]
+    },
+    "LifecycleCallStarted": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "call-started"
+        },
+        "session": {
+          "type": "string",
+          "minLength": 1
+        },
+        "room": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "event",
+        "session",
+        "room"
+      ]
+    },
+    "LifecycleCallStopping": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "call-stopping"
+        },
+        "session": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "session",
+        "reason"
+      ]
+    },
+    "LifecycleFirstAudio": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "first-audio"
+        },
+        "session": {
+          "type": "string",
+          "minLength": 1
+        },
+        "monotonicMs": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "sinceStartMs": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "event",
+        "session",
+        "monotonicMs",
+        "sinceStartMs"
+      ]
+    },
+    "LifecycleDraining": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "draining"
+        },
+        "signal": {
+          "type": "string"
+        },
+        "active": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "event",
+        "active"
+      ]
+    },
+    "LifecycleEnded": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "ended"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "reason"
+      ]
+    },
+    "LifecycleBody": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LifecycleReady"
+        },
+        {
+          "$ref": "#/$defs/LifecycleCallStarted"
+        },
+        {
+          "$ref": "#/$defs/LifecycleCallStopping"
+        },
+        {
+          "$ref": "#/$defs/LifecycleFirstAudio"
+        },
+        {
+          "$ref": "#/$defs/LifecycleDraining"
+        },
+        {
+          "$ref": "#/$defs/LifecycleEnded"
+        }
+      ]
+    },
+    "ConversationRecord": {
+      "type": "object",
+      "properties": {
+        "envelope": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seq": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "class": {
+          "type": "string",
+          "const": "conversation"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "body": {
+          "$ref": "#/$defs/ConversationBody"
+        }
+      },
+      "required": [
+        "envelope",
+        "producer",
+        "seq",
+        "class",
+        "at",
+        "body"
+      ]
+    },
+    "LifecycleRecord": {
+      "type": "object",
+      "properties": {
+        "envelope": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "producer": {
+          "type": "string",
+          "const": "runner"
+        },
+        "seq": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "class": {
+          "type": "string",
+          "const": "lifecycle"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "body": {
+          "$ref": "#/$defs/LifecycleBody"
+        }
+      },
+      "required": [
+        "envelope",
+        "producer",
+        "seq",
+        "class",
+        "at",
+        "body"
+      ]
+    },
+    "HostRecord": {
+      "type": "object",
+      "properties": {
+        "envelope": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seq": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "class": {
+          "type": "string",
+          "const": "host"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "body": {
+          "$ref": "#/$defs/HostRecordBody"
+        }
+      },
+      "required": [
+        "envelope",
+        "producer",
+        "seq",
+        "class",
+        "at",
+        "body"
+      ]
+    },
+    "JournalRecord": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ConversationRecord"
+        },
+        {
+          "$ref": "#/$defs/LifecycleRecord"
+        },
+        {
+          "$ref": "#/$defs/HostRecord"
+        }
+      ]
+    },
+    "Ping": {
+      "type": "object",
+      "properties": {
+        "ping": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "ping"
+      ]
+    }
+  }
+}

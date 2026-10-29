@@ -1,0 +1,33 @@
+{
+  "name": "{{APP_NAME}}",
+  "private": true,
+  "type": "module",
+  "curb": {
+    "requiredRuntimeSecrets": [
+      "KUGELAUDIO_API_KEY"
+    ]
+  },
+  "scripts": {
+    "dev": "curb dev",
+    "check": "curb check",
+    "start": "curb start",
+    "server": "curb server",
+    "upgrade": "curb upgrade"
+  },
+  "allowScripts": {
+    "@livekit/blingfire": false,
+    "@livekit/local-inference": false,
+    "esbuild": false,
+    "fsevents": false,
+    "onnxruntime-node": false
+  },
+  "dependencies": {
+    "curb": "{{FRAMEWORK_SPEC}}",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "typescript": "^6.0.3"
+  }
+}

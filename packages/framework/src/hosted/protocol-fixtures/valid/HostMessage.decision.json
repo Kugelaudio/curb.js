@@ -1,0 +1,6 @@
+{
+  "id": "msg_host_0001",
+  "name": "human.decision",
+  "payload": { "disposition": "allowed", "reason": "operator available" },
+  "inReplyTo": "msg_agent_0007"
+}
