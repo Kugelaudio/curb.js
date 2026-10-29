@@ -16,32 +16,22 @@
 
 ---
 
-curb.js gives you a working voice agent out of the box. Your job is the
-**context**: what the agent knows, what rules it follows, and what it can do.
+curb.js gives you a working voice agent out of the box. You write what it
+knows and what it can do, as React components.
 
-- **The voice agent ships ready.** Speech, turn-taking, and handling
-  interruptions are the framework's job.
-- **You write the context as a small React app.** Components render the
-  agent's instructions, knowledge, and tools.
-- **State changes the agent.** As your state changes, tools and knowledge
-  appear, disappear, or swap out, exactly like UI elements in a normal
-  React app.
-- **Bring any model.** curb.js is the framework; the models are your choice.
-  Speech-to-text and text-to-speech from KugelAudio, Azure, Deepgram,
-  ElevenLabs, Cartesia, OpenAI or any LiveKit plugin, and any Anthropic, OpenAI
-  or OpenAI-compatible LLM (including self-hosted). Swap one in a single line.
-- **It's a real React renderer.** Like react-dom targets the browser,
-  curb.js targets the agent's context: components become what the model
-  sees. The same tree renders as UI in the dev preview, where you talk to
-  the agent and debug every turn, tool call, and audio clip.
+- **Voice is done.** Speech, turn-taking and interruptions are handled for you.
+- **State changes the agent.** Tools and knowledge appear and disappear as
+  your state changes, like UI in a React app.
+- **Bring any model.** Use any speech-to-text, text-to-speech or LLM provider,
+  hosted or self-hosted. Swapping one is a single line.
+- **See every turn.** The dev preview shows exactly what the model saw, every
+  tool call and every audio clip.
 
-> **Don't want to run infrastructure?** KugelAudio hosts curb agents for you:
-> deploy from the CLI, and get phone numbers, scaling, and call logs included.
+> **Don't want to run infrastructure?** KugelAudio hosts curb agents for you,
+> with phone numbers, scaling and call logs included.
 > [Deploy on KugelAudio →](https://kugelaudio.com) · [How hosting works](#hosting)
 
-Here is a complete skill, a coffee counter. Drop it into
-`src/agent/counter/skill.tsx` of a fresh project, link it from the agent's
-`<Skills>` list, and talk to it:
+Here is a complete skill, a coffee counter:
 
 ```tsx
 import { useState } from "react";
@@ -82,149 +72,85 @@ export default function Counter() {
 }
 ```
 
-It's just a React component. Whatever it renders is what the agent knows and
-can do at that moment. Notice the last block: checkout only exists once the
-order has a drink in it. You control the agent the way a React UI controls
-what a user can click.
+Whatever the component renders is what the agent knows and can do right now.
+`place_order` only exists once there is a drink in the order.
 
 ## Quickstart
 
-Curb needs Node.js 22.12 or newer: `create-curb-app` and the `curb` CLI both
-refuse an older Node with an `UnsupportedNodeVersion` error. CI tests Node 22
-and 24 on Linux, the supported platform. macOS is used for day-to-day
-development but is not tested in CI, and Windows is not tested.
-
-Start the installer:
+You need Node.js 22.12 or newer.
 
 ```bash
 npm create kugelaudio my-agent
-```
-
-It walks you through the voice pipeline: pick a provider per slot, paste
-another provider's API key once (with links to where to get it), and it
-scaffolds the project, writes your `.env`, and installs:
-
-```text
-  1. Speech-to-text   KugelAudio (Kugel Ear)
-  2. LLM              KugelAudio · qwen3.8-27b
-  3. Text-to-speech   KugelAudio · kugel-3.5
-```
-
-The defaults run the whole agent on KugelAudio (its EU-hosted LLM, Kugel Ear and Kugel
-TTS). Sign in with `npx curb login`; there is no key to copy, and every curb command in
-the project then runs on your login. A `KUGELAUDIO_API_KEY` in `.env` or the environment
-(an API key from the dashboard, for CI or a server) works too and wins over the login.
-Anthropic, OpenAI and any OpenAI-compatible endpoint stay one pick away.
-
-Then run it:
-
-```bash
 cd my-agent
-npx curb login         # sign in in the browser; Curb uses your login
-npm run dev            # everything on http://127.0.0.1:4000
+npx curb login         # sign in once in the browser
+npm run dev            # open http://127.0.0.1:4000
 ```
 
-This opens the **preview**: a web app where you meet your agent. Type into
-the conversation, or press **Start call** and talk: both land in the same
-thread. The conversation title opens restorable preview history, so you can
-start another thread and return to the original transcript and agent state.
-The scaffolded demo is **Juno**, a personal assistant: put tasks on her list,
-tell her things to remember, and ask "how does this work?".
+The installer asks which provider to use for speech-to-text, the LLM and
+text-to-speech, then sets up the project. The defaults run everything on
+KugelAudio, so `curb login` is all the setup you need. Anthropic, OpenAI,
+Deepgram, ElevenLabs, Cartesia and any OpenAI-compatible endpoint are one pick
+away.
+
+`npm run dev` opens the **preview**, where you talk to your agent: type, or
+press **Start call** and speak. The starter agent is **Juno**, a personal
+assistant. Ask her "how does this work?".
 
 > Not on npm yet. For now, scaffold from a checkout of this repo:
 > `npm install` once at the root, then `npm run new -- ~/my-agent`.
 
-Voice works out of the box: in `npm run dev` a call runs over the page's own
-connection to the dev server, so there is nothing else to install or start.
-Several agents can run side by side; if 4000 is taken the preview simply
-moves to 4001. Set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`
-to run calls through your own LiveKit deployment instead.
-Providers beyond the defaults (OpenAI or any OpenAI-compatible LLM endpoint;
-Deepgram, ElevenLabs, Cartesia, OpenAI for speech) are offered in the
-installer, and missing keys only disable their own feature. The startup log
-tells you what's off.
-
-To update an existing project to the newest framework release, run
-`npm run upgrade` inside it: it repoints the `curb` dependency at the latest
-published tarball and reinstalls. The dev server also prints a one-line notice
-when an update is out. Projects scaffolded from a repo checkout update via git
-instead.
-
-To host the actual voice agent, add your deployed LiveKit project's
-`LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`, then run
-`npm start` as a long-running process. This starts the production LiveKit
-worker without the preview. Configure LiveKit room or SIP dispatch to target
-the worker's name: `CURB_AGENT_NAME` when set, otherwise the project's package
-name.
+To update a project later, run `npm run upgrade` inside it.
 
 ## Hosting
 
-A curb agent runs anywhere Node runs, with your own LiveKit deployment and your
-own provider keys; no hosted platform is involved. `npx curb build` turns a
-project into one self-contained directory. Run it as a LiveKit worker, or start
-it as a managed runner (`CURB_MANAGEMENT_ADDR` + `CURB_MANAGEMENT_TOKEN`) that
-your own orchestrator places calls on over a small, versioned HTTP protocol
-with a published JSON Schema. See
-[packages/framework/docs/hosting.md](packages/framework/docs/hosting.md) for the
-ways to run an agent and the full host protocol v1 reference.
+A curb agent runs anywhere Node runs, with your own LiveKit and your own
+provider keys. Set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`,
+then run `npm start` to start the production worker. `npx curb build` packs
+the project into one self-contained directory. See
+[hosting.md](packages/framework/docs/hosting.md) for all the ways to run an
+agent.
 
 ### Deploy to KugelAudio
 
-Prefer not to run LiveKit, workers, and telephony yourself? KugelAudio hosts curb
-agents: every deploy is built and verified, then goes live behind a playground link,
-with phone numbers, call logs, and scaling handled for you.
+Rather not run LiveKit, workers and telephony yourself? KugelAudio builds,
+verifies and hosts your agent, with phone numbers, call logs and scaling
+handled for you.
 **[Deploy on KugelAudio →](https://kugelaudio.com)**
 
-Sign in once and deploy from the project root:
-
 ```bash
-npx curb login          # browser sign-in; session and project keys in ~/.config/curb/
-npx curb secrets push   # every .env variable onto the agent's production environment (names printed, never values)
-npx curb deploy         # pack, upload, build, go live; prints the playground URL
-npx curb logout         # revoke and delete the stored session and project keys
+npx curb login          # sign in once
+npx curb secrets push   # send your .env keys to the hosted agent
+npx curb deploy         # build and go live, prints a playground link
 ```
 
-The first `deploy` or `secrets push` picks or creates the hosted agent and saves it in
-`.curb/link.json`. See
-[packages/framework/docs/deploy.md](packages/framework/docs/deploy.md) for flags, what is
-uploaded, and the limits.
+See [deploy.md](packages/framework/docs/deploy.md) for flags and limits.
 
 ## Why it works well
 
-- **You always know what the model sees.** The entire context (prompt, facts,
-  tools) is the output of one render, and the dev preview shows it to you for
-  every single turn. No prompt strings scattered across files.
-- **Skills work like pages.** Each `skill.tsx` is one topic the agent opens
-  when the conversation goes there. Only a few stay loaded at once, so an
-  agent with 50 skills still sends a small, cacheable prompt.
-- **Conversation behavior is built in.** On top of
-  [LiveKit agents](https://github.com/livekit/agents-js) (WebRTC, voice
-  activity detection, turn endpointing), curb agents stay quiet while a
-  caller thinks out loud, check in after a long pause, and handle being
-  talked over: the history is corrected to the words that were actually
-  spoken, so the agent knows exactly where it was cut off.
-- **You can see why anything happened.** Every message's exact audio is one
-  click away, a complete call can be replayed or downloaded, any conversation
-  can be rewound to an earlier turn, and one click copies a transcript
-  formatted for a coding agent, so Claude Code or Cursor can improve your
-  agent from a real conversation.
+- **You always know what the model sees.** The whole context is the output
+  of one render, and the preview shows it for every turn.
+- **Skills load only when needed.** Each skill is one topic, like a page, so
+  even an agent with 50 skills sends a small prompt.
+- **Natural conversation is built in.** Agents wait while a caller thinks,
+  check in after a long pause and know exactly where they were cut off.
+- **You can see why anything happened.** Replay any call, rewind to any turn,
+  and copy a transcript for Claude Code or Cursor to improve your agent.
 
 ## How an agent is built
 
-Everything you write lives in `src/agent/`. Three kinds of files:
+Everything you write lives in `src/agent/`:
 
 ```text
 my-agent/
   src/agent/
-    agent.tsx          # who the agent is, and where every conversation starts:
-                       # prompt, voice, model, skill index
-    counter/skill.tsx  # one skill per topic, like pages, opened when needed
+    agent.tsx          # who the agent is: prompt, voice, model, skills
+    counter/skill.tsx  # one skill per topic
     menu/skill.tsx
   context/menu.md      # plain markdown the agent can know
 ```
 
-**A skill is a component plus a one-line description** the model uses to
-decide when to go there. Here is a complete file-backed skill, a café menu:
+**A skill is a component plus a short description** that tells the model when
+to use it:
 
 ```tsx
 import { Instruction, Text, type SkillMeta } from "curb";
@@ -244,11 +170,10 @@ export default function Menu() {
 }
 ```
 
-That `<Text src="menu.md" />` line is the whole knowledge story: the menu is
-a markdown file. Edit it, save, and the agent knows the new prices. No code,
-no re-deploy, hot-reloaded in dev.
+Knowledge is just markdown. Edit `menu.md`, save, and the agent knows the new
+prices.
 
-**The agent itself is a few lines in `agent.tsx`:**
+**The agent is a few lines in `agent.tsx`:**
 
 ```tsx
 import { Agent, Skill, Skills, SystemPrompt, defineAgent } from "curb";
@@ -256,7 +181,7 @@ import { kugelaudio } from "curb/providers";
 
 function App() {
   return (
-    // Providers are props. Optional: these are the defaults (plus Azure speech-to-text).
+    // Providers are props: swap any of them in one line.
     <Agent llm={kugelaudio.llm()} tts={kugelaudio.tts({ voice: 1072, language: "en" })}>
       <SystemPrompt>
         You are Kona, the barista at Curb Café. Be warm and quick, one or
@@ -273,62 +198,35 @@ function App() {
 export const agent = defineAgent({ app: App });
 ```
 
-A conversation starts at the agent level: the prompt and the skill index are
-in context from the first turn, and a skill joins only when the conversation
-needs it. The prompt is exactly what you write. In voice sessions the framework
-appends its own spoken-reply rules at runtime (short turns, no markdown out
-loud, when to stay silent, how to behave after being interrupted), so every
-agent sounds like a person on a call without you writing those rules.
-
 From here it grows like any React app:
 
-- **Shared state**: `createAgentStore` (Zustand-style) makes state like the
-  order visible to every skill; rendering from it is what gates tools.
-- **`<Gate>`**: content and tools locked behind a credential check
-  (an email, an order number). Locked means *not rendered*.
-- **`<Procedure>`**: an ordered workflow the agent must walk step by step.
-- **`<Mcp>`**: plug in a remote MCP server (Linear, Notion, …); its tools
-  join the agent's tools, OAuth handled in the preview.
-- **`useAgentInfo`**: data from outside the conversation, like the caller's
-  phone number, readable from any component.
+- **`createAgentStore`**: state shared across skills.
+- **`<Gate>`**: content and tools unlocked only after a check, like an order number.
+- **`<Procedure>`**: a step-by-step workflow the agent follows.
+- **`<Mcp>`**: tools from any MCP server, like Linear or Notion.
+- **`useAgentInfo`**: outside data, like the caller's phone number.
 
 ## The dev loop
 
-`npm run dev` serves the preview on one port. It renders the agent's context
-as an interactive UI: tools become forms you can fill in and submit yourself,
-a `<Gate>` becomes a login card, a `<Procedure>` a stepper whose button
-advances it, knowledge a set of documents. Everything the model can do, you
-can do by clicking, and the agent's state changes the same way. Around it:
+The preview turns your agent into a UI you can click through: tools become
+forms, a `<Gate>` becomes a login card, a `<Procedure>` a stepper. Anything the
+model can do, you can do by hand.
 
-- **One conversation, typed or spoken**: **Start call** attaches voice to
-  the same thread, with live transcription, tool calls you can open, per-message
-  audio, rewind to any turn; hang up and keep typing.
-- **Restorable conversation history**: start another conversation, then
-  switch back to its complete transcript and live agent state from the header.
-- **Synchronized call replay**: the preview records the microphone and agent
-  audio together, preserving pauses, overlap, and interruptions. Play or scrub
-  the timeline to reveal messages at the moment they happened, or download the
-  complete call as one WAV. When a user speaks or types over the agent,
-  generated text that was not spoken is visibly muted after the interruption
-  marker.
-- **Context inspector**: the exact compiled context, turn by turn, with the
-  diff each tool call caused.
-- **Diagnostics**: `curb check` validates the whole agent (unreachable
-  skills, duplicate tools, missing descriptions …) with concrete fixes.
-- **Copy for coding agent**: a coding-agent-ready transcript of the conversation,
-  with your skill map attached.
-- Every conversation is recorded to a local JSON-lines file, `.data/conversations.jsonl` (`npx curb conversations`).
+- **Type or talk** in the same conversation.
+- **Replay calls** with the real audio, interruptions included.
+- **Inspect the context** the model saw on every turn.
+- **Catch mistakes** with `curb check`, which explains how to fix each one.
+- **Copy for a coding agent** to improve your agent from a real conversation.
 
 ## Repository layout
 
-An npm workspace, structured like Next.js:
-
 ```text
 curb.js/
-  packages/framework/          # the framework (published as "curb")
-  packages/create-curb-app/    # the scaffolder
-  examples/insurance-agent/    # a bigger real-world demo (claims, gate, procedure)
-  examples/ops-agent/          # an MCP-heavy example
+  packages/framework/             # the framework (published as "curb")
+  packages/create-framework-app/  # the scaffolder (create-curb-app)
+  packages/create-kugelaudio/     # npm create kugelaudio
+  examples/insurance-agent/       # a bigger demo: claims, gate, procedure
+  examples/ops-agent/             # an MCP-heavy example
 ```
 
 ```bash
@@ -339,14 +237,10 @@ npm test        # framework test suite
 
 ## Status
 
-curb.js is in active development ahead of a first public release: APIs may
-still move and the packages are not yet on npm. Production LiveKit workers
-are scaffolded; SIP trunks and dispatch rules are configured in LiveKit.
-Feedback from early builds is very welcome.
+curb.js is in active development ahead of its first public release. APIs may
+still change and the packages are not on npm yet. Feedback is very welcome.
 
-Built by [KugelAudio](https://kugelaudio.com). Agents speak with
-[Kugel TTS](https://kugelaudio.com) by default, and every provider is
-swappable.
+Built by [KugelAudio](https://kugelaudio.com).
 
 ## License
 
