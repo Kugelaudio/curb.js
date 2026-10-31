@@ -1,0 +1,28 @@
+# Release notes from the conventional commits since the last stable tag. Preview tags do not
+# count, and only what a project using Curb would notice is listed.
+
+[changelog]
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+
+{% for commit in commits -%}
+- {{ commit.message | upper_first }}
+{% endfor %}
+{% endfor %}"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+protect_breaking_commits = true
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+sort_commits = "newest"
+commit_parsers = [
+  { field = "scope", pattern = "^(website|ci)$", skip = true },
+  { field = "breaking", pattern = "true", group = "<!-- 0 -->Breaking" },
+  { message = "^feat", group = "<!-- 1 -->Added" },
+  { message = "^fix", group = "<!-- 2 -->Fixed" },
+  { message = "^perf", group = "<!-- 3 -->Performance" },
+  { message = ".*", skip = true },
+]

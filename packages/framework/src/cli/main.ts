@@ -42,7 +42,7 @@ Commands:
              --emit-layers <dir> also records the dependency layer split for a hosted builder;
              --dependency-layer <descriptor.json> builds only the app layer, and exits 75
              when the project reaches past the recorded build inputs.
-  upgrade    Update this project's curb dependency to the latest published version (--check to only report).
+  upgrade    Update this project's curb dependency to the latest published version (--check to only report, --preview for the newest preview).
   info       Print the versions, providers and environment variable names a bug report needs.
              Runs anywhere and starts nothing. Prints names only, never a value.
   --version  Print the curb version.

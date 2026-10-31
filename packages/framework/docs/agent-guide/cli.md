@@ -102,7 +102,7 @@ prove it runs ([Self-hosting](./hosting.md#built-artifact-curb-build)).
 ## `curb upgrade`
 
 Updates the project's `curb` dependency to the latest published version ([Upgrading](./upgrading.md)).
-`--check` only reports.
+`--check` only reports, and `--preview` takes the newest preview.
 
 ## `curb info`
 

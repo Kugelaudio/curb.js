@@ -270,3 +270,5 @@ curb server
 curb start
 curb test
 curb upgrade
+curb upgrade --check
+curb upgrade --preview

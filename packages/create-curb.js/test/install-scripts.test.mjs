@@ -1,4 +1,4 @@
-// create-curb-app fails the setup when npm 12 skipped a dependency's install script, and
+// create-curb.js fails the setup when npm 12 skipped a dependency's install script, and
 // names the two commands that fix it, instead of reporting success for a project whose
 // first turn would fail.
 import assert from "node:assert/strict";

@@ -3,17 +3,29 @@
 // an unchanged project starts from must contain none.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const bin = fileURLToPath(new URL("../bin/create-curb-app.js", import.meta.url));
+const bin = fileURLToPath(new URL("../bin/create-curb.js", import.meta.url));
 const template = fileURLToPath(new URL("../templates/default", import.meta.url));
 
 function scaffold(t, flags = []) {
-  const root = mkdtempSync(join(tmpdir(), "create-curb-app-test-"));
+  const root = mkdtempSync(join(tmpdir(), "create-curb.js-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const project = join(root, "app");
   const result = run(root, [project, ...flags]);
@@ -21,7 +33,7 @@ function scaffold(t, flags = []) {
   return project;
 }
 
-/** create-curb-app with the test's flags, no install, no git, from `cwd`; its result. */
+/** create-curb.js with the test's flags, no install, no git, from `cwd`; its result. */
 function run(cwd, args) {
   return spawnSync(
     process.execPath,
@@ -116,11 +128,11 @@ test("the default agent runs on KugelAudio's LLM, Kugel Ear and Kugel TTS, all o
   }
 });
 
-// create-curb-app asks nothing: with no provider flags, in a terminal or not, it writes the
+// create-curb.js asks nothing: with no provider flags, in a terminal or not, it writes the
 // KugelAudio defaults straight away and prints no question.
 for (const stdin of ["closed", "tty-less pipe"]) {
   test(`no flags and a ${stdin} stdin writes the KugelAudio defaults without a question`, (t) => {
-    const root = mkdtempSync(join(tmpdir(), "create-curb-app-test-"));
+    const root = mkdtempSync(join(tmpdir(), "create-curb.js-test-"));
     t.after(() => rmSync(root, { recursive: true, force: true }));
     const project = join(root, "app");
     const result = spawnSync(process.execPath, [bin, project, "--skip-install", "--skip-git", "--framework", "file:/unused"], {
@@ -153,7 +165,7 @@ test("--model picks the other KugelAudio model, and one KugelAudio does not serv
   const agent = readFileSync(join(project, "src/agent/agent.tsx"), "utf8");
   assert.match(agent, /llm=\{kugelaudio\.llm\(\{ model: "mistral-medium-3\.5-128b" \}\)\}/);
 
-  const root = mkdtempSync(join(tmpdir(), "create-curb-app-test-"));
+  const root = mkdtempSync(join(tmpdir(), "create-curb.js-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const refused = run(root, [join(root, "app"), "--model", "claude-haiku-4-5"]);
   assert.equal(refused.status, 1);
@@ -175,7 +187,7 @@ test("--llm anthropic still writes Claude and asks for its key", (t) => {
 // A coding agent started in an empty folder scaffolds into it, so the .mcp.json, CLAUDE.md
 // and AGENTS.md it reads at start are the project's.
 test("scaffolds into the empty current folder with .", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "create-curb-app-test-"));
+  const root = mkdtempSync(join(tmpdir(), "create-curb.js-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const folder = join(root, "my-agent");
   mkdirSync(folder);
@@ -225,7 +237,7 @@ test("the generated project carries no voice session code of its own", (t) => {
 });
 
 // npm 12 skips every dependency install script that package.json "allowScripts" does not
-// decide, and create-curb-app stops the setup for any it skipped. The conversation
+// decide, and create-curb.js stops the setup for any it skipped. The conversation
 // store is a plain file now, so the template approves no script for it.
 test("the template decides every install script, with true or false", () => {
   const { allowScripts } = readJson(join(template, "package.json"));
@@ -236,7 +248,7 @@ test("the template decides every install script, with true or false", () => {
 
 // @livekit/agents 1.9.4 (2026-10-24) depends on @livekit/blingfire, whose install script is a
 // no-op (`node -e ""`; its native binding ships prebuilt). Left undecided, npm 12 skips it and
-// create-curb-app stops the setup as if the agent could not run.
+// create-curb.js stops the setup as if the agent could not run.
 test("the template denies @livekit/blingfire's no-op install script", () => {
   const { allowScripts } = readJson(join(template, "package.json"));
   assert.equal(allowScripts["@livekit/blingfire"], false);
@@ -267,4 +279,56 @@ test("the project has no npm config file, which hosted builds refuse", (t) => {
   const project = scaffold(t);
   for (const file of [".npmrc", "npmrc"]) assert.ok(!existsSync(join(project, file)), file);
   assert.ok(!existsSync(join(template, "npmrc")) && !existsSync(join(template, ".npmrc")));
+});
+
+/** Runs this package as npm installs it at `version`: no framework checkout beside it. */
+function scaffoldFromPublishedCopy(t, version, flags = []) {
+  const root = mkdtempSync(join(tmpdir(), "create-curb-js-published-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const pkg = join(root, "create-curb.js");
+  const source = fileURLToPath(new URL("..", import.meta.url));
+  for (const part of ["bin", "templates"]) cpSync(join(source, part), join(pkg, part), { recursive: true });
+  writeFileSync(join(pkg, "package.json"), JSON.stringify({ ...readJson(join(source, "package.json")), version }));
+  mkdirSync(join(root, "node_modules"));
+  const picocolors = dirname(createRequire(import.meta.url).resolve("picocolors/package.json"));
+  symlinkSync(picocolors, join(root, "node_modules", "picocolors"));
+  const project = join(root, "app");
+  const result = spawnSync(
+    process.execPath,
+    [join(pkg, "bin/create-curb.js"), project, "--skip-install", "--skip-git", ...flags],
+    { cwd: root, env: { PATH: process.env.PATH, HOME: root }, encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return readJson(join(project, "package.json"));
+}
+
+// `npm create curb.js` and `npm create curb.js@preview` differ only in the version npm picks.
+for (const version of ["1.15.0", "1.16.0-preview.3"]) {
+  test(`a published ${version} pins curb.js at ${version} under the name projects import`, (t) => {
+    const manifest = scaffoldFromPublishedCopy(t, version);
+    assert.equal(manifest.dependencies.curb, `npm:curb.js@${version}`);
+  });
+}
+
+test("--framework takes a bare version as a curb.js version, never npm's unrelated curb package", (t) => {
+  const manifest = scaffoldFromPublishedCopy(t, "1.15.0", ["--framework", "1.14.1"]);
+  assert.equal(manifest.dependencies.curb, "npm:curb.js@1.14.1");
+});
+
+test("--framework passes any other spec through", (t) => {
+  const manifest = scaffoldFromPublishedCopy(t, "1.15.0", ["--framework", "https://example.test/curb.tgz"]);
+  assert.equal(manifest.dependencies.curb, "https://example.test/curb.tgz");
+});
+
+test("a repo checkout links the sibling framework", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "create-curb.js-test-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const project = join(root, "app");
+  const result = spawnSync(process.execPath, [bin, project, "--skip-install", "--skip-git"], {
+    cwd: root,
+    env: { PATH: process.env.PATH, HOME: root },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(readJson(join(project, "package.json")).dependencies.curb, /^file:.*packages\/framework$/);
 });

@@ -90,7 +90,7 @@ type AgentDirectory = (typeof AGENT_DIRECTORIES)[number];
  * An event is a change only when a file's size or modification time differs from what it was
  * at the start or at its last change, or a file that was there is gone. macOS reports the
  * creation of files written just before the watch began, and events about directories, and
- * those must not reload an agent nobody edited (`npm run dev` right after `create-curb-app`).
+ * those must not reload an agent nobody edited (`npm run dev` right after `create-curb.js`).
  */
 export function watchProject(
   projectRoot: string,

@@ -267,7 +267,7 @@ export async function bundleAgentDeclarations(options: {
   throw new Error(
     `curb build: cannot load the agent in src/agent/ to read its goals and experiments: ${report.message}\n` +
       (commonJs
-        ? '  A curb project is an ES module package: add "type": "module" to package.json, as create-curb-app writes it.'
+        ? '  A curb project is an ES module package: add "type": "module" to package.json, as `npm create curb.js` writes it.'
         : "  The agent's module must import without throwing; `curb check` reports why it does not.") +
       tailOf(output),
   );

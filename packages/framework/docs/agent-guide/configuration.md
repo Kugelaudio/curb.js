@@ -48,7 +48,8 @@ naming it.
 | `AGENT_LLM_TIMEOUT_MS` | `60000` | How long a model may take to answer |
 | `KUGEL_CONVERSATIONS_DB` | a local file | Where conversations are recorded. `off` turns it off ([The preview](./preview.md#recorded-conversations)) |
 | `CURB_NO_OPEN` | | `1` keeps `curb dev` from opening the browser |
-| `CURB_CDN` | `https://cdn.kugelaudio.com/curb` | Where `curb upgrade` looks. Set it to a mirror |
+| `CURB_CDN` | `https://cdn.kugelaudio.com/curb` | Where `curb upgrade` looks for a project installed from the CDN. Set it to a mirror |
+| `CURB_NPM_REGISTRY` | `https://registry.npmjs.org` | Where `curb upgrade` looks for a project installed from npm. Set it to a mirror |
 | `MCP_SERVERS_FILE` | `mcp.servers.json` | The servers added in the preview |
 | `MCP_AUTH_DIR` | `.mcp-auth` | Where MCP sign-ins are stored |
 | `MCP_<ID>_TOKEN` | | A bearer token for the MCP server with that id |

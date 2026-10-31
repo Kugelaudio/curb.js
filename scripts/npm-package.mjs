@@ -1,30 +1,40 @@
 #!/usr/bin/env node
-// Turns a Curb release tarball from the CDN into the tarball npm receives.
+// Builds the tarballs npm receives from the source at this commit.
 //
-//   node scripts/npm-package.mjs <curb-X.Y.Z.tgz> <out-dir>
+//   node scripts/npm-package.mjs <version> <out-dir> [--notes <file>]
 //
-// The CDN tarball is named `curb` and marked private, because `curb` belongs to someone
-// else on npm and the hosted builder admits only a package named `curb` from the CDN. npm
-// gets the same release as `curb.js`. Only package.json may differ: every other file is
-// compared by hash after packing, and any other difference fails the script.
+// Each package is packed as it stands, then stamped: the repository holds no release version,
+// so the version comes from scripts/release-version.mjs. The framework is `curb` here and
+// `curb.js` on npm, because `curb` belongs to someone else there; projects keep
+// `import ... from "curb"` through the alias `"curb": "npm:curb.js@<version>"`. Only
+// package.json and the release notes may differ from the packed source: every other file is
+// compared by hash after packing, and any other difference fails the script. Build output
+// under `.curb/` fails it too: `files` ignores .gitignore, so a test run leaves it packable.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
-export const NPM_NAME = "curb.js";
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+// The order matters: create-curb.js pins curb.js, so curb.js reaches npm first.
+export const PACKAGES = ["packages/framework", "packages/create-curb.js"];
+const NPM_NAMES = { curb: "curb.js", "create-curb.js": "create-curb.js" };
 const MANIFEST = "package.json";
+const NOTES = "RELEASE_NOTES.md";
 
-/** The release's manifest as npm publishes it. Users keep `import ... from "curb"`. */
-export function npmManifest(manifest) {
-  if (manifest.name !== "curb") throw new Error(`expected the curb release tarball, found ${manifest.name}`);
+/** A package's manifest as npm publishes it. npm checks `repository` against provenance. */
+export function npmManifest(manifest, version) {
+  const name = NPM_NAMES[manifest.name];
+  if (!name) throw new Error(`expected a package Curb publishes, found ${manifest.name}`);
   const { private: _private, ...published } = manifest;
   return {
     ...published,
-    name: NPM_NAME,
+    name,
+    version,
     homepage: "https://curbjs.com",
     repository: { type: "git", url: "git+https://github.com/Kugelaudio/curb.js.git" },
   };
@@ -41,10 +51,17 @@ export function fileHashes(root) {
   return hashes;
 }
 
-/** The paths that differ between two trees, package.json aside. */
+/** The paths that differ between two trees, package.json and the release notes aside. */
 export function unexpectedDifferences(before, after) {
   const paths = new Set([...before.keys(), ...after.keys()]);
-  return [...paths].filter((path) => path !== MANIFEST && before.get(path) !== after.get(path)).sort();
+  return [...paths]
+    .filter((path) => path !== MANIFEST && path !== NOTES && before.get(path) !== after.get(path))
+    .sort();
+}
+
+/** The paths under a `.curb/` directory, which only a build or a test run writes. */
+export function buildOutput(paths) {
+  return [...paths].filter((path) => path.split(sep).includes(".curb")).sort();
 }
 
 function unpack(tarball) {
@@ -53,28 +70,47 @@ function unpack(tarball) {
   return join(directory, "package");
 }
 
-function main([tarball, outDir]) {
-  if (!tarball || !outDir) throw new Error("usage: npm-package.mjs <curb-X.Y.Z.tgz> <out-dir>");
+function npmPack(cwd) {
+  const directory = mkdtempSync(join(tmpdir(), "curb-npm-pack-"));
+  const packed = execFileSync("npm", ["pack", "--silent", "--pack-destination", directory], {
+    cwd,
+    encoding: "utf8",
+  }).trim();
+  return join(directory, packed);
+}
+
+/** Stamps a packed tarball and writes the result to `outDir`; its path. */
+export function stampTarball(tarball, outDir, { version, notes }) {
   const source = unpack(resolve(tarball));
   const before = fileHashes(source);
 
   const manifestPath = join(source, MANIFEST);
-  const manifest = npmManifest(JSON.parse(readFileSync(manifestPath, "utf8")));
+  const manifest = npmManifest(JSON.parse(readFileSync(manifestPath, "utf8")), version);
+  if (notes) {
+    copyFileSync(notes, join(source, NOTES));
+    manifest.files = [...manifest.files, NOTES];
+  }
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   // Packed aside, so a tarball this script refuses is never left where publish reads it.
-  const packDirectory = mkdtempSync(join(tmpdir(), "curb-npm-pack-"));
-  const packed = execFileSync("npm", ["pack", "--silent", "--pack-destination", packDirectory], {
-    cwd: source,
-    encoding: "utf8",
-  }).trim();
-  const result = join(packDirectory, packed);
-
-  const changed = unexpectedDifferences(before, fileHashes(unpack(result)));
+  const result = npmPack(source);
+  const after = fileHashes(unpack(result));
+  const changed = unexpectedDifferences(before, after);
   if (changed.length > 0) throw new Error(`npm pack changed more than package.json: ${changed.join(", ")}`);
-  const destination = join(resolve(outDir), `${NPM_NAME}-${manifest.version}.tgz`);
+  const output = buildOutput(after.keys());
+  if (output.length > 0) throw new Error(`${manifest.name} would ship build output: ${output.join(", ")}`);
+  const destination = join(resolve(outDir), `${manifest.name}-${version}.tgz`);
   copyFileSync(result, destination);
-  console.log(destination);
+  return destination;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main(process.argv.slice(2));
+function main() {
+  const { positionals, values } = parseArgs({ allowPositionals: true, options: { notes: { type: "string" } } });
+  const [version, outDir] = positionals;
+  if (!version || !outDir) throw new Error("usage: npm-package.mjs <version> <out-dir> [--notes <file>]");
+  for (const directory of PACKAGES) {
+    console.log(stampTarball(npmPack(join(ROOT, directory)), outDir, { version, notes: values.notes }));
+  }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) main();

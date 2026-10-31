@@ -1,34 +1,134 @@
 name: publish
 
-# Publishes a release to npm from its `v<version>` tag, pushed after the release reached the CDN.
-# npm trusts this file through a trusted publisher, so no npm token
-# exists anywhere: a publisher names this repository, `publish.yml` and the `npm` environment.
-# npm accepts GitHub-hosted runners only, and gives provenance from a public repository only.
-# A dispatch republishes whatever npm lacks for a version, so a failed run can be finished.
+# Every release is built from source here, in this one file: npm trusts it through trusted
+# publishers, so no npm token exists anywhere. A publisher names this repository, `publish.yml`
+# and the `npm` environment. npm accepts GitHub-hosted runners only, and gives provenance from a
+# public repository only.
 #
-#   curb.js            the CDN release of the tag's version, renamed by scripts/npm-package.mjs
-#   create-curb.js     packages/create-curb.js at the tag, when npm lacks its version. It only
-#                      points at the CDN, so it keeps its own version and needs few releases.
+#   preview   a merge to main that changes a published package. Publishes
+#             <next minor>-preview.<n> to the `preview` dist-tag, with a matching git tag.
+#   stable    a dispatch on main. Publishes the bumped version to `latest`, then adds a
+#             `v<version>` tag and a GitHub Release. Being able to dispatch is the gate. dry_run
+#             does everything except publish, tag and release.
+#
+# Tags hold the version (scripts/release-version.mjs). It is stamped into the tarballs at build
+# time, because no workflow can push a commit to main. The tarballs verify tests are the ones
+# publish sends. The order is verify, publish, tag, release, so a tag only ever names a version
+# npm holds: a tag written first would count as a release that never happened. A tag pushed with
+# GITHUB_TOKEN starts no workflow, so nothing here listens for tags. A failed run is finished
+# with "Re-run failed jobs": every step after verify skips what is already done.
 
 on:
   push:
-    tags: ['v[0-9]*']
+    branches: [main]
+    paths:
+      - packages/framework/**
+      - packages/create-curb.js/**
+      - '!packages/framework/docs/**'
+      - '!packages/*/*.md'
   workflow_dispatch:
     inputs:
-      version:
-        description: Version to publish
-        type: string
+      semver:
+        description: Which part of the version to bump
+        type: choice
+        options: [patch, minor, major]
         required: true
+      dry_run:
+        description: Do everything except publish, tag and release
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+# One group per trigger: GitHub keeps one pending run per group, so a merge sharing a group with
+# a dispatch could cancel the waiting stable release. Nothing in progress is cancelled. A preview
+# that was only queued can be replaced by a newer merge, whose preview carries the same changes.
 concurrency:
-  group: npm-publish
+  group: release-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      git_tag: ${{ steps.version.outputs.git_tag }}
+      dist_tag: ${{ steps.version.outputs.dist_tag }}
+    steps:
+      - name: Release from main only
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "A release runs on main, and this run is on $GITHUB_REF." >&2
+          exit 1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - id: version
+        env:
+          CHANNEL: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'preview' }}
+          SEMVER: ${{ inputs.semver }}
+        run: node scripts/release-version.mjs --channel "$CHANNEL" --semver "$SEMVER"
+
+  verify:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      # CPU binaries ship in npm; the Linux postinstall otherwise downloads CUDA from NuGet.
+      ONNXRUNTIME_NODE_INSTALL: skip
+      VERSION: ${{ needs.plan.outputs.version }}
+      GIT_TAG: ${{ needs.plan.outputs.git_tag }}
+      DIST_TAG: ${{ needs.plan.outputs.dist_tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npm run build
+      - run: npm test
+      - run: npm run check:examples
+      - run: npm run check:compat
+      - run: npm run check:independence
+      - run: npm run smoke:self-host
+      - name: Write the release notes
+        run: |
+          mkdir out
+          npx --yes git-cliff@2.14.2 --config cliff.toml --unreleased --tag "$GIT_TAG" --output out/release-notes.md
+          cat out/release-notes.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Pack the tarballs from source
+        run: node scripts/npm-package.mjs "$VERSION" out --notes out/release-notes.md
+      - name: Scaffold a project from the tarballs
+        run: node scripts/release-install-test.mjs out
+      - name: Dry-run the publication
+        run: |
+          for name in curb.js create-curb.js; do
+            npm publish --dry-run --access public --tag "$DIST_TAG" "out/$name-$VERSION.tgz"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: out
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
+    needs: [plan, verify]
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-24.04
     environment:
       name: npm
@@ -38,41 +138,42 @@ jobs:
       contents: read
       id-token: write
     env:
-      VERSION: ${{ inputs.version || github.ref_name }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      DIST_TAG: ${{ needs.plan.outputs.dist_tag }}
       NPM_CONFIG_PROVENANCE: ${{ !github.event.repository.private }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: ${{ inputs.version && format('v{0}', inputs.version) || github.ref }}
-          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
       - name: Install npm with trusted publishing support
         run: npm install --global npm@11.17.0
-      - name: Package what npm lacks
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: out
+      # Before the first publish: a package npm lacks cannot have a trusted publisher, so its
+      # publish would fail after curb.js went out, leaving half a release.
+      - name: Refuse half a release
         run: |
-          VERSION="${VERSION#v}"
-          mkdir -p out
-          if ! npm view "curb.js@${VERSION}" version >/dev/null 2>&1; then
-            curl --fail --silent --show-error --location --output release.tgz \
-              "https://cdn.kugelaudio.com/curb/curb-${VERSION}.tgz"
-            node scripts/npm-package.mjs release.tgz out
-          fi
-          own=$(jq -er .version packages/create-curb.js/package.json)
-          if ! npm view "create-curb.js@${own}" version >/dev/null 2>&1; then
-            npm pack --silent --pack-destination out --workspace packages/create-curb.js
-          fi
-      - name: Publish
+          for name in curb.js create-curb.js; do
+            npm view "$name" name >/dev/null || { echo "$name is not on npm; publish nothing until it is" >&2; exit 1; }
+          done
+      - name: Publish what npm lacks
         run: |
-          shopt -s nullglob
-          for tarball in out/*.tgz; do npm publish --access public "$tarball"; done
+          # curb.js first: create-curb.js pins it.
+          for name in curb.js create-curb.js; do
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is already on npm"
+            else
+              npm publish --access public --tag "$DIST_TAG" "out/$name-$VERSION.tgz"
+            fi
+          done
       - name: Read the publication back
         run: |
-          shopt -s nullglob
-          for tarball in out/*.tgz; do
-            spec=$(tar -xzOf "$tarball" package/package.json | jq -er '"\(.name)@\(.version)"')
+          for name in curb.js create-curb.js; do
+            spec="$name@$VERSION"
+            tarball="out/$name-$VERSION.tgz"
             expected="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
             for attempt in 1 2 3 4 5 6; do
               found=$(npm view "$spec" dist.integrity 2>/dev/null) || found=""
@@ -82,3 +183,45 @@ jobs:
             [[ "$found" == "$expected" ]] || { echo "npm serves ${found:-nothing} for $spec, expected $expected" >&2; exit 1; }
             echo "$spec is on npm"
           done
+
+  tag:
+    needs: [plan, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the released commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIT_TAG: ${{ needs.plan.outputs.git_tag }}
+        run: |
+          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GIT_TAG" --jq .object.sha 2>/dev/null); then
+            [[ "$existing" == "$GITHUB_SHA" ]] || { echo "$GIT_TAG is already on $existing" >&2; exit 1; }
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$GIT_TAG" -f "sha=$GITHUB_SHA"
+          fi
+
+  release:
+    needs: [plan, tag]
+    if: needs.plan.outputs.dist_tag == 'latest'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: out
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GIT_TAG: ${{ needs.plan.outputs.git_tag }}
+        run: |
+          if gh release view "$GIT_TAG" >/dev/null 2>&1; then
+            echo "$GIT_TAG already has a release"
+          else
+            gh release create "$GIT_TAG" --verify-tag --title "$GIT_TAG" --notes-file out/release-notes.md
+          fi

@@ -246,3 +246,7 @@ Some 1.x releases made breaking changes without a major version. Each one is lis
 ### Added
 
 - First release: a React agent framework with one conversation for chat and voice, a CDN scaffold and `curb upgrade`.
+
+## After 1.14.1
+
+Release notes for later versions are on [GitHub Releases](https://github.com/Kugelaudio/curb.js/releases).
