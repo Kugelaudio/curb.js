@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Documentation
-    url: https://curbjs.com/docs/
-    about: Guides and the API reference.
-  - name: Report a security problem
-    url: https://github.com/Kugelaudio/curb.js/blob/main/CONTRIBUTING.md#security
-    about: Please do not report security problems in public issues.

@@ -7,7 +7,8 @@ Thanks for helping improve Curb.
 Curb is developed here. Pull requests are reviewed and merged in this repository, and each
 merge to `main` that changes the framework is released.
 
-- **Issues** are welcome: bugs, missing features, unclear docs.
+- **Issues** are welcome: bugs, missing features, unclear docs. To report a bug, follow
+  [Reporting a bug](packages/framework/docs/agent-guide/reporting-a-bug.md).
 - **Pull requests** are welcome too. The title is the changelog line, written for someone
   using Curb: `fix: ...`, `feat: ...`, or `feat!: ...` for a breaking change.
 

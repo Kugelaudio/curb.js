@@ -41,6 +41,7 @@ The full guide ships in `node_modules/curb/docs/agent-guide/`: read `README.md` 
 There is one page per task, such as `human-handoff.md` and `confirmations.md`;
 `api-reference.md` leads to every export, and `improve-from-calls.md` is the way to fix an
 agent from a call that went wrong.
+A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person's yes first.
 
 ## Verify every change
 
