@@ -4,7 +4,7 @@
 server doing the work: the project lives in the browser (IndexedDB), the page compiles it
 with esbuild-wasm, installs npm packages from the registry, runs the agent server in a Web
 Worker and serves the same preview, by text and by voice. It is a development environment
-only; a deployed agent is built and run exactly as before (`curb build`, `hosting.md`).
+only; a deployed agent is built and run exactly as before (`curb build`, `agent-guide/hosting.md`).
 
 Local Curb is unchanged by it: `npm install`, `curb dev`, `curb check`, `curb build` and
 `curb deploy` run the same code as without it. The page reuses `curb dev`'s own supervisor

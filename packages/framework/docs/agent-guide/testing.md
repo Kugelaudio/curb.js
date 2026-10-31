@@ -1,9 +1,38 @@
-# Testing an agent: `curb check`, `curb say`, then `curb test`
+# Testing
 
 Three commands tell you whether an agent works, with no browser, microphone or
 LiveKit: `curb check` says whether it builds, `curb say` says how it behaves
 turn by turn, and `curb test` whether whole conversations still work. Run them
 after every change, in that order.
+
+## Test the agent you built
+
+`curb say` plays one caller turn from the terminal and prints the tool calls and what the turn added
+to the context. A coding agent uses the same commands.
+
+```bash
+npx curb check
+npx curb say --new "A pipe burst at home last night"
+```
+
+Keep a conversation as a test:
+
+```ts
+// src/agent/report-claim/report-claim.scenario.ts
+import { scenario } from "curb/testing";
+
+export default scenario({
+  name: "opens a claim",
+  turns: ["A pipe burst at home last night"],
+  expect: ({ called }) => [called("open_claim")],
+});
+```
+
+```bash
+npx curb test
+```
+
+Each `curb say` and `curb test` turn calls the LLM, so it costs tokens like a real call.
 
 ## 1. `curb check`: does it build?
 
@@ -14,7 +43,7 @@ npx curb check
 It type-checks every file under `src/` with the project's `tsconfig.json`,
 renders the whole agent with every skill loaded, and reads the source of every
 skill, including branches that are not rendered yet. Each finding has a stable
-code, a `file:line` location and a fix ([diagnostics.md](./diagnostics.md)).
+code, a `file:line` location and a fix ([Diagnostics](./diagnostics.md)).
 It exits 1 when there is an error.
 
 Agent code runs through tsx, which does not check types. Without the check, a
@@ -53,7 +82,7 @@ npx curb say "Put buy milk on my list"
 
 It runs ONE caller turn through the same session a call uses: the same skills,
 tools and context, and the spoken-reply rules a voice call adds. It calls the
-LLM with the key in the project's `.env`, so it costs tokens like a real call;
+LLM on your `curb login` or the key in the project's `.env`, so it costs tokens like a real call;
 speech keys are not needed. It prints the reply, one line per tool call, any
 error, and the context lines the turn added:
 
@@ -108,7 +137,7 @@ npx curb say "I have photos of the damage"
 `--new` starts a new conversation with its turn; `curb say --new` alone just
 resets. Between calls the conversation is kept in `.curb/say-session.json`:
 the transcript, the loaded skills, the page info (`--client`), and the state of
-every `createAgentStore` store. Component state (`useState`) starts fresh on every call, so keep
+every `createAgentStore` store. Component state (`useState`) starts fresh on every `curb say` run, so keep
 anything a later turn depends on in a store. Tool calls are not run again
 when a conversation continues: a booking made in turn 1 is not booked twice.
 After you change the agent's code, start the scenario over with `--new`.
@@ -326,7 +355,9 @@ The conversation stops at the first turn that reports an error.
 - `called(tool, input?)`: the tool ran, not refused, at least once. With
   `input`, only a call whose input has those values counts (text compared
   ignoring case). A value may be a pattern, `{ date: /^2026-10-/ }`, tested
-  against the field's text.
+  against the field's text. A call that returned `ok: false`, a fake's
+  included, counts as refused: to test a failure path, read it from
+  `transcript` with `check`.
 - `notCalled(tool)`: the tool never ran.
 - `said(text)` or `said(/pattern/)`: an agent reply contains the text (ignoring
   case) or matches the pattern.
@@ -388,8 +419,8 @@ scenario file that cannot be loaded is reported as
 
 ### What it costs and what it touches
 
-- Every turn calls the agent's LLM as a real call does, with the key in the
-  project's `.env`; speech keys are not needed. A missing LLM key stops the run
+- Every turn calls the agent's LLM as a real call does, on your `curb login` or
+  the key in the project's `.env`; speech keys are not needed. A missing LLM key stops the run
   before the first turn and names the variable.
 - The simulated caller and the judge run on the agent's own provider, on a
   small fast model: `claude-haiku-5-5` for Anthropic, `gpt-5.4-mini` for
@@ -403,7 +434,7 @@ scenario file that cannot be loaded is reported as
 ## Page info: `client.*`
 
 A page the agent is embedded in can send page info about itself, which the
-agent reads as `client.<key>` session info (see [authoring.md](./authoring.md),
+agent reads as `client.<key>` session info (see [Agents and skills](./agents-and-skills.md),
 "Who speaks first", for what it is and why it is untrusted). Every way of
 talking to the agent locally can send it, held to the same limits, and it is on
 the conversation before the agent opens, so a `firstTurn: { say }` function
@@ -440,7 +471,7 @@ input and sends the rest.
 ## Experiment variants: `experiment.*`
 
 An agent that declares `defineAgent({ experiments })` gets one variant of each
-per call, read with `useVariant(name)` (see [authoring.md](./authoring.md),
+per call, read with `useVariant(name)` (see [Agents and skills](./agents-and-skills.md),
 "Goals and A/B experiments"). A hosting platform assigns them. Locally they are
 drawn by the same rule:
 
@@ -484,4 +515,9 @@ drawn by the same rule:
    earlier scenario still passes.
 
 When the text behaves, boot `npm run dev` and listen: timing, interruptions
-and voice are only audible on a real call ([preview.md](./preview.md)).
+and voice are only audible on a real call ([The preview](./preview.md)).
+
+## Next steps
+
+- [Deploying](./deploying.md): put the agent live.
+- [Improve from real calls](./improve-from-calls.md): fix an agent from a call that went wrong.

@@ -1,0 +1,16 @@
+---
+import { GUIDE_GROUPS, GUIDE_PAGES, pageUrl, type GuidePageId } from '../guide'
+
+const { id } = Astro.props as { id: GuidePageId }
+const groups = GUIDE_GROUPS.map((group) => ({ group, pages: GUIDE_PAGES.filter((page) => page.group === group) }))
+---
+
+{groups.map(({ group, pages }, index) => (
+  <details class="docs-section" data-group={group} open={index === 0 || pages.some((page) => page.id === id)}>
+    <summary class="docs-group">
+      {group}
+      <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" /></svg>
+    </summary>
+    <ul>{pages.map((page) => <li><a href={pageUrl(page.id)} aria-current={page.id === id ? 'page' : undefined}>{page.title}</a></li>)}</ul>
+  </details>
+))}

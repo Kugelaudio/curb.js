@@ -1,0 +1,52 @@
+---
+/**
+ * One switch: the caller gives a policy number, `verified` flips, and the model's instruction and
+ * tool change with it. Lines leaving are struck through and lines arriving are marked. Without
+ * JavaScript the second step simply stays on screen.
+ */
+import { Code } from 'astro:components'
+import { branchedLines, codeClasses, curbCodeTheme } from '../code-theme'
+import { skillBranches, type StateStep } from '../requests'
+
+const { skill, steps } = Astro.props as { skill: string; steps: StateStep[] }
+const shown = 2
+const lines = (kind: 'instruction' | 'tool') =>
+  steps.flatMap((step, index) =>
+    step.lines
+      .filter((line) => line.startsWith(`${kind}: `))
+      .map((text) => ({ text: text.replace(`${kind}: `, '').replace(/\(.*$/, ''), step: index + 1 })),
+  )
+---
+
+<div class="story" data-story data-step={shown} data-lit={shown}>
+  <div class="story-bar">
+    <ol class="story-steps">
+      {steps.map((step, index) => <li><button type="button" data-step-to={index + 1} disabled aria-current={index + 1 === shown ? 'step' : undefined}>“{step.caller}”</button></li>)}
+    </ol>
+    <button type="button" class="story-pause" data-story-pause hidden>Pause</button>
+  </div>
+  <div class="render-grid">
+    <div class="pane story-code">
+      <p class="pane-title">CurbJS</p>
+      <div class="story-box">
+      <dl class="story-values" data-story-values={JSON.stringify(steps.map((step) => step.values))}>
+        {steps[shown - 1]!.values.map(([name, value]) => <div><dt>{name}</dt><dd data-value={name}>{value}</dd></div>)}
+      </dl>
+      <Code code={skill} lang="tsx" theme={curbCodeTheme} transformers={[codeClasses, branchedLines(skillBranches(skill))]} />
+      </div>
+    </div>
+    <div class="pane">
+      <p class="pane-title">Model context</p>
+      <div class="story-output">
+        <p class="story-label">Instruction</p>
+        <div class="live-lines">
+          {lines('instruction').map((line) => <p class:list={['live-line', { 'is-on': line.step === shown }]} data-on={line.step}><span>{line.text}</span></p>)}
+        </div>
+        <p class="story-label">Tools</p>
+        <div class="live-lines">
+          {lines('tool').map((line) => <p class:list={['live-line', { 'is-on': line.step === shown }]} data-on={line.step}><span>{line.text}</span></p>)}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

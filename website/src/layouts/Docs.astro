@@ -1,0 +1,46 @@
+---
+import type { MarkdownHeading } from 'astro'
+import Base from './Base.astro'
+import DocsNav from '../components/DocsNav.astro'
+import { GUIDE_PAGES, markdownUrl, neighbours, pageUrl, type GuidePageId } from '../guide'
+
+const { id, title, headings } = Astro.props as { id: GuidePageId; title: string; headings: MarkdownHeading[] }
+const contents = headings.filter((heading) => heading.depth === 2 || heading.depth === 3)
+const { previous, next } = neighbours(id)
+const { description } = GUIDE_PAGES.find((page) => page.id === id)!
+---
+
+<Base
+  title={`${title} | Curb`}
+  description={description}
+  path={pageUrl(id)}
+  markdown={markdownUrl(id)}
+>
+  <div class="docs">
+    <details class="docs-nav-toggle">
+      <summary>
+        {title}
+        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" /></svg>
+      </summary>
+      <nav aria-label="Guide, small screens"><DocsNav id={id} /></nav>
+    </details>
+    <nav class="docs-nav" aria-label="Guide"><DocsNav id={id} /></nav>
+    <script is:inline src="/sidebar.js"></script>
+    <main id="main" class="docs-main">
+      <article class="prose"><slot /></article>
+      <nav class="pager" aria-label="Next and previous page">
+        {previous ? <a href={pageUrl(previous.id)}><span>Previous</span>{previous.title}</a> : <span></span>}
+        {next && <a class="pager-next" href={pageUrl(next.id)}><span>Next</span>{next.title}</a>}
+      </nav>
+    </main>
+    <aside class="docs-toc">
+      {contents.length > 0 && (
+        <nav aria-label="On this page">
+          <p class="docs-group">On this page</p>
+          <ul>{contents.map((heading) => <li class:list={{ deep: heading.depth === 3 }}><a href={`#${heading.slug}`}>{heading.text}</a></li>)}</ul>
+        </nav>
+      )}
+      <p class="docs-agent"><a href={markdownUrl(id)}>This page as Markdown</a></p>
+    </aside>
+  </div>
+</Base>

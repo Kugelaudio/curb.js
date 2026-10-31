@@ -27,7 +27,7 @@ curb.js/
 │   ├── src/server/            # WS agent server, LiveKit voice host, conversation store
 │   ├── src/preview/           # browser preview app (served by `curb dev`)
 │   └── src/test-fixtures/project/  # hermetic fixture project used by the test suite
-├── packages/create-curb-app/  # project scaffolder (npm create kugelaudio <dir>);
+├── packages/create-curb-app/  # project scaffolder (npm create curb.js <dir>);
 │                              # template lives in templates/default/
 ├── examples/insurance-agent/  # complete agent project (default demo; the template)
 └── examples/ops-agent/        # MCP-heavy second example
@@ -140,8 +140,10 @@ edit a frozen project to make it pass.
 - **The browser/authoring public API is `src/index.ts`.** Agent code imports
   from `"curb"`. Server-only scripts use the sanctioned `"curb/orchestration"`
   export from `src/orchestration.ts`; don't document or encourage any other
-  deep imports. Document authoring additions in `docs/agent-guide/authoring.md`
-  and voice session additions in `docs/agent-guide/orchestration.md`.
+  deep imports. Document a new component in `docs/agent-guide/components.md`, a new hook in
+  `docs/agent-guide/hooks.md`, a new environment variable in `docs/agent-guide/configuration.md`
+  and a voice session addition in `docs/agent-guide/voice-sessions.md`, with a guide page when
+  it is a new task.
 - **New diagnostics** get a code in `AUTHORING_DIAGNOSTIC_CODES`, a row in
   `docs/agent-guide/diagnostics.md`, and a test.
 - **Node floor is `engines.node`.** Both published `package.json` files declare
@@ -206,8 +208,8 @@ edit a frozen project to make it pass.
   `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`, and direct join deletes those from the
   environment rather than merely not reading them. A half-configured direct join
   exits 78 instead of falling back to the worker path.
-  See `docs/build-verification.md`, and `docs/hosting.md` for self-hosting and the
-  protocol. `npm run smoke:self-host` builds the insurance example and drives a
+  See `docs/build-verification.md`, and `docs/agent-guide/hosting.md` for self-hosting and
+  `docs/agent-guide/host-protocol.md` for the protocol. `npm run smoke:self-host` builds the insurance example and drives a
   managed runner with no LiveKit credentials against `protocol.schema.json`;
   `npm run check:independence` fails if Curb cites a private KugelAudio platform
   document.

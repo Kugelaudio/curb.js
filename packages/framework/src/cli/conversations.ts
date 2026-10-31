@@ -15,7 +15,7 @@ import { ConversationStore, DEFAULT_CONVERSATIONS_DB_PATH, legacyHistoryNotice }
 
 export const CONVERSATIONS_USAGE = `Usage: curb conversations [--last <n> | --id <id>] [--json]
 
-Prints the project's recorded conversations (curb dev, curb say, curb test) with every
+Prints the project's recorded conversations (curb dev, curb say) with every
 message, tool call, tool input and tool result, newest last. Read them to see where the agent
 went wrong before changing it.
 

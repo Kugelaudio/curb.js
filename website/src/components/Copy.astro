@@ -1,0 +1,9 @@
+---
+/** A one-line command with a copy button. The button appears with JavaScript; the text is always selectable. */
+const { command } = Astro.props as { command: string }
+---
+
+<div class="command">
+  <code>{command}</code>
+  <button type="button" class="copy" data-copy={command} hidden>Copy</button>
+</div>

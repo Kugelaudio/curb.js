@@ -41,7 +41,7 @@ function StatusIcon({ status, running }: { status: ToolCallStatus; running: bool
 }
 
 /**
- * One thing the agent did, inside its turn. A skill it opened reads "Opened skill <name>"
+ * One thing the agent did, inside its turn. A skill it opened reads "Open skill <name>"
  * and opens that skill; any other tool call shows its name, its first arguments and how it
  * went, and expands to its arguments and result. The same for every tool: nothing here
  * words one tool's call differently.
@@ -72,7 +72,7 @@ export function ToolCallRow({
         onClick={() => onOpenSkill(path)}
       >
         <BookOpenIcon className="size-3.5 shrink-0" aria-hidden="true" />
-        Opened skill
+        Open skill
         <span className="truncate font-medium text-foreground">{skillLabel(path)}</span>
         {status === "failed" ? <StatusIcon status={status} running={running} /> : null}
       </button>

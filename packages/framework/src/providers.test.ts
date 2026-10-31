@@ -58,7 +58,7 @@ describe("curb/providers factories", () => {
     const diagnostic = (thrown as AgentAuthoringError).diagnostic;
     expect(diagnostic.code).toBe(AUTHORING_DIAGNOSTIC_CODES.scaffoldPlaceholder);
     expect(diagnostic.message).toContain("{{AGENT_MODEL}}");
-    expect(diagnostic.fix).toContain("npm create kugelaudio");
+    expect(diagnostic.fix).toContain("npm create curb.js");
     expect(() => openai("{{ AGENT_MODEL }}")).toThrow(AgentAuthoringError);
     expect(() => openaiCompatible({ baseURL: "http://x/v1", model: "{{AGENT_MODEL}}" })).toThrow(
       AgentAuthoringError,

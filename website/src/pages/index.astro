@@ -1,0 +1,200 @@
+---
+import { Code } from 'astro:components'
+import { getEntry } from 'astro:content'
+import Base from '../layouts/Base.astro'
+import Copy from '../components/Copy.astro'
+import RequestStory from '../components/RequestStory.astro'
+import Gate from '../components/diagrams/Gate.astro'
+import Pipeline from '../components/diagrams/Pipeline.astro'
+import Skills from '../components/diagrams/Skills.astro'
+import { codeClasses, curbCodeTheme } from '../code-theme'
+import { codeBlock, plainSkill, requestBlock, stateSteps } from '../requests'
+
+const page = await getEntry('guide', 'what-the-model-receives')
+if (!page?.body) throw new Error('The agent guide has no what-the-model-receives.md')
+const skill = plainSkill(codeBlock(page.body, 'src/agent/report-claim/skill.tsx, with a switch'))
+const callSteps = stateSteps(requestBlock(page.body, 'states'))
+
+const curbTest = `$ npx curb test
+
+--- opens a claim for a burst pipe
+caller: A pipe burst at home last night
+agent:  Your claim is open.
+  pass  called open_claim
+
+--- asks what happened before opening a claim
+caller: I need to report some damage
+agent:  What happened, and when?
+  pass  did not call open_claim
+
+--- answers a question without opening a claim
+caller: Is water damage covered?
+agent:  Water damage is covered.
+  pass  did not call open_claim
+
+3 of 3 scenario(s) passed in 0.6s.`
+
+const stack = [
+  { slot: 'LLM', names: ['KugelAudio', 'Anthropic', 'OpenAI', 'Any OpenAI-compatible endpoint'] },
+  { slot: 'Speech to text', names: ['KugelAudio', 'OpenAI', 'Azure', 'Deepgram', 'ElevenLabs'] },
+  { slot: 'Text to speech', names: ['KugelAudio', 'OpenAI', 'ElevenLabs', 'Cartesia'] },
+  { slot: 'Tools', names: ['Your APIs', 'Any MCP server'] },
+]
+
+const examples = [
+  { href: '/docs/human-handoff/', title: 'Human handoff', text: 'Put the caller through to a person, with a callback when nobody answers.' },
+  { href: '/docs/complex-handoffs/', title: 'Complex handoffs', text: 'Hand over by code, to a skill with its own voice, or to a person with a note.' },
+  { href: '/docs/voice-sessions/#change-how-a-call-runs', title: 'Changing the orchestration', text: 'Who speaks first, the order of a conversation, what needs a yes.' },
+  { href: '/docs/mid-call-changes/', title: 'Changing the pipeline', text: 'Switch language, voice or model during a call.' },
+]
+
+const features = [
+  { href: '/docs/confirmations/', title: 'Confirmations', text: 'The agent asks first, and only the caller’s yes runs the tool.' },
+  { href: '/docs/procedures/', title: 'Step-by-step procedures', text: 'The model gets one step at a time, and the last tool appears only at the end.' },
+  { href: '/docs/human-handoff/', title: 'Human handoff', text: 'Transfer to a person, with a fallback when nobody answers.' },
+  { href: '/docs/mid-call-changes/', title: 'Mid-call changes', text: 'Switch voice, language or model during a call.' },
+  { href: '/docs/testing/', title: 'Conversation tests', text: 'Keep a whole call as a test and run it from the terminal.' },
+  { href: '/docs/hosting/', title: 'Self-hosting', text: 'Deploy to KugelAudio, or run the same project on your own servers.' },
+]
+
+const foundation = [
+  { href: 'https://react.dev', title: 'React', text: 'A real React renderer. Components, state and hooks work as you know them, with context as the target.' },
+  { href: 'https://docs.livekit.io/agents/', title: 'LiveKit Agents', text: 'Rooms, audio and the voice session underneath every call.' },
+  { href: 'https://zod.dev', title: 'TypeScript and Zod', text: 'Typed tools, with inputs validated before your code runs.' },
+]
+
+const steps = [
+  { id: 'create', title: 'Create', command: 'npm create curb.js .', text: 'In an empty folder. Keep the defaults and the agent runs on KugelAudio with one sign-in.' },
+  { id: 'login', title: 'Sign in', command: 'npx curb login', text: 'Opens your browser once. There is no key to copy.' },
+  { id: 'dev', title: 'Talk to it', command: 'npm run dev', text: 'Type to your agent, or start a call, and watch what the model has.' },
+  { id: 'test', title: 'Test it', command: 'npx curb test', text: 'Runs whole conversations from the terminal, with no microphone.' },
+]
+---
+
+<Base
+  title="Curb: the framework for production voice agents"
+  description="Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships."
+  path="/"
+>
+  <main id="main">
+    <section class="hero">
+      <h1>The framework for production voice agents.</h1>
+      <p class="lede"><strong>Dynamic prompting</strong> with <strong>full control</strong>, in plain code <strong>you own</strong>. Your coding agent can <strong>build</strong>, <strong>test</strong>, and <strong>simulate conversations</strong> before it ships.</p>
+      <Copy command="npm create curb.js ." />
+    </section>
+
+    <figure class="shot">
+      <div class="shot-stage">
+        <div class="shot-window">
+          <div class="shot-bar" aria-hidden="true"><span></span><span></span><span></span><p>localhost:4000</p></div>
+          <img
+            src="/preview.webp"
+            width="2640"
+            height="1600"
+            fetchpriority="high"
+            alt="The Curb preview: a caller reports a burst pipe to an insurance agent, which opens the Report a claim skill, checks the policy and opens the claim, and on the right the context panel lists the skill in use and its tools."
+          />
+        </div>
+      </div>
+    </figure>
+
+    <section class="block">
+      <h2>Dynamic prompting</h2>
+      <p class="block-lede">Your prompt is React, so it follows your state. At every moment of the call, the model gets only the instruction and tools that fit.</p>
+      <RequestStory skill={skill} steps={callSteps} />
+    </section>
+
+    <section class="block">
+      <h2>Everything you need to build a voice agent</h2>
+      <div class="diagrams">
+        <a href="/docs/state/">
+          <Gate />
+          <h3>Conditional tools <span aria-hidden="true">→</span></h3>
+          <p>A tool your code does not render is not in the request, so the model cannot call it.</p>
+        </a>
+        <a href="/docs/skill-lifecycle/">
+          <Skills />
+          <h3>Skills <span aria-hidden="true">→</span></h3>
+          <p>Each job gets its own instructions and tools, and the model opens it when the call needs it.</p>
+        </a>
+        <a href="/docs/voice-sessions/">
+          <Pipeline />
+          <h3>Voice pipeline included <span aria-hidden="true">→</span></h3>
+          <p>Speech to text, text to speech, turn-taking and interruptions are built in.</p>
+        </a>
+      </div>
+      <div class="links">
+        {features.map((feature) => (
+          <a href={feature.href}>
+            <h3>{feature.title} <span aria-hidden="true">→</span></h3>
+            <p>{feature.text}</p>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <section class="block loop">
+      <div>
+        <h2>Automated testing</h2>
+        <p class="block-lede">
+          Write a call down once and run it after every change, with no microphone. When a real call goes wrong, your coding agent
+          finds the cause, fixes it and keeps the call as a test.
+        </p>
+        <p class="note"><a href="/docs/testing/">How testing works</a></p>
+      </div>
+      <figure data-playback>
+        <Code code={curbTest} lang="text" theme={curbCodeTheme} transformers={[codeClasses]} />
+        <figcaption>A shortened <code>curb test</code> run on the quickstart agent, with a test model standing in for the LLM.</figcaption>
+      </figure>
+    </section>
+
+    <section class="block">
+      <h2>Built on a foundation you know</h2>
+      <div class="foundation">
+        {foundation.map((item) => (
+          <a href={item.href}>
+            <h3>{item.title} <span aria-hidden="true">→</span></h3>
+            <p>{item.text}</p>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Works with your stack</h2>
+      <p class="block-lede">Every part of the pipeline is a prop. Run it all on KugelAudio with one <span class="nowrap">sign-in</span>, or swap one part at a time.</p>
+      <dl class="stack-table">
+        {stack.map((row) => (
+          <div>
+            <dt>{row.slot}</dt>
+            <dd>{row.names.map((name) => <span>{name}</span>)}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+
+    <section class="block start">
+      <div class="start-copy" data-tabs>
+        <h2>Get started in seconds</h2>
+        <div class="tabs" role="tablist" aria-label="Getting started" hidden>
+          {steps.map((step) => <button type="button" role="tab" id={`tab-${step.id}`} aria-controls={`step-${step.id}`}>{step.title}</button>)}
+        </div>
+        {steps.map((step) => (
+          <div role="tabpanel" id={`step-${step.id}`} aria-labelledby={`tab-${step.id}`} class="start-panel">
+            <Copy command={step.command} />
+            <p>{step.text}</p>
+          </div>
+        ))}
+        <p class="start-next"><a class="button" href="/docs/installation/">Start building</a></p>
+      </div>
+      <div class="start-examples">
+        {examples.map((example) => (
+          <a href={example.href}>
+            <h3>{example.title}</h3>
+            <p>{example.text}</p>
+          </a>
+        ))}
+      </div>
+    </section>
+  </main>
+</Base>

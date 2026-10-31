@@ -33,11 +33,14 @@ have to do, such as open a sign-in link. They may never have used a terminal.
 permission first: the workspace is the person's own sandbox. If they turned on **Ask before
 acting**, the chat asks them for you.
 
-A new project is created with `npm create kugelaudio my-agent`, and you then work in
-`my-agent` (`npm create kugelaudio .` fills the current empty folder instead).
+A new project is created with `npm create curb.js my-agent`, and you then work in
+`my-agent` (`npm create curb.js .` fills the current empty folder instead).
 
 The full guide ships in `node_modules/curb/docs/agent-guide/`: read `README.md` first, then
-`authoring.md` (every component and pattern) and `testing.md`.
+`what-the-model-receives.md`, `agents-and-skills.md`, `tools.md`, `state.md` and `testing.md`.
+There is one page per task, such as `human-handoff.md` and `confirmations.md`;
+`api-reference.md` leads to every export, and `improve-from-calls.md` is the way to fix an
+agent from a call that went wrong.
 
 ## Verify every change
 
@@ -50,13 +53,14 @@ The full guide ships in `node_modules/curb/docs/agent-guide/`: read `README.md` 
    caller lines or a simulated caller pursuing a goal, and fails on turn errors, repeated
    sentences or a goal not reached. Keep one scenario per flow that matters (`testing.md`).
 
-**To improve the agent, read its recent conversations first.** `npx curb conversations`
-prints the last ones the preview, `curb say` and `curb test` ran, with every tool call, its
-input and its result (`--last <n>`, `--id <id>`, `--json`). Calls to the hosted agent are
-read with the `kugelaudio` MCP server's `list_agent_calls`, `get_agent_call` and
-`get_agent_call_timeline` where it is signed in. Find where the agent went wrong, fix that,
-and turn the conversation into a scenario so it stays fixed.
 4. `npm run dev`: the browser preview with chat and voice on http://127.0.0.1:4000. Open it in the person's own browser yourself (`open http://127.0.0.1:4000` on macOS, `xdg-open` on Linux, `start` on Windows): a browser built into an app, like the Claude app's Browser pane, blocks the microphone, so a call there fails.
+
+**To improve the agent, read its recent conversations first.** `npx curb conversations`
+prints the last ones the preview and `curb say` ran, with every tool call, its
+input and its result (`--last <n>`, `--id <id>`, `--json`). Calls to the hosted agent are
+read with the `kugelaudio` MCP server's `agent_list_calls`, `agent_get_call` and
+`agent_get_call_timeline` where it is signed in. Find where the agent went wrong, fix that,
+and turn the conversation into a scenario so it stays fixed.
 
 ## The preview
 
@@ -83,7 +87,8 @@ context/*.md                knowledge a skill reads with <Text src="file.md" />
   `<SystemPrompt>` and `<Text>`. Paragraphs and `- ` lists reach the model; multi-line JSX
   text is joined into one line.
 - **A skill's description is written once**, as `meta.description` in its `skill.tsx`,
-  phrased as a routing rule ("Use for ...", "NOT for ..."). Its `<Skill>` link repeats none.
+  phrased as a routing rule ("Use for ...", "NOT for ..."). Its `<Skill>` link repeats none
+  (a `description` on the link works too, but keep one).
 - **No per-call state at module scope**: one runner serves several calls. Keep a call's
   state in a `createAgentStore` store, never in a module-level variable.
 - **Secrets** come from `.env` locally and `npx curb secrets push` when hosted. Read them
@@ -140,4 +145,4 @@ asks hello@kugelaudio.com, and `curb dev` and `curb say` keep working meanwhile.
 is `npx curb deploy --no-activate` (or `npx curb build`, which uploads nothing).
 
 Run `npx curb check` before deploying. `.env*`, `node_modules/`, `.git/`, `.curb/` and
-`.data/` are never uploaded. Details: `node_modules/curb/docs/deploy.md`.
+`.data/` are never uploaded. Details: `node_modules/curb/docs/agent-guide/deploying.md`.
