@@ -9,6 +9,10 @@ import Pipeline from '../components/diagrams/Pipeline.astro'
 import Skills from '../components/diagrams/Skills.astro'
 import { codeClasses, curbCodeTheme } from '../code-theme'
 import { codeBlock, plainSkill, requestBlock, stateSteps } from '../requests'
+import { homeStructuredData } from '../seo'
+
+const description =
+  'Build production voice agents in React and TypeScript: dynamic prompts in plain code you own, tested by simulated conversations before they ship.'
 
 const page = await getEntry('guide', 'what-the-model-receives')
 if (!page?.body) throw new Error('The agent guide has no what-the-model-receives.md')
@@ -72,9 +76,11 @@ const steps = [
 ---
 
 <Base
-  title="Curb: the framework for production voice agents"
-  description="Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships."
+  title="Curb: the React framework for production voice agents"
+  description={description}
   path="/"
+  pageKeywords={['Curb', 'Curb framework', 'React framework for voice agents']}
+  structuredData={homeStructuredData(Astro.site!, description)}
 >
   <main id="main">
     <section class="hero">

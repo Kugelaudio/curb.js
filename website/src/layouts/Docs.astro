@@ -3,18 +3,22 @@ import type { MarkdownHeading } from 'astro'
 import Base from './Base.astro'
 import DocsNav from '../components/DocsNav.astro'
 import { GUIDE_PAGES, markdownUrl, neighbours, pageUrl, type GuidePageId } from '../guide'
+import { docsStructuredData, docsTitle } from '../seo'
 
 const { id, title, headings } = Astro.props as { id: GuidePageId; title: string; headings: MarkdownHeading[] }
 const contents = headings.filter((heading) => heading.depth === 2 || heading.depth === 3)
 const { previous, next } = neighbours(id)
-const { description } = GUIDE_PAGES.find((page) => page.id === id)!
+const { description, group } = GUIDE_PAGES.find((page) => page.id === id)!
 ---
 
 <Base
-  title={`${title} | Curb`}
+  title={docsTitle(title)}
   description={description}
   path={pageUrl(id)}
   markdown={markdownUrl(id)}
+  pageKeywords={[title, group]}
+  structuredData={docsStructuredData(Astro.site!, id, title)}
+  ogType="article"
 >
   <div class="docs">
     <details class="docs-nav-toggle">
