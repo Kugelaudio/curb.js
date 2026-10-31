@@ -1,0 +1,32 @@
+name: pr-rules
+
+# Checks a pull request's title and body (scripts/pr-rules.mjs). edited is here because the
+# default triggers do not rerun when a title changes. No paths filter or job condition: this
+# always reports, so it can be a required check.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-rules:
+    name: pr-rules
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # The base branch's script, so nothing from the pull request is checked out or run.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.base_ref }}
+          persist-credentials: false
+      # A base without the script is the pull request that adds it, or one based on a branch
+      # from before it. There is nothing trusted to run, so it passes with a warning.
+      - run: |
+          if [ -f scripts/pr-rules.mjs ]; then
+            node scripts/pr-rules.mjs
+          else
+            echo "::warning::scripts/pr-rules.mjs is not on the base branch: the rules did not run"
+          fi

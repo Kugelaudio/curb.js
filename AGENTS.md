@@ -127,6 +127,9 @@ edit a frozen project to make it pass.
 
 ## Working rules
 
+- **Pull requests follow `pr-rules`.** The title is the commit on `main`, so it must be
+  `type(scope)!: subject`, and the body must say what changes and why. Commit messages are not
+  checked. See "Branches, commits and pull requests" in `CONTRIBUTING.md`.
 - **Tests are hermetic.** The suite runs against
   `src/test-fixtures/project/` (a copy of the insurance example) through the
   same `AGENT_PROJECT_DIR` discovery as a real project. If you
