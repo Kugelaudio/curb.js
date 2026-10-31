@@ -3,8 +3,9 @@ name: pages
 # Builds website/ and publishes it to curbjs.com through GitHub Pages. Runs on
 # github.com/Kugelaudio/curb.js. website/ lives only there, and the guide it renders
 # comes from the framework's docs/agent-guide. The custom domain is a repository
-# setting: with this kind of deployment GitHub ignores a CNAME file. A pull request builds
-# and tests the site; only main deploys it.
+# setting: with this kind of deployment GitHub ignores a CNAME file. Only main deploys it. On a
+# pull request the website suite in test.yml builds and tests the site, inside the required gate,
+# so here a pull request runs only for a change to this file, the one thing that suite cannot try.
 
 on:
   push:
@@ -15,13 +16,7 @@ on:
       - '.github/workflows/pages.yml'
   pull_request:
     paths:
-      - 'website/**'
-      - 'packages/framework/docs/agent-guide/**'
       - '.github/workflows/pages.yml'
-      # website/src/seo.test.ts holds these to the site's tagline.
-      - 'README.md'
-      - 'packages/framework/package.json'
-      - 'packages/create-curb.js/package.json'
   workflow_dispatch:
 
 permissions:

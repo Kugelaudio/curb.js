@@ -7,18 +7,21 @@ import { appendFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const SUITES = ["framework", "scaffolders", "scripts", "examples", "compat", "smoke", "package"];
+export const SUITES = ["framework", "scaffolders", "scripts", "examples", "compat", "smoke", "package", "website"];
 
 const IGNORED = [
-  /^website\//,
-  /^packages\/framework\/docs\//,
+  /^packages\/framework\/docs\/(?!agent-guide\/)/,
   /^\.github\/assets\//,
-  /^\.github\/workflows\/pages\.yml$/,
-  /^[^/]+\.md$/,
+  /^(?!README\.md$)[^/]+\.md$/,
   /^(LICENSE|NOTICE|\.gitignore|cliff\.toml)$/,
 ];
 
 const RULES = [
+  // The site renders the agent guide, and website/src/seo.test.ts holds the README and both
+  // manifests to its tagline.
+  [/^(website\/|README\.md$|\.github\/workflows\/pages\.yml$|packages\/framework\/docs\/agent-guide\/)/, ["website"]],
+  [/^packages\/framework\/package\.json$/, ["framework", "examples", "compat", "smoke", "package", "website"]],
+  [/^packages\/create-curb\.js\/package\.json$/, ["scaffolders", "package", "website"]],
   [/^packages\/framework\//, ["framework", "examples", "compat", "smoke", "package"]],
   [/^packages\/create-curb\.js\//, ["scaffolders", "package"]],
   [/^examples\/insurance-agent\//, ["examples", "smoke"]],

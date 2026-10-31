@@ -1,18 +1,34 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { SUITES, affectedSuites } from "./affected.mjs";
 
-test("docs, the website and the other workflows run nothing", () => {
+test("docs the site does not render run nothing", () => {
   assert.deepEqual(
-    affectedSuites([
-      "README.md",
-      "website/src/pages/index.astro",
-      "packages/framework/docs/agent-guide/tools.md",
-      ".github/workflows/pages.yml",
-    ]),
+    affectedSuites(["CONTRIBUTING.md", "packages/framework/docs/build-verification.md", ".github/assets/logo.png"]),
     [],
   );
+});
+
+test("what the site reads runs the website suite", () => {
+  for (const file of [
+    "website/src/pages/index.astro",
+    "website/package-lock.json",
+    "packages/framework/docs/agent-guide/tools.md",
+    ".github/workflows/pages.yml",
+    "README.md",
+  ]) {
+    assert.deepEqual(affectedSuites([file]), ["website"]);
+  }
+});
+
+test("the manifests the site checks run the website suite with their own suites", () => {
+  assert.ok(affectedSuites(["packages/framework/package.json"]).includes("website"));
+  assert.ok(affectedSuites(["packages/framework/package.json"]).includes("framework"));
+  assert.deepEqual(affectedSuites(["packages/create-curb.js/package.json"]), ["scaffolders", "package", "website"]);
+  assert.ok(!affectedSuites(["packages/framework/src/index.ts"]).includes("website"));
 });
 
 test("framework code runs what is built on it", () => {
@@ -60,12 +76,53 @@ test("the lockfile, the root manifest, this workflow and any unknown file run ev
 });
 
 test("the docs of a package do not pack it", () => {
-  assert.deepEqual(affectedSuites(["packages/framework/docs/agent-guide/tools.md"]), []);
+  assert.ok(!affectedSuites(["packages/framework/docs/agent-guide/tools.md"]).includes("package"));
 });
 
 test("several files add up", () => {
-  assert.deepEqual(affectedSuites(["compat/projects/a/package.json", "README.md", "scripts/x.mjs"]), [
+  assert.deepEqual(affectedSuites(["compat/projects/a/package.json", "CONTRIBUTING.md", "scripts/x.mjs"]), [
     "scripts",
     "compat",
   ]);
+});
+
+const testYml = readFileSync(new URL("../.github/workflows/test.yml", import.meta.url), "utf8");
+const gateJob = testYml.slice(testYml.indexOf("\n  gate:\n"));
+
+/** Runs gate's own script, the way a GitHub step does, with these job results. */
+function gate(results) {
+  const script = /run: \|\n((?:          .*\n)+)/.exec(gateJob)[1];
+  return spawnSync("bash", ["-e", "-c", script], { env: { ...process.env, ...results } }).status;
+}
+
+test("gate reports on every run, and waits for every job", () => {
+  assert.match(gateJob, /needs: \[affected, test, website\]/);
+  assert.match(gateJob, /if: always\(\)/);
+  assert.match(gateJob, /WEBSITE: \$\{\{ needs\.website\.result \}\}/);
+});
+
+test("gate fails when the website suite fails, and when it is cancelled", () => {
+  for (const WEBSITE of ["failure", "cancelled"]) {
+    for (const TEST of ["success", "skipped"]) {
+      assert.equal(gate({ AFFECTED: "success", TEST, WEBSITE }), 1, `test ${TEST}, website ${WEBSITE}`);
+    }
+  }
+});
+
+test("gate fails when test or affected fails, whatever the website suite did", () => {
+  assert.equal(gate({ AFFECTED: "success", TEST: "failure", WEBSITE: "success" }), 1);
+  assert.equal(gate({ AFFECTED: "failure", TEST: "skipped", WEBSITE: "skipped" }), 1);
+});
+
+test("gate passes a suite that succeeded or was not needed", () => {
+  for (const TEST of ["success", "skipped"]) {
+    for (const WEBSITE of ["success", "skipped"]) {
+      assert.equal(gate({ AFFECTED: "success", TEST, WEBSITE }), 0, `test ${TEST}, website ${WEBSITE}`);
+    }
+  }
+});
+
+test("a change only the website suite covers does not start the test job", () => {
+  assert.match(testYml, /needs\.affected\.outputs\.suites != 'website'/);
+  assert.deepEqual(affectedSuites(["README.md"]).join(" "), "website");
 });

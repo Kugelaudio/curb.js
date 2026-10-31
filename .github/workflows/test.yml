@@ -42,7 +42,7 @@ jobs:
   test:
     name: test (Node ${{ matrix.node }})
     needs: affected
-    if: needs.affected.outputs.suites != ''
+    if: needs.affected.outputs.suites != '' && needs.affected.outputs.suites != 'website'
     runs-on: curb-js-runner
     timeout-minutes: 30
     strategy:
@@ -91,8 +91,30 @@ jobs:
             npm publish --dry-run --access public --tag preview "./out/$name-$VERSION.tgz"
           done
 
+  # The site has its own lockfile and a higher Node floor, so it is not a row of test.
+  website:
+    needs: affected
+    if: contains(needs.affected.outputs.suites, 'website')
+    runs-on: curb-js-runner
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: website
+      - run: npm test
+        working-directory: website
+      - run: npm run build
+        working-directory: website
+
   gate:
-    needs: [affected, test]
+    needs: [affected, test, website]
     if: always()
     runs-on: curb-js-runner
     timeout-minutes: 5
@@ -100,6 +122,10 @@ jobs:
       - env:
           AFFECTED: ${{ needs.affected.result }}
           TEST: ${{ needs.test.result }}
+          WEBSITE: ${{ needs.website.result }}
         run: |
-          echo "affected: $AFFECTED, test: $TEST"
-          [ "$AFFECTED" = success ] && { [ "$TEST" = success ] || [ "$TEST" = skipped ]; }
+          echo "affected: $AFFECTED, test: $TEST, website: $WEBSITE"
+          [ "$AFFECTED" = success ]
+          for result in "$TEST" "$WEBSITE"; do
+            [ "$result" = success ] || [ "$result" = skipped ]
+          done
