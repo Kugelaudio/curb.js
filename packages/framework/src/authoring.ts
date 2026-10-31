@@ -20,6 +20,7 @@ export const AUTHORING_DIAGNOSTIC_CODES = {
   homeSkillRemoved: "AGENT_HOME_SKILL_REMOVED",
   agentRouterRemoved: "AGENT_ROUTER_REMOVED",
   goalToolNotDeclared: "AGENT_GOAL_TOOL_NOT_DECLARED",
+  conversationStoreSqlite: "AGENT_CONVERSATION_STORE_SQLITE",
 } as const;
 
 export type AuthoringDiagnosticCode =

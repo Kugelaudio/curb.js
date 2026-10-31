@@ -1004,7 +1004,7 @@ describe("the conversation file", () => {
     withJournal((path) => {
       const sqlite = Buffer.concat([Buffer.from("SQLite format 3\0", "latin1"), Buffer.from([0, 1, 10, 2, 3])]);
       writeFileSync(path, sqlite);
-      expect(() => new ConversationStore(path)).toThrow(/is an SQLite database from an older curb/);
+      expect(() => new ConversationStore(path)).toThrow(/\[AGENT_CONVERSATION_STORE_SQLITE\].*is an SQLite database from an older curb/);
       expect(readFileSync(path)).toEqual(sqlite);
     });
   });

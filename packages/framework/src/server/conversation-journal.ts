@@ -1,5 +1,6 @@
 import { appendFileSync, closeSync, mkdirSync, openSync, readSync, statSync, truncateSync } from "node:fs";
 import { dirname } from "node:path";
+import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES } from "../authoring.js";
 import type { AgentAssistantMessage, AgentToolCallRecord, AgentUserMessage } from "../llm/types.js";
 import type { ToolResult } from "../types.js";
 import { logWarn } from "./log.js";
@@ -140,11 +141,15 @@ export class ConversationJournal {
   /** Take in `chunk`, the file's bytes from `this.offset` on. */
   private ingest(chunk: Buffer): void {
     if (this.offset === 0 && chunk.subarray(0, SQLITE_HEADER.length).equals(SQLITE_HEADER)) {
-      throw new Error(
-        `${this.path} is an SQLite database from an older curb. Conversations are now recorded as ` +
-          "JSON lines, and that file is not read. Fix: point KUGEL_CONVERSATIONS_DB at a new file " +
-          "(the default is .data/conversations.jsonl), or unset it.",
-      );
+      throw new AgentAuthoringError({
+        code: AUTHORING_DIAGNOSTIC_CODES.conversationStoreSqlite,
+        severity: "error",
+        message:
+          `${this.path} is an SQLite database from an older curb. Conversations are now recorded as ` +
+          "JSON lines, and that file is not read.",
+        location: {},
+        fix: "Point KUGEL_CONVERSATIONS_DB at a new file (the default is .data/conversations.jsonl), or unset it.",
+      });
     }
     const segments = splitLines(chunk);
     const last = segments.findLastIndex((segment) => segment.text.trim() !== "");

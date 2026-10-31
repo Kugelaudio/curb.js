@@ -577,7 +577,7 @@ cp -R .curb/standalone/* /tmp/curb-proof/     # somewhere with no node_modules a
 
 cd /tmp/curb-proof
 LIVEKIT_URL=ws://127.0.0.1:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret \
-  CURB_AGENT_NAME=curb-proof KUGEL_CONVERSATIONS_DB=off \
+  CURB_AGENT_NAME=curb-proof \
   node packages/framework/entry/worker.mjs start
 
 docker run --rm --network host livekit/livekit-cli:latest dispatch create \
@@ -604,6 +604,3 @@ the agent still appears in the room (`participant active`, identity
 `curb-agent`, grants `RoomJoin: true, Room: curb-proof-room`) in the server's own
 log.
 
-`KUGEL_CONVERSATIONS_DB=off` because the conversation store then loaded a native
-module that had no built binding for Node 26 on darwin-arm64 on this machine. The
-store is a plain JSON-lines file now and needs no binding, so later runs can drop it.

@@ -222,7 +222,9 @@ the next time the file opens, with a warning naming its line; every record
 before it is kept. Any other line that is not a record stops the server with the
 file and line number, so fix or delete that line, or move the file away to start
 a new history. An older Curb recorded to `.data/conversations.db`; that file is
-not read (the startup log says so once) and can be deleted.
+not read (the startup log says so once) and can be deleted, with its `-wal` and
+`-shm` files. If `KUGEL_CONVERSATIONS_DB` still points at such a file, the server
+stops at startup and says so: point it at a new file, or unset it.
 
 The conversation list behind the conversation title reads this file:
 it offers the 20 most recent recorded conversations, plus the ones started on

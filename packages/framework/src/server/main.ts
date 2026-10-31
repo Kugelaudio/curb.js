@@ -18,6 +18,7 @@ import {
   describeConversationStore,
   detachConversationRecorder,
   getConversationHistoryStore,
+  getConversationSink,
   keepConversationState,
   loadConfiguredConversationSink,
   recordedConversationId,
@@ -416,6 +417,9 @@ export async function createAgentServer(options: { dev?: DevServerLink } = {}): 
   // Same reason as the line above: a conversation sink named by configuration is
   // imported here so a bad path fails at boot, not on the first recorded message.
   await loadConfiguredConversationSink();
+  // The file store opens here for the same reason: a path it refuses, such as the SQLite file
+  // of an older curb, would otherwise boot and then fail every conversation.
+  getConversationSink();
   // One line naming where transcripts go. A dropped or misspelled KUGEL_CONVERSATION_SINK
   // does not fail, it records to the file default, and this line is where that shows.
   if (!dev?.quiet) logInfo("curb", `conversation store: ${describeConversationStore()}`);
