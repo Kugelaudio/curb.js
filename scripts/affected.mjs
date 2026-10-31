@@ -7,7 +7,7 @@ import { appendFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const SUITES = ["framework", "scaffolders", "scripts", "examples", "compat", "smoke"];
+export const SUITES = ["framework", "scaffolders", "scripts", "examples", "compat", "smoke", "package"];
 
 const IGNORED = [
   /^website\//,
@@ -19,14 +19,15 @@ const IGNORED = [
 ];
 
 const RULES = [
-  [/^packages\/framework\//, ["framework", "examples", "compat", "smoke"]],
-  [/^packages\/create-curb\.js\//, ["scaffolders"]],
+  [/^packages\/framework\//, ["framework", "examples", "compat", "smoke", "package"]],
+  [/^packages\/create-curb\.js\//, ["scaffolders", "package"]],
   [/^examples\/insurance-agent\//, ["examples", "smoke"]],
   [/^examples\//, ["examples"]],
   [/^compat\//, ["compat"]],
   [/^\.github\/workflows\/publish\.yml$/, ["scripts"]],
   [/^scripts\/check-projects\./, ["scripts", "examples", "compat"]],
   [/^scripts\/self-host-smoke\./, ["smoke"]],
+  [/^scripts\/(npm-package|release-install-test|release-version)\./, ["scripts", "package"]],
   [/^scripts\//, ["scripts"]],
 ];
 

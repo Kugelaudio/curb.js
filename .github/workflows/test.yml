@@ -75,6 +75,21 @@ jobs:
         if: contains(needs.affected.outputs.suites, 'compat')
       - run: npm run smoke:self-host
         if: contains(needs.affected.outputs.suites, 'smoke')
+      # The tarball half of publish.yml's verify job, on one Node. This workflow has no token, no
+      # id-token and no npm environment, so it cannot publish: the version only ever lands in a
+      # dry run. It is a preview so that the channel's own paths run.
+      - name: Pack, install and dry-run the tarballs
+        if: contains(needs.affected.outputs.suites, 'package') && strategy.job-index == 0
+        env:
+          VERSION: 0.0.0-preview.0
+        run: |
+          mkdir out
+          node scripts/npm-package.mjs "$VERSION" out
+          node scripts/release-install-test.mjs out
+          # The ./ matters: npm reads out/x.tgz as the GitHub repository out/x.tgz.
+          for name in curb.js create-curb.js; do
+            npm publish --dry-run --access public --tag preview "./out/$name-$VERSION.tgz"
+          done
 
   gate:
     needs: [affected, test]
