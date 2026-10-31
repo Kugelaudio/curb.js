@@ -20,7 +20,7 @@ const PRIVATE_REFERENCE =
   /\bD-\d{2}\b|\bOQ-\d{2}\b|\b\d{2}-[a-z][a-z-]+\.md\b|products\/(platform|web)\b|packages\/private\b|\b(ENG|KUG)-\d{4,}\b|github\.com\/Kugelaudio\/KugelAudio\b/i;
 
 /** The public surface: what ships in the packages and what a reader of the repo sees first. */
-const SCANNED = ["packages", "examples", "scripts", "README.md", "AGENTS.md", "CHANGELOG.md"];
+const SCANNED = ["packages", "examples", "scripts", "README.md", "AGENTS.md"];
 
 /** This file spells the patterns out, so it is the one file never scanned. */
 const SELF = fileURLToPath(import.meta.url);

@@ -1,0 +1,200 @@
+/*
+ * Shared by every view. NO COLOUR anywhere in this deck: hierarchy is carried
+ * by weight and opacity alone. Tinting was tried on the first view and it
+ * turned a calm drawing into a chart.
+ *
+ * Neutrals only, at chroma 0 for the ground — not the warm cream this kind of
+ * page reaches for by reflex.
+ */
+:root {
+  --ground: hsl(0 0% 98%);
+  --ink: hsl(60 3% 8%);
+  --ink-soft: hsl(50 4% 42%);
+  --hairline: hsl(40 4% 86%);
+
+  /* Cards sit on the ground, not in it. Pure white against a 98% ground is a
+     two-percent step, which is all a soft shadow needs to read as lift. */
+  --surface: hsl(0 0% 100%);
+
+  /* One shadow, built from four layers at low opacity rather than one at high:
+     a single blur reads as a drop shadow, stacked blurs read as an object
+     resting on a surface. The 0.5px spread layer is the hairline, so the card
+     needs no border of its own. */
+  --lift: 0 0 0 0.5px hsl(60 3% 8% / 0.07), 0 1px 2px hsl(60 3% 8% / 0.04),
+    0 6px 16px hsl(60 3% 8% / 0.045), 0 18px 40px hsl(60 3% 8% / 0.04);
+
+  /* The hero card, one step further off the page. */
+  --lift-hero: 0 0 0 0.5px hsl(60 3% 8% / 0.09), 0 2px 4px hsl(60 3% 8% / 0.05),
+    0 12px 28px hsl(60 3% 8% / 0.06), 0 34px 68px hsl(60 3% 8% / 0.07);
+
+  /* Constants, not clamps: the slide is a fixed 1600x900 box now, and at that
+     width both of these already sat on their max. A viewport clamp here would
+     resolve against the WINDOW rather than the slide, which is the whole bug
+     this pins down. :root is outside every container, so cq units are not an
+     option at this level either. */
+  --step-0: 0.95rem;
+  --step-1: 1.2rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: var(--step-0);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One screen, no scrolling: this is projected, and a scrollbar means the
+   argument did not fit where the audience is looking. */
+.page {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: clamp(1rem, 3cqh, 2.5rem);
+  padding: clamp(1.5rem, 5cqh, 3.5rem) clamp(1.5rem, 6cqw, 5rem);
+}
+
+.lede {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wordmark {
+  display: flex;
+  align-items: baseline;
+  /* Top RIGHT, opposite the headline. It is a standing mark rather than part of
+     the sentence each slide is making, and on the left it read as the first
+     line of that sentence. */
+  align-self: flex-end;
+  gap: 0.55rem;
+  margin: 0;
+  font-size: var(--step-0);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Separated by a hairline rule rather than a bullet: a dot between two words
+   is a decoration, a rule is a boundary. */
+.wordmark-note {
+  padding-left: 0.55rem;
+  border-left: 1px solid var(--hairline);
+  font-weight: 450;
+  color: var(--ink-soft);
+}
+
+
+
+/* The subject of a slide. One definition for the whole deck: it lived in both
+   concepts.css and slides.css, and which one won depended on import order. */
+.headline {
+  margin: 0.15rem 0 0;
+  max-width: 24ch;
+  font-size: clamp(1.9rem, 1.3rem + 2.6cqw, 3.4rem);
+  font-weight: 620;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+/* Holds a hyphenated term together. A headline that breaks at the hyphen reads
+   as two words ("No lock-" / "in."), and it is invisible until it is projected. */
+.nowrap {
+  white-space: nowrap;
+}
+
+/* ---------- Slide export ---------- */
+
+/* Each slide gets a box of exactly the presenting size, so what prints is what
+   was designed rather than whatever the window happened to be. */
+.export-slide {
+  position: relative;
+  width: 1600px;
+  height: 900px;
+  overflow: hidden;
+}
+
+/* THE ONE BOX EVERY SLIDE IS MEASURED IN.
+   The live route used to let .page fill whatever the window happened to be
+   while this one pinned 1600x900, so the deck being presented was never the
+   deck being exported. At 2340x1266 the three-column code slide stretched its
+   columns to 942px and centred 686px of content in a 1032px track — that gap
+   under the title was the window leaking into the layout.
+   Making both a size container is what lets every clamp inside resolve against
+   the SLIDE. */
+.export-slide,
+.slide-stage {
+  container-type: size;
+}
+
+/* Presenting: the same fixed box, scaled as a whole to fit the window. Scaling
+   rather than reflowing is the point — a reflowed slide is a different slide. */
+.stage-fit {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.slide-stage {
+  width: 1600px;
+  height: 900px;
+  transform: scale(var(--stage-scale, 1));
+  transform-origin: center center;
+}
+
+/* Explicit for the same reason as the export box below. */
+.slide-stage > .page {
+  height: 900px;
+}
+
+/* Explicit, not a percentage. `height: 100%` resolves against a parent the
+   paginator is in the middle of fragmenting, and Chromium drops the grid's
+   second row when it does — the densest slide printed as a bare headline while
+   every other one was fine. */
+.export-slide > .page {
+  height: 900px;
+}
+
+/* The app pins itself to the viewport for presenting; stacked, it has to be
+   allowed to grow instead. */
+html:has(.export),
+body:has(.export),
+#root:has(.export) {
+  height: auto;
+}
+
+@media print {
+  /* No margin box: the slide IS the page. A default margin would letterbox
+     every one of them and quietly change the aspect ratio. */
+  @page {
+    size: 1600px 900px;
+    margin: 0;
+  }
+
+  .export-slide {
+    break-after: page;
+  }
+
+  .export-slide:last-child {
+    break-after: auto;
+  }
+
+  /* Useful while presenting, noise on a printed page. */
+  .deck-position {
+    display: none;
+  }
+}

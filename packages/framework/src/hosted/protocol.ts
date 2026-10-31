@@ -58,6 +58,13 @@ export const ErrorCode = z.enum([
   // `<Agent adjustable>` does not give the host, HTTP 422 for a value that does not fit.
   "not_adjustable",
   "invalid_settings",
+  // A hook this runner cannot run (`/v1/hooks/...`): HTTP 501 on a runner that is not a hook
+  // runner, 404 for a hook this build does not declare or a run it does not hold, and 413 for
+  // an event over the route's body limit.
+  "runner_takes_no_hooks",
+  "hook_not_declared",
+  "hook_run_not_found",
+  "payload_too_large",
 ]);
 
 /** The body of every non-2xx answer. */
@@ -141,6 +148,10 @@ export const SessionList = z.object({
   sessions: z.array(LiveCall),
 });
 
+/** What a runner is for: serving `calls`, or running an agent's `hooks` after them. */
+export const RunnerRole = z.enum(["calls", "hooks"]);
+
+/** `role` is absent on a runner started with no role, which is a `calls` runner. */
 export const RunnerStatus = z.object({
   protocolVersion: z.literal(PROTOCOL_VERSION),
   deploymentId: nonEmpty.optional(),
@@ -149,6 +160,7 @@ export const RunnerStatus = z.object({
   activeSessions: nonNegativeInt,
   draining: z.boolean(),
   sessions: z.array(LiveCall),
+  role: RunnerRole.optional(),
 });
 
 /** Bounds of the `graceMs` query parameter on `DELETE /v1/sessions/{id}`. */
@@ -190,6 +202,101 @@ export const HostMessage = z.object({
 export const HostMessageResponse = z.object({
   id: messageId,
   delivered: z.boolean(),
+});
+
+// --- after-call hooks ---------------------------------------------------------------------
+
+/** Seconds since the Unix epoch, as every timestamp of a call event is. */
+const epochSeconds = nonNegativeInt;
+
+/**
+ * The call a call event describes. Every field is always present, null when it has no value.
+ * Field names are snake_case, as the webhook body that carries the same object has them.
+ *
+ * `goals` is null on `call.ended` and an array on `call.evaluated`, empty when the agent
+ * declares none. `content: "not_stored"` means `transcript: null` and `call_data: []`.
+ * `transcript_truncated` is true when the transcript was too long to send, so null for that
+ * reason, not because the call stores nothing.
+ */
+export const CallRecord = z.object({
+  id: nonEmpty,
+  object: z.literal("call"),
+  agent_id: nonEmpty,
+  environment: nonEmpty,
+  deployment_id: nonEmpty.nullable(),
+  direction: z.enum(["inbound", "outbound"]),
+  channel: nonEmpty.nullable(),
+  status: z.enum(["completed", "failed"]),
+  terminal_reason: nonEmpty.nullable(),
+  started_at: epochSeconds.nullable(),
+  ended_at: epochSeconds.nullable(),
+  duration_seconds: z.number().nonnegative().nullable(),
+  client: z.record(z.string(), z.string()),
+  experiments: z.record(z.string(), z.string()),
+  content: z.enum(["stored", "not_stored"]),
+  transcript: z
+    .object({
+      complete: z.boolean(),
+      turns: z.array(z.object({ role: nonEmpty, text: z.string(), created: epochSeconds })),
+    })
+    .nullable(),
+  transcript_truncated: z.boolean(),
+  call_data: z.array(z.object({ name: nonEmpty, payload })),
+  goals: z
+    .array(
+      z.object({
+        name: nonEmpty,
+        status: z.enum(["reached", "not_reached", "not_judged", "not_evaluable"]),
+        detail: z.string().nullable(),
+      }),
+    )
+    .nullable(),
+  livemode: z.boolean(),
+});
+
+/**
+ * One moment of a call, in the same JSON a webhook receives. `id` is stable across retries,
+ * which is what makes it an idempotency key: a hook runs at least once for an event.
+ */
+export const CallEvent = z.object({
+  id: z.string().regex(/^evt_\S+$/),
+  object: z.literal("event"),
+  api_version: nonEmpty,
+  created: epochSeconds,
+  data: z.object({ object: CallRecord }),
+  livemode: z.boolean(),
+  pending_webhooks: nonNegativeInt,
+  request: z.object({ id: z.string().nullable(), idempotency_key: z.string().nullable() }),
+  type: z.enum(["call.ended", "call.evaluated"]),
+});
+
+/** The largest `deadlineMs`: Node's timers fire at once past this, so it could never hold. */
+export const MAX_HOOK_DEADLINE_MS = 2_147_483_647;
+
+/**
+ * Runs one hook (`POST /v1/hooks/{name}`). Idempotent by `runId`: a repeat answers the same and
+ * never runs the hook twice. `deadlineMs` is relative to the runner's acceptance; past it the
+ * run reads `failed` with `error.message` `timeout`.
+ */
+export const HookRunRequest = z.object({
+  runId: messageId,
+  event: CallEvent,
+  deadlineMs: positiveInt.max(MAX_HOOK_DEADLINE_MS),
+});
+
+/** The run is taken, which says nothing of how it ends: read `GET /v1/hooks/runs/{runId}`. */
+export const HookRunResponse = z.object({
+  runId: messageId,
+  accepted: z.literal(true),
+});
+
+export const HookRunState = z.enum(["running", "succeeded", "failed"]);
+
+/** `error` is present on a `failed` run: the message alone, never a stack or an environment value. */
+export const HookRunStatus = z.object({
+  runId: messageId,
+  state: HookRunState,
+  error: z.object({ message: z.string() }).optional(),
 });
 
 // --- the events stream --------------------------------------------------------------------
@@ -331,10 +438,17 @@ export type DrainResponse = z.infer<typeof DrainResponse>;
 export type CallState = z.infer<typeof CallState>;
 export type LiveCall = z.infer<typeof LiveCall>;
 export type SessionList = z.infer<typeof SessionList>;
+export type RunnerRole = z.infer<typeof RunnerRole>;
 export type RunnerStatus = z.infer<typeof RunnerStatus>;
 export type SessionUpdateResponse = z.infer<typeof SessionUpdateResponse>;
 export type HostMessage = z.infer<typeof HostMessage>;
 export type HostMessageResponse = z.infer<typeof HostMessageResponse>;
+export type CallRecord = z.infer<typeof CallRecord>;
+export type CallEvent = z.infer<typeof CallEvent>;
+export type HookRunRequest = z.infer<typeof HookRunRequest>;
+export type HookRunResponse = z.infer<typeof HookRunResponse>;
+export type HookRunState = z.infer<typeof HookRunState>;
+export type HookRunStatus = z.infer<typeof HookRunStatus>;
 export type ConversationBody = z.infer<typeof ConversationBody>;
 export type HostRecordBody = z.infer<typeof HostRecordBody>;
 export type LifecycleBody = z.infer<typeof LifecycleBody>;
@@ -358,6 +472,7 @@ export const PROTOCOL_SCHEMAS = {
   CallState,
   LiveCall,
   SessionList,
+  RunnerRole,
   RunnerStatus,
   AdjustablePath,
   SessionUpdate,
@@ -365,6 +480,12 @@ export const PROTOCOL_SCHEMAS = {
   SessionUpdateResponse,
   HostMessage,
   HostMessageResponse,
+  CallRecord,
+  CallEvent,
+  HookRunRequest,
+  HookRunResponse,
+  HookRunState,
+  HookRunStatus,
   ConversationTurn,
   ConversationEvent,
   ConversationBody,

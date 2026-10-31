@@ -180,7 +180,7 @@ function modelId(factory: string, model: string): string {
       location: { source: "src/agent/agent.tsx", component: factory },
       fix:
         `Replace ${JSON.stringify(model)} with a real model id like "claude-haiku-4-5". ` +
-        "Projects created with `npx create-curb-app` get this substituted during scaffolding; " +
+        "Projects created with `npm create kugelaudio` get this substituted during scaffolding; " +
         "a project copied out of templates/default does not.",
     });
   }

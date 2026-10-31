@@ -1,0 +1,84 @@
+name: publish
+
+# Publishes a release to npm from its `v<version>` tag, pushed after the release reached the CDN.
+# npm trusts this file through a trusted publisher, so no npm token
+# exists anywhere: a publisher names this repository, `publish.yml` and the `npm` environment.
+# npm accepts GitHub-hosted runners only, and gives provenance from a public repository only.
+# A dispatch republishes whatever npm lacks for a version, so a failed run can be finished.
+#
+#   curb.js            the CDN release of the tag's version, renamed by scripts/npm-package.mjs
+#   create-curb.js     packages/create-curb.js at the tag, when npm lacks its version. It only
+#                      points at the CDN, so it keeps its own version and needs few releases.
+
+on:
+  push:
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment:
+      name: npm
+      deployment: false
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+      NPM_CONFIG_PROVENANCE: ${{ !github.event.repository.private }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.version && format('v{0}', inputs.version) || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - name: Install npm with trusted publishing support
+        run: npm install --global npm@11.17.0
+      - name: Package what npm lacks
+        run: |
+          VERSION="${VERSION#v}"
+          mkdir -p out
+          if ! npm view "curb.js@${VERSION}" version >/dev/null 2>&1; then
+            curl --fail --silent --show-error --location --output release.tgz \
+              "https://cdn.kugelaudio.com/curb/curb-${VERSION}.tgz"
+            node scripts/npm-package.mjs release.tgz out
+          fi
+          own=$(jq -er .version packages/create-curb.js/package.json)
+          if ! npm view "create-curb.js@${own}" version >/dev/null 2>&1; then
+            npm pack --silent --pack-destination out --workspace packages/create-curb.js
+          fi
+      - name: Publish
+        run: |
+          shopt -s nullglob
+          for tarball in out/*.tgz; do npm publish --access public "$tarball"; done
+      - name: Read the publication back
+        run: |
+          shopt -s nullglob
+          for tarball in out/*.tgz; do
+            spec=$(tar -xzOf "$tarball" package/package.json | jq -er '"\(.name)@\(.version)"')
+            expected="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
+            for attempt in 1 2 3 4 5 6; do
+              found=$(npm view "$spec" dist.integrity 2>/dev/null) || found=""
+              [[ "$found" == "$expected" ]] && break
+              sleep 10
+            done
+            [[ "$found" == "$expected" ]] || { echo "npm serves ${found:-nothing} for $spec, expected $expected" >&2; exit 1; }
+            echo "$spec is on npm"
+          done

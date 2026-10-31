@@ -173,6 +173,22 @@ describe("kugel stt plugin", () => {
     expect(server.received.at(-1)).toEqual({ type: "end_of_speech" });
   });
 
+  it("ends a stream that carried no audio without sending end_of_speech", async () => {
+    // A call no caller joined: the stream ends before any audio. end_of_speech on an empty
+    // stream is a protocol error (1008), seen every ~40 s from the staging rollout check.
+    const plugin = new KugelSTT(config);
+    const stream = plugin.stream({ connOptions: { maxRetry: 0, retryIntervalMs: 0, timeoutMs: 1000 } });
+    const done = (async () => {
+      for await (const _event of stream) {
+        // no events expected
+      }
+    })();
+    await server.until(() => server.received.some((f) => f.type === "config"));
+    stream.endInput();
+    await done;
+    expect(server.received.map((f) => f.type)).toEqual(["config"]);
+  });
+
   it("takes the revision as the turn's text and reports partials as interim", async () => {
     const call = open();
     await server.until(() => server.received.length >= 1);

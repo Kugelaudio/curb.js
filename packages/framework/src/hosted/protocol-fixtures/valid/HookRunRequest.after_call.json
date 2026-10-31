@@ -1,0 +1,34 @@
+{ "runId": "run_01", "event": {
+    "id": "evt_0192f0c4a1b27c3e9d4f5a6b7c8d9e0f",
+    "object": "event",
+    "api_version": "2026-11-01",
+    "created": 1793366405,
+    "data": {
+      "object": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "object": "call",
+        "agent_id": "00000000-0000-4000-8000-000000000002",
+        "environment": "production",
+        "deployment_id": "00000000-0000-4000-8000-000000000003",
+        "direction": "inbound",
+        "channel": "sip",
+        "status": "completed",
+        "terminal_reason": "caller_hangup",
+        "started_at": 1793366180,
+        "ended_at": 1793366364,
+        "duration_seconds": 184,
+        "client": {},
+        "experiments": { "tone": "warm" },
+        "content": "stored",
+        "transcript": { "complete": true, "turns": [{ "role": "user", "text": "hi", "created": 1793366182 }] },
+        "transcript_truncated": false,
+        "call_data": [{ "name": "feedback", "payload": { "rating": 5 } }],
+        "goals": null,
+        "livemode": true
+      }
+    },
+    "livemode": true,
+    "pending_webhooks": 1,
+    "request": { "id": null, "idempotency_key": null },
+    "type": "call.ended"
+  }, "deadlineMs": 120000 }

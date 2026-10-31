@@ -1,0 +1,84 @@
+/* The positioning view. Shared tokens and page frame live in base.css. */
+
+.figure {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  min-height: 0;
+}
+
+/* The drawing scales to whatever room is left after the words, rather than
+   forcing the page to scroll. */
+.drawing {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow: visible;
+}
+
+.ink {
+  fill: none;
+  stroke: none;
+  /* Resolves currentColor for the tributary gradient stops. */
+  color: var(--ink);
+}
+
+/* Uniform and quiet: any one of them is replaceable and none is "the" one, so
+   promoting any — by weight or by hue — would undercut the claim. */
+.tributary {
+  /* Fades to nothing as it reaches the channel — see the gradient in the
+     markup. `currentColor` in the stops resolves against .ink below. */
+  stroke: url(#tributary-fade);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+
+/* Grey like the rest of the drawing, so the only full-ink marks on the page
+   are the words naming what curb.js holds. It keeps the heaviest stroke —
+   weight alone is enough to separate it from the tributaries feeding it. */
+.channel {
+  /* Rises out of the tributaries' fade rather than starting at full strength —
+     see #channel-rise in the markup. */
+  stroke: url(#channel-rise);
+  stroke-width: 3.4;
+  stroke-linecap: butt;
+}
+
+/* Grey, like the tributaries leaving them: everything on this side of the
+   junction is replaceable, and full ink here competed with the one thing on
+   the page that is not. */
+.source-label {
+  fill: var(--ink-soft);
+  font-size: 24px;
+  font-weight: 450;
+  letter-spacing: -0.01em;
+}
+
+/* Quieter than the two lines under it: it names what they run in, it is not
+   one of the parts. */
+.vessel-line {
+  fill: var(--ink);
+  font-size: 30px;
+  font-weight: 560;
+  letter-spacing: -0.012em;
+}
+
+.caption {
+  fill: var(--ink-soft);
+  font-size: 22px;
+  font-weight: 450;
+}
+
+/* Below this the drawing's left-to-right reading stops working at a legible
+   text size, so the words carry it alone rather than shrinking into noise. */
+@media (max-width: 48rem) {
+  .drawing {
+    display: none;
+  }
+
+  .page {
+    grid-template-rows: auto 1fr;
+    align-content: center;
+  }
+}

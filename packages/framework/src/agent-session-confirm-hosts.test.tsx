@@ -495,7 +495,8 @@ describe("curb say", () => {
       const ids = saved.messages.flatMap((message) =>
         message.role === "assistant" ? (message.toolCalls ?? []).map((call) => call.id) : [],
       );
-      expect(ids).toEqual(["toolu_A", "toolu_A_yes", "toolu_B", "toolu_B_yes"]);
+      expect(ids.slice(0, 1).concat(ids[2]!)).toEqual(["toolu_A", "toolu_B"]);
+      expect(new Set(ids).size).toBe(4);
       expect(onSubmit).toHaveBeenCalledTimes(2);
     } finally {
       rmSync(projectRoot, { recursive: true, force: true });

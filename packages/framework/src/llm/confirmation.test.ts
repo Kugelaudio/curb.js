@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  confirmedCall,
   checkAnswer,
   confirmationRequest,
   isConfirmationRequest,
@@ -110,5 +111,24 @@ describe("confirmation check", () => {
     });
     expect(tool.description.startsWith("Book the chosen slot. Calling this tool does not run it yet")).toBe(true);
     expect(tool.description).toContain("without asking for that confirmation yourself");
+  });
+});
+
+describe("confirmedCall", () => {
+  const runtime = { toolDefinition: () => ({ name: "create_claim" }) } as never;
+  const pending = (toolCallId: string) =>
+    ({ toolName: "create_claim", input: {}, readBack: "Ok?", toolCallId, heldAt: 0 }) as never;
+
+  // Mistral refuses any other id, and by then the tool has already run.
+  it("makes an id of nine letters and digits, which every provider accepts", () => {
+    for (const held of ["kDO26", "call_abc-123", "toolu_01ABCdefGHIjklMNOpqrSTUvw", "a:b/c"]) {
+      expect(confirmedCall(runtime, pending(held), "ja").id).toMatch(/^[a-zA-Z0-9]{9}$/);
+    }
+  });
+
+  it("derives it from the held call, so it is the same in every process and differs between calls", () => {
+    expect(confirmedCall(runtime, pending("c1"), "ja").id).toBe(confirmedCall(runtime, pending("c1"), "yes").id);
+    expect(confirmedCall(runtime, pending("c1"), "ja").id).not.toBe(confirmedCall(runtime, pending("c2"), "ja").id);
+    expect(confirmedCall(runtime, pending("c1"), "ja").id).not.toBe("c1");
   });
 });

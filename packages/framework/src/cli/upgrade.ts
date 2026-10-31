@@ -1,6 +1,6 @@
 // `curb upgrade`: repoint the project's "curb" dependency at the latest CDN
 // tarball and reinstall. The CDN publishes a `latest.json` pointer next to the
-// tarballs (see scripts/publish-cdn.mjs in the framework repo).
+// tarballs.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -164,7 +164,8 @@ export async function runUpgrade(args: string[], cwd = process.cwd()): Promise<v
   }
 
   writeFileSync(pkgPath, rewriteCurbDep(pkgText, `${base}/${latest.tarball}`));
-  const install = spawnSync("npm", ["install"], { cwd, stdio: "inherit" });
+  // Through the shell: npm is a .cmd shim on Windows, which Node starts no other way.
+  const install = spawnSync("npm install", { cwd, stdio: "inherit", shell: true });
   if (install.error || install.status !== 0) {
     writeFileSync(pkgPath, pkgText);
     const cause = install.error ? install.error.message : `exit code ${install.status ?? "signal"}`;

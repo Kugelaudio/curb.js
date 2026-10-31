@@ -7,7 +7,7 @@
     "check": "curb check"
   },
   "dependencies": {
-    "framework": "*",
+    "curb": "*",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
