@@ -28,6 +28,27 @@ merge to `main` that changes the framework is released.
 - Trivial pull requests still take a maintainer's time, so bundle them with a real change.
 - Features start as an issue.
 
+## Branches, commits and pull requests
+
+Merges are squashed and the commit on `main` takes the pull request's title, so the title is
+the one message that lasts. The `pr-rules` check enforces the title and body.
+
+- **Title:** `type(scope)!: subject`. The scope and `!` are optional. The type is one of
+  `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `ci` or `chore`. The subject starts with
+  a lowercase letter and has no trailing period. The whole title is at most 100 characters.
+
+  ```text
+  feat(framework): add a hook that runs after a call
+  fix: keep the conversation after a reload
+  docs(examples): add a README to livekit-pipeline
+  feat(framework)!: rename the session store option
+  ```
+
+- **Body:** say what changes and why. The template's headings and checklist do not count, so
+  fill them in rather than deleting them.
+- **Commits:** commit messages on a branch are not checked and do not reach `main`. Write them
+  however helps you; only the title has rules. Branch names have no rules either.
+
 ## Security
 
 Please do not report security problems in public issues. Use
