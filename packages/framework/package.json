@@ -61,7 +61,7 @@
     "lucide-react": "^1.63.0",
     "microsoft-cognitiveservices-speech-sdk": "^1.53.0",
     "onnxruntime-node": "^1.31.1",
-    "react-reconciler": "^0.34.0",
+    "react-reconciler": "^0.33.0",
     "shadcn": "^4.23.0",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.7.0",
@@ -75,7 +75,7 @@
   },
   "peerDependencies": {
     "react": "^19.2.7",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@livekit/agents-plugin-cartesia": "^1.9.5",
@@ -84,7 +84,7 @@
     "@livekit/agents-plugin-openai": "^1.9.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@types/react-reconciler": "^0.34.1",
+    "@types/react-reconciler": "^0.33.0",
     "@types/semver": "7.8.0",
     "@types/ws": "^8.18.2",
     "buffer": "^6.0.3",
