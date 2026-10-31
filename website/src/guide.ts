@@ -30,6 +30,7 @@ const ALL_PAGES = [
   { id: 'web-calls', file: 'web-calls.md', title: 'Calls from your website', group: 'Guides', description: "Start a call from a page, and tell the agent where it came from." },
   { id: 'improve-from-calls', file: 'improve-from-calls.md', title: 'Improve from real calls', group: 'Guides', description: "Fix an agent from a real call's transcript, and test the fix." },
   { id: 'coding-agents', file: 'coding-agents.md', title: 'Working with a coding agent', group: 'Guides', description: "Build a Curb agent with a coding agent: the loop, the rules and connecting KugelAudio." },
+  { id: 'reporting-a-bug', file: 'reporting-a-bug.md', title: 'Reporting a bug', group: 'Guides', description: "What a bug report holds and how to file it, for people and coding agents." },
   { id: 'preview', file: 'preview.md', title: 'The preview', group: 'Guides', description: "The curb dev page: chat, voice, the context the model reads, tools and recorded conversations." },
   { id: 'hosting', file: 'hosting.md', title: 'Self-hosting', group: 'Guides', description: "Run an agent on your own servers: dev, the LiveKit worker, a built artifact or a managed runner." },
   { id: 'migrate-from-elevenlabs', file: 'migrate-from-elevenlabs.md', title: 'Migrate from ElevenLabs', group: 'Guides', description: "Rebuild an ElevenLabs agent in Curb, test it and move your numbers." },

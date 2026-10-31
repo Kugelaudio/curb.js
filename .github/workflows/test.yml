@@ -13,6 +13,15 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the run it supersedes. Every other run gets a group of
+# its own, because a group keeps one pending run and replaces the rest, cancel-in-progress or
+# not, which would drop a queued push to main. gate stays on always(): in a cancelled run it
+# fails on the superseded commit, and the newest commit's run reports. With !cancelled() it
+# would be skipped, and a skipped required check passes.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('test-pr-{0}', github.event.pull_request.number) || format('test-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   affected:
     name: affected suites
@@ -37,7 +46,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['22', '24']
+        # A pull request runs the engines floor, which '22' would skip by resolving to the newest
+        # 22.x. main runs both majors the README promises.
+        node: ${{ github.event_name == 'pull_request' && fromJSON('["22.12"]') || fromJSON('["22.12", "24"]') }}
     env:
       # CPU binaries ship in npm; the Linux postinstall otherwise downloads CUDA from NuGet.
       ONNXRUNTIME_NODE_INSTALL: skip

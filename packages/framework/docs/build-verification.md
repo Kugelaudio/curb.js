@@ -484,7 +484,7 @@ Implementation: `src/bundler/layers.ts` and `src/bundler/layer-escape.ts`. Suite
 - both modes over a real project;
 - a CLI hit build from a tree materialized from exactly the recorded inputs, whose agent
   imports `sharp` and `curb/orchestration` and still has its goals and experiments read
-  without those natives (exit 0, not 75);
+  without those natives (exit 0, not 75, on Node 22.15 and later; below that, exit 75);
 - a CLI hit build whose agent leaves a timer running at import, which still finishes;
 - a changed `mcp.servers.json`;
 - the explicit Silero model asset and a real managed-runner warmup;
@@ -528,8 +528,9 @@ and exits:
   behind `curb/orchestration`), so without stubs every hit-mode build of such an agent would
   escape to a full install. The stubs are synchronous module hooks (`module.registerHooks`,
   Node 22.15 and later), the only kind a `require()` inside a dependency goes through; on an
-  older Node nothing is stubbed. A missing file of the project's own, or any error its code
-  throws, still fails the build.
+  older Node nothing is stubbed, so such a build escapes (exit 75) and the builder falls back
+  to a full install. A missing file of the project's own, or any error its code throws, still
+  fails the build.
 - In a `--dependency-layer` build, any failure while a stub was loaded is an escape (exit 75,
   `path` the first stubbed package), because the stub may be the cause (an importer needing a
   name it does not export, say a string-named import its pattern cannot read) and a full
