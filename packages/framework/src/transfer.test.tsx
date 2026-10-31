@@ -1,16 +1,26 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Agent, AgentAuthoringError, AgentSiteRuntime, TransferCallTool, useTransferCall, type TransferCall } from "./index.js";
+import {
+  Agent,
+  AgentAuthoringError,
+  AgentSiteRuntime,
+  TransferCallTool,
+  useTransferCall,
+  type TransferCall,
+  type TransferEnded,
+  type TransferEndedOption,
+} from "./index.js";
 import type { OutgoingHostMessage } from "./messages.js";
 import { CALL_TRANSFER_RESULT_MESSAGE, attachTransferAudio, transferToolResult, type TransferAudio } from "./transfer.js";
+import { decideTransferEnded } from "./transfer-ended.js";
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
-function Transfers({ onTransfer }: { onTransfer: (transfer: TransferCall) => void }) {
+function Transfers({ onTransfer, onEnded }: { onTransfer: (transfer: TransferCall) => void; onEnded?: TransferEndedOption }) {
   onTransfer(useTransferCall());
-  return <TransferCallTool to="+493012345678" ringTimeoutSeconds={20} />;
+  return <TransferCallTool to="+493012345678" ringTimeoutSeconds={20} {...(onEnded ? { onEnded } : {})} />;
 }
 
 /** A runtime on a phone call whose host answers `call.transfer` with `reply`. */
@@ -21,12 +31,14 @@ function phoneCall(
     host?: boolean;
     audio?: TransferAudio;
     onSend?: (message: OutgoingHostMessage) => void;
+    /** The `<TransferCallTool>`'s `onEnded`. */
+    onEnded?: TransferEndedOption;
   } = {},
 ) {
   let transfer: TransferCall | undefined;
   const runtime = new AgentSiteRuntime(
     <Agent>
-      <Transfers onTransfer={(value) => (transfer = value)} />
+      <Transfers onTransfer={(value) => (transfer = value)} {...(options.onEnded ? { onEnded: options.onEnded } : {})} />
     </Agent>,
   );
   if (options.audio) attachTransferAudio(runtime.info, options.audio);
@@ -210,6 +222,29 @@ describe("useTransferCall", () => {
     await expect(transfer()({ to: "sales" })).rejects.toBeInstanceOf(TypeError);
     await expect(transfer()({ to: "+493012345678", ringTimeoutSeconds: 5 })).rejects.toBeInstanceOf(TypeError);
     await expect(transfer()({ to: "+493012345678", ringTimeoutSeconds: 12.5 })).rejects.toBeInstanceOf(TypeError);
+    await expect(
+      transfer()({ to: "+493012345678", onEnded: { action: "hang_up" } as unknown as TransferEndedOption }),
+    ).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it("hands its onEnded function the answered transfer once the target leaves", async () => {
+    const seen: TransferEnded[] = [];
+    const { runtime, sent, transfer } = phoneCall({ reply: () => ({ transferId: "t-5" }) });
+    const pending = transfer()({
+      to: " +49 30 1234 5678 ",
+      onEnded: (ended) => {
+        seen.push(ended);
+        return { action: "end_call" };
+      },
+    });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await result(runtime, { transferId: "t-5", outcome: "answered", dialStatus: "ANSWER" });
+    await expect(pending).resolves.toMatchObject({ outcome: "answered" });
+    // The host channel never sees onEnded: it stays with the agent.
+    expect(sent[0]!.payload).toEqual({ to: "+49 30 1234 5678" });
+    await expect(decideTransferEnded(runtime.info)).resolves.toEqual({ action: "end_call" });
+    expect(seen).toEqual([{ to: "+49 30 1234 5678", transferId: "t-5" }]);
   });
 });
 
@@ -224,6 +259,38 @@ describe("TransferCallTool", () => {
     await result(runtime, { transferId: "t-4", outcome: "no_answer", dialStatus: "NOANSWER" });
     const { result: toolResult } = await call;
     expect(toolResult.message).toContain("Nobody answered");
+  });
+
+  it("applies its onEnded once an answered transfer's target leaves, and only then", async () => {
+    const goodbye = { action: "end_call", goodbye: "Thank you for calling. Goodbye!" } as const;
+    const { runtime, sent } = phoneCall({ onEnded: goodbye, reply: () => ({ transferId: `t-${sent.length}` }) });
+
+    const busy = runtime.callTool("transfer_call", { announce: ANNOUNCE });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await result(runtime, { transferId: "t-1", outcome: "busy", dialStatus: "BUSY" });
+    await busy;
+    await expect(decideTransferEnded(runtime.info)).resolves.toEqual({ action: "continue" });
+
+    const answered = runtime.callTool("transfer_call", { announce: ANNOUNCE });
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await result(runtime, { transferId: "t-2", outcome: "answered", dialStatus: "ANSWER" });
+    await answered;
+    await expect(decideTransferEnded(runtime.info)).resolves.toEqual(goodbye);
+  });
+
+  it("applies its onEnded when the target leaves before the answered result arrives", async () => {
+    const { runtime, sent } = phoneCall({ onEnded: { action: "end_call" }, reply: () => ({ transferId: "t-6" }) });
+    const call = runtime.callTool("transfer_call", { announce: ANNOUNCE });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Accepted, the target joined and left; the result is still on its way.
+    await expect(decideTransferEnded(runtime.info)).resolves.toEqual({ action: "end_call" });
+    await result(runtime, { transferId: "t-6", outcome: "answered", dialStatus: "ANSWER" });
+    await call;
+    // The late result tracks nothing a later transfer could pick up.
+    await expect(decideTransferEnded(runtime.info)).resolves.toEqual({ action: "continue" });
   });
 
   it("asks the model for its announcement and says it before dialing", async () => {
@@ -267,7 +334,11 @@ describe("TransferCallTool", () => {
     expect(transferToolResult({ outcome: "refused", code: "transfer_unsupported_session" }).message).toContain("phone call");
   });
 
-  it("refuses a bad number when it renders", () => {
+  it("refuses a bad number or onEnded when it renders", () => {
     expect(() => new AgentSiteRuntime(<Agent><TransferCallTool to="claims" /></Agent>)).toThrow(AgentAuthoringError);
+    const onEnded = { action: "end_call", goodbye: "" } as const;
+    expect(() => new AgentSiteRuntime(<Agent><TransferCallTool to="+493012345678" onEnded={onEnded} /></Agent>)).toThrow(
+      AgentAuthoringError,
+    );
   });
 });

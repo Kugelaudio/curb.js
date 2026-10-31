@@ -3,6 +3,13 @@ import { AUTHORING_DIAGNOSTIC_CODES, AgentAuthoringError } from "./authoring.js"
 import type { AgentInfo, AgentInfoStore } from "./info-store.js";
 import { useAgentInfoStore } from "./info-context.js";
 import { HostTimeoutError, HostUnavailableError, useAppMessages, type AppMessages } from "./messages.js";
+import {
+  checkTransferEndedOption,
+  trackTransfer,
+  untrackTransfer,
+  type TrackedTransfer,
+  type TransferEndedOption,
+} from "./transfer-ended.js";
 import { ToolInputError, type ToolResult } from "./types.js";
 
 /**
@@ -16,7 +23,8 @@ import { ToolInputError, type ToolResult } from "./types.js";
  * ({ code, message, feature? }); `call.transfer.result` ({ transferId, outcome, dialStatus })
  * follows once the target answered, did not, or the dial failed. Once the target is in the
  * room the voice host hands the call off (the agent stops listening and speaking) and takes
- * it back when the target leaves while the caller stays (`livekit-host/transfer-handoff.ts`).
+ * it back when the target leaves while the caller stays (`livekit-host/transfer-handoff.ts`),
+ * or does what the request's `onEnded` decides instead (`transfer-ended.ts`).
  *
  * What the caller hears meanwhile comes from the voice host ({@link TransferAudio}, attached
  * per call by `livekit-host/host.ts`): the request's `announce`, played to its end before
@@ -49,6 +57,10 @@ export interface TransferCallRequest {
    * connecting you to our sales team." It cannot be interrupted, and the dial starts once it
    * finished playing. Default: no announcement. */
   announce?: string;
+  /** What happens when the person the caller was put through to hangs up while the caller
+   * stays: `{ action: "end_call", goodbye? }`, `{ action: "continue", instruction? }`, or a
+   * function returning one. Default: the agent takes the call back. */
+  onEnded?: TransferEndedOption;
 }
 
 /**
@@ -104,6 +116,12 @@ export interface TransferDeps {
   /** The call's audio, read when the transfer starts. */
   audio?: () => TransferAudio | undefined;
   error?: (line: string) => void;
+  /** Where an accepted transfer is tracked until it ends unanswered, so the voice host applies
+   * the request's `onEnded` once its target leaves (`transfer-ended.ts`). */
+  tracking?: {
+    track: (transfer: TrackedTransfer) => void;
+    untrack: (transferId: string) => void;
+  };
 }
 
 /** One transfer, start to outcome. `useTransferCall` binds it to the rendering runtime. */
@@ -138,6 +156,10 @@ export async function transferCall(deps: TransferDeps, request: TransferCallRequ
   });
   const audio = deps.audio?.();
   let stopRingback = () => {};
+  // Tracked from the acceptance on: the target may join, and leave, before its answered
+  // result arrives. Untracked on every other ending.
+  let tracked: string | null = null;
+  let answered = false;
   try {
     if (announcement !== undefined) {
       if (!audio) logError("[curb] call transfer: this call has no voice output, so the announcement was not said");
@@ -189,6 +211,8 @@ export async function transferCall(deps: TransferDeps, request: TransferCallRequ
     }
 
     const transferId = reply.transferId;
+    deps.tracking?.track({ to: payload.to, transferId, onEnded: request.onEnded });
+    tracked = transferId;
     const ringSeconds = request.ringTimeoutSeconds ?? DEFAULT_TRANSFER_RING_TIMEOUT_SECONDS;
     const waitMs = ringSeconds * 1000 + TRANSFER_RESULT_MARGIN_MS;
     const result =
@@ -216,6 +240,7 @@ export async function transferCall(deps: TransferDeps, request: TransferCallRequ
       logError(`[curb] call transfer ${transferId}: unknown outcome ${JSON.stringify(result.outcome)}, read as failed`);
       return { outcome: "failed", transferId, message: `Unknown transfer outcome ${JSON.stringify(result.outcome)}.` };
     }
+    answered = outcome === "answered";
     return {
       outcome,
       transferId,
@@ -224,6 +249,7 @@ export async function transferCall(deps: TransferDeps, request: TransferCallRequ
   } finally {
     stopRingback();
     unsubscribe();
+    if (tracked !== null && !answered) deps.tracking?.untrack(tracked);
   }
 }
 
@@ -250,10 +276,10 @@ function errorText(error: unknown): string {
 }
 
 /** The `call.transfer` payload, or a TypeError naming what is wrong with the request. */
-function transferPayload(request: TransferCallRequest): Record<string, unknown> {
+function transferPayload(request: TransferCallRequest): { to: string; ringTimeoutSeconds?: number } {
   if (!isRecord(request)) {
     throw new TypeError(
-      'transfer() takes { to, ringTimeoutSeconds?, announce? }, for example transfer({ to: "+493012345678" }).',
+      'transfer() takes { to, ringTimeoutSeconds?, announce?, onEnded? }, for example transfer({ to: "+493012345678" }).',
     );
   }
   const to = typeof request.to === "string" ? request.to.trim() : "";
@@ -271,6 +297,7 @@ function transferPayload(request: TransferCallRequest): Record<string, unknown> 
       `transfer() needs ringTimeoutSeconds as a whole number from ${MIN_RING_TIMEOUT_SECONDS} to ${MAX_RING_TIMEOUT_SECONDS}; got ${JSON.stringify(ring)}.`,
     );
   }
+  checkTransferEndedOption(request.onEnded);
   return { to, ...(ring === undefined ? {} : { ringTimeoutSeconds: ring }) };
 }
 
@@ -297,7 +324,18 @@ export function useTransferCall(): TransferCall {
   if (info === null) throw new Error("useTransferCall must be used inside an agent runtime render.");
   return useMemo(
     () => (request: TransferCallRequest) =>
-      transferCall({ messages, info: info.snapshot, audio: () => transferAudioByRuntime.get(info) }, request),
+      transferCall(
+        {
+          messages,
+          info: info.snapshot,
+          audio: () => transferAudioByRuntime.get(info),
+          tracking: {
+            track: (transfer) => trackTransfer(info, transfer),
+            untrack: (transferId) => untrackTransfer(info, transferId),
+          },
+        },
+        request,
+      ),
     [messages, info],
   );
 }
@@ -343,6 +381,9 @@ export interface TransferCallToolProps {
   description?: string;
   /** How long the target's phone rings, 10 to 60 seconds. Default 30. */
   ringTimeoutSeconds?: number;
+  /** What happens when the person hangs up while the caller stays; see
+   * {@link TransferCallRequest.onEnded}. Default: the agent takes the call back. */
+  onEnded?: TransferEndedOption;
 }
 
 /**
@@ -351,11 +392,16 @@ export interface TransferCallToolProps {
  *
  * ```tsx
  * <TransferCallTool to="+493012345678" description="Put the caller through to the claims team when they ask for a person." />
+ * <TransferCallTool to="+493012345678" onEnded={{ action: "end_call", goodbye: "Thank you for calling. Goodbye!" }} />
  * ```
  */
-export function TransferCallTool({ to, name, description, ringTimeoutSeconds }: TransferCallToolProps) {
+export function TransferCallTool({ to, name, description, ringTimeoutSeconds, onEnded }: TransferCallToolProps) {
   const transfer = useTransferCall();
-  const request: TransferCallRequest = { to, ...(ringTimeoutSeconds === undefined ? {} : { ringTimeoutSeconds }) };
+  const request: TransferCallRequest = {
+    to,
+    ...(ringTimeoutSeconds === undefined ? {} : { ringTimeoutSeconds }),
+    ...(onEnded === undefined ? {} : { onEnded }),
+  };
   try {
     transferPayload(request);
   } catch (error) {
@@ -366,7 +412,9 @@ export function TransferCallTool({ to, name, description, ringTimeoutSeconds }: 
       severity: "error",
       message: error.message,
       location: { component: "TransferCallTool" },
-      fix: 'Pass to="+493012345678" (international format) and, if at all, ringTimeoutSeconds from 10 to 60.',
+      fix:
+        'Pass to="+493012345678" (international format) and, if at all, ringTimeoutSeconds from 10 to 60 and ' +
+        'onEnded={{ action: "end_call", goodbye: "Goodbye!" }} or { action: "continue", instruction }.',
     });
   }
   const ring = ringTimeoutSeconds ?? DEFAULT_TRANSFER_RING_TIMEOUT_SECONDS;

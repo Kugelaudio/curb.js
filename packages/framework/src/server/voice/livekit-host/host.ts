@@ -25,8 +25,8 @@
  *   this host is attached, and the disconnect waits for the closing line to
  *   finish playing (see `../end-call.ts`).
  * - handed-off mode (`transfer-handoff.ts`): while a transfer target is in the room the
- *   agent neither listens nor speaks; it resumes with a system note when the target leaves
- *   and the caller stays.
+ *   agent neither listens nor speaks; when the target leaves and the caller stays it resumes
+ *   with a system note, or ends the call, as the transfer's `onEnded` decides.
  * - transfer audio (`transfer-audio.ts`): while a phone call is transferred the caller hears
  *   the transfer's announcement, then a ringback until the outcome, on a track of their own.
  * - typed input mid-call: `handle.sendText` feeds a typed message through
@@ -72,7 +72,9 @@ import {
   callerSide,
   createTransferHandoff,
   isTransferTarget,
+  applyTransferEnded,
 } from "./transfer-handoff.js";
+import { decideTransferEnded, moveTrackedTransfer } from "../../../transfer-ended.js";
 
 // agents-js asserts its logger exists before any session work; the worker
 // CLI normally does this — we host sessions directly, so do it here.
@@ -267,8 +269,16 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
     },
     log: (message) => logError("voice", `${options.roomName}: transfer audio: ${message}`),
   });
+  // The note the agent last resumed with after a transfer, so its turn reads as synthetic.
+  let transferPrompt = TRANSFER_ENDED_PROMPT;
+  // A transfer's onEnded that failed, or whose goodbye did not play: logged and in the record.
+  const reportTransferEnded = (message: string) => {
+    logError("voice", `${options.roomName}: ${message}`);
+    options.reporter?.event("error", { kind: "transfer_ended", message });
+  };
   // Handed-off mode: a transfer target is on the call, so the agent neither listens nor
-  // speaks until it leaves while the caller stays. See transfer-handoff.ts.
+  // speaks until it leaves while the caller stays; then the transfer's onEnded decides.
+  // See transfer-handoff.ts and transfer-ended.ts.
   const handoff = createTransferHandoff({
     participants: () => room.participants(),
     pause: () => {
@@ -286,10 +296,35 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
     resume: () => {
       const active = session;
       if (!active) return;
-      active.input.setAudioEnabled(true);
-      active.output.setAudioEnabled(true);
-      options.reporter?.event("transfer_resumed", {});
-      active.generateReply({ userInput: TRANSFER_ENDED_PROMPT });
+      // The agent stays quiet until the transfer's onEnded decided (a function gets at most
+      // TRANSFER_ENDED_TIMEOUT_MS); without one this resolves at once with `continue`.
+      void decideTransferEnded(bundle.runtime.info, { error: reportTransferEnded })
+        .then((decision) =>
+          applyTransferEnded(decision, {
+            stale: () => closing !== null || handoff.handedOff() || callerSide(room.participants()).length === 0,
+            resume: (prompt) => {
+              active.input.setAudioEnabled(true);
+              active.output.setAudioEnabled(true);
+              options.reporter?.event("transfer_resumed", {});
+              transferPrompt = prompt;
+              active.generateReply({ userInput: prompt });
+            },
+            sayGoodbye: (goodbye) => transferAudio.announce(goodbye),
+            endCall: () => {
+              options.reporter?.event("transfer_ended_call", {});
+              closeFromRoom();
+            },
+            log: (message) => logInfo("voice", `${options.roomName}: ${message}`),
+            error: reportTransferEnded,
+          }),
+        )
+        .catch((error: unknown) => {
+          // KEEP-JUSTIFIED: runs outside the room event that started it; the cause is logged
+          // and lands in the call's record.
+          const message = error instanceof Error ? error.message : String(error);
+          logError("voice", `${options.roomName}: taking the call back after a transfer failed: ${message}`);
+          options.reporter?.event("error", { kind: "transfer_handoff", message });
+        });
     },
     log: (message) => logInfo("voice", `${options.roomName}: ${message}`),
   });
@@ -312,7 +347,7 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
     const synthetic =
       userText === SILENCE_FOLLOWUP_PROMPT ||
       userText === AGENT_FIRST_TURN_PROMPT ||
-      userText === TRANSFER_ENDED_PROMPT;
+      userText === transferPrompt;
     const from = finalsConsumed;
     const to = finalsSeen - 1;
     if (!typed && !synthetic) finalsConsumed = finalsSeen;
@@ -699,6 +734,8 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
       // the rebuilt runtime — otherwise end_call would quietly vanish.
       bundle.runtime.setEndCallRequest(null);
       attachTransferAudio(bundle.runtime.info, null);
+      // A transfer under way goes on in the rebuilt runtime, with its onEnded.
+      moveTrackedTransfer(bundle.runtime.info, next.runtime.info);
       bundle = next;
       clientMessages.bind(bundle.runtime);
       unfollowSettings();

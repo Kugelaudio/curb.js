@@ -73,11 +73,12 @@ export function Handover() {
 }
 ```
 
-- `transfer({ to, ringTimeoutSeconds?, announce? })` resolves
+- `transfer({ to, ringTimeoutSeconds?, announce?, onEnded? })` resolves
   `{ outcome, code?, message?, transferId? }` with `outcome` one of `answered`, `no_answer`,
   `busy`, `failed`, `refused`. It never rejects for an outcome; a bad `to`, a
-  `ringTimeoutSeconds` outside 10 to 60 or a blank `announce` throws `TypeError` (on
-  `<TransferCallTool>`, an authoring error when it renders).
+  `ringTimeoutSeconds` outside 10 to 60, a blank `announce` or an `onEnded` that is not one
+  ([below](#when-the-person-hangs-up)) throws `TypeError` (on `<TransferCallTool>`, an
+  authoring error when it renders).
 - The caller never waits in silence. `announce` is said first, in the agent's voice: it
   cannot be interrupted, and the number is dialed only once it has played. Without
   `announce` nothing is said. Then the caller hears a ringback tone (425 Hz, 1 s on, 4 s
@@ -85,7 +86,8 @@ export function Handover() {
   nothing plays.
 - `answered`: the target is in the call and the agent is handed off: it stops listening
   and speaking. When the target leaves and the caller is still there, the agent takes the
-  call back and is told the transfer ended. The caller hanging up ends the call.
+  call back and is told the transfer ended, unless `onEnded` says otherwise (below). The
+  caller hanging up ends the call.
 - `refused`: nothing was dialed, and one error line in the log names the code.
   `upgrade_required` means the plan has no `outbound-calls` feature;
   `transfer_unsupported_session` means this is not a phone call (a browser session or
@@ -93,7 +95,7 @@ export function Handover() {
 - `failed` with code `transfer_no_reply`: the host did not answer the request within 20 s,
   or sent no result within the ring time plus 30 s.
 - `<TransferCallTool>` takes `to`, and optionally `name` (default `transfer_call`),
-  `description` and `ringTimeoutSeconds`. The model calls it with `announce`, the one
+  `description`, `ringTimeoutSeconds` and `onEnded`. The model calls it with `announce`, the one
   sentence it says to the caller before connecting ("One moment, I am connecting you to our
   sales team."); a call without one is refused and nobody is dialed, so the model calls
   again with it. The tool tells the model each outcome in plain words ("nobody answered",
@@ -108,6 +110,48 @@ A refused transfer comes back as `outcome: "refused"` with a `code`:
 | `transfer_unsupported_number` | The call's number is from your own Twilio or Telnyx account |
 | `transfer_in_progress` | Another transfer of this call is still ringing |
 | `callback_destination_blocked` | The number is outside Germany, Austria and Switzerland, or premium-rate |
+
+## When the person hangs up
+
+By default, when the person the call was put through to hangs up and the caller is still
+there, the agent takes the call back. A transfer's `onEnded` decides instead:
+
+```tsx
+import { TransferCallTool } from "curb";
+
+export function Handover() {
+  return (
+    <>
+      {/* After sales, the call is done. */}
+      <TransferCallTool
+        name="transfer_sales"
+        to="+493011111111"
+        onEnded={{ action: "end_call", goodbye: "Thank you for calling. Goodbye!" }}
+      />
+      {/* After support, the agent continues with its own instruction. */}
+      <TransferCallTool
+        name="transfer_support"
+        to="+493022222222"
+        onEnded={{ action: "continue", instruction: "Ask whether support could solve the problem." }}
+      />
+    </>
+  );
+}
+```
+
+`transfer({ to, onEnded })` takes the same option.
+
+- `{ action: "end_call", goodbye? }` ends the call. `goodbye` is said first, in the agent's
+  voice, and cannot be interrupted; without it the call ends at once.
+- `{ action: "continue", instruction? }` gives the call back to the agent. `instruction` says
+  what it does next; without it, as without `onEnded`, the agent tells the caller the other
+  person left and asks whether it can help with anything else.
+- `onEnded` may also be a function, sync or async, that gets `{ to, transferId }` and returns
+  a decision, or nothing to continue:
+  `onEnded={async () => ((await ticketSolved()) ? { action: "end_call" } : undefined)}`.
+- The agent stays quiet until the decision is made. A function that throws, returns
+  something else, or takes longer than 5 s is logged and the agent continues, so the caller
+  is never left alone. When the caller hangs up, the call ends and `onEnded` is not asked.
 
 ## Next steps
 

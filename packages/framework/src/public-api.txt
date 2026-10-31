@@ -106,6 +106,9 @@
 . TransferCallRequest
 . TransferCallTool
 . TransferCallToolProps
+. TransferEnded
+. TransferEndedDecision
+. TransferEndedOption
 . TransferOutcome
 . UseAgentStore
 . UseMessageWithSchema
