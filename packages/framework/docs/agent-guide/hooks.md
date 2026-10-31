@@ -123,6 +123,7 @@ const { outcome, code, message, transferId } = await transfer({ to: "+4930123456
 | `to` | `string` | | The number in international format |
 | `ringTimeoutSeconds` | `number` | `30` | How long it rings, 10 to 60 seconds |
 | `announce` | `string` | none | Said to the caller before it dials |
+| `onEnded` | decision or function | the agent takes the call back | What happens when the person hangs up and the caller stays ([When the person hangs up](./human-handoff.md#when-the-person-hangs-up)) |
 
 `outcome` is `answered`, `no_answer`, `busy`, `failed` or `refused`. It never rejects for an outcome,
 and throws `TypeError` for a bad request. See [Human handoff](./human-handoff.md).

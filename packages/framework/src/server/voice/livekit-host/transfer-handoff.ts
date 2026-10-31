@@ -10,15 +10,26 @@
  * Extracted from `startLivekitVoiceAgent` so the rule is testable without a LiveKit room.
  */
 
+import type { TransferEndedDecision } from "../../../transfer-ended.js";
 import { isCaller, type CallParticipant } from "./call-opening.js";
 
 /** The LiveKit identity of a transfer target starts with this (`sip_` + its caller ID). */
 export const TRANSFER_TARGET_IDENTITY_PREFIX = "sip_transfer-";
 
-/** The system note the model gets when the transfer target left and the caller stayed. Kept
- * out of the visible transcript while still giving the model a normal turn. */
-export const TRANSFER_ENDED_PROMPT =
-  "(The person you transferred this call to has left the call. The caller is still on the line and hears you again. Tell them in one short line that the other person has left, and ask whether you can help with anything else. Do not call skip_turn.)";
+const TRANSFER_ENDED_DEFAULT_INSTRUCTION =
+  "Tell them in one short line that the other person has left, and ask whether you can help with anything else.";
+
+/** The system note the model gets when the transfer target left and the caller stayed, with a
+ * transfer's `onEnded` `instruction` in place of the default one. Kept out of the
+ * visible transcript while still giving the model a normal turn. */
+export function transferEndedPrompt(instruction: string = TRANSFER_ENDED_DEFAULT_INSTRUCTION): string {
+  const sentence = /[.!?]$/.test(instruction) ? instruction : `${instruction}.`;
+  return `(The person you transferred this call to has left the call. The caller is still on the line and hears you again. ${sentence} Do not call skip_turn.)`;
+}
+
+export const TRANSFER_ENDED_PROMPT = transferEndedPrompt();
+
+const GOODBYE_TIMED_OUT = Symbol("goodbye timed out");
 
 export function isTransferTarget(participant: Pick<CallParticipant, "identity">): boolean {
   return participant.identity.startsWith(TRANSFER_TARGET_IDENTITY_PREFIX);
@@ -34,7 +45,8 @@ export type TransferHandoffOptions = {
   participants: () => Iterable<CallParticipant>;
   /** Stop listening and speaking. */
   pause: () => void;
-  /** Listen and speak again, then give the model {@link TRANSFER_ENDED_PROMPT}. */
+  /** The target left while the caller stays: listen and speak again, or end the call, as
+   * the transfer's `onEnded` decides (default: continue). */
   resume: () => void;
   log: (message: string) => void;
 };
@@ -70,4 +82,75 @@ export function createTransferHandoff(options: TransferHandoffOptions): Transfer
       options.resume();
     },
   };
+}
+
+/** How long a goodbye may take to play. The caller hears nothing else and the agent no longer
+ * listens, so a voice that stalls must not hold the call open. */
+export const TRANSFER_GOODBYE_TIMEOUT_MS = 20_000;
+
+export type TransferEndedEffects = {
+  /** True when the decision no longer applies: the call is closing, another target joined,
+   * or no caller is left to hear it. */
+  stale: () => boolean;
+  /** Listen and speak again, then give the model `prompt`. */
+  resume: (prompt: string) => void;
+  /** Say `goodbye` to the caller, not interruptible. Resolves once it played; the call ends
+   * after {@link TRANSFER_GOODBYE_TIMEOUT_MS} regardless. */
+  sayGoodbye: (goodbye: string) => Promise<void>;
+  /** End the call. */
+  endCall: () => void;
+  log: (message: string) => void;
+  error: (message: string) => void;
+};
+
+/** Carry out what the transfer's `onEnded` decided once its target left (`transfer-ended.ts`). */
+export async function applyTransferEnded(decision: TransferEndedDecision, effects: TransferEndedEffects): Promise<void> {
+  if (effects.stale()) {
+    effects.log(`the transfer's onEnded decided ${decision.action} after the call moved on: nothing to do`);
+    return;
+  }
+  if (decision.action === "continue") {
+    effects.resume(transferEndedPrompt(decision.instruction));
+    return;
+  }
+  effects.log("the transfer target left and the transfer's onEnded ends the call");
+  if (decision.goodbye !== undefined) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<typeof GOODBYE_TIMED_OUT>((resolve) => {
+      timer = setTimeout(() => resolve(GOODBYE_TIMED_OUT), TRANSFER_GOODBYE_TIMEOUT_MS);
+    });
+    try {
+      const played = await Promise.race([effects.sayGoodbye(decision.goodbye), timedOut]);
+      if (played === GOODBYE_TIMED_OUT) {
+        effects.error(`the goodbye did not finish within ${TRANSFER_GOODBYE_TIMEOUT_MS} ms, the call ends anyway`);
+      }
+    } catch (error) {
+      // KEEP-JUSTIFIED: the author asked to end the call; a goodbye that could not be played
+      // must not keep it open. The cause is reported.
+      effects.error(`the goodbye could not be played, the call ends anyway: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  effects.endCall();
+}
+
+/**
+ * Decide and carry out what happens once the target left. Whatever goes wrong on the way, the
+ * caller is not left muted: the agent is off until a decision turns it back on, so a failure
+ * here takes the call back as if the transfer had no `onEnded`. A failed recovery rejects.
+ */
+export async function settleTransferEnded(
+  decide: () => Promise<TransferEndedDecision>,
+  effects: TransferEndedEffects,
+): Promise<void> {
+  try {
+    await applyTransferEnded(await decide(), effects);
+  } catch (error) {
+    try {
+      if (!effects.stale()) effects.resume(TRANSFER_ENDED_PROMPT);
+    } finally {
+      effects.error(`taking the call back after a transfer failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 }

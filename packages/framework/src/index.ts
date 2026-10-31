@@ -89,6 +89,7 @@ export type {
 } from "./messages.js";
 export { TransferCallTool, useTransferCall } from "./transfer.js";
 export type { TransferCall, TransferCallRequest, TransferCallToolProps, TransferOutcome } from "./transfer.js";
+export type { TransferEnded, TransferEndedDecision, TransferEndedOption } from "./transfer-ended.js";
 export type { GetState, SetState, StoreInitializer, UseAgentStore } from "./agent-state.js";
 export { listPublicMarkdown, preloadPublicMarkdown, resolvePublicMarkdown } from "./public-context.js";
 export { AgentSiteRuntime } from "./runtime.js";
