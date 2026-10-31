@@ -7,6 +7,7 @@ import RequestStory from '../components/RequestStory.astro'
 import Gate from '../components/diagrams/Gate.astro'
 import Pipeline from '../components/diagrams/Pipeline.astro'
 import Skills from '../components/diagrams/Skills.astro'
+import { agentPrompt, CREATE_COMMAND } from '../agent-prompt'
 import { codeClasses, curbCodeTheme } from '../code-theme'
 import { codeBlock, plainSkill, requestBlock, stateSteps } from '../requests'
 import { SITE_DESCRIPTION, SITE_HEADLINE, SITE_LEDE_HTML, SITE_TITLE, homeStructuredData } from '../seo'
@@ -83,7 +84,10 @@ const steps = [
     <section class="hero">
       <h1>{SITE_HEADLINE}</h1>
       <p class="lede" set:html={SITE_LEDE_HTML} />
-      <Copy command="npm create curb.js ." />
+      <div class="hero-actions">
+        <Copy command={CREATE_COMMAND} />
+        <button type="button" class="copy copy-prompt" data-copy={agentPrompt(Astro.site!)} hidden>Copy prompt for coding agents</button>
+      </div>
     </section>
 
     <figure class="shot">

@@ -8,18 +8,19 @@ function inView(element: Element, onChange: (visible: boolean) => void): void {
 }
 
 function copyButton(button: HTMLButtonElement, text: () => string): void {
+  const label = button.textContent
   button.hidden = false
   button.addEventListener('click', () => {
     navigator.clipboard.writeText(text()).then(
-      () => flash(button, 'Copied'),
-      () => flash(button, 'Copy failed'),
+      () => flash(button, 'Copied', label),
+      () => flash(button, 'Copy failed', label),
     )
   })
 }
 
-function flash(button: HTMLButtonElement, label: string): void {
-  button.textContent = label
-  window.setTimeout(() => (button.textContent = 'Copy'), 1600)
+function flash(button: HTMLButtonElement, message: string, label: string): void {
+  button.textContent = message
+  window.setTimeout(() => (button.textContent = label), 1600)
 }
 
 function enhanceTabs(root: HTMLElement): void {

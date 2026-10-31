@@ -9,7 +9,8 @@ and no analytics. A small script adds tabs and copy buttons; without it every pa
 
 | Path | What it holds |
 |---|---|
-| `src/pages/index.astro` | The landing page, the only text this site writes itself |
+| `src/pages/index.astro` | The landing page, the only text this site writes itself besides the prompt below |
+| `src/agent-prompt.ts` | The prompt the hero's button copies for coding agents. A test checks its URLs, commands and Node version against the repository |
 | `src/guide.ts` | The one table of pages in reading order, with each page's group and description. A test fails when a guide page is missing from it |
 | `src/search-index.ts`, `src/pages/search-index.json.ts`, `src/scripts/search.ts` | Docs search: an index built from the guide, and a dialog opened with `/` or Cmd+K |
 | `public/sidebar.js` | Keeps the sidebar's open sections and scroll position from page to page, for the tab's session. Blocking, so it runs before the first paint |
