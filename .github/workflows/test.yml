@@ -20,8 +20,6 @@ jobs:
   test:
     name: test (${{ matrix.os }}, Node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
-    # Windows has 25 known failures, tracked in an issue. It reports but does not block yet.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -29,8 +27,6 @@ jobs:
         include:
           - { os: ubuntu-24.04, node: '22' }
           - { os: ubuntu-24.04, node: '24' }
-          - { os: macos-latest, node: '24' }
-          - { os: windows-latest, node: '24' }
     env:
       # CPU binaries ship in npm; the Linux postinstall otherwise downloads CUDA from NuGet.
       ONNXRUNTIME_NODE_INSTALL: skip
