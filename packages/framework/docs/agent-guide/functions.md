@@ -30,10 +30,14 @@ export const agent = defineAgent({ app: App, timeZone: "Europe/Berlin", firstTur
 | `mcpServers` | array | | Remote MCP servers ([MCP servers](./mcp.md)) |
 | `goals` | object | | What counts as a successful call ([Goals and experiments](./goals-and-experiments.md)) |
 | `experiments` | object | | A/B experiments, by name |
+| `afterCall` | `CallHook` | | Runs once the call is over ([After-call code](./after-call-code.md)) |
+| `afterEvaluation` | `CallHook` | | Runs once the call's goals are judged |
 | `preview` | `{ suggestedPrompts?, chatPlaceholder? }` | | Hints for the preview. Never reach the model |
 
-It refuses a time zone that does not exist, a `firstTurn` no conversation can open with, and goals or
-experiments a host could not evaluate.
+It refuses a time zone that does not exist, a `firstTurn` no conversation can open with, goals or
+experiments a host could not evaluate, and a hook that is not a function.
+
+`CallHook`, `CallEvent` and `CallRecord` are the types of those functions and of what they receive.
 
 ### `createAgentStore`
 

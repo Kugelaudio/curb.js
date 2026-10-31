@@ -6,10 +6,12 @@ import {
   MAX_SESSIONS_VAR,
   CONFIGURATION_VERSION_VAR,
   DEPLOYMENT_ID_VAR,
+  RUNNER_ROLE_VAR,
 } from "./managed-runner.js";
 import { MANAGEMENT_ADDRESS_ENV, MANAGEMENT_TOKEN_ENV } from "../hosted/management-server.js";
 import { EventJournal, type JournalRecord } from "../hosted/event-journal.js";
-import { JournalRecord as JournalRecordSchema } from "../hosted/protocol.js";
+import { ErrorBody, HookRunStatus, JournalRecord as JournalRecordSchema, RunnerStatus } from "../hosted/protocol.js";
+import { buildCallEvent } from "../testing/hooks.js";
 import { HOSTED_MARKER, type DirectJoinSession, type WarmVoiceRunner } from "./direct-join.js";
 import { AppMessages, type MessageMeta } from "../messages.js";
 import { SessionSettings } from "../session-settings.js";
@@ -51,6 +53,30 @@ describe("readManagedConfig", () => {
         [CONFIGURATION_VERSION_VAR]: "7",
       }),
     ).toEqual({ address: "127.0.0.1:7071", maxSessions: 2, deploymentId: "dep-a", configurationVersion: 7 });
+  });
+
+  const managed = { [MANAGEMENT_ADDRESS_ENV]: "127.0.0.1:7071" };
+
+  it("reads an unset role, an empty one and calls as the same runner of calls", () => {
+    const plain = { address: "127.0.0.1:7071", maxSessions: 1 };
+    expect(readManagedConfig(managed)).toEqual(plain);
+    expect(readManagedConfig({ ...managed, [RUNNER_ROLE_VAR]: "" })).toEqual(plain);
+    expect(readManagedConfig({ ...managed, [RUNNER_ROLE_VAR]: "calls" })).toEqual(plain);
+  });
+
+  it("reads a hook runner", () => {
+    expect(readManagedConfig({ ...managed, [RUNNER_ROLE_VAR]: "hooks" })?.role).toBe("hooks");
+  });
+
+  it("refuses a role that does not exist, managed or not, rather than defaulting", () => {
+    expect(() => readManagedConfig({ ...managed, [RUNNER_ROLE_VAR]: "hook" })).toThrow(
+      "CURB_RUNNER_ROLE=hook is not a runner role",
+    );
+    expect(() => readManagedConfig({ [RUNNER_ROLE_VAR]: "Hooks" })).toThrow("is not a runner role");
+  });
+
+  it("refuses a hook runner with no management port, which would fall through to taking calls", () => {
+    expect(() => readManagedConfig({ [RUNNER_ROLE_VAR]: "hooks" })).toThrow("CURB_RUNNER_ROLE=hooks needs CURB_MANAGEMENT_ADDR");
   });
 });
 
@@ -163,6 +189,115 @@ function quiet() {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+});
+
+describe("runManaged as a hook runner", () => {
+  const event = buildCallEvent("call.ended");
+  const HOOKS = { address: "127.0.0.1:0", maxSessions: 1, role: "hooks" } as const;
+
+  /** Starts a hook runner and waits for its `ready` line. */
+  async function hookRunner(log: ReturnType<typeof quiet>, hooks: Parameters<typeof runManaged>[1]) {
+    const running = runManaged(HOOKS, hooks);
+    const ready = await waitFor(() => hostedLines(log).find((line) => line.event === "ready"));
+    return { running, address: String(ready.address) };
+  }
+
+  const start = (address: string, runId: string) =>
+    http(address, "/v1/hooks/afterCall", "POST", { runId, event, deadlineMs: 1_000 });
+
+  async function runState(address: string, runId: string) {
+    return HookRunStatus.parse(JSON.parse((await http(address, `/v1/hooks/runs/${runId}`)).body));
+  }
+
+  it("announces ready with no voice warmup, refuses calls and runs a hook", async () => {
+    const log = quiet();
+    const warm = vi.fn(async () => fakeWarm());
+    const join = vi.fn();
+    const afterCall = vi.fn(async () => {
+      console.log("the hook's own line");
+    });
+    const { running, address } = await hookRunner(log, { warm, join, loadHooks: () => ({ afterCall }) });
+
+    const status = RunnerStatus.parse(JSON.parse((await http(address, "/v1/runner")).body));
+    expect(status).toMatchObject({ role: "hooks", activeSessions: 0, draining: false });
+
+    const call = await http(address, "/v1/sessions", "POST", { sessionId: "s1", realtimeUrl: "ws://x", realtimeToken: "t" });
+    expect(call.status).toBe(501);
+    expect(ErrorBody.parse(JSON.parse(call.body)).error).toBe("runner_takes_no_calls");
+
+    expect((await start(address, "r1")).status).toBe(202);
+    await waitFor(() => (afterCall.mock.calls.length > 0 ? true : undefined));
+    await vi.waitFor(async () => expect((await runState(address, "r1")).state).toBe("succeeded"));
+    expect(log.mock.calls.map((args: unknown[]) => args[0])).toContain("the hook's own line");
+
+    expect((await http(address, "/v1/runner/drain", "POST")).status).toBe(202);
+    await running;
+    expect(warm).not.toHaveBeenCalled();
+    expect(join).not.toHaveBeenCalled();
+    expect(hostedLines(log).map((line) => line.event)).toEqual(["ready", "draining", "ended"]);
+  });
+
+  it("waits for a run in progress before it ends, and says it was active", async () => {
+    const log = quiet();
+    const gate = deferred<void>();
+    const { running, address } = await hookRunner(log, { loadHooks: () => ({ afterCall: () => gate.promise }) });
+    await start(address, "r1");
+
+    let finished = false;
+    void running.then(() => {
+      finished = true;
+    });
+    expect((await http(address, "/v1/runner/drain", "POST")).status).toBe(202);
+    const refused = await start(address, "r2");
+    expect(refused.status).toBe(503);
+    expect(ErrorBody.parse(JSON.parse(refused.body)).error).toBe("runner_draining");
+    expect(finished).toBe(false);
+    expect(hostedLines(log).find((line) => line.event === "draining")).toMatchObject({ active: 1 });
+
+    gate.resolve();
+    await running;
+    expect(hostedLines(log).at(-1)).toMatchObject({ event: "ended" });
+  });
+
+  it("stays up when a hook leaves a rejection nothing awaits", async () => {
+    const log = quiet();
+    const gate = deferred<void>();
+    const { running, address } = await hookRunner(log, { loadHooks: () => ({ afterCall: () => gate.promise }) });
+    await start(address, "r1");
+
+    process.emit("unhandledRejection", new Error("a floating promise"), Promise.resolve());
+
+    expect(await runState(address, "r1")).toEqual({
+      runId: "r1",
+      state: "failed",
+      error: { message: "a floating promise" },
+    });
+    expect((await http(address, "/v1/runner/drain", "POST")).status).toBe(202);
+    await running;
+    gate.resolve();
+  });
+
+  it("removes its guard when it ends", async () => {
+    const log = quiet();
+    const before = process.listenerCount("uncaughtException");
+    const { running, address } = await hookRunner(log, { loadHooks: () => ({}) });
+    expect(process.listenerCount("uncaughtException")).toBe(before + 1);
+    await http(address, "/v1/runner/drain", "POST");
+    await running;
+    expect(process.listenerCount("uncaughtException")).toBe(before);
+  });
+
+  it("fails before ready when the agent's hooks cannot be read", async () => {
+    const log = quiet();
+    await expect(
+      runManaged(HOOKS, {
+        loadHooks: () => {
+          throw new Error("no agent in this bundle");
+        },
+      }),
+    ).rejects.toThrow("warmup failed before ready: no agent in this bundle");
+    expect(hostedLines(log).map((line) => line.event)).not.toContain("ready");
+  });
 });
 
 describe("runManaged warmup", () => {

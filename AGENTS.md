@@ -203,7 +203,9 @@ edit a frozen project to make it pass.
   `CURB_MANAGEMENT_ADDR` (+ `CURB_MANAGEMENT_TOKEN`) starts a MANAGED runner
   (`src/bundler/managed-runner.ts`) that warms up once, prints the stable
   `curb-hosted {"event":"ready",...}` line, and takes calls over host protocol v1
-  (`src/hosted/`); `CURB_REALTIME_URL` + `CURB_REALTIME_TOKEN` joins that ONE room
+  (`src/hosted/`), or with `CURB_RUNNER_ROLE=hooks` skips the warmup and runs the agent's
+  `afterCall` and `afterEvaluation` over that port instead (`src/hosted/hook-runs.ts`);
+  `CURB_REALTIME_URL` + `CURB_REALTIME_TOKEN` joins that ONE room
   directly and serves one call (`src/bundler/direct-join.ts`, the same seam
   `curb dev` uses); otherwise it registers a LiveKit worker pool. The managed and
   direct paths get room-scoped tokens from their host, never

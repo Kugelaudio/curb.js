@@ -216,7 +216,8 @@ const epochSeconds = nonNegativeInt;
  * `goals` is null on `call.ended` and an array on `call.evaluated`, empty when the agent
  * declares none. `content: "not_stored"` means `transcript: null` and `call_data: []`.
  * `transcript_truncated` is true when the transcript was too long to send, so null for that
- * reason, not because the call stores nothing.
+ * reason, not because the call stores nothing. A `call_data` entry's `payload` is null when the
+ * message was too large to keep.
  */
 export const CallRecord = z.object({
   id: nonEmpty,
@@ -241,7 +242,7 @@ export const CallRecord = z.object({
     })
     .nullable(),
   transcript_truncated: z.boolean(),
-  call_data: z.array(z.object({ name: nonEmpty, payload })),
+  call_data: z.array(z.object({ name: nonEmpty, payload: payload.nullable() })),
   goals: z
     .array(
       z.object({

@@ -26,6 +26,7 @@ const ALL_PAGES = [
   { id: 'mcp', file: 'mcp.md', title: 'MCP servers', group: 'Guides', description: "Give an agent tools from remote MCP servers." },
   { id: 'app-messages', file: 'app-messages.md', title: 'App messages', group: 'Guides', description: "Exchange messages with the caller's page and the host, without the model." },
   { id: 'goals-and-experiments', file: 'goals-and-experiments.md', title: 'Goals and experiments', group: 'Guides', description: "Say what a successful call is, and compare variants of an agent." },
+  { id: 'after-call-code', file: 'after-call-code.md', title: 'After-call code', group: 'Guides', description: "Run your own code after each call, with the transcript, the call data and the goal results." },
   { id: 'outbound-calls', file: 'outbound-calls.md', title: 'Outbound calls', group: 'Guides', description: "The agent's side of a call it places: what it knows, and how it opens." },
   { id: 'web-calls', file: 'web-calls.md', title: 'Calls from your website', group: 'Guides', description: "Start a call from a page, and tell the agent where it came from." },
   { id: 'improve-from-calls', file: 'improve-from-calls.md', title: 'Improve from real calls', group: 'Guides', description: "Fix an agent from a real call's transcript, and test the fix." },

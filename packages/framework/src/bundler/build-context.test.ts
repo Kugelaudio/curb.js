@@ -68,10 +68,11 @@ describe("curb build packaging of context markdown", () => {
     }
   });
 
-  it("writes the agent's goals and experiments into the manifest even with verify skipped, [] when none", () => {
+  it("writes the agent's goals, experiments and hooks into the manifest even with verify skipped, [] when none", () => {
     const manifest = JSON.parse(readFileSync(join(outDir, "curb.bundle.json"), "utf8")) as Record<string, unknown>;
     expect(manifest.goals).toEqual([]);
     expect(manifest.experiments).toEqual([]);
+    expect(manifest.hooks).toEqual([]);
   });
 
   it("carries them in the library entry too, so both entries agree", () => {

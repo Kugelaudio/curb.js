@@ -410,8 +410,8 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     timer.mark("escape", "prove the bundle read only the recorded build inputs");
   }
 
-  // 3b. The agent's goals and experiments, for the manifest (declarations.ts). After the escape
-  //     checks, so a dependency-layer build that reaches past its inputs reports esbuild's
+  // 3b. The agent's goals, experiments and hooks, for the manifest (declarations.ts). After the
+  //     escape checks, so a dependency-layer build that reaches past its inputs reports esbuild's
   //     reason; before that build writes --out, so an escape here leaves --out alone too.
   const agentDeclarations = await bundleAgentDeclarations({ projectRoot, dependencyLayer: descriptor !== undefined });
   timer.mark("declarations", "import the agent to read its goals and experiments");
@@ -795,6 +795,9 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     // name, `[]` when none: a host reports goals per call and assigns each call its variants.
     goals: agentDeclarations.goals,
     experiments: agentDeclarations.experiments,
+    // The hooks this build can run after a call (`defineAgent({ afterCall, afterEvaluation })`),
+    // sorted, `[]` when none: a host starts a hook runner only for a hook named here.
+    hooks: agentDeclarations.hooks,
     // What this artifact can run on. The vendored tree carries platform-specific
     // native prebuilds, so a bundle built here is not portable to another target --
     // a darwin-arm64 artifact inside a linux image dies on a missing binding with a

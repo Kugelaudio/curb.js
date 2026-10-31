@@ -20,6 +20,7 @@ around a call.
 | Recording conversations | `.data/conversations.jsonl`, or your own store with `KUGEL_CONVERSATION_SINK` | Call log with retention |
 | `curb test`, with a simulated caller and its judge | Included, on the agent's own LLM | Included |
 | Goals (`defineAgent({ goals })`) | **Not judged.** Your goals are written to `curb.bundle.json`, and nothing evaluates them | Judged after each call by a hosted LLM, shown on the Goals tab |
+| After-call code (`afterCall`, `afterEvaluation`) | **Your host runs it.** The manifest names the hooks, and your host starts a [hook runner](#hook-runner) and posts each event to it | Run after each call in a sandbox of its own, with retries, on plans that include it |
 | Experiments (`defineAgent({ experiments })`) | **Not assigned.** Your host picks each call's variants and passes them when it starts the call. Under `curb start` no call gets a variant | Assigned per call, with results |
 | Call transfer | **Your host dials.** The agent asks for a transfer in a host message. With no host, or a host that does not answer, the transfer ends as `failed` ([transfer on your own host](./host-protocol.md#transfer-on-your-own-host)) | Included on phone calls |
 | Changing a live call's settings from your server | `PATCH /v1/sessions/{id}` on the management port | No published route yet: from the caller's app or the agent |
@@ -46,6 +47,7 @@ needs your own hosting, or an HTTPS API in front of that system.
 | LiveKit worker | `npm start` (`curb start`) | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | a long-running worker that LiveKit dispatches rooms to |
 | Built artifact | `curb build`, then `node <entrypoint>` | Node only; no `npm install`, no TypeScript | shipping one self-contained directory to a server or container |
 | Managed runner | the built artifact with `CURB_MANAGEMENT_ADDR` + `CURB_MANAGEMENT_TOKEN` | an orchestrator that speaks host protocol v1 | your own control plane placing calls on warm runners |
+| Hook runner | a managed runner with `CURB_RUNNER_ROLE=hooks` | an orchestrator that speaks host protocol v1 | running `afterCall` and `afterEvaluation` apart from the calls |
 
 Every mode runs the same voice session, the framework's: the same providers, greeting,
 caller info and call identity ([Voice sessions](./voice-sessions.md)). A
@@ -139,7 +141,7 @@ The built entrypoint picks its mode from the environment, one of four:
 | Environment | Mode |
 |---|---|
 | `CURB_READINESS_PROBE=1` | load the bundle, construct the agent, exit 0; touches no media |
-| `CURB_MANAGEMENT_ADDR` (+ `CURB_MANAGEMENT_TOKEN`) | managed runner, below |
+| `CURB_MANAGEMENT_ADDR` (+ `CURB_MANAGEMENT_TOKEN`) | managed runner, below; with `CURB_RUNNER_ROLE=hooks`, a [hook runner](#hook-runner) |
 | `CURB_REALTIME_URL` + `CURB_REALTIME_TOKEN` | direct join: join that one already-created room, serve one call, exit |
 | none of the above | LiveKit worker, exactly like `npm start` (needs the three `LIVEKIT_*` variables): the same job, under the same name (`CURB_AGENT_NAME`, otherwise the package name `curb build` baked in) |
 
@@ -196,6 +198,48 @@ What Curb cannot guarantee: calls in one process run as one OS user. Agent code 
 writes outside its `scratchDir` (`os.tmpdir()` itself, a fixed path) or keeps state in a
 module-level variable shares it with every other call on the runner. Run one call per
 runner (the default) when calls must not share a process.
+
+### Hook runner
+
+`CURB_RUNNER_ROLE=hooks` turns a managed runner into one that runs the agent's
+`afterCall` and `afterEvaluation` and takes no calls. Start the same build:
+
+```bash
+cd dist
+CURB_RUNNER_ROLE=hooks \
+CURB_MANAGEMENT_ADDR=127.0.0.1:7072 \
+CURB_MANAGEMENT_TOKEN="$(openssl rand -hex 24)" \
+node "$(node -p 'require("./curb.bundle.json").entrypoint')"
+```
+
+It prints the same ready line, but warms up no voice session, so it needs no
+speech provider keys unless a hook uses them. It answers `POST /v1/sessions` with
+`501 runner_takes_no_calls` and reports `role: "hooks"` in `GET /v1/runner`. A role
+that does not exist, or the role with no `CURB_MANAGEMENT_ADDR`, stops it at startup
+with exit code 78. Without the variable a runner is what it always was, and answers both
+hook routes with `501 runner_takes_no_hooks`.
+
+Your host decides when a hook runs: the bundle manifest's `hooks` names the ones the
+agent declares ([build-verification.md](../build-verification.md)). Post each event to
+`POST /v1/hooks/{name}`, then read `GET /v1/hooks/runs/{runId}` ([Host protocol](./host-protocol.md#routes)):
+
+- **Once per `runId`.** Repeating a `runId` the runner holds answers `202` and runs nothing,
+  so a retried post is safe. Send a new `runId` to run the hook again, and the same
+  `event.id`: that is what a hook uses to do its work once.
+- **A hook that fails cannot take the runner down.** A throw, a rejection, or an error
+  in something the hook left running reads as `failed`. A stray error cannot be traced
+  to one run, so it fails every run in progress. Past `deadlineMs` the run reads `failed`
+  with `error.message` `timeout`, and it stays failed if the hook finishes later.
+- **`error.message` is safe to store.** It holds no stack trace, the runner's environment
+  values are replaced with `[redacted]`, and a thrown value that is not an `Error` or a
+  string is reported only by its type. Values under 6 characters and encoded forms of a value
+  are not caught. The whole error goes to the runner's log, redacted the same way.
+- **What a hook prints** reaches the runner's stdout, as an agent's logs do.
+- **Runs are not bounded by `CURB_MAX_SESSIONS`.** Every run accepted runs at once, so
+  limit what you send. A runner remembers the last 1024 finished runs.
+- **Draining waits for runs.** New ones answer `503 runner_draining`, a repeat of a held
+  `runId` still answers `202`, the `draining` line counts the runs in progress in `active`,
+  and the process exits when they end. `activeSessions` counts calls only, so it reads 0 here.
 
 ### Management port in dev and worker mode
 

@@ -21,6 +21,8 @@ export const AUTHORING_DIAGNOSTIC_CODES = {
   agentRouterRemoved: "AGENT_ROUTER_REMOVED",
   goalToolNotDeclared: "AGENT_GOAL_TOOL_NOT_DECLARED",
   conversationStoreSqlite: "AGENT_CONVERSATION_STORE_SQLITE",
+  hookNotAFunction: "AGENT_HOOK_NOT_A_FUNCTION",
+  hookNotDeclared: "AGENT_HOOK_NOT_DECLARED",
 } as const;
 
 export type AuthoringDiagnosticCode =

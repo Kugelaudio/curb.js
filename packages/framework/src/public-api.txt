@@ -33,6 +33,9 @@
 . AuthoringDiagnosticCode
 . AuthoringDiagnosticSeverity
 . AuthoringLocation
+. CallEvent
+. CallHook
+. CallRecord
 . CallView
 . ClientInfo
 . CompiledContext
@@ -249,12 +252,15 @@
 ./testing ScenarioToolCall
 ./testing ScenarioTurn
 ./testing ScenarioTurnError
+./testing buildCallEvent
+./testing runHook
 ./testing scenario
 curb build
 curb check
 curb conversations
 curb deploy
 curb dev
+curb hook
 curb info
 curb login
 curb logout

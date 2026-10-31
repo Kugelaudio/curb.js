@@ -12,6 +12,7 @@ import {
   type ErrorCode,
   type HostMessage,
   type LiveCall,
+  type RunnerRole,
   type RunnerStatus,
   type StartCallRequest,
 } from "./protocol.js";
@@ -44,6 +45,8 @@ export interface RunnerIdentity {
   configurationVersion?: number;
   /** How many calls this runner may serve at once. */
   maxSessions: number;
+  /** Set on a hook runner. Absent means a runner of calls. */
+  role?: RunnerRole;
 }
 
 /** What the host sends to start one call. */
@@ -132,7 +135,7 @@ export interface AdoptedCall {
 }
 
 export interface SessionRegistryOptions {
-  /** What this runner is. Only a runner that places calls (`startCall`) reports it. */
+  /** What this runner is. Only a `managed` runner reports it. */
   identity?: RunnerIdentity;
   /**
    * Starts a call the host placed with `POST /v1/sessions`. Absent means this process takes
@@ -206,6 +209,14 @@ export class SessionRegistry {
     return this.#startCall !== undefined;
   }
 
+  /**
+   * True when a host owns this runner's life (`GET /v1/runner`, `POST /v1/runner/drain`): one
+   * it places calls on, and a hook runner, which takes none.
+   */
+  get managed(): boolean {
+    return this.placesCalls || this.#identity.role === "hooks";
+  }
+
   status(): RunnerStatus {
     const mine = this.#identity;
     return {
@@ -218,6 +229,7 @@ export class SessionRegistry {
       activeSessions: this.#calls.size,
       draining: this.#draining,
       sessions: this.list(),
+      ...(mine.role === undefined ? {} : { role: mine.role }),
     };
   }
 

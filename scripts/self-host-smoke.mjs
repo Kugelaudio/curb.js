@@ -10,7 +10,11 @@
 // 4. waits for the stable stdout line `curb-hosted {"event":"ready",...}`;
 // 5. drives host protocol v1 over HTTP and validates every JSON answer and every event
 //    stream record against the published protocol.schema.json;
-// 6. sends SIGTERM and expects `draining`, `ended`, EOF on the stream and exit code 0.
+// 6. sends SIGTERM and expects `draining`, `ended`, EOF on the stream and exit code 0;
+// 7. starts the same artifact with CURB_RUNNER_ROLE=hooks, with no provider key at all, and runs
+//    the example's `afterCall` through the hook routes to `succeeded`, every answer validated
+//    against the same schema;
+// 8. proves a role that does not exist stops a runner at startup with exit code 78.
 //
 // Places no call: a call needs a realtime room, and this check is about the host protocol.
 // --keep leaves the built artifact in place and prints its path.
@@ -32,6 +36,8 @@ const HOSTED_MARKER = "curb-hosted ";
 const BUILD_TIMEOUT_MS = 240_000;
 const READY_TIMEOUT_MS = 60_000;
 const EXIT_TIMEOUT_MS = 30_000;
+const HOOK_TIMEOUT_MS = 10_000;
+const HOOK_BODY_LIMIT = 2 * 1024 * 1024;
 
 const keep = process.argv.includes("--keep");
 const startedAt = performance.now();
@@ -114,6 +120,21 @@ function runnerEnv(address, token) {
     if (process.env[name] !== undefined) env[name] = process.env[name];
   }
   return env;
+}
+
+/** A hook runner's environment: no provider key, because it holds no conversation. */
+function hookRunnerEnv(address, token) {
+  const { KUGELAUDIO_API_KEY: _key, ...env } = runnerEnv(address, token);
+  return { ...env, CURB_RUNNER_ROLE: "hooks" };
+}
+
+/** `promise`, or a failure past `timeoutMs`, leaving no timer behind to hold the process open. */
+function within(promise, timeoutMs, message) {
+  let timer;
+  const limit = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
 }
 
 function startRunner(entry, cwd, env) {
@@ -199,6 +220,17 @@ async function expectAnswer(base, method, path, options, status, type, check = (
   expectValid(type, answer.json, what);
   check(answer.json, what);
   return answer.json;
+}
+
+/** Reads a hook run until it ends, every answer to schema. */
+async function waitForHookRun(base, token, runId) {
+  const deadline = Date.now() + HOOK_TIMEOUT_MS;
+  for (;;) {
+    const status = await expectAnswer(base, "GET", `/v1/hooks/runs/${runId}`, { token }, 200, "HookRunStatus");
+    if (status.state !== "running") return status;
+    if (Date.now() > deadline) fail(`hook run ${runId} still reads running after ${HOOK_TIMEOUT_MS} ms`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 function expectError(code) {
@@ -311,6 +343,7 @@ async function main() {
 
   const manifest = JSON.parse(readFileSync(join(outDir, "curb.bundle.json"), "utf8"));
   if (typeof manifest.entrypoint !== "string") fail("curb.bundle.json names no entrypoint");
+  if (JSON.stringify(manifest.hooks) !== '["afterCall"]') fail(`the manifest declares hooks ${JSON.stringify(manifest.hooks)}`);
 
   // Port 0: the runner binds a free port and reports the bound one on its ready line.
   const token = randomBytes(24).toString("hex");
@@ -350,6 +383,8 @@ async function main() {
       if (body.stopped !== false) fail(`${what}: stopping an unknown call reports stopped=${body.stopped}`);
     });
     await expectAnswer(base, "GET", "/v1/runner/events?from=-1", { token }, 400, "ErrorBody", expectError("invalid_request"));
+    await expectAnswer(base, "POST", "/v1/hooks/afterCall", { token, body: {} }, 501, "ErrorBody", expectError("runner_takes_no_hooks"));
+    await expectAnswer(base, "GET", "/v1/hooks/runs/nobody", { token }, 501, "ErrorBody", expectError("runner_takes_no_hooks"));
   });
 
   await phase("events stream replays the ready record from 0", async () => {
@@ -365,10 +400,7 @@ async function main() {
     // Resume AFTER the ready record: `from` is exclusive.
     const stream = await openEvents(base, token, 1);
     runner.child.kill("SIGTERM");
-    const exit = await Promise.race([
-      runner.exited,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("the runner did not exit after SIGTERM")), EXIT_TIMEOUT_MS)),
-    ]);
+    const exit = await within(runner.exited, EXIT_TIMEOUT_MS, "the runner did not exit after SIGTERM");
     await stream.finished;
     const events = stream.records.map((record) => record.body.event);
     if (events.join(",") !== "draining,ended") {
@@ -386,6 +418,55 @@ async function main() {
       ? "      the stream ended with a complete chunked response"
       : "      note: the runner closed the socket instead of ending the chunked response",
   );
+
+  const entry = join(outDir, manifest.entrypoint);
+  const hookRunner = startRunner(entry, outDir, hookRunnerEnv("127.0.0.1:0", token));
+  const hookBase = await phase("hook runner printed the ready line", async () => {
+    const line = await hookRunner.waitForLine(READY_PREFIX, READY_TIMEOUT_MS);
+    const hookReady = expectValid("LifecycleReady", JSON.parse(line.slice(HOSTED_MARKER.length)), "the hook runner's ready line");
+    return `http://${hookReady.address}`;
+  });
+
+  await phase("hook runner refuses calls and reports its role", async () => {
+    await expectAnswer(hookBase, "POST", "/v1/hooks/afterCall", { body: {} }, 401, "ErrorBody", expectError("unauthorized"));
+    await expectAnswer(hookBase, "GET", "/v1/runner", { token }, 200, "RunnerStatus", (status, what) => {
+      if (status.role !== "hooks") fail(`${what}: a hook runner reports role ${status.role}`);
+    });
+    await expectAnswer(hookBase, "POST", "/v1/sessions", { token, body: { sessionId: "nobody" } }, 501, "ErrorBody", expectError("runner_takes_no_calls"));
+  });
+
+  await phase("afterCall runs once through the hook routes", async () => {
+    const fixture = JSON.parse(readFileSync(join(hosted, "protocol-fixtures/valid/HookRunRequest.after_call.json"), "utf8"));
+    const accepted = (body, what) => {
+      if (body.runId !== "smoke" || body.accepted !== true) fail(`${what}: answered ${JSON.stringify(body)}`);
+    };
+    const run = { ...fixture, runId: "smoke" };
+    await expectAnswer(hookBase, "POST", "/v1/hooks/afterEvaluation", { token, body: run }, 404, "ErrorBody", expectError("hook_not_declared"));
+    await expectAnswer(hookBase, "POST", "/v1/hooks/afterCall", { token, body: { runId: "smoke" } }, 400, "ErrorBody", expectError("invalid_request"));
+    await expectAnswer(hookBase, "POST", "/v1/hooks/afterCall", { token, rawBody: " ".repeat(HOOK_BODY_LIMIT + 1) }, 413, "ErrorBody", expectError("payload_too_large"));
+    await expectAnswer(hookBase, "GET", "/v1/hooks/runs/smoke", { token }, 404, "ErrorBody", expectError("hook_run_not_found"));
+    await expectAnswer(hookBase, "POST", "/v1/hooks/afterCall", { token, body: run }, 202, "HookRunResponse", accepted);
+    await expectAnswer(hookBase, "POST", "/v1/hooks/afterCall", { token, body: run }, 202, "HookRunResponse", accepted);
+    const status = await waitForHookRun(hookBase, token, "smoke");
+    if (status.state !== "succeeded") fail(`the hook run reads ${JSON.stringify(status)}`);
+    // The hook's own console.log, on the runner's stdout, once: the repeat ran nothing.
+    const said = `call ${fixture.event.data.object.id} ended completed (${fixture.event.id})`;
+    const lines = hookRunner.lines.filter((line) => line === said).length;
+    if (lines !== 1) fail(`stdout carries the hook's line ${lines} time(s), expected 1:\n${hookRunner.output()}`);
+  });
+
+  await phase("hook runner drains on SIGTERM and exits 0", async () => {
+    hookRunner.child.kill("SIGTERM");
+    const exit = await within(hookRunner.exited, EXIT_TIMEOUT_MS, "the hook runner did not exit after SIGTERM");
+    if (exit.code !== 0) fail(`the hook runner exited ${exit.code ?? exit.signal}, expected 0:\n${hookRunner.output()}`);
+  });
+
+  await phase("a role that does not exist stops the runner at startup", async () => {
+    const refused = startRunner(entry, outDir, { ...runnerEnv("127.0.0.1:0", token), CURB_RUNNER_ROLE: "hook" });
+    const exit = await within(refused.exited, READY_TIMEOUT_MS, "the runner did not stop on a bad role");
+    if (exit.code !== 78) fail(`the runner exited ${exit.code ?? exit.signal}, expected 78:\n${refused.output()}`);
+    if (!refused.output().includes("CURB_RUNNER_ROLE=hook is not a runner role")) fail(`the refusal names no role:\n${refused.output()}`);
+  });
 }
 
 /** Idempotent and synchronous, so it also runs from the process "exit" event. */

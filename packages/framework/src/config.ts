@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES } from "./authoring.js";
 import { assertExperiments, type AgentExperiments } from "./experiments.js";
 import { assertGoals, type AgentGoals } from "./goals.js";
+import { assertHooks, type CallHook } from "./hooks.js";
 import type { AgentInfo } from "./info-store.js";
 import { isTimeZone } from "./llm/localized.js";
 import type { McpServerConfig } from "./mcp/config.js";
@@ -91,6 +92,13 @@ export type AgentDefinition = AgentConfig & {
    * with `useVariant(name)`. A hosting platform assigns them; `curb dev` and `curb test` draw
    * them by the same rule. */
   experiments?: AgentExperiments;
+  /** Runs after the call, once its transcript and call data are final: `call.ended`. Plain async
+   * code, outside React and outside any call, on a runner of its own. At least once per event, so
+   * use `event.id` to do its work once. `curb dev` and `curb say` never fire it. */
+  afterCall?: CallHook;
+  /** Runs after the call's goals are judged, once its `afterCall` has finished: `call.evaluated`,
+   * the same call plus its goal results. */
+  afterEvaluation?: CallHook;
 };
 
 /** Refuse a time zone `Intl` does not know: a typo would otherwise fail the first turn of
@@ -175,12 +183,13 @@ function openingLine(say: AgentOpeningLine, info: AgentInfo): string {
 
 /** Identity helper that gives the definition full type checking and
  * autocomplete at the definition site. Also catches a time zone that does
- * not exist, a `firstTurn` no conversation can open with, and goals or
- * experiments no platform could evaluate or assign. */
+ * not exist, a `firstTurn` no conversation can open with, goals or experiments
+ * no platform could evaluate or assign, and a hook that is not a function. */
 export function defineAgent(definition: AgentDefinition): AgentDefinition {
   assertTimeZone(definition);
   assertFirstTurn(definition);
   assertGoals(definition.goals);
   assertExperiments(definition.experiments);
+  assertHooks(definition);
   return definition;
 }
