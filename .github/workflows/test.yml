@@ -3,6 +3,9 @@ name: test
 # Linux only for now. A pull request runs only the suites its changes can affect
 # (scripts/affected.mjs); main runs them all. check:independence always runs, on everything.
 # gate is the required check: it always reports, so a pull request that skips test can merge.
+# Every job runs on curb-js-hetzner-runner, this repository's own scale set on our Hetzner CI
+# pool (KugelAudio infrastructure/github-runners/curb-js-values.yaml): GitHub-hosted minutes are
+# billed, and on 2026-10-31 this workflow used up the organisation's Actions budget.
 
 on:
   push:
@@ -25,7 +28,7 @@ concurrency:
 jobs:
   affected:
     name: affected suites
-    runs-on: ubuntu-24.04
+    runs-on: curb-js-hetzner-runner
     timeout-minutes: 5
     outputs:
       suites: ${{ steps.affected.outputs.suites }}
@@ -41,7 +44,7 @@ jobs:
     name: test (Node ${{ matrix.node }})
     needs: affected
     if: needs.affected.outputs.suites != ''
-    runs-on: ubuntu-24.04
+    runs-on: curb-js-hetzner-runner
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -77,7 +80,7 @@ jobs:
   gate:
     needs: [affected, test]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: curb-js-hetzner-runner
     timeout-minutes: 5
     steps:
       - env:
