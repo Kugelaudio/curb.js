@@ -77,6 +77,27 @@ test(".mcp.json registers the KugelAudio MCP servers, and AGENTS.md points at it
   assert.doesNotMatch(agents, /claude mcp add/);
 });
 
+// AGENTS.md is what a coding agent acts on, and the MCP server lives in another repository, so
+// a name it does not register fails only when an agent calls it. This list is the tools the
+// file may name: add to it after checking the name on the live server.
+const MCP_TOOLS_IN_AGENTS_MD = new Set([
+  "agent_add_dependency", "agent_check", "agent_create", "agent_create_upload", "agent_delete_file",
+  "agent_deploy", "agent_edit_file", "agent_get_call", "agent_get_call_timeline", "agent_get_logs",
+  "agent_get_preview_conversation", "agent_get_preview_log", "agent_list", "agent_list_calls",
+  "agent_list_files", "agent_list_preview_conversations", "agent_open", "agent_overview",
+  "agent_publish", "agent_read_file", "agent_remove_dependency", "agent_request_secret",
+  "agent_restart_preview", "agent_say", "agent_search", "agent_set_secrets", "agent_write_file",
+]);
+
+test("AGENTS.md names only the MCP server's tools, under their current names", () => {
+  const agents = readFileSync(join(template, "AGENTS.md"), "utf8");
+  const named = [...agents.matchAll(/`(agent_[a-z_]+)`/g)].map((match) => match[1]);
+  assert.ok(named.length > 0);
+  assert.deepEqual(named.filter((name) => !MCP_TOOLS_IN_AGENTS_MD.has(name)), []);
+  const beforeTheRename = /`[a-z]+_agent(_[a-z_]+)?`/g;
+  assert.deepEqual(agents.match(beforeTheRename) ?? [], []);
+});
+
 // a new project needs exactly one key, and a hosted agent none of its own.
 test("the default agent runs on KugelAudio's LLM, Kugel Ear and Kugel TTS, all on the one KugelAudio key", (t) => {
   const project = scaffold(t);

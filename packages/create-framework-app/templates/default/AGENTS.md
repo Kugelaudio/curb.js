@@ -16,22 +16,33 @@ own key. A turn answered 403 `LLM_NOT_ENABLED` means the user's organization doe
 KugelAudio's LLM yet (it comes with hosted agents, in closed alpha): they ask
 hello@kugelaudio.com, or the agent uses another LLM meanwhile.
 
-**In a KugelAudio workspace** (`CURB_PLATFORM_TOKEN_FILE` is set), model access is already
-set up: the workspace supplies the key and renews it, and `npx curb check` says
-`from this workspace`. Do not run `npx curb login`, never ask for a key or an `.env` entry,
-and run `npx curb check`, `npx curb say` and `npx curb test` yourself. A key that is
-`not issued yet` arrives within a minute of the workspace starting: wait and run again.
-The `kugelaudio-docs` MCP server works there as it is; the `kugelaudio` one is not signed in
-in a workspace, so never ask the user to connect or authenticate it: use `npx curb say` for
-speech and `kugelaudio-docs` or `node_modules/curb/docs/` for facts.
+**Without a shell** (claude.ai, the Claude desktop chat), or when the person asks for it, build
+in the agent's **browser project**: the platform keeps the project, the person's own browser
+tab runs it, and you work through the `kugelaudio` MCP server's tools. Run no command and ask
+the person to run none.
+
+1. `agent_list` finds the agent, or `agent_create` makes one named for what it does. `agent_open`
+   answers its session link: the person opens it beside the chat and keeps that tab open.
+   Every tool below but `agent_publish` runs in the tab, and a closed tab is refused with the
+   link to send.
+2. `agent_overview` shows the project. Read with `agent_read_file`, `agent_list_files` and
+   `agent_search`; change it with `agent_edit_file`, `agent_write_file` and `agent_delete_file`.
+   Read `reload` in each change's answer and fix `failed` diagnostics first.
+3. `agent_add_dependency` and `agent_remove_dependency` change the packages. One that needs
+   native addons, a shell or child processes does not run in the browser.
+4. `agent_request_secret` makes the tab ask the person for a key. It stays in that tab, and
+   `agent_publish` does not deploy it; say so when the live agent needs the key too.
+5. After every change run `agent_check`, then `agent_say` with what a caller says
+   (`new_conversation` after a code change). `agent_get_preview_log` shows what went wrong,
+   `agent_list_preview_conversations` and `agent_get_preview_conversation` what the person
+   said in the tab, and `agent_restart_preview` unsticks a preview.
+6. `agent_publish` puts it live. Run it only when the person asks.
+
+With a shell, the rest of this file applies as it stands.
 
 **Say what you do.** Before each step (creating the project, installing, checking, signing
 in, deploying), tell the user in one plain sentence what it does and what, if anything, they
 have to do, such as open a sign-in link. They may never have used a terminal.
-
-**In a KugelAudio workspace you may run any command** you need, without asking for
-permission first: the workspace is the person's own sandbox. If they turned on **Ask before
-acting**, the chat asks them for you.
 
 A new project is created with `npm create curb.js my-agent`, and you then work in
 `my-agent` (`npm create curb.js .` fills the current empty folder instead).
@@ -94,7 +105,7 @@ context/*.md                knowledge a skill reads with <Text src="file.md" />
 - **Secrets** come from `.env` locally and `npx curb secrets push` when hosted. Read them
   in tool handlers (`process.env.NAME`); never render them into a prompt.
 - **A key never goes into a tool call.** Never paste one into a command line, a chat message
-  or an MCP tool's arguments (`set_agent_secrets` included). The user puts it in `.env`
+  or an MCP tool's arguments (`agent_set_secrets` included). The user puts it in `.env`
   themselves, and `npx curb secrets push` sends it to the hosted agent. A hosted agent gets
   `KUGELAUDIO_API_KEY` from KugelAudio, so the default agent has nothing to push.
 - **No hard-coded names or dates.** The framework tells the model today's date on every
@@ -128,8 +139,8 @@ to use them): `kugelaudio`, your KugelAudio account (sign in from `/mcp`), and
 `https://www.kugelaudio.com/mcp` as a remote MCP server. Look KugelAudio facts up with
 `search_docs` and `read_docs_page`; for hosted agents use the `kugelaudio` server's,
 since `kugelaudio-docs` serves public pages only. Deploy and read build and call logs
-with the `kugelaudio` tools: `create_agent` (once), `create_agent_upload`, `deploy_agent`,
-`get_agent_logs`; keys reach it only through `npx curb secrets push`. Without them:
+with the `kugelaudio` tools: `agent_create` (once), `agent_create_upload`, `agent_deploy`,
+`agent_get_logs`; keys reach it only through `npx curb secrets push`. Without them:
 
 ```bash
 npx curb login --no-open  # once; prints a sign-in link and waits up to 5 minutes
