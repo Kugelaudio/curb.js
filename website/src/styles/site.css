@@ -446,6 +446,22 @@ main > figure {
   font-weight: 450;
 }
 
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  max-width: 100%;
+}
+
+/* As tall as the command beside it, and wide enough that "Copied" does not move the row. */
+.hero .copy-prompt {
+  min-width: 13.25rem;
+  height: 2.75rem;
+  border-radius: 0.4rem;
+}
+
 .hero + .shot {
   width: min(74rem, 100% - 2 * var(--gutter));
 }
