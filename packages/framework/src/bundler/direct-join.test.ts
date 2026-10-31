@@ -90,7 +90,7 @@ function fakeBundle(name = "bundle"): VoiceAgentBundle {
   return {
     name,
     agentId: "insurance",
-    definition: { firstTurn: "agent" },
+    definition: { firstTurn: "agent", pipeline: {} },
     runtime: { messages: new AppMessages(), settings: { current: () => SETTINGS }, bindCall: () => {} },
     session: { updateInfo: () => {} },
   } as unknown as VoiceAgentBundle;
@@ -232,7 +232,7 @@ describe("joinRoomAndServe on a warm runner", () => {
     // built at warmup, and the providers that were connecting in parallel.
     expect(takeBundle).toHaveBeenCalledTimes(1);
     expect(startVoiceAgent).toHaveBeenCalledWith(
-      expect.objectContaining({ bundle, vad: FAKE_VAD, providers }),
+      expect.objectContaining({ bundle, vad: FAKE_VAD, providers, pipeline: bundle.definition.pipeline }),
     );
   });
 

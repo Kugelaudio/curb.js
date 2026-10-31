@@ -6,6 +6,7 @@ import type { AgentInfo } from "./info-store.js";
 import { isTimeZone } from "./llm/localized.js";
 import type { McpServerConfig } from "./mcp/config.js";
 import type { AgentRoute } from "./routing.js";
+import type { VoicePipeline } from "./server/voice/livekit-host/pipeline.js";
 
 /** Dev-dashboard hints. Purely cosmetic — never sent to the LLM. */
 export type AgentPreviewHints = {
@@ -47,6 +48,10 @@ export type AgentConfig = {
    * that line and no model call: wording that must not vary, such as a legal notice.
    * Default: `"user"`. */
   firstTurn?: AgentFirstTurn;
+  /** Changes to the LiveKit pipeline: its session options, its agent class, its events.
+   * Applies to voice calls only. A module this imports stays free of runtime imports from
+   * `curb/orchestration`, because the agent also loads where those cannot. */
+  pipeline?: VoicePipeline;
   preview?: AgentPreviewHints;
 };
 

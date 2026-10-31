@@ -163,6 +163,8 @@
 ./orchestration ClientBridgeTarget
 ./orchestration ClientMessageBridge
 ./orchestration ConversationClips
+./orchestration CurbLLMStub
+./orchestration CurbVoiceAgent
 ./orchestration END_CALL_TOOL_NAME
 ./orchestration EndCallHangup
 ./orchestration EndCallHangupOptions
@@ -171,6 +173,7 @@
 ./orchestration RoomEvent
 ./orchestration SKIP_TURN_TOOL_NAME
 ./orchestration ServedCall
+./orchestration ServerOptions
 ./orchestration SessionSettings
 ./orchestration SpokenReply
 ./orchestration SttProviderId
@@ -179,16 +182,20 @@
 ./orchestration TtsProviderId
 ./orchestration VoiceAgentBundle
 ./orchestration VoiceOrchestrationModule
+./orchestration VoicePipeline
+./orchestration VoicePipelineCall
 ./orchestration VoiceProviderError
 ./orchestration VoiceProviderModuleLoader
 ./orchestration VoiceProviderSettings
 ./orchestration VoiceProviders
 ./orchestration VoiceSessionHandle
+./orchestration VoiceSessionOptions
 ./orchestration VoiceSessionStartOptions
 ./orchestration attachClientMessages
 ./orchestration buildVoiceProviders
 ./orchestration buildVoiceStt
 ./orchestration buildVoiceTts
+./orchestration cli
 ./orchestration createEndCallHangup
 ./orchestration createProviderSwitch
 ./orchestration createVoiceAgentBundle

@@ -17,6 +17,7 @@ authored:
 | Who speaks first | `defineAgent({ firstTurn })`: `"user"` (the default), `"agent"`, or `{ say }` for exact words |
 | Endpointing and the silence check-in | `VOICE_ENDPOINTING_MIN_MS` (300), `VOICE_ENDPOINTING_MAX_MS` (3000), `VOICE_SILENCE_FOLLOWUP_MS` (6000) in `.env` |
 | Azure segmentation silence | `azure.stt({ segmentationMs })` |
+| Anything else in the LiveKit session | `defineAgent({ pipeline })` ([Override the LiveKit pipeline](./livekit-pipeline.md)) |
 
 A changed prop applies from the next render, mid-call included: the session swaps its
 speech providers when the tree renders others. `curb dev` applies a saved `.env` (and saved

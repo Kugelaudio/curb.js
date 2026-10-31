@@ -97,6 +97,7 @@ export const agent = defineAgent({
   timeZone: "Europe/Berlin",   // the date line in every request (default "UTC")
   maxTranscriptMessages: 60,   // transcript cap sent to the LLM (default 60)
   firstTurn: "agent",          // calls open with a greeting; { say } for exact words; "user" (default) waits
+  pipeline,                    // changes to the LiveKit session: Override the LiveKit pipeline
   goals: { callback: { tool: "request_callback" } },               // what counts as a successful call
   experiments: { tone: { variants: { warm: 1, brief: 1 } } },     // A/B variants, read with useVariant("tone")
   mcpServers: [{ id: "linear", url: "https://mcp.linear.app/mcp", enabled: false }],

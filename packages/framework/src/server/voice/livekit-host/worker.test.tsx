@@ -25,6 +25,8 @@ import { runVoiceWorkerJob, type WorkerJobSeams } from "./worker.js";
 const SCRATCH_ROOT = mkdtempSync(join(tmpdir(), "curb-worker-job-test-"));
 afterAll(() => rmSync(SCRATCH_ROOT, { recursive: true, force: true }));
 
+const pipeline = {};
+
 function CallProbe() {
   const { call } = useSession();
   return <Text>{call ? `call ${call.sessionId} scratch ${call.scratchDir ?? "none"}` : "no call"}</Text>;
@@ -63,7 +65,7 @@ function recordedBundle(order: string[] = []) {
     runtime,
     session,
     agentId: "probe",
-    definition: { firstTurn: "agent" },
+    definition: { firstTurn: "agent", pipeline },
   } as unknown as VoiceAgentBundle;
   return { state, written, runtime, session, bundle };
 }
@@ -149,6 +151,7 @@ describe("the LiveKit worker job", () => {
       bundle,
       client: call.client,
       firstTurn: "agent",
+      pipeline,
     });
     // serveCall's end-of-call hook reaches the session.
     expect(typeof call.started()?.onClosed).toBe("function");
