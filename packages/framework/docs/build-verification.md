@@ -229,6 +229,8 @@ no way to tell whether a revision has already been built, and no stable key for
   "requiredCapabilities": ["provider.llm", "provider.stt", "provider.tts", "realtime.audio"],
   "goals": [{ "name": "booked", "kind": "tool", "tool": "book_slot" }, …],
   "experiments": [{ "name": "greeting", "variants": [{ "name": "casual", "weight": 1 }, { "name": "formal", "weight": 1 }] }],
+  "hooks": ["afterCall"],
+  "hooks": ["afterCall"],
   "target": { "os": "darwin", "architecture": "arm64" },
   "reproducible": true,
   "assets": [{ "path": "assets/agent-source/agent.tsx", "kind": "agent-source" }, …],
@@ -507,12 +509,13 @@ become a deployable artifact.
 | `requiredCapabilities[]` | What the runner must grant. | Derived. Four are structural to every artifact this builder writes (`realtime.audio`, `provider.llm`, `provider.stt`, `provider.tts`) because the generated worker unconditionally starts a voice session; `integration.mcp` is added when the shipped agent source declares an MCP server. |
 | `goals[]` | What counts as a successful call: `{ name, description?, kind: "tool", tool }` or `{ name, description?, kind: "judge", criterion }`. | `defineAgent({ goals })`, sorted by name; `[]` when none. |
 | `experiments[]` | The agent's A/B experiments: `{ name, description?, variants: [{ name, weight }], fromClient? }`. A host assigns each call a variant of each and passes it in the start request's `experiments` ([hosting.md](./agent-guide/hosting.md)). | `defineAgent({ experiments })`, experiments and variants sorted by name (the order the assignment walks); `[]` when none. |
+| `hooks[]` | The names of the hooks the agent declares, `afterCall` and `afterEvaluation`. A host reads them to know which it may run on a hook runner ([hosting.md](./agent-guide/hosting.md#hook-runner)). | `defineAgent({ afterCall, afterEvaluation })`, sorted; `[]` when none. |
 
-`goals` and `experiments` are values in the agent's module, so every build imports
+`goals`, `experiments` and `hooks` are values in the agent's module, so every build imports
 `src/agent/agent.tsx` (not its skills) to read them, the way `curb check` does, and writes
-both fields in every mode: the render check that loads the agent too does not run with
+all three fields in every mode: the render check that loads the agent too does not run with
 `--no-verify`, `--no-trace` or `--dependency-layer`. `defineAgent` validates them on import,
-so a build fails on goals or experiments a host would refuse.
+so a build fails on goals, experiments or hooks a host would refuse.
 
 The import runs in a child process (`curb build-declarations <projectRoot>`, through the same
 CLI shim; `src/bundler/declarations-child.ts`) that prints one `curb-declarations {...}` line

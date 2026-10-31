@@ -59,6 +59,17 @@ npx curb test claims
 Runs `src/**/*.scenario.ts`, or those matching a filter, and exits 1 when one fails
 ([Testing](./testing.md#3-curb-test-do-whole-conversations-work)). `--json` prints one JSON object.
 
+## `curb hook`
+
+```bash
+npx curb hook afterCall --call fixtures/call.json
+```
+
+Runs the agent's `afterCall` or `afterEvaluation` once, in this process, with the project's `.env`.
+`--call` is a JSON file holding a whole event, or a call with the fields the hook reads. Nothing else
+fires a hook on your machine. Exits 1 when the hook failed
+([After-call code](./after-call-code.md#try-it-locally)).
+
 ## `curb conversations`
 
 Prints recorded conversations of `curb dev` and `curb say`, with every tool call and result.

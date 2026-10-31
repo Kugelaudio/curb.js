@@ -71,7 +71,8 @@ export function libraryEntrySource(paths: {
  * Three modes, chosen by the environment and never more than one:
  *
  *   - MANAGED (CURB_MANAGEMENT_ADDR): the host starts the process before any call and
- *     hands it calls over a TCP management port. See bundler/managed-runner.ts.
+ *     hands it calls over a TCP management port, or with CURB_RUNNER_ROLE=hooks hands it
+ *     the agent's hooks and no call. See bundler/managed-runner.ts.
  *   - DIRECT JOIN (CURB_REALTIME_URL + CURB_REALTIME_TOKEN): a hosted platform already
  *     created the room and minted this runner a room-scoped token, so the artifact
  *     joins that one room and serves that one call. See bundler/direct-join.ts.
@@ -161,7 +162,16 @@ export function workerEntrySource(paths: {
     "// conversations of one generation. Checked before direct-join because a managed",
     "// runner is given no room at start -- there is nothing for readDirectJoinConfig to",
     "// find, and the absence is correct rather than a misconfiguration.",
-    "const __curbManaged = readManagedConfig();",
+    "//",
+    "// A CURB_RUNNER_ROLE that names no role, or a hook runner with no management port, is a",
+    "// configuration error, never a quiet fall through to the modes below.",
+    "let __curbManaged = null;",
+    "try {",
+    "  __curbManaged = readManagedConfig();",
+    "} catch (error) {",
+    "  console.error(`curb: ${error instanceof Error ? error.message : String(error)}`);",
+    "  process.exit(78); // EX_CONFIG",
+    "}",
     "if (__curbManaged) {",
     "  try {",
     "    await runManaged(__curbManaged);",

@@ -54,6 +54,7 @@ export type {
 } from "./config.js";
 export type { AgentGoal, AgentGoals, AgentJudgeGoal, AgentToolGoal } from "./goals.js";
 export type { AgentExperiment, AgentExperiments } from "./experiments.js";
+export type { CallEvent, CallHook, CallRecord } from "./hooks.js";
 export { AgentInfoStore } from "./info-store.js";
 export type { AgentInfo } from "./info-store.js";
 export type { ProviderSettings, ProviderSlot } from "./session-settings.js";

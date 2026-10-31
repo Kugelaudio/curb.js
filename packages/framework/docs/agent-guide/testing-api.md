@@ -45,6 +45,33 @@ export default scenario({
 
 `transcript` holds every turn: `caller`, `reply`, `toolCalls`, `errors`, `skillPath`, `endedCall` and more.
 
+## `runHook`
+
+```ts
+import { runHook } from "curb/testing";
+import { agent } from "./agent.js";
+
+const event = await runHook(agent, "afterCall", { status: "failed" });
+```
+
+Runs one of the agent's [hooks](./after-call-code.md) in this process, as a host would: `(call, event)`,
+within 120 seconds. The third argument is the fields of the call you care about, or a whole event. It
+resolves with the event the hook received and rejects with what the hook threw.
+
+## `buildCallEvent`
+
+```ts
+import { buildCallEvent } from "curb/testing";
+
+const event = buildCallEvent("call.evaluated", {
+  goals: [{ name: "booked", status: "reached", detail: null }],
+});
+```
+
+Builds a valid event from a type and the fields you care about. The rest is a plain completed call.
+It throws on what no real call produces, such as `goals` on a `call.ended` event or a `transcript` on
+a call whose `content` is `not_stored`.
+
 ## Next steps
 
 - [Testing guide](./testing.md): `curb check`, `curb say` and `curb test`.

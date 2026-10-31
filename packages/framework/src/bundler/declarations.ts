@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExperimentDeclaration } from "../experiments.js";
 import type { GoalDeclaration } from "../goals.js";
+import type { HookName } from "../hooks.js";
 import type { BundleAsset } from "./assets.js";
 import { DECLARATIONS_COMMAND, DECLARATIONS_MARKER, type DeclarationsReport } from "./declarations-child.js";
 import { LayerEscapeError, missingModuleEscape } from "./layer-escape.js";
@@ -12,7 +13,7 @@ import { stopChild } from "./verify.js";
 /**
  * The manifest fields that describe what a bundle IMPLEMENTS and what it ASKS FOR:
  * `runtimeProtocolVersion`, `runtime.node`, `requiredSecrets` and `requiredCapabilities`, and
- * what the agent MEASURES: `goals` and `experiments`.
+ * what the agent MEASURES: `goals` and `experiments`, and what it RUNS AFTER A CALL: `hooks`.
  *
  * They are gathered here rather than written inline in the manifest literal because each
  * one is a claim someone downstream enforces, and a claim needs its derivation next to it.
@@ -199,10 +200,12 @@ export async function deriveRequiredCapabilities(options: {
   return [...capabilities].sort();
 }
 
-/** `manifest.goals` and `manifest.experiments`: what the agent declares in `defineAgent`. */
+/** `manifest.goals`, `manifest.experiments` and `manifest.hooks`: what the agent declares in
+ * `defineAgent`. */
 export type BundleAgentDeclarations = {
   goals: GoalDeclaration[];
   experiments: ExperimentDeclaration[];
+  hooks: HookName[];
 };
 
 /** How long the agent's module may take to import before the build gives up on it. */
@@ -216,15 +219,16 @@ const CURB_BIN = fileURLToPath(new URL("../../bin/curb.js", import.meta.url));
 const MAX_CHILD_OUTPUT_CHARS = 1_000_000;
 
 /**
- * The goals and experiments the project's agent declares, as the manifest carries them.
+ * The goals, experiments and hooks the project's agent declares, as the manifest carries them.
  *
  * They are values in the agent's module, so the build imports `src/agent/agent.tsx` (not its
  * skills) the way `curb check` does, in a child process (`declarations-child.ts`) that prints
  * them and exits: an agent that opens a handle at import cannot keep the build running, and a
  * package missing from a dependency layer loads as a stub there. The artifact's render check
  * loads the same agent, but it does not run in every build (`--dependency-layer`, `--no-verify`,
- * `--no-trace` skip it), and every build writes both fields. `defineAgent` validates them on
- * import, so goals or experiments a platform would refuse fail the build here, naming the problem.
+ * `--no-trace` skip it), and every build writes all three fields. `defineAgent` validates them on
+ * import, so goals, experiments or hooks a platform would refuse fail the build here, naming the
+ * problem.
  *
  * In a `--dependency-layer` build, a failure while a stub was loaded, and a module Node still
  * cannot find, are escapes (exit 75: the builder falls back to a full build), not the project's
@@ -237,7 +241,7 @@ export async function bundleAgentDeclarations(options: {
 }): Promise<BundleAgentDeclarations> {
   const timeoutMs = options.timeoutMs ?? DECLARATIONS_TIMEOUT_MS;
   const { report, output } = await runDeclarationsChild(options.projectRoot, timeoutMs);
-  if (report.ok) return { goals: report.goals, experiments: report.experiments };
+  if (report.ok) return { goals: report.goals, experiments: report.experiments, hooks: report.hooks };
 
   if (options.dependencyLayer) {
     // With a stub loaded the failure may be the stub's (a name the importer needs that it does

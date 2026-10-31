@@ -63,6 +63,7 @@ These apply to a built artifact, and to `curb dev` and `curb start` with a manag
 | `CURB_MANAGEMENT_ADDR` | `host:port` for host protocol v1. Absent means not managed |
 | `CURB_MANAGEMENT_TOKEN` | The bearer token, one per runner. Required with the address |
 | `CURB_MAX_SESSIONS` | Concurrent calls. Default `1` |
+| `CURB_RUNNER_ROLE` | `hooks` for a [hook runner](./hosting.md#hook-runner). `calls` or absent means a runner that takes calls. Anything else stops it at startup |
 | `CURB_DEPLOYMENT_ID` | Optional: which deployment this runner is |
 | `CURB_CONFIGURATION_VERSION` | Optional: a positive integer |
 | `CURB_REALTIME_URL`, `CURB_REALTIME_TOKEN` | Join this one room directly and serve one call |

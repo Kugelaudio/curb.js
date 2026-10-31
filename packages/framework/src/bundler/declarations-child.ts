@@ -4,9 +4,10 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { experimentDeclarations } from "../experiments.js";
 import { goalDeclarations } from "../goals.js";
+import { hookDeclarations } from "../hooks.js";
 
 /**
- * The child process `curb build` reads the agent's goals and experiments in (`declarations.ts`).
+ * The child process `curb build` reads the agent's goals, experiments and hooks in (`declarations.ts`).
  *
  * It runs as `curb build-declarations <projectRoot>`, through the CLI's own shim, so the agent is
  * imported the way `curb check` imports it (tsx, the project's spanning tsconfig). A child rather
@@ -32,12 +33,17 @@ export const DECLARATIONS_COMMAND = "build-declarations";
 export const DECLARATIONS_MARKER = "curb-declarations";
 
 /**
- * What the child reports: the manifest's two fields, or why the agent could not be loaded.
+ * What the child reports: the manifest's three fields, or why the agent could not be loaded.
  * `standIns` names every package that loaded as a stub before the failure: with any, the failure
  * may be the stub's (a name it does not export, a value it is not), not the project's.
  */
 export type DeclarationsReport =
-  | { ok: true; goals: ReturnType<typeof goalDeclarations>; experiments: ReturnType<typeof experimentDeclarations> }
+  | {
+      ok: true;
+      goals: ReturnType<typeof goalDeclarations>;
+      experiments: ReturnType<typeof experimentDeclarations>;
+      hooks: ReturnType<typeof hookDeclarations>;
+    }
   | { ok: false; message: string; code?: string; standIns?: string[] };
 
 /** Every bare specifier this process loaded as a stub, in the order it was first needed. */
@@ -168,6 +174,7 @@ export async function runDeclarationsChild(projectRoot: string | undefined): Pro
       ok: true,
       goals: goalDeclarations(definition.goals),
       experiments: experimentDeclarations(definition.experiments),
+      hooks: hookDeclarations(definition),
     });
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code;

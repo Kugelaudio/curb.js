@@ -501,6 +501,39 @@ drawn by the same rule:
   for every path that must hold in both.
 - `curb say` assigns none, so `useVariant` returns `undefined` there.
 
+## Hooks: `curb hook`
+
+`curb dev` and `curb say` never fire `afterCall` or `afterEvaluation`
+([After-call code](./after-call-code.md)). Run one yourself, on a call you describe:
+
+```bash
+npx curb hook afterCall --call fixtures/call.json
+```
+
+The fixture holds a whole event, or a call object that may leave out whatever
+the hook does not read: `{ "status": "failed" }` is enough, and curb fills in
+the rest. The hook gets `.env` the way `curb say` does, and what it prints shows
+up as it runs. The last line says how it ended, with the event's id and the time
+it took. The exit code is 0 when it succeeded and 1 when it threw.
+
+In a test of your own, `runHook` from `curb/testing` does the same in process.
+It resolves with the event the hook received and rejects with what the hook
+threw; `buildCallEvent` builds a valid event from a partial call:
+
+```ts
+import { buildCallEvent, runHook } from "curb/testing";
+import { agent } from "./agent.js";
+
+const event = await runHook(agent, "afterCall", { status: "failed" });
+const evaluated = buildCallEvent("call.evaluated", {
+  goals: [{ name: "booked", status: "reached", detail: null }],
+});
+await runHook(agent, "afterEvaluation", evaluated);
+```
+
+Both refuse what no real call produces, such as `goals` on a `call.ended` event
+or a `transcript` on a call whose `content` is `not_stored`.
+
 ## The loop
 
 1. Edit `src/agent/` (and `context/`).

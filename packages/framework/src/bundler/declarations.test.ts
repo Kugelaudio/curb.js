@@ -169,7 +169,7 @@ describe("the agent's goals and experiments", () => {
       },
     );
     try {
-      const declared = { goals: [{ name: "booked", kind: "tool", tool: "book_slot" }], experiments: [] };
+      const declared = { goals: [{ name: "booked", kind: "tool", tool: "book_slot" }], experiments: [], hooks: [] };
       if (hasStandIns) {
         for (const dependencyLayer of [true, false]) {
           await expect(bundleAgentDeclarations({ projectRoot: root, dependencyLayer })).resolves.toEqual(declared);
@@ -244,6 +244,8 @@ describe("the agent's goals and experiments", () => {
           booked: { tool: "book_slot" },
         },
         experiments: { greeting: { variants: { formal: 1, casual: 3 }, fromClient: "greeting" } },
+        afterEvaluation: async () => {},
+        afterCall: async () => {},
       };
     `);
     try {
@@ -259,19 +261,32 @@ describe("the agent's goals and experiments", () => {
             fromClient: "greeting",
           },
         ],
+        hooks: ["afterCall", "afterEvaluation"],
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("is two empty lists for an agent that declares neither", async () => {
+  it("is empty lists for an agent that declares none of them", async () => {
     const root = projectWith("export const agent = { app: () => null };\n");
     try {
       await expect(bundleAgentDeclarations({ projectRoot: root, dependencyLayer: false })).resolves.toEqual({
         goals: [],
         experiments: [],
+        hooks: [],
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails the build on a hook that is not a function, rather than leaving it out of the manifest", async () => {
+    const root = projectWith('export const agent = { app: () => null, afterCall: "https://crm.example.com" };\n');
+    try {
+      await expect(bundleAgentDeclarations({ projectRoot: root, dependencyLayer: false })).rejects.toThrow(
+        /defineAgent\(\{ afterCall \}\) is "https:\/\/crm.example.com", not a function/,
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

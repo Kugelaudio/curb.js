@@ -16,6 +16,7 @@ are examples every implementation must accept or refuse.
 | `CURB_MANAGEMENT_ADDR` | `host:port` to listen on. Absent means not managed. Port `0` binds a free port; the ready line reports the bound one. |
 | `CURB_MANAGEMENT_TOKEN` | Per-runner bearer token. Required when the address is set; without it the runner refuses to open the port. Use one token per runner, never one per fleet. |
 | `CURB_MAX_SESSIONS` | Concurrent calls this runner takes. Default `1`. Read once, at boot (see "Several calls in one runner"). |
+| `CURB_RUNNER_ROLE` | `hooks` for a [hook runner](./hosting.md#hook-runner). `calls` or absent means a runner that takes calls. Anything else stops it at startup. |
 | `CURB_DEPLOYMENT_ID` | Optional generation pin: which deployment this runner is. |
 | `CURB_CONFIGURATION_VERSION` | Optional generation pin, a positive integer. |
 
@@ -52,6 +53,8 @@ under `/v1/` answers `404 {"error":"unknown_version","detail":...,"versions":[1]
 | `PATCH /v1/sessions/{id}` (body `SessionUpdate`) | 200 `{sessionId, settings: EffectiveSettings}` | 400 `invalid_request`, 403 `not_adjustable`, 404 `session_not_found`, 422 `invalid_settings`, 501 `runner_takes_no_calls` |
 | `POST /v1/runner/drain` | 202 `{draining: true, activeSessions}` | |
 | `GET /v1/runner/events?from=N` | 200 NDJSON stream | 400 `invalid_request`, 410 `cursor_too_old`, 503 `no_journal` |
+| `POST /v1/hooks/{name}` (body `HookRunRequest`) | 202 `{runId, accepted: true}` | 400 `invalid_request`, 404 `hook_not_declared`, 413 `payload_too_large`, 501 `runner_takes_no_hooks`, 503 `runner_draining` |
+| `GET /v1/hooks/runs/{runId}` | 200 `HookRunStatus` | 404 `hook_run_not_found`, 501 `runner_takes_no_hooks` |
 | anything else | | 404 `not_found` |
 | a handler failed | | 500 `internal` |
 
@@ -82,9 +85,16 @@ Shapes (all in `protocol.schema.json`):
   never turns into an error.
 - `graceMs` is an integer from 0 to 60000 (default 0): how long to let the agent finish
   its current utterance before leaving the room.
-- `RunnerStatus` = `{protocolVersion: 1, deploymentId?, configurationVersion?, maxSessions, activeSessions, draining, sessions: LiveCall[]}`.
+- `RunnerStatus` = `{protocolVersion: 1, role?, deploymentId?, configurationVersion?, maxSessions, activeSessions, draining, sessions: LiveCall[]}`. `role` is `hooks` on a hook runner and absent otherwise.
 - `LiveCall` = `{sessionId, state: "starting" | "connected" | "ending" | "ended", startedAtMs}`.
 - `SessionUpdate` and `EffectiveSettings`: see [Live session settings](#live-session-settings).
+- `HookRunRequest` = `{runId, event, deadlineMs}`. `runId` is 1 to 128 characters. `event` is a
+  `CallEvent`: `afterCall` takes `call.ended` and `afterEvaluation` takes `call.evaluated`,
+  anything else is `400 invalid_request`. Fields this build does not know reach the hook
+  as sent. `deadlineMs` counts from when the runner accepts the run, a positive integer of
+  at most 2147483647. The body is limited to 2 MiB.
+- `HookRunStatus` = `{runId, state: "running" | "succeeded" | "failed", error?: {message}}`.
+  `error.message` is `timeout` past the deadline.
 - In dev and worker mode, `POST /v1/sessions`, `GET /v1/runner` and `POST /v1/runner/drain`
   answer `501 runner_takes_no_calls` (see above).
 
@@ -96,7 +106,8 @@ Classify by `error`, never by `detail`, which is prose for humans.
 `unauthorized`, `unknown_version`, `not_found`, `invalid_request`, `session_not_found`,
 `runner_at_capacity`, `generation_mismatch`, `runner_draining`, `start_failed`,
 `runner_takes_no_calls`, `cursor_too_old`, `no_journal`, `internal`, `no_handler`,
-`invalid_payload`, `handler_failed`, `not_adjustable`, `invalid_settings`.
+`invalid_payload`, `handler_failed`, `not_adjustable`, `invalid_settings`,
+`runner_takes_no_hooks`, `hook_not_declared`, `hook_run_not_found`, `payload_too_large`.
 
 `runner_draining` (503) means "place this call on another runner"; `runner_at_capacity`
 and `generation_mismatch` (409) mean "this runner cannot take it". Runners older than

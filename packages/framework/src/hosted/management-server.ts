@@ -2,7 +2,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { timingSafeEqual } from "node:crypto";
 import type { DeliverOutcome, SessionRegistry, StartOutcome, UpdateOutcome } from "./session-registry.js";
 import { CursorTooOldError, type EventJournal } from "./event-journal.js";
+import type { HookRuns, HookStartOutcome } from "./hook-runs.js";
+import { isHookName } from "../hooks.js";
 import {
+  HookRunRequest,
   HostMessage,
   MAX_STOP_GRACE_MS,
   PROTOCOL_VERSION,
@@ -12,6 +15,7 @@ import {
   type ErrorBody,
   type ErrorCode,
   type Health,
+  type HookRunResponse,
   type HostMessageResponse,
   type SessionList,
   type SessionUpdateResponse,
@@ -58,6 +62,13 @@ const HEARTBEAT_MS = 15_000;
 /** Why a stop that names no reason ended. */
 const DEFAULT_STOP_REASON = "host_stop";
 
+/**
+ * The most `POST /v1/hooks/{name}` reads: an event carries a transcript of up to 1 MiB in
+ * JSON, whose escaping can double it. Every other route stays at the far smaller
+ * {@link readBody} bound.
+ */
+export const MAX_HOOK_BODY_BYTES = 2 * 1024 * 1024;
+
 export interface ManagementServer {
   readonly address: string;
   close(): Promise<void>;
@@ -75,6 +86,8 @@ export interface ManagementServerOptions {
   token?: string;
   /** The stream `GET /v1/runner/events` serves. Absent means that route answers 503. */
   journal?: EventJournal;
+  /** Makes this a hook runner. Absent means the hook routes answer 501. */
+  hooks?: HookRuns;
   /** How often an idle stream pings. Injected so a test need not wait the real interval. */
   heartbeatMs?: number;
   log?: (message: string) => void;
@@ -88,6 +101,9 @@ export interface ManagementServerOptions {
  * A registry that places no calls (`curb start`, `curb dev`: LiveKit or the preview places
  * them) serves every route about the calls it runs and refuses the placement routes
  * (`POST /v1/sessions`, `GET /v1/runner`, `POST /v1/runner/drain`) with 501.
+ *
+ * A hook runner (`options.hooks`) is managed like any runner and takes no calls: it serves the
+ * hook routes, `GET /v1/runner` and `POST /v1/runner/drain`, and refuses `POST /v1/sessions`.
  */
 export async function startManagementServer(
   registry: SessionRegistry | null,
@@ -124,6 +140,7 @@ export async function startManagementServer(
       log,
       token,
       options.journal,
+      options.hooks,
       options.heartbeatMs ?? HEARTBEAT_MS,
       streams,
     );
@@ -215,6 +232,7 @@ async function handle(
   log: (message: string) => void,
   token: string,
   journal: EventJournal | undefined,
+  hooks: HookRuns | undefined,
   heartbeatMs: number,
   streams: Set<ServerResponse>,
 ): Promise<void> {
@@ -255,6 +273,21 @@ async function handle(
       streamEvents(url, response, journal, log, heartbeatMs, streams);
       return;
     }
+    // Before the call routes, so a runner with no registry still answers as one taking no hooks.
+    const hookRunId = method === "GET" ? hookRunRoute(route) : null;
+    const hookName = method === "POST" ? hookRoute(route) : null;
+    if (hookRunId !== null || hookName !== null) {
+      if (hooks === undefined) {
+        fail(response, 501, "runner_takes_no_hooks", {
+          detail: "this runner takes calls; start one with CURB_RUNNER_ROLE=hooks to run hooks",
+        });
+      } else if (hookRunId !== null) {
+        readHookRun(hooks, hookRunId, response);
+      } else if (hookName !== null) {
+        await startHook(hooks, hookName, request, response);
+      }
+      return;
+    }
     // Everything past here drives calls. A runner handed its call at start has none of it,
     // and says so rather than 404-ing as though the route were misspelled.
     if (registry === null) {
@@ -263,15 +296,15 @@ async function handle(
       });
       return;
     }
-    const placement =
-      (method === "GET" && route === "/runner") ||
-      (method === "POST" && route === "/runner/drain") ||
-      (method === "POST" && route === "/sessions");
-    if (placement && !registry.placesCalls) {
+    const managing =
+      (method === "GET" && route === "/runner") || (method === "POST" && route === "/runner/drain");
+    const placing = method === "POST" && route === "/sessions";
+    if ((managing && !registry.managed) || (placing && !registry.placesCalls)) {
       fail(response, 501, "runner_takes_no_calls", {
-        detail:
-          "LiveKit dispatch places the calls on this process; the host can list, message, " +
-          "adjust and end them, but not place, count or drain them",
+        detail: registry.managed
+          ? "this is a hook runner; place calls on a runner started without a hook role"
+          : "LiveKit dispatch places the calls on this process; the host can list, message, " +
+            "adjust and end them, but not place, count or drain them",
       });
       return;
     }
@@ -345,14 +378,18 @@ async function handle(
 
 /** The id in `/sessions/{id}`, or null for any other route (including deeper paths). */
 function sessionRoute(route: string): string | null {
-  const prefix = "/sessions/";
+  return lastSegment(route, "/sessions/");
+}
+
+/** The one decoded path segment after `prefix`, or null when `route` is anything else. */
+function lastSegment(route: string, prefix: string): string | null {
   if (!route.startsWith(prefix)) return null;
   const encoded = route.slice(prefix.length);
   if (encoded === "" || encoded.includes("/")) return null;
   try {
     return decodeURIComponent(encoded);
   } catch {
-    return null; // a malformed escape names no call
+    return null; // a malformed escape names nothing
   }
 }
 
@@ -361,6 +398,16 @@ function messagesRoute(route: string): string | null {
   const suffix = "/messages";
   if (!route.endsWith(suffix)) return null;
   return sessionRoute(route.slice(0, -suffix.length));
+}
+
+/** The name in `/hooks/{name}`, or null for any other route. */
+function hookRoute(route: string): string | null {
+  return lastSegment(route, "/hooks/");
+}
+
+/** The id in `/hooks/runs/{id}`, or null for any other route. */
+function hookRunRoute(route: string): string | null {
+  return lastSegment(route, "/hooks/runs/");
 }
 
 /** `graceMs` from the query: absent is 0, anything but an integer in range is null. */
@@ -515,6 +562,72 @@ function describeIssues(issues: ReadonlyArray<{ path: PropertyKey[]; message: st
     .join("; ");
 }
 
+/**
+ * Takes one hook run and answers before it ends: a run takes as long as the customer's code does,
+ * and a host that loses this connection must be able to pick the run up by its id.
+ */
+async function startHook(
+  hooks: HookRuns,
+  name: string,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  if (!isHookName(name)) {
+    fail(response, 404, "hook_not_declared", { detail: `no hook is named ${name}` });
+    return;
+  }
+  let text: string;
+  try {
+    text = await readHookBody(request);
+  } catch (error) {
+    if (!(error instanceof HookBodyTooLargeError)) throw error;
+    fail(response, 413, "payload_too_large", { detail: error.message });
+    return;
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch (error) {
+    fail(response, 400, "invalid_request", { detail: `the body is not JSON: ${describe(error)}` });
+    return;
+  }
+  const parsed = HookRunRequest.safeParse(body);
+  if (!parsed.success) {
+    fail(response, 400, "invalid_request", { detail: describeIssues(parsed.error.issues) });
+    return;
+  }
+  // The event as it arrived, not as parsed: parsing drops the fields this build does not know,
+  // and a hook receives everything a webhook would.
+  const event = (body as Pick<HookRunRequest, "event">).event;
+  const outcome = hooks.start(name, { ...parsed.data, event });
+  if (!outcome.ok) {
+    fail(response, hookStartStatus(outcome.code), outcome.code, { detail: outcome.detail });
+    return;
+  }
+  const accepted: HookRunResponse = { runId: outcome.runId, accepted: true };
+  send(response, 202, accepted);
+}
+
+function readHookRun(hooks: HookRuns, runId: string, response: ServerResponse): void {
+  const status = hooks.status(runId);
+  if (status === null) {
+    fail(response, 404, "hook_run_not_found", { detail: `no such run: ${runId}` });
+    return;
+  }
+  send(response, 200, status);
+}
+
+function hookStartStatus(code: Extract<HookStartOutcome, { ok: false }>["code"]): number {
+  switch (code) {
+    case "invalid_request":
+      return 400;
+    case "hook_not_declared":
+      return 404;
+    case "runner_draining":
+      return 503;
+  }
+}
+
 async function deliverMessage(
   registry: SessionRegistry,
   sessionId: string,
@@ -629,6 +742,33 @@ function readBody(request: IncomingMessage): Promise<string> {
       chunks.push(chunk);
     });
     request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("error", reject);
+  });
+}
+
+class HookBodyTooLargeError extends Error {
+  constructor() {
+    super(`the body is over the ${MAX_HOOK_BODY_BYTES} bytes this route reads`);
+  }
+}
+
+/**
+ * The body of a hook request, or {@link HookBodyTooLargeError}. An oversized body is read to its
+ * end and dropped, so the client is answered with the 413 rather than a reset in mid-write.
+ */
+function readHookBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    request.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_HOOK_BODY_BYTES) chunks.length = 0;
+      else chunks.push(chunk);
+    });
+    request.on("end", () => {
+      if (size > MAX_HOOK_BODY_BYTES) reject(new HookBodyTooLargeError());
+      else resolve(Buffer.concat(chunks).toString("utf8"));
+    });
     request.on("error", reject);
   });
 }

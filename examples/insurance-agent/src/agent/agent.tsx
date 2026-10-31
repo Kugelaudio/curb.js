@@ -123,6 +123,11 @@ export function InsuranceApp() {
 export const agent = defineAgent({
   app: InsuranceApp,
   maxLoadedSkills: 3,
+  // Runs once the call is over, outside it, with this agent's secrets: the place to send the
+  // transcript to a CRM. It can run more than once for a call, so save by `event.id`.
+  afterCall: async (call, event) => {
+    console.log(`call ${call.id} ended ${call.status} (${event.id})`);
+  },
   preview: {
     suggestedPrompts: [
       "I need to report property damage",
