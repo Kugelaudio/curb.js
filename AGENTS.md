@@ -161,6 +161,7 @@ edit a frozen project to make it pass.
   `shadcn`'s CLI (`fast-glob` -> `micromatch`); Curb imports nothing from
   `shadcn` but `shadcn/tailwind.css`, so no glob is ever expanded. Drop the
   override once silero's pin reaches a fixed `onnxruntime-node`.
+- **Workflows** follow [`.github/AGENTS.md`](.github/AGENTS.md).
 - Validate CLI/host changes by actually booting: `curb check` +
   `curb dev` from `examples/insurance-agent`, not just the unit suite.
 - **`curb build`** bundles a project for hosting: static agent registry ->

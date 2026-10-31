@@ -20,6 +20,13 @@ merge to `main` that changes the framework is released.
    [`.github/workflows/test.yml`](.github/workflows/test.yml), which runs on
    every pull request.
 
+## What we ask of you
+
+- Using AI to help is welcome, but you open the pull request: review and understand every change
+  in it.
+- Trivial pull requests still take a maintainer's time, so bundle them with a real change.
+- Features start as an issue.
+
 ## Security
 
 Please do not report security problems in public issues. Use
