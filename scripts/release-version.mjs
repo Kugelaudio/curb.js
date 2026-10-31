@@ -5,9 +5,8 @@
 //   node scripts/release-version.mjs --channel stable --semver minor
 //   node scripts/release-version.mjs --channel preview
 //
-// The base is the highest of the stable `v*` tags, npm's `latest` of curb.js and the CDN's
-// latest.json, so the first release from here lands above the last one the CDN published.
-// A stable release bumps the base. A preview is `<next minor>-preview.<n>`, with n continuing
+// The base is the higher of the stable `v*` tags and npm's `latest` of curb.js. A stable release
+// bumps the base. A preview is `<next minor>-preview.<n>`, with n continuing
 // from the published `preview` tag and the preview git tags, and starting over at 1 when a
 // stable release moves the base past that line.
 //
@@ -43,22 +42,22 @@ function compareParts(a, b) {
 
 const tagVersions = (tags) => tags.map((tag) => tag.replace(/^v/, ""));
 
-/** The highest plain release among the tags, npm's latest and the CDN's. */
-function baseParts({ tags, npmLatest, cdnLatest }) {
-  const releases = [...tagVersions(tags), npmLatest, cdnLatest].map(stableParts).filter(Boolean);
+/** The highest plain release among the tags and npm's latest. */
+function baseParts({ tags, npmLatest }) {
+  const releases = [...tagVersions(tags), npmLatest].map(stableParts).filter(Boolean);
   return releases.reduce((high, parts) => (compareParts(parts, high) > 0 ? parts : high), [0, 0, 0]);
 }
 
-export function stableVersion({ tags, npmLatest, cdnLatest, semver }) {
-  const [major, minor, patch] = baseParts({ tags, npmLatest, cdnLatest });
+export function stableVersion({ tags, npmLatest, semver }) {
+  const [major, minor, patch] = baseParts({ tags, npmLatest });
   if (semver === "major") return `${major + 1}.0.0`;
   if (semver === "minor") return `${major}.${minor + 1}.0`;
   if (semver === "patch") return `${major}.${minor}.${patch + 1}`;
   throw new Error(`semver must be patch, minor or major, got ${JSON.stringify(semver)}`);
 }
 
-export function previewVersion({ tags, npmLatest, cdnLatest, npmPreview }) {
-  const [major, minor] = baseParts({ tags, npmLatest, cdnLatest });
+export function previewVersion({ tags, npmLatest, npmPreview }) {
+  const [major, minor] = baseParts({ tags, npmLatest });
   const next = [major, minor + 1, 0];
   // Tags are pushed after a publish, so they name published versions. They count too because
   // the dist-tag can lag a publish that just finished, and that number must not be reused.
@@ -80,25 +79,14 @@ export async function npmDistTags(name, { registry = "https://registry.npmjs.org
   return response.json();
 }
 
-/** The version the CDN's latest.json names. */
-export async function cdnLatestVersion(cdn, { fetchImpl = fetch } = {}) {
-  const url = `${cdn}/latest.json`;
-  const response = await fetchImpl(url, { signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`${url} answered HTTP ${response.status}`);
-  const { version } = await response.json();
-  if (!stableParts(version)) throw new Error(`${url} names no release: ${JSON.stringify(version)}`);
-  return version;
-}
-
 async function main() {
   const { values } = parseArgs({ options: { channel: { type: "string" }, semver: { type: "string" } } });
   if (values.channel !== "stable" && values.channel !== "preview") {
     throw new Error("usage: release-version.mjs --channel stable --semver <patch|minor|major> | --channel preview");
   }
   const tags = execFileSync("git", ["tag", "--list", "v*"], { encoding: "utf8" }).split("\n").filter(Boolean);
-  const cdn = (process.env.CURB_CDN ?? "https://cdn.kugelaudio.com/curb").replace(/\/$/, "");
-  const [distTags, cdnLatest] = await Promise.all([npmDistTags("curb.js"), cdnLatestVersion(cdn)]);
-  const sources = { tags, npmLatest: distTags.latest, cdnLatest };
+  const distTags = await npmDistTags("curb.js");
+  const sources = { tags, npmLatest: distTags.latest };
   const version =
     values.channel === "stable"
       ? stableVersion({ ...sources, semver: values.semver })

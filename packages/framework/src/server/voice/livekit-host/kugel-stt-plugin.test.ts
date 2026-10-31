@@ -175,7 +175,7 @@ describe("kugel stt plugin", () => {
 
   it("ends a stream that carried no audio without sending end_of_speech", async () => {
     // A call no caller joined: the stream ends before any audio. end_of_speech on an empty
-    // stream is a protocol error (1008), seen every ~40 s from the staging rollout check.
+    // stream is a protocol error (1008), seen every ~40 s from an automated check.
     const plugin = new KugelSTT(config);
     const stream = plugin.stream({ connOptions: { maxRetry: 0, retryIntervalMs: 0, timeoutMs: 1000 } });
     const done = (async () => {

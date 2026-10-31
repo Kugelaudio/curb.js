@@ -6,10 +6,10 @@ Update Curb from the project folder:
 npm run upgrade
 ```
 
-This runs `curb upgrade`, which points the project's `curb` dependency at the latest published
-version from where the project gets it, npm or the older CDN install, and reinstalls. The guide in `node_modules/curb/docs/agent-guide/` updates with it, so a
-coding agent always reads the docs of the version it builds on. If the install fails, `package.json`
-is restored and nothing changes.
+This runs `curb upgrade`, which points the project's `curb` dependency at the latest version on npm
+and reinstalls. The guide in `node_modules/curb/docs/agent-guide/` updates with it, so a coding agent
+always reads the docs of the version it builds on. If the install fails, `package.json` is restored
+and nothing changes.
 
 To see whether a newer version exists without changing anything:
 
@@ -36,15 +36,21 @@ version sooner:
 npm install curb@npm:curb.js@latest
 ```
 
-A project that installs Curb from the CDN has no previews. `curb upgrade --preview` says so and
-names the command that moves it to npm:
+## Move an older project to npm
+
+Curb is published to npm only, so a project that depends on `npm:curb.js@<version>` gets every
+update. `curb upgrade` stops on any other `curb` dependency, such as a tarball URL, and names this
+command, which changes the dependency:
 
 ```bash
-npm install curb@npm:curb.js@preview
+npm install curb@npm:curb.js@latest
 ```
 
-Hosted deploys accept a project that installs Curb from the CDN, and not yet one that installs it
-from npm. To deploy, keep the project on a CDN install until they do.
+Use `@preview` for the newest preview.
+
+## Hosted deploys
+
+Hosted deploys do not accept a project that installs Curb from npm yet.
 
 ## After an upgrade
 

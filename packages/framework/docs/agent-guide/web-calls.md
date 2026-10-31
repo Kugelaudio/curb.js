@@ -1,12 +1,13 @@
 # Calls from your website
 
-On KugelAudio, the web widget puts a talk button on your page, with one script tag. Its styling
-options and which sites may start calls are in the
+On KugelAudio, the web widget puts a talk button on your page, with one script tag. The dashboard
+gives you that tag for your widget; `YOUR_WIDGET_SCRIPT` below stands for the `src` it carries. The
+widget's styling options and which sites may start calls are in the
 [KugelAudio docs](https://docs.kugelaudio.com/hosted-agents/web-widget); hosted agents are in closed
 alpha. On your own host, connect your page with [`curb/client`](./client.md).
 
 ```html
-<script src="https://cdn.kugelaudio.com/widget/v1/widget.js" data-agent="YOUR_WIDGET_ID" async></script>
+<script src="YOUR_WIDGET_SCRIPT" data-agent="YOUR_WIDGET_ID" async></script>
 ```
 
 ## Tell the agent where a call comes from
@@ -31,7 +32,7 @@ dashboard has no setting for them: add them to your page yourself.
   again.
 
 ```html
-<script src="https://cdn.kugelaudio.com/widget/v1/widget.js"
+<script src="YOUR_WIDGET_SCRIPT"
   data-agent="YOUR_WIDGET_ID"
   data-context='{"page":"pricing"}'
   data-context-params="event,ref"
@@ -90,7 +91,7 @@ starts the call.
          <div data-kugelaudio-widget></div>
        </main>
 
-       <script src="https://cdn.kugelaudio.com/widget/v1/widget.js"
+       <script src="YOUR_WIDGET_SCRIPT"
          data-agent="YOUR_WIDGET_ID"
          data-position="inline"
          data-size="lg"

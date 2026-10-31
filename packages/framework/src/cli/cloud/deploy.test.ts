@@ -166,10 +166,10 @@ describe("resolveTarget", () => {
   });
 
   it("refuses a project link to another web URL, before calling anything", async () => {
-    writeLink(root, { webUrl: "https://staging.example.com", orgId: "org-a", projectId: "proj-a" });
+    writeLink(root, { webUrl: "https://other.example.com", orgId: "org-a", projectId: "proj-a" });
 
     await expect(resolveTarget({ client, root, prompter: null, log })).rejects.toThrow(
-      `This project is linked to https://staging.example.com, but you are signed in to ${cloud.url}.`,
+      `This project is linked to https://other.example.com, but you are signed in to ${cloud.url}.`,
     );
     expect(cloud.requests).toHaveLength(0);
   });

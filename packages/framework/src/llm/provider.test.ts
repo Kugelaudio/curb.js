@@ -17,11 +17,11 @@ describe("resolveLlmProvider", () => {
       baseUrl: "https://api.eu.kugelaudio.com/v1",
       apiKey: "k",
     });
-    const staging = { KUGELAUDIO_API_KEY: "k", KUGELAUDIO_API_BASE: " https://staging.example/ " };
-    expect(resolveLlmProvider(kugelaudio.llm({ model: "mistral-medium-3.5-128b" }), staging)).toEqual({
+    const elsewhere = { KUGELAUDIO_API_KEY: "k", KUGELAUDIO_API_BASE: " https://other.example/ " };
+    expect(resolveLlmProvider(kugelaudio.llm({ model: "mistral-medium-3.5-128b" }), elsewhere)).toEqual({
       kind: "kugelaudio",
       model: "mistral-medium-3.5-128b",
-      baseUrl: "https://staging.example/v1",
+      baseUrl: "https://other.example/v1",
       apiKey: "k",
     });
   });

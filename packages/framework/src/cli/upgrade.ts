@@ -1,18 +1,11 @@
-// `curb upgrade`: repoint the project's "curb" dependency at the newest release
-// from wherever the project gets it, and reinstall. A project on
-// `npm:curb.js@<version>` reads npm's dist-tags; any other published install
-// reads the `latest.json` pointer the CDN keeps next to its tarballs.
+// `curb upgrade`: repoint the project's "curb" dependency at the newest release on npm and
+// reinstall. npm's dist-tags say what is newest: `latest` for stable, `preview` for previews.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { curbVersion } from "../version.js";
 
-/** Same convention as create-curb.js: env override, no trailing slash. */
-export function cdnBase(env: NodeJS.ProcessEnv = process.env): string {
-  return (env.CURB_CDN ?? "https://cdn.kugelaudio.com/curb").replace(/\/$/, "");
-}
-
-/** Same convention for npm, for a project behind a registry mirror. */
+/** An env override with no trailing slash, for a project behind a registry mirror. */
 export function npmRegistry(env: NodeJS.ProcessEnv = process.env): string {
   return (env.CURB_NPM_REGISTRY ?? "https://registry.npmjs.org").replace(/\/$/, "");
 }
@@ -119,43 +112,6 @@ export function rewriteCurbDep(pkgJsonText: string, spec: string): string {
   return `${JSON.stringify(pkg, null, 2)}\n`;
 }
 
-interface LatestManifest {
-  version: string;
-  tarball: string;
-}
-
-/** Fetch and validate `<cdn>/latest.json`. Every failure names the URL and a fix. */
-export async function fetchLatest(base: string, timeoutMs = 10_000): Promise<LatestManifest> {
-  const url = `${base}/latest.json`;
-  let response: Response;
-  try {
-    response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Could not reach the curb CDN at ${url} (${reason}). Check your network, or set CURB_CDN to a mirror.`,
-    );
-  }
-  if (!response.ok) {
-    throw new Error(
-      `The curb CDN returned HTTP ${response.status} for ${url}. If this persists, the latest-version pointer may not be published yet.`,
-    );
-  }
-  let manifest: unknown;
-  try {
-    manifest = await response.json();
-  } catch {
-    throw new Error(`The curb CDN response at ${url} is not valid JSON.`);
-  }
-  const { version, tarball } = (manifest ?? {}) as Partial<LatestManifest>;
-  if (typeof version !== "string" || version === "" || typeof tarball !== "string" || tarball === "") {
-    throw new Error(
-      `Unexpected latest.json shape at ${url}: expected { "version": "…", "tarball": "…" }.`,
-    );
-  }
-  return { version, tarball };
-}
-
 /** The version a dist-tag of curb.js on npm points at. Every failure names the URL and a fix. */
 export async function fetchNpmVersion(registry: string, tag: string, timeoutMs = 10_000): Promise<string> {
   const url = `${registry}/-/package/curb.js/dist-tags`;
@@ -182,18 +138,13 @@ export async function fetchNpmVersion(registry: string, tag: string, timeoutMs =
   return version;
 }
 
-/** The newest release for a project with this spec, and the spec that installs it. */
-async function newestRelease(
-  spec: string,
-  { preview = false, timeoutMs }: { preview?: boolean; timeoutMs?: number } = {},
-): Promise<{ version: string; spec: string }> {
-  if (isNpmSpec(spec)) {
-    const version = await fetchNpmVersion(npmRegistry(), preview ? "preview" : "latest", timeoutMs);
-    return { version, spec: `${NPM_ALIAS}@${version}` };
-  }
-  const base = cdnBase();
-  const latest = await fetchLatest(base, timeoutMs);
-  return { version: latest.version, spec: `${base}/${latest.tarball}` };
+/** Why a project outside npm gets no update, and the command that moves it there. */
+function notOnNpmMessage(spec: string, tag: string): string {
+  return (
+    `This project's "curb" dependency is ${spec}, and \`curb upgrade\` reads npm only. Change it to ` +
+    `"${NPM_ALIAS}@<version>" by running \`npm install curb@${NPM_ALIAS}@${tag}\`. ` +
+    "Hosted deploys do not accept a project that installs Curb from npm yet."
+  );
 }
 
 /** The `curb upgrade` command. Throws with an actionable message on failure (the CLI maps that to exit 1). */
@@ -213,36 +164,33 @@ export async function runUpgrade(args: string[], cwd = process.cwd()): Promise<v
   }
   if (isFileSpec(spec)) {
     console.log(
-      "This project links curb from a repo checkout (file: dependency). Update it with git in the framework repo; `curb upgrade` only manages installs from npm or the CDN.",
+      "This project links curb from a repo checkout (file: dependency). Update it with git in the framework repo; `curb upgrade` only manages installs from npm.",
     );
     return;
   }
 
-  if (preview && !isNpmSpec(spec)) {
-    throw new Error(
-      `Previews are published to npm only, and this project installs curb from ${spec}. To move it to npm, run \`npm install curb@npm:curb.js@preview\`.`,
-    );
-  }
+  const tag = preview ? "preview" : "latest";
+  if (!isNpmSpec(spec)) throw new Error(notOnNpmMessage(spec, tag));
 
-  const latest = await newestRelease(spec, { preview });
+  const latest = await fetchNpmVersion(npmRegistry(), tag);
   const current = curbVersion();
-  const decision = resolveUpgrade({ current, latest: latest.version });
+  const decision = resolveUpgrade({ current, latest });
   if (decision === "up-to-date") {
     console.log(`curb v${current} is up to date.`);
     return;
   }
   if (decision === "ahead") {
     console.log(
-      `Installed curb v${current} is newer than the latest published v${latest.version}; nothing to do.`,
+      `Installed curb v${current} is newer than the latest published v${latest}; nothing to do.`,
     );
     return;
   }
   if (checkOnly) {
-    console.log(`curb v${current} → v${latest.version} is available. Run \`curb upgrade${preview ? " --preview" : ""}\` to update.`);
+    console.log(`curb v${current} → v${latest} is available. Run \`curb upgrade${preview ? " --preview" : ""}\` to update.`);
     return;
   }
 
-  writeFileSync(pkgPath, rewriteCurbDep(pkgText, latest.spec));
+  writeFileSync(pkgPath, rewriteCurbDep(pkgText, `${NPM_ALIAS}@${latest}`));
   // Through the shell: npm is a .cmd shim on Windows, which Node starts no other way.
   const install = spawnSync("npm install", { cwd, stdio: "inherit", shell: true });
   if (install.error || install.status !== 0) {
@@ -253,23 +201,23 @@ export async function runUpgrade(args: string[], cwd = process.cwd()): Promise<v
     );
   }
   console.log(
-    `curb updated: v${current} → v${latest.version}. The agent docs in node_modules/curb/docs/agent-guide/ were updated with it.`,
+    `curb updated: v${current} → v${latest}. The agent docs in node_modules/curb/docs/agent-guide/ were updated with it.`,
   );
 }
 
 /**
  * Passive update notice for `curb dev`: fire-and-forget, never awaited by the
- * boot path. Prints one line when a newer version is published; stays silent
- * for repo-linked (file:) projects and on any failure.
+ * boot path. Prints one line when npm has a newer version; stays silent for a
+ * project that does not install curb from npm and on any failure.
  */
 export function notifyIfUpdateAvailable(projectRoot: string): void {
   (async () => {
     const spec = curbDepSpec(readFileSync(join(projectRoot, "package.json"), "utf8"));
-    if (spec === null || isFileSpec(spec)) return;
-    const latest = await newestRelease(spec, { timeoutMs: 3_000 });
+    if (spec === null || !isNpmSpec(spec)) return;
+    const latest = await fetchNpmVersion(npmRegistry(), "latest", 3_000);
     const current = curbVersion();
-    if (resolveUpgrade({ current, latest: latest.version }) === "upgrade") {
-      console.log(`[curb] update available: v${current} → v${latest.version} — run \`curb upgrade\``);
+    if (resolveUpgrade({ current, latest }) === "upgrade") {
+      console.log(`[curb] update available: v${current} → v${latest} — run \`curb upgrade\``);
     }
   })().catch(() => {
     // KEEP-JUSTIFIED: the update notice is best-effort telemetry; it must never break or delay dev.

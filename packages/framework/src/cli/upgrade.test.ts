@@ -8,6 +8,7 @@ import {
   fetchNpmVersion,
   isFileSpec,
   isNpmSpec,
+  notifyIfUpdateAvailable,
   resolveUpgrade,
   rewriteCurbDep,
   runUpgrade,
@@ -21,7 +22,7 @@ const pkgText = `${JSON.stringify(
     type: "module",
     scripts: { dev: "curb dev", check: "curb check" },
     dependencies: {
-      curb: "https://cdn.kugelaudio.com/curb/curb-0.1.0.tgz",
+      curb: "npm:curb.js@0.1.0",
       react: "^19.2.7",
       "react-dom": "^19.2.7",
     },
@@ -29,6 +30,8 @@ const pkgText = `${JSON.stringify(
   null,
   2,
 )}\n`;
+
+const tarball = "https://cdn.example.com/curb/curb-0.1.0.tgz";
 
 describe("compareVersions", () => {
   it("orders numeric segments numerically, not lexicographically", () => {
@@ -80,7 +83,7 @@ describe("resolveUpgrade", () => {
 
 describe("curbDepSpec / isFileSpec", () => {
   it("finds the curb spec in dependencies", () => {
-    expect(curbDepSpec(pkgText)).toBe("https://cdn.kugelaudio.com/curb/curb-0.1.0.tgz");
+    expect(curbDepSpec(pkgText)).toBe("npm:curb.js@0.1.0");
   });
 
   it("returns null (no curb dependency) instead of guessing", () => {
@@ -92,18 +95,18 @@ describe("curbDepSpec / isFileSpec", () => {
     expect(isNpmSpec("npm:curb.js@1.16.0-preview.2")).toBe(true);
     expect(isNpmSpec("npm:curb.js")).toBe(true);
     expect(isNpmSpec("npm:curb.jsx@1.0.0")).toBe(false);
-    expect(isNpmSpec("https://cdn.kugelaudio.com/curb/curb-0.1.0.tgz")).toBe(false);
+    expect(isNpmSpec(tarball)).toBe(false);
     expect(isNpmSpec("file:../curb.js/packages/framework")).toBe(false);
   });
 
   it("detects repo-linked file: specs", () => {
     expect(isFileSpec("file:../curb.js/packages/framework")).toBe(true);
-    expect(isFileSpec("https://cdn.kugelaudio.com/curb/curb-0.1.0.tgz")).toBe(false);
+    expect(isFileSpec(tarball)).toBe(false);
   });
 });
 
 describe("rewriteCurbDep", () => {
-  const spec = "https://cdn.kugelaudio.com/curb/curb-0.2.0.tgz";
+  const spec = "npm:curb.js@0.2.0";
 
   it("rewrites only the curb entry and keeps every other field intact", () => {
     const next = JSON.parse(rewriteCurbDep(pkgText, spec));
@@ -117,7 +120,7 @@ describe("rewriteCurbDep", () => {
   it("preserves key order, 2-space indentation, and the trailing newline", () => {
     const text = rewriteCurbDep(pkgText, spec);
     expect(Object.keys(JSON.parse(text).dependencies)).toEqual(["curb", "react", "react-dom"]);
-    expect(text).toBe(pkgText.replace("https://cdn.kugelaudio.com/curb/curb-0.1.0.tgz", spec));
+    expect(text).toBe(pkgText.replace("npm:curb.js@0.1.0", spec));
     expect(text.endsWith("}\n")).toBe(true);
     expect(text).toContain('\n  "dependencies": {\n    "curb":');
   });
@@ -153,7 +156,6 @@ describe("where a project's upgrade reads from", () => {
   }
 
   const distTags = "https://registry.npmjs.org/-/package/curb.js/dist-tags";
-  const cdnPointer = "https://cdn.kugelaudio.com/curb/latest.json";
   const newest = "999.0.0";
 
   it("a project on the npm alias reads npm's latest", async () => {
@@ -176,19 +178,40 @@ describe("where a project's upgrade reads from", () => {
     expect(logged.join("\n")).toContain(`Installed curb v${curbVersion()} is newer`);
   });
 
-  it("a project on a CDN tarball keeps reading the CDN and never asks npm", async () => {
-    const { dir, asked, logged } = project("https://cdn.kugelaudio.com/curb/curb-0.1.0.tgz", {
-      [cdnPointer]: { version: newest, tarball: `curb-${newest}.tgz` },
-    });
-    await runUpgrade(["--check"], dir);
-    expect(asked).toEqual([cdnPointer]);
-    expect(logged.join("\n")).toContain(`v${newest} is available`);
+  it("a project on a tarball URL stops with the npm command, and asks nothing", async () => {
+    const { dir, asked } = project(tarball, {});
+    const failure = runUpgrade([], dir);
+    await expect(failure).rejects.toThrow(tarball);
+    await expect(failure).rejects.toThrow(/"npm:curb\.js@<version>" by running `npm install curb@npm:curb\.js@latest`/);
+    expect(asked).toEqual([]);
   });
 
-  it("--preview on a CDN project refuses, and names the command that moves it to npm", async () => {
-    const { dir, asked } = project("https://cdn.kugelaudio.com/curb/curb-0.1.0.tgz", {});
+  it("--check and --preview stop the same way, and --preview names the preview tag", async () => {
+    const { dir, asked } = project(tarball, {});
+    await expect(runUpgrade(["--check"], dir)).rejects.toThrow(/npm install curb@npm:curb\.js@latest/);
     await expect(runUpgrade(["--preview"], dir)).rejects.toThrow(/npm install curb@npm:curb\.js@preview/);
     expect(asked).toEqual([]);
+  });
+
+  it("a dependency that is neither npm's alias nor file: stops too", async () => {
+    const { dir, asked } = project("*", {});
+    await expect(runUpgrade([], dir)).rejects.toThrow(/dependency is \*/);
+    expect(asked).toEqual([]);
+  });
+
+  it("the update notice reads npm's latest for a project on the npm alias", async () => {
+    const { dir, asked, logged } = project("npm:curb.js@1.0.0", { [distTags]: { latest: newest } });
+    notifyIfUpdateAvailable(dir);
+    await vi.waitFor(() => expect(logged.join("\n")).toContain(`v${newest} — run \`curb upgrade\``));
+    expect(asked).toEqual([distTags]);
+  });
+
+  it("the update notice asks nothing for a project outside npm", async () => {
+    const { dir, asked, logged } = project(tarball, {});
+    notifyIfUpdateAvailable(dir);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(asked).toEqual([]);
+    expect(logged).toEqual([]);
   });
 
   it("a repo-linked project is left alone, with --preview too", async () => {
