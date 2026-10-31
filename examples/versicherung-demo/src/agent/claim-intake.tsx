@@ -1,4 +1,5 @@
-import { Text, Tool, type ZodObjectSchema } from "curb";
+import { Text, Tool, type ZodObjectSchema, type z } from "curb";
+import { schadenAnlegen } from "../kunden.js";
 import { useStore } from "./agent.js";
 
 /**
@@ -17,16 +18,19 @@ import { useStore } from "./agent.js";
  * Not named `skill.tsx`, so not a route: discovery matches that filename only.
  * This is an ordinary component.
  */
-export function ClaimIntake({
+export function ClaimIntake<TSchema extends ZodObjectSchema>({
   name,
   description,
   schema,
+  confirm,
 }: {
   /** Tool name, distinct per insurance line (e.g. "kfz_schaden_aufnehmen"). */
   name: string;
   /** Tool description. German: the model reads it. */
   description: string;
-  schema: ZodObjectSchema;
+  schema: TSchema;
+  /** The question read back before anything is filed, so the caller's yes approves this claim. */
+  confirm: (input: z.infer<TSchema>) => string;
 }) {
   const firstStepsDone = useStore((s) => s.firstStepsDone);
 
@@ -52,10 +56,11 @@ export function ClaimIntake({
         schema={schema}
         name={name}
         description={description}
+        confirm={confirm}
         success="Die Schadenmeldung wurde aufgenommen."
         onSubmit={(input) => ({
           ok: true,
-          message: `Schadenmeldung aufgenommen. Vorgangsnummer SD-2026-4471.`,
+          message: `Schadenmeldung aufgenommen. Vorgangsnummer ${schadenAnlegen()}. Nenne sie der anrufenden Person.`,
           data: input,
         })}
       />

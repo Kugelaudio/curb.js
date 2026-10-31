@@ -30,6 +30,7 @@ export default function PropertyClaim() {
       <ClaimIntake
         name="sachschaden_aufnehmen"
         description="Einen Schaden an Gebäude oder Hausrat aufnehmen."
+        confirm={(input) => `Ich nehme für ${input.name} den Schaden durch ${input.cause} auf, geschätzte Höhe ${input.estimatedAmount}. Stimmt das so?`}
         schema={propertySchema}
       />
     </>

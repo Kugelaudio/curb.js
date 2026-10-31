@@ -1,4 +1,5 @@
 import { Instruction, Skill, Text, Tool, z, type SkillMeta } from "curb";
+import { kundeLesen, kundePruefen } from "../../kunden.js";
 import { useStore } from "../agent.js";
 
 export const meta: SkillMeta = {
@@ -35,6 +36,7 @@ const verifySchema = z.object({
 export default function CustomerAccount() {
   const customerNumber = useStore((s) => s.customerNumber);
   const verify = useStore((s) => s.verify);
+  const kunde = customerNumber ? kundeLesen(customerNumber) : null;
 
   return (
     <>
@@ -43,10 +45,17 @@ export default function CustomerAccount() {
         Frage freundlich nach Kundennummer und Geburtsjahr: beides zusammen, in einem Satz, nicht wie ein Verhör.
       `}</Instruction>
 
-      {customerNumber ? (
+      {kunde ? (
         <>
-          <Text>{`Verifiziert als ${customerNumber}.`}</Text>
-          <Text src="kundenkonto/freigeschaltet.md" />
+          <Text>{`
+            Verifiziert als ${kunde.name}, ${kunde.kundennummer}.
+            - Tarif: ${kunde.tarif}, Versicherungssumme ${kunde.versicherungssumme}
+            - Vertrag seit: ${kunde.vertragSeit}
+            - Selbstbeteiligung: ${kunde.selbstbeteiligung}
+            - Beitrag: ${kunde.beitrag}
+            - Bausteine: ${kunde.bausteine.join(", ") || "keine"}
+            - Offene Vorgänge: ${kunde.offeneVorgaenge.join("; ") || "keine"}
+          `}</Text>
           {/* THE LOCKED SKILL: linked only in this branch, so only discoverable
               after verification. */}
           <Skill
@@ -67,10 +76,14 @@ export default function CustomerAccount() {
             name="kundenkonto_verifizieren"
             description="Kundennummer und Geburtsjahr prüfen und das Kundenkonto freischalten."
             success="Das Kundenkonto wurde freigeschaltet."
-            tryWith={{ customerNumber: "K-482913", birthYear: "1985" }}
+            tryWith={{ customerNumber: "K-100200", birthYear: "1985" }}
             onSubmit={(input) => {
-              verify(input.customerNumber);
-              return { ok: true, message: `Freigeschaltet als ${input.customerNumber}.` };
+              const treffer = kundePruefen(input.customerNumber, input.birthYear);
+              if (!treffer) {
+                return { ok: false, message: "Die Angaben passen nicht zusammen. Bitte noch einmal erfragen." };
+              }
+              verify(treffer.kundennummer);
+              return { ok: true, message: `Freigeschaltet als ${treffer.name}.` };
             }}
           />
         </>

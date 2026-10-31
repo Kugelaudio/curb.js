@@ -53,6 +53,7 @@ import {
 import { logError, logInfo } from "../../log.js";
 import { AGENT_FIRST_TURN_PROMPT, createCallOpening } from "./call-opening.js";
 import { EMPTY_ROOM_GRACE_MS, createCallerWatchdog } from "./caller-watchdog.js";
+import { createSilenceFollowup } from "./silence-followup.js";
 import type {
   VoiceSessionHandle,
   VoiceSessionStartOptions,
@@ -254,13 +255,6 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
   const room = options.room;
 
   let session: voice.AgentSession | null = null;
-  let silenceTimer: ReturnType<typeof setTimeout> | null = null;
-  const cancelFollowup = () => {
-    if (silenceTimer !== null) {
-      clearTimeout(silenceTimer);
-      silenceTimer = null;
-    }
-  };
   // What a phone caller hears while their call is transferred: the announcement, then a
   // ringback until the outcome. On a track of its own; see transfer-audio.ts.
   const transferAudio = createTransferAudio({
@@ -277,7 +271,7 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
   const handoff = createTransferHandoff({
     participants: () => room.participants(),
     pause: () => {
-      cancelFollowup();
+      silence.cancel();
       // The target is on the line: the ringback is over even before the outcome arrives.
       transferAudio.stop();
       const active = session;
@@ -298,17 +292,15 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
     },
     log: (message) => logInfo("voice", `${options.roomName}: ${message}`),
   });
-  const armFollowup = () => {
-    // Handed off: the caller is talking to someone else, not quiet.
-    if (handoff.handedOff()) return;
-    const delay = Number(env.VOICE_SILENCE_FOLLOWUP_MS ?? 6000);
-    if (delay <= 0) return;
-    cancelFollowup();
-    silenceTimer = setTimeout(() => {
-      silenceTimer = null;
-      session?.generateReply({ userInput: SILENCE_FOLLOWUP_PROMPT });
-    }, delay);
-  };
+  const silence = createSilenceFollowup({
+    delayMs: Number(env.VOICE_SILENCE_FOLLOWUP_MS ?? 6000),
+    handedOff: () => handoff.handedOff(),
+    reply: () => session?.generateReply({ userInput: SILENCE_FOLLOWUP_PROMPT }),
+    onError: (error) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      logError("voice", `${options.roomName}: silence check-in failed: ${detail}`);
+    },
+  });
 
   /** One spoken turn on the shared session. Typed and synthetic inputs claim
    * no user clips; STT turns claim the final ordinals they merged. */
@@ -348,7 +340,7 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
       runTurn: (userText, signal) => runCurbTurn(userText, signal),
       clips,
       reporter: options.reporter,
-      callbacks: { onSkipTurn: armFollowup },
+      callbacks: { onSkipTurn: silence.arm },
       ...swap,
     });
   const agent = createAgent({ id: "curb_agent_0" });
@@ -391,15 +383,17 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
 
   // Any user speech cancels a pending follow-up (they came back on their own);
   // a FINAL closes the current user debug clip (one clip per user message).
+  // The SDK closes the session itself when the caller leaves, before `close` below runs.
+  session.on(voice.AgentSessionEventTypes.Close, silence.stop);
   session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (event) => {
-    cancelFollowup();
+    silence.cancel();
     if (event.isFinal) {
       finalsSeen += 1;
       clips.finish("user");
     }
   });
   session.on(voice.AgentSessionEventTypes.UserStateChanged, (event) => {
-    if (event.newState === "speaking") cancelFollowup();
+    if (event.newState === "speaking") silence.cancel();
   });
   if (options.onFirstAudio) watchFirstAgentAudio(session, options.onFirstAudio);
 
@@ -542,7 +536,7 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
     return closing;
   };
   const closeNow = async (graceMs: number) => {
-    cancelFollowup();
+    silence.stop();
     try {
       const outcome = await waitForCurrentReply(currentReply, graceMs);
       if (outcome !== "idle") logInfo("voice", `closing ${options.roomName}: current reply ${outcome}`);
@@ -675,7 +669,7 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
     sendText: async (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
-      cancelFollowup();
+      silence.cancel();
       const activeSession = session;
       if (!activeSession) return;
       // The greeting cannot be interrupted, and LiveKit throws rather than queue when
@@ -701,7 +695,7 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
       attachTransferAudio(bundle.runtime.info, transferAudio);
     },
     interrupt: () => {
-      cancelFollowup();
+      silence.cancel();
       session?.interrupt({ force: true });
     },
   };

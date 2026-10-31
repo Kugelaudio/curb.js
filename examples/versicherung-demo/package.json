@@ -5,10 +5,11 @@
   "description": "German insurance service agent — the demo agent for showing what curb does that a config platform cannot.",
   "scripts": {
     "dev": "curb dev",
-    "check": "curb check"
+    "check": "curb check",
+    "test": "curb test"
   },
   "dependencies": {
-    "framework": "*",
+    "curb": "*",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

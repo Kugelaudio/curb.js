@@ -5,11 +5,12 @@ import {
   Skills,
   SystemPrompt,
   Tool,
+  TransferCallTool,
   createAgentStore,
   defineAgent,
   z,
 } from "curb";
-import { azure, kugelaudio } from "curb/providers";
+import { kugelaudio } from "curb/providers";
 
 /**
  * Nora, customer service for a German property insurer.
@@ -27,8 +28,7 @@ import { azure, kugelaudio } from "curb/providers";
  *      knowledge and tools only once it needs them.
  *   3. Flows are components (`<Procedure>`), so they are reusable across
  *      clients and testable with ordinary unit tests. Locks are plain
- *      if/else over state; there is NO `<Gate>` block in the framework, even
- *      though authoring.md describes one.
+ *      if/else over state.
  *
  * Language split, deliberate: everything the MODEL or the CALLER sees is
  * German (prompts, instructions, skill descriptions, tool names, route paths,
@@ -59,27 +59,37 @@ const callbackSchema = z.object({
 
 export function InsuranceApp() {
   return (
-    // Voice and language in one place, and authored rather than left to the
-    // environment. Without a voice, the default follows the TTS language (1072
-    // for English, 1887 for German); this demo names its own German voice.
+    // One key runs all of it: the LLM, speech recognition and the voice are KugelAudio's. The
+    // voice is the default for German. boostedPhrases makes Ear expect the words a caller of
+    // this insurer says; add product names, tariffs and your brand here.
     //
-    // dictionaryIds and projectId name a brand-pronunciation dictionary in
-    // another project. With your own key, use your project's dictionary ids or
-    // leave both out.
+    // Mistral, not the default Qwen: this agent depends on a tool call in the caller's first
+    // turn, and on Qwen that call went missing in 9 of 30 tries (Mistral 0 of 30, staging,
+    // 2026-10-30). Qwen then says "ich stelle Sie durch" and nothing happens.
     <Agent
-      stt={azure.stt({ language: "de" })}
-      tts={kugelaudio.tts({ voice: 1840, language: "de", dictionaryIds: [120], projectId: 13 })}
+      llm={kugelaudio.llm({ model: "mistral-medium-3.5-128b" })}
+      stt={kugelaudio.stt({
+        language: "de",
+        boostedPhrases: ["Selbstbeteiligung", "Elementarschutz", "Vollkasko", "Teilkasko", "Tagebuchnummer"],
+      })}
+      tts={kugelaudio.tts({ language: "de" })}
     >
       <SystemPrompt>{`
         Du bist Nora, Kundenservice einer Sachversicherung.
         Dein Kontext enthält Anweisungen und Werkzeuge für die Fähigkeiten, die du geladen hast.
+        Antworte immer auf Deutsch.
 
         ## Fähigkeiten und Werkzeuge
-        - Nutze das Werkzeug read_skill stillschweigend, sobald das Thema der anrufenden Person Anweisungen oder Werkzeuge erfordert, die du noch nicht hast.
+        - Sobald das Anliegen klar ist, rufe read_skill auf, bevor du inhaltlich antwortest, auch im ersten Zug. Antworte nie aus dem Kopf zu Schäden, Versicherungsschutz oder Vertragsdaten.
         - Kündige das Laden nie an, erkläre es nicht, fasse es nicht zusammen, und sende im selben Zug keinen Text an die anrufende Person.
         - Fahre fort, als hättest du das Thema immer gekonnt.
         - Wenn ein Ablauf vorliegt, arbeite seine Schritte der Reihe nach ab.
         - Rufe ausschließlich Werkzeuge auf, die in deinem aktuellen Kontext stehen; erfinde niemals Werkzeuge, Felder oder Empfänger.
+
+        ## Satzfetzen
+        - Bruchstücke ohne erkennbares Anliegen ("Aber.", "Ich glaube.") sind keine Bitte: Rufe skip_turn auf und warte. Lade dafür keine Fähigkeit.
+        - Bleibt es unklar, frage höchstens einmal, worum es geht. Sage nie denselben Satz zweimal.
+        - Sprich die Person nur mit einem Namen an, den sie selbst genannt hat.
 
         ## Sprechen
         - Sprich klar und natürlich, in ein bis zwei Sätzen: du bist am Telefon.
@@ -87,10 +97,9 @@ export function InsuranceApp() {
         - Verwende NIE Emojis, Markdown, Aufzählungszeichen oder Überschriften, auch nicht im Textchat.
           Alles, was du schreibst, kann im nächsten Moment vorgelesen werden.
 
-        ## Einstieg
-        - Begrüße die anrufende Person kurz als Nora von der Sachversicherung und frage, worum es geht.
-        - Antworte nicht fachlich, bevor klar ist, worum es überhaupt geht.
-        - Häufige Anliegen: einen neuen Schaden melden, Fragen zum Versicherungsschutz, Auskunft zu den eigenen Vertragsdaten.
+        ## Menschen
+        - Wer ausdrücklich mit einem Menschen sprechen will, wird sofort verbunden: nutze verbinden_mit_berater und frage nichts mehr vorher.
+        - Klappt das Verbinden nicht, biete einen Rückruf an.
 
         ## Länge, hart
         - Höchstens zwei bis drei kurze Sätze, ungefähr vierzig Wörter. Länger nur, wenn ausdrücklich nach Details gefragt wird.
@@ -135,6 +144,14 @@ export function InsuranceApp() {
           tryWith={{ name: "Erika Mustermann", phone: "+49 30 1234567", topic: "Rückfrage zum Vorgang SD-2026-4471" }}
           onSubmit={(input) => ({ ok: true, data: input })}
         />
+        {/* The number is an invented placeholder: put your service desk here. On a phone call
+            it dials; in `curb dev` a transfer is refused, and the model offers the callback. */}
+        <TransferCallTool
+          name="verbinden_mit_berater"
+          description="Die anrufende Person zu einer Beraterin oder einem Berater durchstellen."
+          to="+493012345678"
+          ringTimeoutSeconds={25}
+        />
       </GlobalTools>
     </Agent>
   );
@@ -146,7 +163,19 @@ export const agent = defineAgent({
   // caller may ask about /vertrag on the way. A budget of 3 would then evict the immediate
   // measures mid-flow.
   maxLoadedSkills: 5,
-  firstTurn: "agent",
+  // Said word for word: a caller has to learn they are talking to an AI, and that sentence
+  // must not depend on what the model feels like writing.
+  firstTurn: {
+    say: "Guten Tag, hier ist Nora, die digitale Assistentin Ihrer Sachversicherung. Ich bin eine KI. Worum geht es?",
+  },
+  goals: {
+    schaden_aufgenommen: {
+      description: "Ein Schaden wurde aufgenommen und die Vorgangsnummer genannt.",
+      judge: "Ein Schaden wurde aufgenommen und der anrufenden Person wurde eine Vorgangsnummer genannt.",
+    },
+    an_mensch_uebergeben: { description: "Die anrufende Person wurde verbunden.", tool: "verbinden_mit_berater" },
+    rueckruf_vorgemerkt: { description: "Ein Rückruf wurde vorgemerkt.", tool: "rueckruf_anfordern" },
+  },
   preview: {
     suggestedPrompts: [
       "Ich möchte einen Wasserschaden melden",

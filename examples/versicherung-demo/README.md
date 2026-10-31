@@ -34,15 +34,29 @@ das Modell muss ihn direkt von der Agentenebene aus erreichen können.
 ## Starten
 
 ```bash
-npm install            # einmalig im Repo-Root (curb.js/)
+npm install            # einmalig im Workspace-Root (packages/public/curb)
 cd examples/versicherung-demo
+npx curb login         # oder KUGELAUDIO_API_KEY in .env
+npm run check          # Typen und Diagnosen
+npm test               # sieben Gespräche, siehe unten
 npm run dev            # Vorschau auf http://127.0.0.1:4000
 ```
 
-Für **Sprache** braucht die Demo Schlüssel in `.env`: `AZURE_SPEECH_KEY` und
-`KUGELAUDIO_API_KEY`. `AZURE_SPEECH_REGION` ist optional und standardmäßig
-`eastus`. Ohne die Schlüssel startet alles normal und der Textchat funktioniert -
-nur der Sprachteil ist aus. Vor dem Termin einrichten und einmal durchsprechen.
+Ein einziger Schlüssel reicht: LLM, Spracherkennung und Stimme laufen bei
+KugelAudio. Testdaten fürs Kundenkonto: **K-100200** mit **1985** oder
+**K-300400** mit **1972**.
+
+## Darauf aufbauen
+
+- `src/kunden.ts` ist die eine Stelle für eure Systeme. Tauscht die drei
+  Funktionen gegen eure API; die Werkzeuge ändern sich nicht.
+- `src/agent/agent.tsx`, `verbinden_mit_berater`: die Nummer ist erfunden.
+  Tragt euren Service-Desk ein. Im `curb dev` wird eine Weiterleitung abgelehnt,
+  das Modell bietet dann den Rückruf an.
+- `src/scenarios/`: ein Gespräch pro Datei. `npm test` spielt alle durch, mit
+  einer simulierten anrufenden Person oder festen Sätzen.
+- Modell: die Demo läuft auf `mistral-medium-3.5-128b`. Warum, steht in
+  `src/agent/agent.tsx`.
 
 ---
 
@@ -110,7 +124,7 @@ verdrahtet. Vier Zweige heißt vier Gelegenheiten, sie zu vergessen."*
 
 Gesperrt. Verifizieren mit **K-100200** und **1985**. Danach:
 
-- die Vertragsdaten stehen im Kontext (aus `context/kundenkonto/freigeschaltet.md`),
+- die Vertragsdaten dieser Person stehen im Kontext (aus `src/kunden.ts`),
 - und ein Link auf `/kundenkonto/prioritaet` ist aufgetaucht.
 
 Satz dazu: *"Vor der Verifizierung wusste das Modell nicht, dass es die
@@ -131,13 +145,10 @@ Satz dazu: *"Das pflegt die Fachabteilung, nicht die IT."*
 
 ### Beat 5 - Optional, wenn technisch gefragt wird (2 min)
 
-Die Sperre aus Beat 2 ist ein gewöhnlicher Unit-Test: Baum bei einem Zustand
-rendern, `compileSite` aufrufen, prüfen dass `sachschaden_aufnehmen` in
-`context.tools` fehlt bzw. vorhanden ist. Deterministisch, ohne Modell, ohne
-Kosten, in der CI.
+Die Sperre aus Beat 2 ist ein Test: `src/scenarios/sperre.scenario.ts` spielt
+das Gespräch und prüft, dass `sachschaden_aufnehmen` nie gelaufen ist.
 
-Satz dazu: *"Die entsprechende Prüfung auf einer Konfigurationsplattform
-braucht ein Modell im Test - und kann die Werkzeugliste gar nicht einsehen."*
+Satz dazu: *"Jede Regel aus diesem Termin läuft bei jeder Änderung wieder mit."*
 
 ---
 
@@ -145,18 +156,15 @@ braucht ein Modell im Test - und kann die Werkzeugliste gar nicht einsehen."*
 
 Pre-Alpha. Einmal am Anfang sagen, dann nicht mehr entschuldigen. Was fehlt:
 
-- Transkripte in der gehosteten Variante (Konsument des Runner-Streams ist
-  noch nicht verdrahtet)
-- Telefonie-Breite: SIP steht, die Carrier-Anbindung ist in Arbeit
-- Wissensdatenbank mit Retrieval gibt es nicht; `<Text src>` lädt ganze Dateien
-- Ein `<Gate>`-Baustein ist in `authoring.md` beschrieben, existiert aber nicht.
-  Sperren sind if/else, wie in `kundenkonto/skill.tsx`.
+- Wissensdatenbank mit Retrieval gibt es nicht; `<Text src>` lädt ganze Dateien.
+- Die Daten in `src/kunden.ts` sind erfunden, und eine Vorgangsnummer zählt nur
+  hoch: `schadenAnlegen` speichert nichts.
 
 ## Wenn es klemmt
 
 - **Port belegt:** die Vorschau wandert selbst auf 4001 weiter.
   `lsof -tiTCP:4000 | xargs kill` räumt auf.
-- **Keine Sprache:** Schlüssel fehlen, siehe oben. Textchat läuft trotzdem.
+- **Keine Antwort:** Schlüssel fehlt. `npx curb check` nennt ihn.
 - **Agent lädt die falsche Fähigkeit:** die Beschreibungen in
   `src/agent/agent.tsx` sind die Routing-Tabelle. Dort schärfen, auch negativ
   ("NICHT für ...").

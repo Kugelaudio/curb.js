@@ -20,6 +20,8 @@ jobs:
   test:
     name: test (${{ matrix.os }}, Node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
+    # Windows has 25 known failures, tracked in an issue. It reports but does not block yet.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false

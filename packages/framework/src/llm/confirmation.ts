@@ -20,8 +20,9 @@ export type PendingConfirmation = {
   input: Record<string, unknown>;
   /** The question the caller heard, word for word. */
   readBack: string;
-  /** The held call's id. The call the caller's yes makes is `<id>_yes`, so it is unique in
-   * the conversation however many processes continue it. */
+  /** The held call's id. The id of the call the caller's yes makes is derived from it
+   * ({@link confirmedCallId}), so it is unique in the conversation however many processes
+   * continue it. */
   toolCallId: string;
   /** The skill the held tool came from; none for a global tool. A yes runs the tool only
    * while that skill still owns its name. */
@@ -167,8 +168,25 @@ export async function holdCall(
 }
 
 /**
+ * The id of the call a caller's yes makes: nine letters and digits, from a hash of the held
+ * call's id. Providers replay it to the model, and Mistral refuses every other shape, so the
+ * turn would fail after the tool already ran. No `node:crypto`: this also runs in the browser.
+ */
+function confirmedCallId(heldId: string): string {
+  let low = 0x811c9dc5;
+  let high = 0x1b873593;
+  for (let index = 0; index < heldId.length; index += 1) {
+    const code = heldId.charCodeAt(index);
+    low = Math.imul(low ^ code, 0x01000193);
+    high = Math.imul(high ^ code, 0xcc9e2d51);
+  }
+  const digits = `${(low >>> 0).toString(36)}${(high >>> 0).toString(36)}`;
+  return `y${digits.padEnd(8, "0").slice(0, 8)}`;
+}
+
+/**
  * The record of the call the caller's yes makes: the held input, confirmed by `words`, with
- * an id derived from the held call's (provider ids keep to `[a-zA-Z0-9_-]`). Marked as not
+ * an id derived from the held call's. Marked as not
  * run when the tool left the context after it was held, or its name now belongs to another
  * skill than the one the caller was asked about.
  */
@@ -186,7 +204,7 @@ export function confirmedCall(
         `${owner(definition.skillPath)}, so nothing was done. Call it again if the caller still wants it.`
       : undefined;
   return {
-    id: `${pending.toolCallId.replace(/[^a-zA-Z0-9_-]/g, "_")}_yes`,
+    id: confirmedCallId(pending.toolCallId),
     name: pending.toolName,
     input: pending.input,
     ...(pending.skillPath ? { skillPath: pending.skillPath } : {}),

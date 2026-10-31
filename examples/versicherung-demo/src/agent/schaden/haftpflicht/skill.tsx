@@ -34,6 +34,7 @@ export default function LiabilityClaim() {
       <ClaimIntake
         name="haftpflicht_schaden_aufnehmen"
         description="Einen Haftpflichtschaden gegenüber Dritten aufnehmen."
+        confirm={(input) => `Ich nehme für ${input.name} den Haftpflichtschaden gegenüber ${input.injuredParty} auf. Stimmt das so?`}
         schema={liabilitySchema}
       />
     </>

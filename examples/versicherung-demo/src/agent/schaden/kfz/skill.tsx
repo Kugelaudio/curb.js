@@ -34,6 +34,7 @@ export default function MotorClaim() {
       <ClaimIntake
         name="kfz_schaden_aufnehmen"
         description="Einen Fahrzeugschaden aufnehmen."
+        confirm={(input) => `Ich nehme für ${input.name} den Schaden am Fahrzeug ${input.licensePlate} auf. Stimmt das so?`}
         schema={motorSchema}
       />
     </>

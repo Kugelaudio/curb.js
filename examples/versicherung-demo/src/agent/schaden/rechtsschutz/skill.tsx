@@ -30,6 +30,7 @@ export default function LegalClaim() {
       <ClaimIntake
         name="rechtsschutz_anfrage_aufnehmen"
         description="Eine Deckungsanfrage im Rechtsschutz aufnehmen."
+        confirm={(input) => `Ich nehme für ${input.name} die Anfrage im Bereich ${input.legalArea} gegen ${input.opponent} auf. Stimmt das so?`}
         schema={legalSchema}
       />
     </>

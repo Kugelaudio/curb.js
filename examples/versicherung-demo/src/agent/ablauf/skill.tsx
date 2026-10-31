@@ -43,21 +43,21 @@ export default function FirstSteps() {
         }}
         onComplete={completeFirstSteps}
         completed={
-          // Says WHAT is next, not WHERE to go. Routing is the model's call,
-          // decided from the descriptions in the `<Skills>` index; writing
-          // "switch to ..." here again would be mechanics in the prompt.
-          <Text>Alle drei Schritte sind erledigt. Nimm die Meldung jetzt auf.</Text>
+          // Says WHAT is next, and that the agent does it: one simulated call in six handed the
+          // caller to a person here instead (staging, 2026-10-30).
+          <Text>Alle drei Schritte sind erledigt. Nimm die Meldung jetzt selbst auf; verbinde dafür nicht weiter.</Text>
         }
       >
         <Step title="Gefahr abwenden und Folgeschäden verhindern">
-          Kläre zuerst, ob aktuell noch Gefahr besteht - etwa laufendes Wasser, Strom in der Nähe
-          von Wasser, oder eine unbewohnbare Wohnung. Nenne die Notrufnummer 112, wenn Menschen in
-          Gefahr sind. Weise darauf hin, den Schaden nach Möglichkeit zu begrenzen, zum Beispiel
-          den Haupthahn zu schließen.
+          Frage passend zum Schaden, ob jetzt noch Gefahr besteht. Bei Wasser: läuft es noch, ist
+          Strom in der Nähe, ist die Wohnung bewohnbar? Bei einem Unfall: ist jemand verletzt,
+          steht das Fahrzeug sicher? Nenne die Notrufnummer 112, wenn Menschen in Gefahr sind.
+          Weise darauf hin, den Schaden zu begrenzen, zum Beispiel den Haupthahn zu schließen oder
+          die Unfallstelle abzusichern.
         </Step>
         <Step title="Nachweise sichern, bevor aufgeräumt wird">
           Bitte darum, den Schaden zu fotografieren, bevor etwas beseitigt oder repariert wird,
-          und beschädigte Gegenstände vorerst aufzubewahren. Rechnungen und Belege sammeln.
+          und Belege aufzubewahren. Frage das einmal, in einem Satz.
         </Step>
         <Step title="Zur Aufnahme übergehen">
           Fasse kurz zusammen, was passiert ist, und kündige an, dass du die Meldung jetzt
