@@ -1,4 +1,5 @@
-# Prefixes keep titles valid for the pull request title rule: type(scope): lowercase subject.
+# Prefixes keep titles valid for the pull request title rule: type(scope): subject.
+# Dependabot capitalises the subject, which scripts/pr-rules.mjs allows for its login alone.
 # compat/ holds projects frozen from older releases: it is neither a workspace nor listed here,
 # and exclude-paths keeps it that way.
 
