@@ -4,13 +4,20 @@ import '@fontsource-variable/geist-mono/wght.css'
 import '../styles/site.css'
 import Header from '../components/Header.astro'
 import Footer from '../components/Footer.astro'
+import { OG_IMAGE_ALT, SITE_NAME, jsonLd, keywords } from '../seo'
 
-const { title, description, path, markdown } = Astro.props as {
+const { title, description, path, markdown, pageKeywords, structuredData, noindex, ogType } = Astro.props as {
   title: string
   description: string
   path: string
   markdown?: string
+  pageKeywords?: string[]
+  structuredData?: unknown
+  noindex?: boolean
+  ogType?: 'website' | 'article'
 }
+const url = new URL(path, Astro.site)
+const image = new URL('/og.png', Astro.site)
 ---
 
 <!doctype html>
@@ -25,18 +32,32 @@ const { title, description, path, markdown } = Astro.props as {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <meta name="keywords" content={keywords(pageKeywords)} />
+    {noindex && <meta name="robots" content="noindex" />}
     <meta name="theme-color" content="#000000" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="canonical" href={new URL(path, Astro.site)} />
+    <link rel="canonical" href={url} />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
     {markdown && <link rel="alternate" type="text/markdown" href={markdown} />}
+    <meta property="og:type" content={ogType ?? 'website'} />
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content={url} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:image" content={new URL('/og.png', Astro.site)} />
+    <meta property="og:image" content={image} />
+    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={OG_IMAGE_ALT} />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
+    <meta name="twitter:image:alt" content={OG_IMAGE_ALT} />
+    {structuredData && <script is:inline type="application/ld+json" set:html={jsonLd(structuredData)} />}
   </head>
   <body class:list={{ "docs-page": markdown }}>
     <a class="skip" href="#main">Skip to the content</a>
