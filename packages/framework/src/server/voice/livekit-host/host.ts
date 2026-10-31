@@ -52,7 +52,7 @@ import {
 } from "../providers.js";
 import { logError, logInfo } from "../../log.js";
 import { AGENT_FIRST_TURN_PROMPT, createCallOpening } from "./call-opening.js";
-import { createCallerWatchdog } from "./caller-watchdog.js";
+import { EMPTY_ROOM_GRACE_MS, createCallerWatchdog } from "./caller-watchdog.js";
 import type {
   VoiceSessionHandle,
   VoiceSessionStartOptions,
@@ -95,15 +95,6 @@ try {
 /** Synthetic input for the silence follow-up (same contract as before). */
 const SILENCE_FOLLOWUP_PROMPT =
   "(The user has been quiet for about six seconds since you skipped your turn. Check in now with one short, natural line — vary it, never reuse an earlier check-in. If they had asked you to wait, acknowledge the wait — something like \"No rush — I'm here.\" Otherwise something like \"Still there?\", or pick up their trailing thought. Do not call skip_turn.)";
-
-/**
- * How long a room may sit with no caller before the agent ends the call.
- *
- * Long enough to ride out a renegotiation or a brief transport blink, short enough
- * that a runner does not outlive a caller who really hung up. A caller who left stays
- * gone; one whose connection stuttered gets their call back.
- */
-const EMPTY_ROOM_GRACE_MS = 15_000;
 
 /**
  * How long the agent waits for a caller who has never arrived.

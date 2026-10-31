@@ -20,6 +20,19 @@
  * joins or leave abandoned rooms running for a minute.
  */
 
+/**
+ * How long a room may sit with no caller before the agent ends the call.
+ *
+ * Long enough to ride out a renegotiation or a brief transport blink, short enough
+ * that a runner does not outlive a caller who really hung up. A caller who left stays
+ * gone; one whose connection stuttered gets their call back.
+ *
+ * On a hosted platform this must outlast PLATFORM_SESSION_RECONNECT_GRACE (30 s by default).
+ * The platform decides when a dropped call is over and stops the runner then, so a caller it
+ * lets back in has to find the agent still in the room, not an empty one.
+ */
+export const EMPTY_ROOM_GRACE_MS = 45_000;
+
 export interface CallerWatchdogOptions {
   /** How many remote participants are in the room right now. */
   remoteCount: () => number;

@@ -1,0 +1,23 @@
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "object": "call",
+  "agent_id": "00000000-0000-4000-8000-000000000002",
+  "environment": "production",
+  "deployment_id": null,
+  "direction": "inbound",
+  "channel": "sip",
+  "status": "completed",
+  "terminal_reason": "caller_hangup",
+  "started_at": 1793366180,
+  "ended_at": 1793366364,
+  "duration_seconds": 184,
+  "client": {},
+  "experiments": {},
+  "content": "stored",
+  "transcript": { "complete": true, "turns": [] },
+  "transcript_truncated": false,
+  "call_data": [],
+  "goals": null,
+  "livemode": true,
+  "added_later": "readers ignore fields they do not know"
+}

@@ -4,6 +4,7 @@
 // which the agent needs); this check turns any other skipped script into a failed setup,
 // instead of an agent that fails at its first turn (a native binding that was never built).
 import { execFileSync } from "node:child_process";
+import { npmCommand } from "./npm-command.js";
 
 /** The first npm major that blocks dependency install scripts by default. */
 export const FIRST_BLOCKING_NPM_MAJOR = 12;
@@ -28,9 +29,11 @@ export function installScriptsFix(names) {
 /** The packages whose install scripts npm skipped in `dir`. None before npm 12, which runs
  * every dependency's install script. */
 export function blockedInstallScripts(dir) {
-  const npmVersion = execFileSync("npm", ["--version"], { cwd: dir, encoding: "utf8" }).trim();
+  const npm = (...args) => {
+    const command = npmCommand("npm", args);
+    return execFileSync(command.file, command.args, { cwd: dir, encoding: "utf8", shell: command.shell });
+  };
+  const npmVersion = npm("--version").trim();
   if (Number(npmVersion.split(".")[0]) < FIRST_BLOCKING_NPM_MAJOR) return [];
-  return pendingInstallScripts(
-    execFileSync("npm", ["install-scripts", "ls", "--json"], { cwd: dir, encoding: "utf8" }),
-  );
+  return pendingInstallScripts(npm("install-scripts", "ls", "--json"));
 }

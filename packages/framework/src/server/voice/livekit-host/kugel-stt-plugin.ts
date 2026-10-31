@@ -159,6 +159,8 @@ export class KugelSpeechStream extends stt.SpeechStream {
   /** The fast final waiting for its revision. */
   private pendingFinal: { text: string; timer: NodeJS.Timeout } | null = null;
   private resolveDrained: (() => void) | null = null;
+  /** An audio_chunk went out on this attempt's socket; without one there is no turn to end. */
+  private audioSent = false;
   private heartbeat: NodeJS.Timeout | null = null;
   /** The connect timeout of LiveKit's options: a handshake that takes longer is a failed attempt. */
   private readonly connectTimeoutMs: number;
@@ -350,7 +352,9 @@ export class KugelSpeechStream extends stt.SpeechStream {
   }
 
   private send(chunk: Buffer): void {
-    this.ws?.send(JSON.stringify({ type: "audio_chunk", audio_b64: chunk.toString("base64") }));
+    if (!this.ws) return;
+    this.ws.send(JSON.stringify({ type: "audio_chunk", audio_b64: chunk.toString("base64") }));
+    this.audioSent = true;
   }
 
   protected async run(): Promise<void> {
@@ -358,6 +362,7 @@ export class KugelSpeechStream extends stt.SpeechStream {
     this.failure = null;
     this.speechStarted = false;
     this.resolveDrained = null;
+    this.audioSent = false;
     this.ws = await this.connect();
     logInfo("voice", "kugel stt stream started");
     let pending = Buffer.alloc(0);
@@ -393,6 +398,9 @@ export class KugelSpeechStream extends stt.SpeechStream {
   private async drain(): Promise<void> {
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // No audio, no turn: end_of_speech on an empty stream is refused (close 1008). A call
+    // nobody joined ends here; the socket is closed normally below.
+    if (!this.audioSent) return;
     const drained = new Promise<void>((resolve) => (this.resolveDrained = resolve));
     ws.send(JSON.stringify({ type: "end_of_speech" }));
     let timer: NodeJS.Timeout | undefined;

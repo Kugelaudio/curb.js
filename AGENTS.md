@@ -9,7 +9,7 @@ Two audiences, two docs:
   own `AGENTS.md` plus `packages/framework/docs/agent-guide/` — read those
   when editing anything under `examples/*/src/agent/`.
 
-## Monorepo overview
+## Repository overview
 
 npm workspaces, structured like Next.js (one framework package, standalone
 example projects):
@@ -27,7 +27,7 @@ curb.js/
 │   ├── src/server/            # WS agent server, LiveKit voice host, conversation store
 │   ├── src/preview/           # browser preview app (served by `curb dev`)
 │   └── src/test-fixtures/project/  # hermetic fixture project used by the test suite
-├── packages/create-curb-app/  # project scaffolder (npx create-curb-app <dir>);
+├── packages/create-curb-app/  # project scaffolder (npm create kugelaudio <dir>);
 │                              # template lives in templates/default/
 ├── examples/insurance-agent/  # complete agent project (default demo; the template)
 └── examples/ops-agent/        # MCP-heavy second example
@@ -73,23 +73,57 @@ Key seams:
 npm install        # once at the repo root (links workspaces + the framework bin)
 npm run dev        # curb dev on examples/insurance-agent (everything on http://127.0.0.1:4000)
 npm test           # framework package suite (vitest, hermetic via the fixture project)
+npm run check:examples  # curb check + curb build on every example
+npm run check:compat    # the same on projects frozen from older releases (compat/README.md)
 npm run build      # tsc type-check build of the package
 npm run check      # authoring diagnostics of the insurance example
 npm run server     # headless agent WS server (insurance example)
-npm run publish:cdn  # pack + upload both packages to the CDN, update latest.json (maintainers)
 ```
 
 Inside an example project the same things are `npm run dev`, `npm run check`,
 `curb server`.
 
-Publishing (maintainers only): `npm run publish:cdn` packs `packages/framework`
-and `packages/create-framework-app`, uploads the tarballs to the curb CDN, then
-updates `curb/latest.json`. That pointer is what `curb upgrade` reads inside a
-scaffolded project to repoint its `"curb"` dependency at the newest tarball
-and reinstall (repo-linked `file:` projects update via git instead). It
-refuses to overwrite an already-published version (`--force` to override),
-`--no-latest` skips the pointer update, and it aborts if a tarball would
-contain an env file.
+Releases come from merges: a merge to `main` that changes the framework reaches npm, the CDN
+and a GitHub release. The commit subject is the changelog line, `!` makes a
+major version, and `CHANGELOG.md` lives on the public repository. `curb upgrade` reads the
+CDN's `curb/latest.json` inside a scaffolded project to repoint its `"curb"` dependency at
+the newest tarball and reinstall (repo-linked `file:` projects update via git instead).
+
+## Tests by area
+
+`npm test` runs every area; `npx vitest run --project <area>` in `packages/framework` runs one.
+
+| Area | Covers |
+| --- | --- |
+| `api` | the public API: every export and CLI command, in `src/public-api.txt` |
+| `cli` | the `curb` commands |
+| `build` | `curb build` and the bundler |
+| `server` | conversations, voice and the WebSocket server |
+| `protocol` | host protocol v1 and `curb/client` |
+| `preview` | the browser preview |
+| `core` | everything else: authoring, runtime, providers |
+
+A changed `public-api.txt` is a change to what projects depend on: removing or renaming a line
+needs `feat(framework)!:`. A failing `check:compat` means real projects break the same way; never
+edit a frozen project to make it pass.
+
+## Tests by area
+
+`npm test` runs every area; `npx vitest run --project <area>` in `packages/framework` runs one.
+
+| Area | Covers |
+| --- | --- |
+| `api` | the public API: every export and CLI command, in `src/public-api.txt` |
+| `cli` | the `curb` commands |
+| `build` | `curb build` and the bundler |
+| `server` | conversations, voice and the WebSocket server |
+| `protocol` | host protocol v1 and `curb/client` |
+| `preview` | the browser preview |
+| `core` | everything else: authoring, runtime, providers |
+
+A changed `public-api.txt` is a change to what projects depend on: removing or renaming a line
+needs `feat(framework)!:`. A failing `check:compat` means real projects break the same way; never
+edit a frozen project to make it pass.
 
 ## Working rules
 

@@ -1,0 +1,80 @@
+#!/usr/bin/env node
+// Turns a Curb release tarball from the CDN into the tarball npm receives.
+//
+//   node scripts/npm-package.mjs <curb-X.Y.Z.tgz> <out-dir>
+//
+// The CDN tarball is named `curb` and marked private, because `curb` belongs to someone
+// else on npm and the hosted builder admits only a package named `curb` from the CDN. npm
+// gets the same release as `curb.js`. Only package.json may differ: every other file is
+// compared by hash after packing, and any other difference fails the script.
+
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+export const NPM_NAME = "curb.js";
+const MANIFEST = "package.json";
+
+/** The release's manifest as npm publishes it. Users keep `import ... from "curb"`. */
+export function npmManifest(manifest) {
+  if (manifest.name !== "curb") throw new Error(`expected the curb release tarball, found ${manifest.name}`);
+  const { private: _private, ...published } = manifest;
+  return {
+    ...published,
+    name: NPM_NAME,
+    homepage: "https://curbjs.com",
+    repository: { type: "git", url: "git+https://github.com/Kugelaudio/curb.js.git" },
+  };
+}
+
+/** Every file under `root` with its sha256, keyed by its path below `root`. */
+export function fileHashes(root) {
+  const hashes = new Map();
+  for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const path = join(entry.parentPath, entry.name);
+    hashes.set(relative(root, path), createHash("sha256").update(readFileSync(path)).digest("hex"));
+  }
+  return hashes;
+}
+
+/** The paths that differ between two trees, package.json aside. */
+export function unexpectedDifferences(before, after) {
+  const paths = new Set([...before.keys(), ...after.keys()]);
+  return [...paths].filter((path) => path !== MANIFEST && before.get(path) !== after.get(path)).sort();
+}
+
+function unpack(tarball) {
+  const directory = mkdtempSync(join(tmpdir(), "curb-npm-"));
+  execFileSync("tar", ["-xzf", tarball, "-C", directory]);
+  return join(directory, "package");
+}
+
+function main([tarball, outDir]) {
+  if (!tarball || !outDir) throw new Error("usage: npm-package.mjs <curb-X.Y.Z.tgz> <out-dir>");
+  const source = unpack(resolve(tarball));
+  const before = fileHashes(source);
+
+  const manifestPath = join(source, MANIFEST);
+  const manifest = npmManifest(JSON.parse(readFileSync(manifestPath, "utf8")));
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  // Packed aside, so a tarball this script refuses is never left where publish reads it.
+  const packDirectory = mkdtempSync(join(tmpdir(), "curb-npm-pack-"));
+  const packed = execFileSync("npm", ["pack", "--silent", "--pack-destination", packDirectory], {
+    cwd: source,
+    encoding: "utf8",
+  }).trim();
+  const result = join(packDirectory, packed);
+
+  const changed = unexpectedDifferences(before, fileHashes(unpack(result)));
+  if (changed.length > 0) throw new Error(`npm pack changed more than package.json: ${changed.join(", ")}`);
+  const destination = join(resolve(outDir), `${NPM_NAME}-${manifest.version}.tgz`);
+  copyFileSync(result, destination);
+  console.log(destination);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) main(process.argv.slice(2));

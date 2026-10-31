@@ -1,0 +1,21 @@
+{
+  "name": "create-curb.js",
+  "version": "1.0.1",
+  "description": "Create a KugelAudio voice agent: npm create curb.js my-agent",
+  "license": "Apache-2.0",
+  "homepage": "https://curbjs.com",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "create-curb.js": "./bin/create-curb.js"
+  },
+  "files": [
+    "bin",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\""
+  }
+}

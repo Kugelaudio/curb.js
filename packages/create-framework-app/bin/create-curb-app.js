@@ -19,6 +19,7 @@ import pc from "picocolors";
 import { blockedInstallScripts, installScriptsFix } from "./install-scripts.js";
 import { newerRelease } from "./newest-release.js";
 import { exitOnUnsupportedNode } from "./node-version.js";
+import { npmCommand } from "./npm-command.js";
 
 exitOnUnsupportedNode(new URL("../package.json", import.meta.url));
 
@@ -57,7 +58,7 @@ use this exact release instead.
 Example (into the empty current folder; .env gets an empty line for each other
 provider key the environment does not hold, for the user to fill in; KugelAudio
 runs on npx curb login, or on a KUGELAUDIO_API_KEY you set):
-  npx create-curb-app .
+  npm create kugelaudio .
 `;
 
 function fail(message) {
@@ -136,7 +137,9 @@ async function handOffToNewerRelease() {
   }
   if (!newer) return;
   console.log(`create-curb-app ${newer.version} is out and this copy is ${version}, so ${newer.version} creates the project.`);
-  const run = spawnSync("npx", ["--yes", "--allow-remote=all", newer.url, ...args], {
+  const npx = npmCommand("npx", ["--yes", "--allow-remote=all", newer.url, ...args]);
+  const run = spawnSync(npx.file, npx.args, {
+    shell: npx.shell,
     stdio: "inherit",
     env: { ...process.env, CREATE_CURB_APP_HANDOFF: newer.version },
   });
@@ -479,9 +482,8 @@ function installWithSpinner() {
       if (tail) console.error(tail);
       resolveInstall(ok);
     };
-    const child = spawn("npm", ["install", "--loglevel=http", "--no-fund", "--no-audit"], {
-      cwd: targetDir,
-    });
+    const npm = npmCommand("npm", ["install", "--loglevel=http", "--no-fund", "--no-audit"]);
+    const child = spawn(npm.file, npm.args, { cwd: targetDir, shell: npm.shell });
     const stderrLines = [];
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
@@ -523,7 +525,8 @@ function installPlain() {
   console.log("Installing dependencies…");
   try {
     // Warnings and errors only: no progress chatter, funding or audit summary.
-    execFileSync("npm", ["install", "--loglevel=warn", "--no-fund", "--no-audit"], { cwd: targetDir, stdio: "inherit" });
+    const npm = npmCommand("npm", ["install", "--loglevel=warn", "--no-fund", "--no-audit"]);
+    execFileSync(npm.file, npm.args, { cwd: targetDir, stdio: "inherit", shell: npm.shell });
     return true;
   } catch (error) {
     // npm printed its errors above; this names what failed and where to retry.

@@ -124,7 +124,7 @@ describe("describeExternals", () => {
 
 describe("UNUSED_OPTIONAL_PEERS", () => {
   // @livekit/agents 1.9.4 imports this optional peer lazily; bundling it failed `curb build`
-  // on every fresh install (curb.build run 40091945346, 2026-10-24).
+  // on every fresh install (seen on 2026-10-24).
   it("lets a dependency's lazy import of an absent optional peer, subpaths included, build", async () => {
     const { build } = await import("esbuild");
     const result = await build({

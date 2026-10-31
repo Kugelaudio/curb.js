@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { createCallerWatchdog } from "./caller-watchdog.js";
+import { describe, expect, it, vi } from "vitest";
+import { EMPTY_ROOM_GRACE_MS, createCallerWatchdog } from "./caller-watchdog.js";
 
 /**
  * A fake clock. Timers fire when the test says so, so these run instantly and
@@ -152,3 +152,27 @@ describe("createCallerWatchdog", () => {
     expect(ended).toEqual([])
   })
 })
+
+describe("a hosted caller's reconnect window", () => {
+  // PLATFORM_SESSION_RECONNECT_GRACE's default: the platform keeps a dropped call this long.
+  const PLATFORM_RECONNECT_GRACE_MS = 30_000;
+
+  it("is still in the room when a caller rejoins as late as the platform allows", () => {
+    const time = clock();
+    const giveUp = vi.fn();
+    const watchdog = createCallerWatchdog({
+      remoteCount: () => 0,
+      giveUp,
+      log: () => {},
+      emptyRoomMs: EMPTY_ROOM_GRACE_MS,
+      noCallerMs: 60_000,
+      setTimer: time.setTimer,
+      clearTimer: time.clearTimer,
+    });
+
+    watchdog.onParticipantLeft();
+    time.advance(PLATFORM_RECONNECT_GRACE_MS);
+
+    expect(giveUp).not.toHaveBeenCalled();
+  });
+});

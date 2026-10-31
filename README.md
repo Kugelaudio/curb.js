@@ -238,7 +238,7 @@ model can do, you can do by hand.
 curb.js/
   packages/framework/             # the framework (published as "curb")
   packages/create-framework-app/  # the scaffolder (create-curb-app)
-  packages/create-kugelaudio/     # npm create kugelaudio
+  packages/create-curb.js/        # npm create curb.js
   examples/insurance-agent/       # a bigger demo: claims, gate, procedure
   examples/ops-agent/             # an MCP-heavy example
 ```

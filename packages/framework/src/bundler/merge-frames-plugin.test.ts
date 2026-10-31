@@ -50,6 +50,7 @@ describe("mergeFrames patch", () => {
     expect(patched).not.toContain("[...data, ...frame.data]");
   });
 
+  // The upstream form is quadratic, and a busy runner takes it past the default 5 s.
   it("returns the same frame as upstream for every buffer shape", async () => {
     const source = installed("utils.js");
     const slow = await load(source);
@@ -70,7 +71,7 @@ describe("mergeFrames patch", () => {
     expect(fast(single)).toBe(single);
     expect(() => fast([])).toThrow("buffer is empty");
     expect(() => fast([frame(4, 1), new StubFrame(new Int16Array(4), 24000, 1, 4)])).toThrow("sample rate mismatch");
-  });
+  }, 30_000);
 
   it("leaves a source alone when the slow form is not there", () => {
     expect(patchMergeFrames("export const x = 1;\n")).toBeNull();

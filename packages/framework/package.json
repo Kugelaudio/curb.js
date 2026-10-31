@@ -2,7 +2,7 @@
   "name": "curb",
   "version": "1.0.0",
   "private": true,
-  "description": "Build voice AI agents in React. Your components decide what the agent knows and can do; speech, turn-taking and interruptions are handled for you. Open source and works with any model.",
+  "description": "curb.js — React framework for authoring voice-first LLM agents: agents are React trees compiled into model context and tools, with a browser preview and a WebSocket agent server.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

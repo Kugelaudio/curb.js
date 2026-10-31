@@ -8,6 +8,18 @@ import { defineConfig } from "vitest/config";
  * package. */
 const fixtureProject = resolve(import.meta.dirname, "src/test-fixtures/project");
 
+/** The suite's areas. `npm test` runs them all; `npx vitest run --project cli` runs one.
+ * `core` takes whatever no area names, so a new test can never fall out of the suite. */
+const TESTS = "**/*.test.{ts,tsx}";
+const areas: Record<string, string[]> = {
+  api: ["src/public-api.test.ts"],
+  cli: [`src/cli/${TESTS}`],
+  build: [`src/bundler/${TESTS}`],
+  server: [`src/server/${TESTS}`],
+  protocol: [`src/hosted/${TESTS}`, `src/client/${TESTS}`],
+  preview: [`src/preview/${TESTS}`, `src/vite/${TESTS}`, `src/browser/${TESTS}`],
+};
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -18,10 +30,13 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     exclude: ["dist/**", "node_modules/**"],
     env: {
       AGENT_PROJECT_DIR: fixtureProject,
     },
+    projects: [
+      ...Object.entries(areas).map(([name, include]) => ({ extends: true, test: { name, include } })),
+      { extends: true, test: { name: "core", include: [`src/${TESTS}`], exclude: Object.values(areas).flat() } },
+    ],
   },
 });

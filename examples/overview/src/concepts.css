@@ -1,0 +1,198 @@
+/* The concepts view: one still illustration of what a skill is made of.
+   Shared tokens and the page frame live in base.css. */
+
+.concepts-page {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.anatomy {
+  fill: none;
+  stroke: none;
+}
+
+/* THE SKILL. One outline around all four parts, because it is one file. */
+.card {
+  fill: var(--ground);
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.card-title {
+  fill: var(--ink);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+
+/* Instructions. Bars rather than sample sentences: the eye should register
+   "prose lives here" and move on instead of trying to read filler. */
+.prose {
+  fill: var(--ink-soft);
+  fill-opacity: 0.32;
+}
+
+/* Tools. Unnamed — what matters is that a skill declares them. */
+.tool-box {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.8;
+}
+
+.tool-box--small {
+  stroke: var(--ink-soft);
+  stroke-width: 1.5;
+}
+
+.tool-mark {
+  fill: var(--ink);
+}
+
+/* Callouts. Every part is named: nobody infers "logic" from a fork glyph, and
+   an unlabelled diagram is where three earlier passes failed. */
+.part-label {
+  fill: var(--ink);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.part-note {
+  fill: var(--ink-soft);
+  font-size: 16px;
+}
+
+.leader {
+  stroke: var(--ink-soft);
+  stroke-opacity: 0.45;
+  stroke-width: 1.2;
+  stroke-dasharray: 3 4;
+}
+
+/* The links, and where they land. Drawn at a fraction of the size: they are
+   where this skill points, not what the page is about. */
+.edge {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.linked {
+  fill: var(--ground);
+  stroke: var(--ink-soft);
+  stroke-width: 1.6;
+}
+
+.linked-title {
+  fill: var(--ink-soft);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* A LINK IN THE PROSE. The only run of text in the drawing with a state of its
+   own — heavier and underlined, the way a link reads anywhere. This is the
+   connection between two skills; the curve leaving it is just where it goes. */
+.prose-link {
+  fill: var(--ink);
+  fill-opacity: 0.9;
+}
+
+.prose-underline {
+  stroke: var(--ink);
+  stroke-opacity: 0.55;
+  stroke-width: 1.4;
+}
+
+/* The conditional tool: dashed, because it is not always there. Repeated at the
+   head of the sentence that says when it is, so the two read as one statement. */
+.tool-box--conditional {
+  stroke-dasharray: 5 4;
+  stroke: var(--ink-soft);
+}
+
+.tool-mark--conditional {
+  fill: var(--ink-soft);
+}
+
+/* Plain words, not code. A customer does not need to know how the condition is
+   written, only that parts of a skill appear when they apply. */
+.condition {
+  fill: var(--ink);
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* THE CONDITIONAL REGION. Dashed, because its contents are not there yet — the
+   one border in the drawing that means "provisional" rather than "container". */
+.gate {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-opacity: 0.65;
+  stroke-width: 1.6;
+  stroke-dasharray: 6 5;
+}
+
+/* Everything inside it is drawn back, so the eye reads the card as complete
+   without it and sees what the condition adds. */
+.prose--dim {
+  fill-opacity: 0.18;
+}
+
+.prose-link--dim {
+  fill-opacity: 0.45;
+}
+
+.prose-underline--dim {
+  stroke-opacity: 0.3;
+}
+
+.tool-box--dim {
+  stroke: var(--ink-soft);
+  stroke-opacity: 0.6;
+  stroke-dasharray: 5 4;
+}
+
+.tool-mark--dim {
+  fill: var(--ink-soft);
+  fill-opacity: 0.6;
+}
+
+/* The link a condition withholds, and where it lands: both dashed, so it reads
+   as a skill the agent cannot reach yet rather than one it simply has not
+   chosen. */
+.edge--dim {
+  stroke-opacity: 0.5;
+  stroke-dasharray: 6 5;
+}
+
+.linked--dim {
+  stroke-opacity: 0.55;
+  stroke-dasharray: 6 5;
+}
+
+.linked-title--dim {
+  fill-opacity: 0.6;
+}
+
+/* The condition's value, in code. Mono is what this deck reserves for things a
+   reader could type, and `claim.isOpen` is exactly that — the state a tool set
+   and the condition reads back. */
+.condition-expr {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 18px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+
+
+/* The domain the skill sits in. Small and quiet: it is orientation, not the
+   subject of the card. */
+.card-domain {
+  fill: var(--ink-soft);
+  font-size: 17px;
+  font-weight: 450;
+  letter-spacing: 0;
+}

@@ -1,0 +1,1211 @@
+/* The pitch slides. Same tokens and page frame as the two drawings — one deck,
+   one hand. */
+
+.slide-page {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* One sentence under the headline, carrying the claim the slide exists to
+   make. Capped short: a standfirst that runs to three lines is a paragraph, and
+   nobody reads a paragraph on a slide. */
+.standfirst {
+  margin: 0.5rem 0 0;
+  max-width: 62ch;
+  font-size: clamp(1rem, 0.9rem + 0.5cqw, 1.25rem);
+  line-height: 1.4;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+
+/* Quiet enough to be invisible from three metres, present enough to be useful
+   to whoever is driving. */
+.deck-position {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 0.8rem;
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  opacity: 0.45;
+}
+
+/* ---------- Pain points ---------- */
+
+.pains {
+  display: grid;
+  align-content: center;
+  gap: clamp(1rem, 3cqh, 1.9rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 62rem;
+}
+
+.pains li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.pain-mark {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: 0.2rem;
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.pains strong {
+  display: block;
+  font-size: clamp(1.1rem, 0.95rem + 0.7cqw, 1.55rem);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.pain-detail {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: var(--step-1);
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+/* ---------- Open source ---------- */
+
+/* Surfaces, lit the same way as the code cards. These were hard-stroked
+   outlines, which put two visual languages three slides apart in one deck. */
+.repo-card,
+.run-card {
+  fill: var(--surface);
+}
+
+.repo-title {
+  fill: var(--ink);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* A key and a value, because "src/agent/" alone means nothing to the
+   non-engineer in the room and "prompts, tools, logic" alone means nothing to
+   the engineer. */
+.repo-key {
+  fill: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 21px;
+}
+
+.repo-value {
+  fill: var(--ink-soft);
+  font-size: 21px;
+}
+
+.run-target {
+  fill: var(--ink);
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.run-note {
+  fill: var(--ink-soft);
+  font-size: 20px;
+}
+
+/* Quieter than the cards, but not so quiet it disappears from three metres.
+   A true hairline vanished against the cards' own shadows. */
+.run-edge {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-opacity: 0.4;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+/* ---------- Two-column comparisons ---------- */
+
+.versus {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: center;
+  gap: clamp(1.5rem, 6cqw, 5rem);
+  min-height: 0;
+}
+
+.versus-label {
+  margin: 0 0 1rem;
+  font-size: var(--step-1);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+
+/* ---------- Capability matrix ---------- */
+
+.matrix {
+  align-self: center;
+  border-collapse: collapse;
+  width: min(58rem, 100%);
+  font-size: var(--step-1);
+}
+
+.matrix th,
+.matrix td {
+  padding: 0.62rem 0.9rem;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+}
+
+.matrix thead th {
+  font-size: var(--step-0);
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.matrix thead th:first-child {
+  border-bottom: none;
+}
+
+.matrix tbody th {
+  font-weight: 450;
+  color: var(--ink);
+}
+
+.matrix td {
+  text-align: center;
+  width: 9rem;
+}
+
+/* Our column is tinted the whole way down, so the eye can follow it without
+   reading a single row label. */
+.matrix-ours {
+  background: hsl(60 3% 94%);
+}
+
+/* The rows that are the actual argument. */
+.matrix-row--gap th {
+  font-weight: 600;
+}
+
+.tick-mark,
+.dash-mark {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tick-mark {
+  stroke: var(--ink);
+}
+
+.dash-mark {
+  stroke: var(--ink-soft);
+  opacity: 0.5;
+}
+
+/* ---------- Code comparison ---------- */
+
+/* KEYNOTE CARDS. A 1px hairline box is a wireframe; what makes a card look
+   considered is that it sits ON the page rather than being drawn onto it.
+   White surface, generous radius and a stacked soft shadow do that, and the
+   0.5px spread layer inside --lift replaces the border so nothing is drawn
+   twice. */
+
+/* THREE COLUMNS, NOT TWO. The graph is what both sides produce, so it belongs
+   at the point they converge rather than parked in a corner of the header
+   fighting the wordmark for the same space. */
+.versus--code {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-content: center;
+  gap: clamp(1rem, 3cqw, 2.75rem);
+}
+
+.agent-graph {
+  display: grid;
+  gap: 0.85rem;
+  align-self: center;
+  margin: 0;
+  width: clamp(9rem, 14cqw, 13rem);
+}
+
+/* Same surface as the code cards, so the slide speaks in one language. The
+   outlined boxes this replaced were a wireframe sitting next to real objects. */
+.gnode {
+  fill: var(--surface);
+}
+
+.gnode-label {
+  fill: var(--ink);
+  font-size: 15px;
+  font-weight: 560;
+  letter-spacing: -0.01em;
+}
+
+/* Tool names are identifiers, and the deck reserves mono for things a reader
+   could type. It also ties each node to the same name in both columns. */
+.gnode-label--tool {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The condition on the branch, which is the whole subject of the slide. */
+.gcondition {
+  fill: var(--ink-soft);
+  font-size: 11.5px;
+}
+
+.gtrunk {
+  fill: none;
+  stroke: var(--hairline);
+  stroke-width: 1.5;
+}
+
+.files {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.file {
+  padding: 0.75rem 0.95rem 0.85rem;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+
+/* The hero. Apple never gives two things equal weight on one slide: ours is
+   larger, rounder and a step further off the page, so the eye lands there
+   first and reads the left column as the thing being compared against. */
+.file--ours {
+  padding: 1.15rem 1.3rem 1.3rem;
+  border-radius: 20px;
+  box-shadow: var(--lift-hero);
+}
+
+.file-name {
+  margin: 0 0 0.55rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: -0.01em;
+  color: var(--ink-soft);
+}
+
+/* REAL CODE, DELIBERATELY SMALL. It is texture as much as reading matter: the
+   eye registers four files across two systems against one component, and that
+   comparison survives at a size no one could read from a chair. */
+.code {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: clamp(0.36rem, 0.21rem + 0.31cqw, 0.5rem);
+  line-height: 1.17;
+  white-space: pre-wrap;
+  /* Only the pre-highlight fallback ever sees this; once the grammar lands,
+     every token carries its own inline colour. */
+  color: var(--ink-soft);
+}
+
+/* Shiki emits its own <pre> with the theme background baked in as an inline
+   style. The page keeps its own ground, and the type is sized by the deck, not
+   by the theme. */
+.code .shiki {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  white-space: pre-wrap;
+}
+
+.code .shiki,
+.code .shiki code,
+.code .shiki span {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* BOTH COLUMNS ARE SET IDENTICALLY. Ours used to be printed in darker ink so it
+   read as the crisper of the two; with real highlighting that would be putting
+   a thumb on the scale, and the emphasis it was carrying is already in the
+   border weight around our file. */
+
+/* The left column runs past the bottom of the slide, because that IS the
+   argument. A hard clip would read as a layout bug; a fade says there is more
+   of this than fits, which is the true statement. */
+.files--many {
+  /* NO FADE, AND IT HAS TO ACTUALLY FIT. Every earlier attempt dissolved the
+     tail of the column, and a half-dissolved card reads as unfinished rather
+     than as "there is more of this". The type and the chrome are tuned until
+     four solid cards fit inside the page with room to spare.
+
+     ROOM TO SPARE IS NOT COSMETIC. This column sat fourteen pixels past the
+     bottom of the page for a while, which looked like nothing on screen and
+     was nothing on screen. Under paged media Chromium does not clip an
+     overflowing grid, it drops it: the PDF export printed this slide as a bare
+     headline while every other slide was perfect. Keep the measured bottom
+     clear of the page's padding edge. */
+  gap: 0.42rem;
+  padding: 0.4rem 1.4rem 0;
+  margin: -0.4rem -1.4rem 0;
+}
+
+.files--many .file {
+  padding: 0.4rem 0.75rem 0.45rem;
+}
+
+/* Five filenames are the countable part of the claim in the standfirst, so
+   they stay legible while the code under them does not. */
+.files--many .file-name {
+  margin-bottom: 0.22rem;
+  font-size: 0.58rem;
+}
+
+/* ---------- Enterprise ---------- */
+
+/* THE CLOSE. The ask is the largest type in the deck, because the last slide's
+   only job is that one sentence. */
+.headline--display {
+  /* Sits lower than every other headline in the deck, and larger. Both are
+     deliberate: paging onto this slide should feel like arriving somewhere,
+     not like reading one more label. */
+  margin-top: clamp(0.5rem, 7cqh, 4rem);
+  max-width: 16ch;
+  font-size: clamp(2.5rem, 1.4rem + 5cqw, 5.6rem);
+  line-height: 0.96;
+  letter-spacing: -0.038em;
+}
+
+/* WHERE THINGS ARE. Centred in the space between the ask and the terms, which
+   was empty and reading as unfinished rather than as air. */
+.progress {
+  display: grid;
+  align-content: center;
+  gap: clamp(1.75rem, 5cqh, 3rem);
+  max-width: 52rem;
+}
+
+.progress section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.progress-head h2 {
+  margin: 0;
+  font-size: clamp(1.05rem, 0.95rem + 0.5cqw, 1.35rem);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.progress-head p {
+  margin: 0;
+  font-size: var(--step-0);
+  color: var(--ink-soft);
+  text-align: right;
+}
+
+/* Ink on hairline. A tinted bar would be the one piece of colour in the deck,
+   and it would be carrying a number nobody should be reading that closely. */
+.track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--hairline);
+}
+
+.track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+}
+
+/* Doubled class rather than a bare one: .terms is declared below this, and at
+   equal specificity the later rule wins, so a single class here silently lost
+   its column count to the three-column default. */
+.terms.terms--pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 62rem;
+}
+
+/* Ruled, not boxed: three identical cards in a row is the shape of a pricing
+   table, and these are terms, not options. Anchored to the bottom so the ask
+   above them keeps the whole upper half of the slide. */
+.terms {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: end;
+  gap: clamp(1.5rem, 5cqw, 4.5rem);
+  padding-bottom: clamp(0.5rem, 4cqh, 2.5rem);
+}
+
+.terms section {
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.terms h2 {
+  margin: 0 0 0.45rem;
+  font-size: clamp(1.05rem, 0.95rem + 0.5cqw, 1.35rem);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.terms p {
+  margin: 0;
+  font-size: var(--step-1);
+  line-height: 1.45;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+@media (max-width: 62rem) {
+  .versus,
+  .terms {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+  }
+}
+
+/* 3. Both sides capped to the same width, so the comparison is honestly about
+   the NUMBER of files and lines rather than one column being wider than the
+   other. Ours ran the full column and its long lines undercut the point. */
+.file {
+  max-width: 34rem;
+}
+
+/* The recap. Bullets: the room scans them in one pass and looks back up, which
+   is all this slide is for. */
+.recap {
+  display: grid;
+  align-content: center;
+  gap: clamp(1.25rem, 4cqh, 2.25rem);
+  max-width: 52rem;
+  min-height: 0;
+}
+
+.recap-list {
+  display: grid;
+  gap: clamp(0.7rem, 2cqh, 1.15rem);
+  margin: 0;
+  padding-left: 1.4rem;
+  list-style: disc;
+}
+
+.recap-list li {
+  font-size: clamp(1.15rem, 0.95rem + 0.9cqw, 1.7rem);
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* Quiet markers: they organise the lines, they are not content. */
+.recap-list li::marker {
+  color: var(--hairline);
+}
+
+
+/* ---------- Skills to context ---------- */
+
+.map-head {
+  fill: var(--ink-soft);
+  font-size: 19px;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+}
+
+.map-rule {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+/* Mono on the left because every item there is something you literally type;
+   sans on the right because none of it is. The face carries the difference
+   between the two columns without a label saying so. */
+.map-from {
+  fill: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 22px;
+}
+
+.map-to {
+  fill: var(--ink);
+  font-size: 23px;
+  font-weight: 550;
+  letter-spacing: -0.012em;
+}
+
+.map-link {
+  stroke: var(--hairline);
+  stroke-width: 1.5;
+}
+
+/* THE CONDITION ROW. Dashed, and quieter on both ends: it does not compile to
+   a field of its own, it decides whether the rows above it are there. Drawing
+   it like the others would flatten the one distinction the slide exists for. */
+.map-from--gate,
+.map-to--gate {
+  fill: var(--ink-soft);
+}
+
+.map-link--gate {
+  stroke-dasharray: 5 5;
+}
+
+.map-note {
+  margin: auto 0 0;
+  padding-top: clamp(0.9rem, 3cqh, 1.5rem);
+  border-top: 1px solid var(--hairline);
+  max-width: 64rem;
+  font-size: clamp(1rem, 0.9rem + 0.5cqw, 1.25rem);
+  line-height: 1.5;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* ---------- The wire: skills rendered into the conversation ---------- */
+
+.wire-bubble,
+.skill-card {
+  fill: var(--surface);
+}
+
+/* Who is talking is orientation, not content. At 17px semibold the labels ran
+   down the left edge shouting over the thing they were labelling. */
+.wire-speaker {
+  fill: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  opacity: 0.45;
+}
+
+.wire-line-text {
+  fill: var(--ink);
+  font-size: 19px;
+}
+
+.skill-name {
+  fill: var(--ink);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* The same bars and squares the Skills slide uses. Someone who saw that slide
+   should recognise the object here without being told what it is. */
+.prose--ghost {
+  fill-opacity: 0.2;
+}
+
+/* Authored, but withheld this turn. An OUTLINE, not a paler fill: an empty bar
+   reads as "not there", where a fainter solid one just reads as another line.
+   It is visible in the skill on the right and absent from the block on the
+   left, and the two blocks are sized so the missing pair can be counted. */
+.prose-cut {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-opacity: 0.45;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.wire-tool {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.8;
+}
+
+.wire-tool--ghost {
+  stroke: var(--ink-soft);
+  stroke-opacity: 0.4;
+  stroke-width: 1.5;
+}
+
+.wire-cut-note {
+  fill: var(--ink-soft);
+  font-size: 15px;
+  font-style: italic;
+}
+
+.wire-edge {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-opacity: 0.4;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* 163 units wide at this size, measured in the browser; the gap between the
+   context block and the skill column is sized from that number rather than the
+   other way round. Raising the size means re-measuring, not guessing. */
+.wire-edge-label {
+  fill: var(--ink-soft);
+  font-size: 14px;
+}
+
+/* ---------- Print ---------- */
+
+/* Chromium flattens a blurred box-shadow into an opaque grey rectangle when it
+   prints, so every lifted card came out of the PDF as a smudge. The drawings
+   are untouched because SVG feDropShadow prints correctly; this is a CSS
+   box-shadow problem specifically.
+
+   A hairline ring is the same shape, prints exactly, and keeps the hierarchy:
+   the hero card takes ink, the rest take the hairline. Lives at the end of
+   slides.css because .file--ours is declared here and base.css loads first. */
+@media print {
+  .file,
+  .wire-bubble,
+  .skill-card {
+    box-shadow: 0 0 0 1px var(--hairline);
+  }
+
+  .file--ours {
+    box-shadow: 0 0 0 1.5px hsl(60 3% 8% / 0.3);
+  }
+}
+
+/* The state each turn is standing on. Mono and unadorned: it is the same
+   expression the code slide gates its tools on, so it should look like code
+   rather than like a caption. */
+.turn-state {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.turn-state li {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+/* One column so the filmstrip sits high and the conclusion sits on the floor
+   of the slide, with the air between them rather than around everything. */
+.turn-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The index. Mono paths, because the value the model passes to read_skill is
+   the path and nothing else. */
+.index-row {
+  fill: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 16px;
+}
+
+.index-note {
+  fill: var(--ink-soft);
+  font-size: 15px;
+}
+
+/* ---------- Code, and the text it becomes ---------- */
+
+/* The state that produced this render, above the pair so the change on the
+   right can be traced rather than taken on faith. */
+.render-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.6rem;
+  margin-bottom: clamp(0.5rem, 2cqh, 1rem);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.render-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-top: clamp(0.5rem, 3cqh, 2rem);
+}
+
+/* One card, one grid. Two separately laid out boxes drift apart the instant
+   either side wraps, and then the reader is matching lines up by hand — which
+   is the whole thing this slide is supposed to save them. */
+.align-card {
+  padding: clamp(1rem, 2.5cqh, 1.5rem) clamp(1.1rem, 2cqw, 1.6rem);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+
+.align-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  column-gap: clamp(1.5rem, 3.5cqw, 3rem);
+  row-gap: clamp(0.65rem, 1.8cqh, 1.1rem);
+  align-items: start;
+}
+
+.align-head {
+  margin: 0 0 0.2rem;
+  font-size: var(--step-0);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.align-code .code {
+  font-size: clamp(0.5rem, 0.3rem + 0.58cqw, 0.78rem);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.align-out {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Same size and leading as the code opposite it, so a line and the line it
+   became sit on the same baseline. */
+.diff-line {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: clamp(0.5rem, 0.3rem + 0.58cqw, 0.78rem);
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.diff-mark {
+  font-weight: 700;
+}
+
+.diff-line--add {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.diff-line--del {
+  opacity: 0.5;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.render-missing {
+  margin: clamp(0.9rem, 2.5cqh, 1.4rem) 0 0;
+  font-size: var(--step-0);
+  line-height: 1.45;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+/* ---------- Print ---------- */
+
+/* Chromium flattens a blurred box-shadow into an opaque grey rectangle when it
+   prints, so every lifted card came out of the PDF as a smudge. The drawings
+   are untouched because SVG feDropShadow prints correctly; this is a CSS
+   box-shadow problem specifically.
+
+   A hairline ring is the same shape, prints exactly, and keeps the hierarchy:
+   the hero card takes ink, the rest take the hairline. Lives at the end of
+   slides.css because .file--ours is declared here and base.css loads first. */
+@media print {
+  .file,
+  .align-card,
+  .wire-bubble,
+  .skill-card {
+    box-shadow: 0 0 0 1px var(--hairline);
+  }
+
+  .file--ours {
+    box-shadow: 0 0 0 1.5px hsl(60 3% 8% / 0.3);
+  }
+}
+
+/* The state each turn is standing on. Mono and unadorned: it is the same
+   expression the code slide gates its tools on, so it should look like code
+   rather than like a caption. */
+.turn-state {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.turn-state li {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+/* One column so the filmstrip sits high and the conclusion sits on the floor
+   of the slide, with the air between them rather than around everything. */
+.turn-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The index. Mono paths, because the value the model passes to read_skill is
+   the path and nothing else. */
+.index-row {
+  fill: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 16px;
+}
+
+.index-note {
+  fill: var(--ink-soft);
+  font-size: 15px;
+}
+
+/* ---------- Code, and the text it becomes ---------- */
+
+/* The state that produced this render, above the pair so the absence on the
+   right can be traced rather than taken on faith. */
+.render-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.6rem;
+  margin-bottom: clamp(0.5rem, 2cqh, 1rem);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+/* Its own two-column grid. It briefly borrowed .versus--code, which is a
+   THREE-column layout with the agent graph in the middle, so the two headings
+   landed on top of each other and the code column was crushed. */
+.render-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-content: start;
+  gap: clamp(1.5rem, 4cqw, 3.5rem);
+}
+
+/* Both panels run the full column: this slide is about one thing becoming
+   another, not about comparing their bulk. */
+.render-pair .file {
+  max-width: none;
+}
+
+/* Plain, not highlighted: this is what the model receives, and colouring it
+   would imply a structure the model does not see. */
+.rendered-text {
+  white-space: pre-wrap;
+  color: var(--ink);
+  opacity: 0.92;
+}
+
+.render-missing {
+  margin: 0.9rem 0 0;
+  font-size: var(--step-0);
+  line-height: 1.45;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+.render-missing code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.92em;
+  color: var(--ink);
+}
+
+/* One column, anchored high: the state line and the pair are one block, not
+   two rows of the page grid fighting for the same 1fr. */
+.render-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-top: clamp(0.5rem, 3cqh, 2rem);
+}
+
+/* The index, inside the block where it actually lives. Mono because these are
+   the literal lines flattenContext emits, not a description of them. */
+.wire-index-line {
+  fill: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+}
+
+.wire-divider {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.wire-index-callout {
+  fill: var(--ink-soft);
+  font-size: 15px;
+}
+
+/* This slide has one file per side and half a page spare, where the comparison
+   slide has four cards fighting for the same height. Same component, so the
+   type has to be re-sized here rather than at .code. */
+.render-pair .code {
+  font-size: clamp(0.52rem, 0.3rem + 0.62cqw, 0.82rem);
+  line-height: 1.5;
+}
+
+.render-pair .file {
+  padding: 1.1rem 1.3rem;
+}
+
+/* A diff, in the deck's own monochrome. Git's red and green would be the
+   reflex; weight and a struck line carry the same meaning here, and reuse the
+   vocabulary the other slides already use for present versus withheld. */
+.diff {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: clamp(0.52rem, 0.3rem + 0.62cqw, 0.82rem);
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.diff-mark {
+  font-weight: 700;
+}
+
+/* Arrived because of the call. Full ink and a heavier line: this is what the
+   model gained. */
+.diff-line--add {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Gone. Struck rather than tinted, the same device the turn slide uses for a
+   line a condition withheld. */
+.diff-line--del {
+  opacity: 0.5;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* TOOLS, COLOURED BY THE SKILL THAT DECLARED THEM. The only colour in the deck
+   that is not syntax highlighting, and it earns its place: it is the one way to
+   see that a tool in a context block is the SAME tool as the one on the card
+   opposite, and that the second block is carrying tools from two skills at
+   once. Muted enough to sit beside the monochrome without shouting. */
+.tool-sq {
+  fill: none;
+  stroke-width: 1.8;
+}
+
+.tool-sq--a {
+  stroke: hsl(212 44% 52%);
+}
+
+.tool-sq--b {
+  stroke: hsl(18 54% 52%);
+}
+
+/* Border only. The wrench stays ink: colour is doing one job here — saying
+   which skill a tool came from — and a coloured glyph as well makes the square
+   read as a status badge instead. */
+.tool-ic {
+  fill: var(--ink);
+}
+
+/* The correction that matters on this slide: there is exactly one of these,
+   and it is always the last message. */
+.wire-last-note {
+  fill: var(--ink-soft);
+  font-size: 15px;
+}
+
+/* Prose tinted by the skill that authored it, the same two hues as the tool
+   borders. Without this the block is one undifferentiated grey wall and the
+   fact that TWO skills are rendered into it has to be taken on trust from the
+   loaded_skills line. Kept faint: this is texture standing in for prose, not
+   something anyone should try to read. */
+.prose--a {
+  fill: hsl(212 44% 50%);
+  fill-opacity: 0.34;
+}
+
+.prose--b {
+  fill: hsl(18 54% 50%);
+  fill-opacity: 0.34;
+}
+
+/* Inside a context block everything is a shade quieter, because it is the
+   skill flattened rather than the skill itself. */
+.prose--ghost.prose--a,
+.prose--ghost.prose--b {
+  fill-opacity: 0.26;
+}
+
+/* Fed INTO the model. Differentiated by ELEVATION, not by colour: a white card
+   with a hairline and no shadow, against the agent's own voice which is the
+   only thing on the column that lifts off the page. The grey fill this
+   replaces read as muddy and fought the tinted prose further down. */
+.wire-bubble--in {
+  fill: var(--surface);
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+/* A tool call is not speech, so it gets no bubble. That is what stops the
+   column reading as a stack of identical boxes. */
+.wire-call {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 16px;
+  fill: var(--ink-soft);
+}
+
+/* ---------- Wire: one subject, quiet setup ---------- */
+
+/* The transcript is setup, so it reads as a script: a speaker and a line, no
+   boxes. Nine near-identical cards on one slide is a page with no figure and
+   no ground. */
+.script-who {
+  fill: var(--ink-soft);
+  font-size: 13px;
+  opacity: 0.5;
+}
+
+.script-line {
+  fill: var(--ink);
+  font-size: 19px;
+}
+
+.script-line--call {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 16px;
+  fill: var(--ink-soft);
+}
+
+/* THE SUBJECT. The only lifted card on the slide, so the eye has somewhere to
+   land and a reading order exists. */
+.ctx-card {
+  fill: var(--surface);
+}
+
+.ctx-label {
+  fill: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ctx-index {
+  fill: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+}
+
+/* Sources: outlines rather than cards, so they feed the block instead of
+   competing with it. */
+.src-card {
+  fill: none;
+  stroke: var(--hairline);
+  stroke-width: 1.5;
+}
+
+.src-name {
+  fill: var(--ink-soft);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.src-note {
+  fill: var(--ink-soft);
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+/* Alternating outlined bubbles. Position carries who is speaking, which is why
+   there are no speaker labels: they were six words of furniture down the left
+   edge saying what the layout says for free. Outlined, so the context block
+   below stays the only filled card. */
+/* FILLED, NOT OUTLINED. Outlined bubbles read as chips or a wireframe; a chat
+   is legible because the two sides carry different fills. The caller sits flat
+   on a light neutral, the agent on white and lifted, so the sides separate by
+   material as well as by position. */
+/* Five points below the window, so it reads as a bubble sitting IN it. The
+   agent's own voice goes the other way, to white. Separation either side of
+   the window value is what makes both legible at once. */
+.turn-bubble {
+  fill: hsl(60 5% 91.5%);
+}
+
+.turn-bubble--agent {
+  fill: var(--surface);
+}
+
+.turn-text {
+  fill: var(--ink);
+  font-size: 17px;
+}
+
+/* The agent acting rather than speaking: no bubble, on the agent's side. */
+/* Quieter than speech: it is machinery, and at the same weight it competed
+   with the lines it sits between. */
+.turn-call {
+  fill: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 14px;
+  opacity: 0.75;
+}
+
+.sys-line {
+  fill: var(--ink-soft);
+  font-size: 13px;
+  opacity: 0.55;
+}
+
+/* ---------- The window ---------- */
+
+/* A shade darker than the page, so it reads as something you look INTO rather
+   than as another card sitting on top of it. Depth then carries role: window
+   96.5%, what the caller says 94.5%, the agent's own voice white, the compiled
+   block white and lifted. */
+/* The window is defined by its BORDER, not by a heavy fill. Darkening the fill
+   to say "look into this" collapsed the caller's bubbles into it: they were
+   94.5 per cent on 96.3, under two points apart and effectively invisible. The
+   frame does that job now and the fill stays out of the way, which leaves the
+   depth scale room to work. */
+.win {
+  fill: hsl(60 3% 97.2%);
+  stroke: hsl(60 4% 88%);
+  stroke-width: 1.5;
+}
+
+.win-label {
+  fill: var(--ink-soft);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+}
+
+/* The system prompt is the first thing in the window, so it gets a body. As a
+   floating label it had nothing under it and read as misplaced. */
+
