@@ -1,32 +1,42 @@
 name: test
 
-# Standard GitHub runners are free on a public repository and billed on a private one.
-# Runs on the systems Curb's users develop on.
+# Linux only for now. A pull request runs only the suites its changes can affect
+# (scripts/affected.mjs); main runs them all. check:independence always runs, on everything.
 
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'website/**'
   pull_request:
-    paths-ignore:
-      - 'website/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  affected:
+    name: affected suites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      suites: ${{ steps.affected.outputs.suites }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 2
+      - id: affected
+        run: node scripts/affected.mjs
+      - run: npm run check:independence
+
   test:
-    name: test (${{ matrix.os }}, Node ${{ matrix.node }})
-    runs-on: ${{ matrix.os }}
+    name: test (Node ${{ matrix.node }})
+    needs: affected
+    if: needs.affected.outputs.suites != ''
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-24.04, node: '22' }
-          - { os: ubuntu-24.04, node: '24' }
+        node: ['22', '24']
     env:
       # CPU binaries ship in npm; the Linux postinstall otherwise downloads CUDA from NuGet.
       ONNXRUNTIME_NODE_INSTALL: skip
@@ -38,8 +48,16 @@ jobs:
           cache: npm
       - run: npm ci --prefer-offline --no-audit --no-fund
       - run: npm run build
-      - run: npm test
-      - run: npm run check:independence
+        if: contains(needs.affected.outputs.suites, 'framework')
+      - run: npm test --workspace packages/framework
+        if: contains(needs.affected.outputs.suites, 'framework')
+      - run: npm test --workspace packages/create-framework-app --workspace packages/create-curb.js
+        if: contains(needs.affected.outputs.suites, 'scaffolders')
+      - run: node --test "scripts/*.test.mjs"
+        if: contains(needs.affected.outputs.suites, 'scripts')
       - run: npm run check:examples
+        if: contains(needs.affected.outputs.suites, 'examples')
       - run: npm run check:compat
+        if: contains(needs.affected.outputs.suites, 'compat')
       - run: npm run smoke:self-host
+        if: contains(needs.affected.outputs.suites, 'smoke')
