@@ -4,7 +4,7 @@ import '@fontsource-variable/geist-mono/wght.css'
 import '../styles/site.css'
 import Header from '../components/Header.astro'
 import Footer from '../components/Footer.astro'
-import { OG_IMAGE_ALT, SITE_NAME, jsonLd, keywords } from '../seo'
+import { OG_IMAGE_ALT, OG_IMAGE_PATH, SITE_NAME, jsonLd, keywords } from '../seo'
 
 const { title, description, path, markdown, pageKeywords, structuredData, noindex, ogType } = Astro.props as {
   title: string
@@ -17,7 +17,7 @@ const { title, description, path, markdown, pageKeywords, structuredData, noinde
   ogType?: 'website' | 'article'
 }
 const url = new URL(path, Astro.site)
-const image = new URL('/og.png', Astro.site)
+const image = new URL(OG_IMAGE_PATH, Astro.site)
 ---
 
 <!doctype html>

@@ -5,7 +5,7 @@
       <img alt="Curb" src=".github/assets/logo-on-light.svg" width="220">
     </picture>
   </h1>
-  <p><strong>The React framework for voice agents.</strong></p>
+  <p><strong>The framework for production voice agents.</strong></p>
 
 <a href="https://kugelaudio.com"><img alt="Made by KugelAudio" src="https://img.shields.io/badge/MADE%20BY%20KugelAudio-000000.svg?style=for-the-badge&labelColor=000000"></a>
 <img alt="Status: pre-release" src="https://img.shields.io/badge/STATUS-PRE--RELEASE-E8590C.svg?style=for-the-badge&labelColor=000000">

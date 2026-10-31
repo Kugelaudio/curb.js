@@ -2,7 +2,26 @@ import { GUIDE_PAGES, pageUrl, type GuidePageId } from './guide'
 
 export const SITE_NAME = 'Curb'
 
-export const OG_IMAGE_ALT = 'Curb: the React framework for voice agents'
+// og.png shows SITE_HEADLINE as pixels: regenerate it and bump OG_IMAGE_PATH when the headline changes.
+export const SITE_HEADLINE = 'The framework for production voice agents.'
+
+export const SITE_DESCRIPTION =
+  'Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships.'
+
+const LEDE_EMPHASIS = ['Dynamic prompting', 'full control', 'you own', 'build', 'test', 'simulate conversations']
+
+/** The home page's lede: SITE_DESCRIPTION with its key phrases in bold. */
+export const SITE_LEDE_HTML = LEDE_EMPHASIS.reduce(
+  (html, phrase) => html.replace(phrase, `<strong>${phrase}</strong>`),
+  SITE_DESCRIPTION,
+)
+
+export const SITE_TITLE = `${SITE_NAME}: ${SITE_HEADLINE.charAt(0).toLowerCase()}${SITE_HEADLINE.slice(1, -1)}`
+
+/** Link previews are cached by image URL, so a new image needs a new version here. */
+export const OG_IMAGE_PATH = '/og.png?v=2'
+
+export const OG_IMAGE_ALT = SITE_TITLE
 
 const KEYWORDS = [
   'voice agents',
@@ -42,7 +61,7 @@ export function homeStructuredData(site: URL, description: string) {
         operatingSystem: 'Linux, macOS',
         softwareRequirements: 'Node.js 22.12 or newer',
         license: 'https://www.apache.org/licenses/LICENSE-2.0',
-        image: new URL('/og.png', site).href,
+        image: new URL(OG_IMAGE_PATH, site).href,
         publisher,
       },
     ],
@@ -63,7 +82,7 @@ export function docsStructuredData(site: URL, id: GuidePageId, title: string) {
         url,
         inLanguage: 'en',
         articleSection: group,
-        image: new URL('/og.png', site).href,
+        image: new URL(OG_IMAGE_PATH, site).href,
         publisher,
       },
       {

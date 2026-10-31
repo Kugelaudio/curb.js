@@ -9,10 +9,7 @@ import Pipeline from '../components/diagrams/Pipeline.astro'
 import Skills from '../components/diagrams/Skills.astro'
 import { codeClasses, curbCodeTheme } from '../code-theme'
 import { codeBlock, plainSkill, requestBlock, stateSteps } from '../requests'
-import { homeStructuredData } from '../seo'
-
-const description =
-  'Build production voice agents in React and TypeScript: dynamic prompts in plain code you own, tested by simulated conversations before they ship.'
+import { SITE_DESCRIPTION, SITE_HEADLINE, SITE_LEDE_HTML, SITE_TITLE, homeStructuredData } from '../seo'
 
 const page = await getEntry('guide', 'what-the-model-receives')
 if (!page?.body) throw new Error('The agent guide has no what-the-model-receives.md')
@@ -76,16 +73,16 @@ const steps = [
 ---
 
 <Base
-  title="Curb: the React framework for production voice agents"
-  description={description}
+  title={SITE_TITLE}
+  description={SITE_DESCRIPTION}
   path="/"
   pageKeywords={['Curb', 'Curb framework', 'React framework for voice agents']}
-  structuredData={homeStructuredData(Astro.site!, description)}
+  structuredData={homeStructuredData(Astro.site!, SITE_DESCRIPTION)}
 >
   <main id="main">
     <section class="hero">
-      <h1>The framework for production voice agents.</h1>
-      <p class="lede"><strong>Dynamic prompting</strong> with <strong>full control</strong>, in plain code <strong>you own</strong>. Your coding agent can <strong>build</strong>, <strong>test</strong>, and <strong>simulate conversations</strong> before it ships.</p>
+      <h1>{SITE_HEADLINE}</h1>
+      <p class="lede" set:html={SITE_LEDE_HTML} />
       <Copy command="npm create curb.js ." />
     </section>
 

@@ -18,6 +18,10 @@ on:
       - 'website/**'
       - 'packages/framework/docs/agent-guide/**'
       - '.github/workflows/pages.yml'
+      # website/src/seo.test.ts holds these to the site's tagline.
+      - 'README.md'
+      - 'packages/framework/package.json'
+      - 'packages/create-curb.js/package.json'
   workflow_dispatch:
 
 permissions:
