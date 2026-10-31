@@ -72,7 +72,7 @@ import {
   callerSide,
   createTransferHandoff,
   isTransferTarget,
-  applyTransferEnded,
+  settleTransferEnded,
 } from "./transfer-handoff.js";
 import { decideTransferEnded, moveTrackedTransfer } from "../../../transfer-ended.js";
 
@@ -298,33 +298,28 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
       if (!active) return;
       // The agent stays quiet until the transfer's onEnded decided (a function gets at most
       // TRANSFER_ENDED_TIMEOUT_MS); without one this resolves at once with `continue`.
-      void decideTransferEnded(bundle.runtime.info, { error: reportTransferEnded })
-        .then((decision) =>
-          applyTransferEnded(decision, {
-            stale: () => closing !== null || handoff.handedOff() || callerSide(room.participants()).length === 0,
-            resume: (prompt) => {
-              active.input.setAudioEnabled(true);
-              active.output.setAudioEnabled(true);
-              options.reporter?.event("transfer_resumed", {});
-              transferPrompt = prompt;
-              active.generateReply({ userInput: prompt });
-            },
-            sayGoodbye: (goodbye) => transferAudio.announce(goodbye),
-            endCall: () => {
-              options.reporter?.event("transfer_ended_call", {});
-              closeFromRoom();
-            },
-            log: (message) => logInfo("voice", `${options.roomName}: ${message}`),
-            error: reportTransferEnded,
-          }),
-        )
-        .catch((error: unknown) => {
-          // KEEP-JUSTIFIED: runs outside the room event that started it; the cause is logged
-          // and lands in the call's record.
-          const message = error instanceof Error ? error.message : String(error);
-          logError("voice", `${options.roomName}: taking the call back after a transfer failed: ${message}`);
-          options.reporter?.event("error", { kind: "transfer_handoff", message });
-        });
+      void settleTransferEnded(() => decideTransferEnded(bundle.runtime.info, { error: reportTransferEnded }), {
+        stale: () => closing !== null || handoff.handedOff() || callerSide(room.participants()).length === 0,
+        resume: (prompt) => {
+          active.input.setAudioEnabled(true);
+          active.output.setAudioEnabled(true);
+          options.reporter?.event("transfer_resumed", {});
+          transferPrompt = prompt;
+          active.generateReply({ userInput: prompt });
+        },
+        sayGoodbye: (goodbye) => transferAudio.announce(goodbye),
+        endCall: () => {
+          options.reporter?.event("transfer_ended_call", {});
+          closeFromRoom();
+        },
+        log: (message) => logInfo("voice", `${options.roomName}: ${message}`),
+        error: reportTransferEnded,
+      }).catch((error: unknown) => {
+        // KEEP-JUSTIFIED: runs outside the room event that started it, and even the recovery
+        // failed; the cause is logged and the call stays up for the caller to end.
+        const message = error instanceof Error ? error.message : String(error);
+        logError("voice", `${options.roomName}: taking the call back after a transfer failed: ${message}`);
+      });
     },
     log: (message) => logInfo("voice", `${options.roomName}: ${message}`),
   });

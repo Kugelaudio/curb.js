@@ -24,6 +24,19 @@ function answeredWith(onEnded?: TransferEndedOption) {
 const errors = () => vi.spyOn(console, "error").mockImplementation(() => {});
 
 describe("decideTransferEnded", () => {
+  it("continues when onEnded returns what cannot be printed, as an HTTP response can be", async () => {
+    const spy = errors();
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    for (const value of [circular, 1n]) {
+      const onEnded = () => value as never;
+      await expect(decideTransferEnded(answeredWith(onEnded))).resolves.toEqual({ action: "continue" });
+    }
+    expect(String(spy.mock.calls[0]?.[0])).toContain("object value that cannot be printed");
+    expect(String(spy.mock.calls[1]?.[0])).toContain("bigint value that cannot be printed");
+  });
+
   it("continues without an answered transfer, or one without onEnded", async () => {
     await expect(decideTransferEnded(new AgentSiteRuntime(<Agent />).info)).resolves.toEqual({ action: "continue" });
     await expect(decideTransferEnded(answeredWith())).resolves.toEqual({ action: "continue" });

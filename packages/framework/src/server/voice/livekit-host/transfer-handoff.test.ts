@@ -1,13 +1,16 @@
 import { ParticipantKind } from "@livekit/rtc-node";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { TransferEndedDecision } from "../../../transfer-ended.js";
 import {
   TRANSFER_ENDED_PROMPT,
+  TRANSFER_GOODBYE_TIMEOUT_MS,
   applyTransferEnded,
   callerSide,
   createTransferHandoff,
   isTransferTarget,
+  settleTransferEnded,
   transferEndedPrompt,
+  type TransferEndedEffects,
 } from "./transfer-handoff.js";
 import type { CallParticipant } from "./call-opening.js";
 
@@ -99,7 +102,42 @@ async function applied(decision: TransferEndedDecision, options: { stale?: boole
   return calls;
 }
 
+/** Effects that record what `settleTransferEnded` and a stalled goodbye do, in order. */
+function recorded(overrides: Partial<TransferEndedEffects> = {}) {
+  const calls: string[] = [];
+  const effects: TransferEndedEffects = {
+    stale: () => false,
+    resume: (prompt) => calls.push(`resume ${prompt}`),
+    sayGoodbye: async () => {},
+    endCall: () => calls.push("end"),
+    log: () => {},
+    error: (message) => calls.push(`error ${message}`),
+    ...overrides,
+  };
+  return { calls, effects };
+}
+
 describe("applyTransferEnded", () => {
+  it("ends the call when the goodbye never finishes, and reports why", async () => {
+    vi.useFakeTimers();
+    try {
+      const { calls, effects } = recorded({ sayGoodbye: () => new Promise(() => {}) });
+      const applying = applyTransferEnded({ action: "end_call", goodbye: "Goodbye!" }, effects);
+
+      await vi.advanceTimersByTimeAsync(TRANSFER_GOODBYE_TIMEOUT_MS - 1);
+      expect(calls).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      await applying;
+
+      expect(calls).toEqual([
+        `error the goodbye did not finish within ${TRANSFER_GOODBYE_TIMEOUT_MS} ms, the call ends anyway`,
+        "end",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("resumes with the default note, or the decision's instruction", async () => {
     expect(await applied({ action: "continue" })).toEqual([`resume ${TRANSFER_ENDED_PROMPT}`]);
     expect(await applied({ action: "continue", instruction: "Offer a callback." })).toEqual([
@@ -123,5 +161,53 @@ describe("applyTransferEnded", () => {
   it("does nothing once the call moved on", async () => {
     expect(await applied({ action: "end_call", goodbye: "Goodbye!" }, { stale: true })).toEqual([]);
     expect(await applied({ action: "continue" }, { stale: true })).toEqual([]);
+  });
+});
+
+describe("settleTransferEnded", () => {
+  it("carries out what was decided", async () => {
+    const { calls, effects } = recorded();
+    await settleTransferEnded(async () => ({ action: "end_call" }), effects);
+    expect(calls).toEqual(["end"]);
+  });
+
+  it("takes the call back when deciding fails, so the caller is not left muted", async () => {
+    const { calls, effects } = recorded();
+    await settleTransferEnded(() => Promise.reject(new Error("no decision")), effects);
+    expect(calls).toEqual([
+      `resume ${TRANSFER_ENDED_PROMPT}`,
+      "error taking the call back after a transfer failed: no decision",
+    ]);
+  });
+
+  it("takes the call back when carrying out the decision fails", async () => {
+    const { calls, effects } = recorded({
+      endCall: () => {
+        throw new Error("no room");
+      },
+    });
+    await settleTransferEnded(async () => ({ action: "end_call" }), effects);
+    expect(calls).toEqual([
+      `resume ${TRANSFER_ENDED_PROMPT}`,
+      "error taking the call back after a transfer failed: no room",
+    ]);
+  });
+
+  it("does not take back a call that moved on", async () => {
+    const { calls, effects } = recorded({ stale: () => true });
+    await settleTransferEnded(() => Promise.reject(new Error("no decision")), effects);
+    expect(calls).toEqual(["error taking the call back after a transfer failed: no decision"]);
+  });
+
+  it("reports the cause and rejects when even the recovery fails", async () => {
+    const { calls, effects } = recorded({
+      resume: () => {
+        throw new Error("session gone");
+      },
+    });
+    await expect(settleTransferEnded(() => Promise.reject(new Error("no decision")), effects)).rejects.toThrow(
+      "session gone",
+    );
+    expect(calls).toEqual(["error taking the call back after a transfer failed: no decision"]);
   });
 });

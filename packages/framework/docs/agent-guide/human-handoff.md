@@ -142,7 +142,8 @@ export function Handover() {
 `transfer({ to, onEnded })` takes the same option.
 
 - `{ action: "end_call", goodbye? }` ends the call. `goodbye` is said first, in the agent's
-  voice, and cannot be interrupted; without it the call ends at once.
+  voice, and cannot be interrupted; without it the call ends at once. A goodbye that fails, or
+  has not finished after 20 s, is reported and the call ends anyway.
 - `{ action: "continue", instruction? }` gives the call back to the agent. `instruction` says
   what it does next; without it, as without `onEnded`, the agent tells the caller the other
   person left and asks whether it can help with anything else.

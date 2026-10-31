@@ -84,7 +84,7 @@ export function checkTransferEndedOption(value: unknown): void {
   if (value === undefined || typeof value === "function" || toDecision(value) !== null) return;
   throw new TypeError(
     `transfer() needs "onEnded" as { action: "continue", instruction? }, { action: "end_call", goodbye? } ` +
-      `or a function returning one, with instruction and goodbye as non-blank text; got ${JSON.stringify(value)}.`,
+      `or a function returning one, with instruction and goodbye as non-blank text; got ${printable(value)}.`,
   );
 }
 
@@ -136,12 +136,23 @@ export async function decideTransferEnded(
   const decision = toDecision(returned);
   if (decision === null) {
     logError(
-      `[curb] transfer onEnded returned ${JSON.stringify(returned)}, which is not a decision, the agent continues. ` +
+      `[curb] transfer onEnded returned ${printable(returned)}, which is not a decision, the agent continues. ` +
         'Return { action: "continue", instruction? }, { action: "end_call", goodbye? } or nothing.',
     );
     return CONTINUE;
   }
   return decision;
+}
+
+/** `value` for a log line. Never throws: an HTTP client's response is circular, and describing
+ * what went wrong must not be what goes wrong. */
+function printable(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? typeof value;
+  } catch {
+    // KEEP-JUSTIFIED: a value JSON cannot hold (circular, a BigInt) still has a type to report.
+    return `${typeof value} value that cannot be printed`;
+  }
 }
 
 /** The decision `value` names, its text trimmed, or null when it names none. A key the action
