@@ -5,11 +5,14 @@ name: publish
 # and the `npm` environment. npm accepts GitHub-hosted runners only, and gives provenance from a
 # public repository only.
 #
-#   preview   a merge to main that changes a published package. Publishes
-#             <next minor>-preview.<n> to the `preview` dist-tag, with a matching git tag.
-#   stable    a dispatch on main. Publishes the bumped version to `latest`, then adds a
-#             `v<version>` tag and a GitHub Release. Being able to dispatch is the gate. dry_run
-#             does everything except publish, tag and release.
+#   preview   a merge to main that changes a published package, or a dispatch on main with
+#             channel preview. Publishes <next minor>-preview.<n> to the `preview` dist-tag, with
+#             a matching git tag.
+#   stable    a dispatch on main with channel stable and a semver. Publishes the bumped version
+#             to `latest`, then adds a `v<version>` tag and a GitHub Release. Being able to
+#             dispatch is the gate.
+#
+# dry_run does everything except publish, tag and release, on either channel.
 #
 # Tags hold the version (scripts/release-version.mjs). It is stamped into the tarballs at build
 # time, because no workflow can push a commit to main. The tarballs verify tests are the ones
@@ -28,11 +31,15 @@ on:
       - '!packages/*/*.md'
   workflow_dispatch:
     inputs:
+      channel:
+        description: Which channel to release to
+        type: choice
+        options: [preview, stable]
+        default: preview
       semver:
-        description: Which part of the version to bump
+        description: Which part of the version to bump, for a stable release
         type: choice
         options: [patch, minor, major]
-        required: true
       dry_run:
         description: Do everything except publish, tag and release
         type: boolean
@@ -41,11 +48,13 @@ on:
 permissions:
   contents: read
 
-# One group per trigger: GitHub keeps one pending run per group, so a merge sharing a group with
-# a dispatch could cancel the waiting stable release. Nothing in progress is cancelled. A preview
-# that was only queued can be replaced by a newer merge, whose preview carries the same changes.
+# One group per channel. A merge and a dispatched preview share one, so they cannot race for the
+# same preview number. Stable has its own: GitHub keeps one pending run per group, so a preview
+# sharing it could cancel the waiting stable release. Nothing in progress is cancelled. A preview
+# that was only queued can be replaced by a newer one, which carries the same changes. A push has
+# no inputs, so it reads as preview.
 concurrency:
-  group: release-${{ github.event_name }}
+  group: release-${{ inputs.channel || 'preview' }}
   cancel-in-progress: false
 
 jobs:
@@ -73,7 +82,7 @@ jobs:
           node-version: '24'
       - id: version
         env:
-          CHANNEL: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'preview' }}
+          CHANNEL: ${{ inputs.channel || 'preview' }}
           SEMVER: ${{ inputs.semver }}
         run: node scripts/release-version.mjs --channel "$CHANNEL" --semver "$SEMVER"
 
