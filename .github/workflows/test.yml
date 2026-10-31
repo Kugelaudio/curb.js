@@ -2,6 +2,7 @@ name: test
 
 # Linux only for now. A pull request runs only the suites its changes can affect
 # (scripts/affected.mjs); main runs them all. check:independence always runs, on everything.
+# gate is the required check: it always reports, so a pull request that skips test can merge.
 
 on:
   push:
@@ -61,3 +62,16 @@ jobs:
         if: contains(needs.affected.outputs.suites, 'compat')
       - run: npm run smoke:self-host
         if: contains(needs.affected.outputs.suites, 'smoke')
+
+  gate:
+    needs: [affected, test]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          AFFECTED: ${{ needs.affected.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          echo "affected: $AFFECTED, test: $TEST"
+          [ "$AFFECTED" = success ] && { [ "$TEST" = success ] || [ "$TEST" = skipped ]; }
