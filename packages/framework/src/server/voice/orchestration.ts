@@ -4,6 +4,7 @@ import type { AgentSessionBundle } from "../connection.js";
 import type { ConversationClips } from "./livekit-host/clip-store.js";
 import type { CallReporter } from "../../hosted/call-reporter.js";
 import type { ClientMessageBridge } from "./livekit-host/messages.js";
+import type { VoicePipeline } from "./livekit-host/pipeline.js";
 
 /**
  * Inputs to the framework's voice session (`startLivekitVoiceAgent`) for one LiveKit room.
@@ -25,6 +26,8 @@ export type VoiceSessionStartOptions = {
   client: ClientMessageBridge;
   /** Who opens the call: the agent's `defineAgent({ firstTurn })`. Defaults to the user. */
   firstTurn?: AgentFirstTurn;
+  /** The project's changes to the session: the agent's `defineAgent({ pipeline })`. */
+  pipeline?: VoicePipeline;
   env?: NodeJS.ProcessEnv;
   /** Called exactly once after the room/session has closed. */
   onClosed?: () => void;

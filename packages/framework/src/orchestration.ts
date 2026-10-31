@@ -5,7 +5,7 @@
  * depend on native LiveKit and Node.js modules.
  */
 
-export { AutoSubscribe, defineAgent, llm, voice } from "@livekit/agents";
+export { AutoSubscribe, ServerOptions, cli, defineAgent, llm, voice } from "@livekit/agents";
 export * as silero from "@livekit/agents-plugin-silero";
 export { RoomEvent } from "@livekit/rtc-node";
 export type { AudioFrame } from "@livekit/rtc-node";
@@ -29,6 +29,12 @@ export type {
   VoiceProviders,
   VoiceProviderSettings,
 } from "./server/voice/providers.js";
+export { CurbLLMStub, CurbVoiceAgent } from "./server/voice/livekit-host/curb-agent.js";
+export type {
+  VoicePipeline,
+  VoicePipelineCall,
+  VoiceSessionOptions,
+} from "./server/voice/livekit-host/pipeline.js";
 export { createProviderSwitch } from "./server/voice/livekit-host/provider-swap.js";
 export type {
   ProviderSwitch,

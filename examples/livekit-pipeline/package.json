@@ -1,0 +1,22 @@
+{
+  "name": "livekit-pipeline",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "curb dev",
+    "start": "curb start",
+    "own-session": "node --env-file-if-exists=.env --import tsx src/own-session.ts start",
+    "check": "curb check",
+    "test": "curb test"
+  },
+  "dependencies": {
+    "curb": "*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

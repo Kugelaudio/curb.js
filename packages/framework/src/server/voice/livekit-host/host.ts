@@ -61,6 +61,7 @@ import type {
 import { createEndCallHangup, type SpokenReply } from "../end-call.js";
 import { ConversationClips } from "./clip-store.js";
 import { CurbLLMStub, CurbVoiceAgent } from "./curb-agent.js";
+import { voiceAgentClass, voiceSessionOptions } from "./pipeline.js";
 import { createProviderSwitch } from "./provider-swap.js";
 import { attachTransferAudio } from "../../../transfer.js";
 import { livekitCallRoom } from "./livekit-call-room.js";
@@ -332,8 +333,9 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
   }
 
   // Every agent of this call is built here: the first one, and one per provider swap.
+  const VoiceAgent = voiceAgentClass(options.pipeline);
   const createAgent = (swap: Pick<ConstructorParameters<typeof CurbVoiceAgent>[0], "id" | "stt" | "tts" | "chatCtx">) =>
-    new CurbVoiceAgent({
+    new VoiceAgent({
       // Placeholder only — curb compiles its own system prompt per turn inside
       // runTurnStream; LiveKit's instructions never reach the model.
       instructions: "curb agent (context compiled per turn by the curb runtime)",
@@ -345,21 +347,31 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
     });
   const agent = createAgent({ id: "curb_agent_0" });
 
-  session = new voice.AgentSession({
-    stt,
-    tts,
-    vad,
-    llm: new CurbLLMStub(),
-    turnHandling: {
-      turnDetection: "vad",
-      // Interruption strategy: plain
-      // VAD, not the adaptive ML detector.
-      interruption: { mode: "vad" },
-      endpointing: {
-        minDelay: Number(env.VOICE_ENDPOINTING_MIN_MS ?? 300),
-        maxDelay: Number(env.VOICE_ENDPOINTING_MAX_MS ?? 3000),
+  session = new voice.AgentSession(
+    voiceSessionOptions(
+      {
+        stt,
+        tts,
+        vad,
+        llm: new CurbLLMStub(),
+        turnHandling: {
+          turnDetection: "vad",
+          // Interruption strategy: plain
+          // VAD, not the adaptive ML detector.
+          interruption: { mode: "vad" },
+          endpointing: {
+            minDelay: Number(env.VOICE_ENDPOINTING_MIN_MS ?? 300),
+            maxDelay: Number(env.VOICE_ENDPOINTING_MAX_MS ?? 3000),
+          },
+        },
       },
-    },
+      options.pipeline,
+    ),
+  );
+  options.pipeline?.onSession?.({
+    session,
+    roomName: options.roomName,
+    events: voice.AgentSessionEventTypes,
   });
 
   // Mid-call provider swaps: the tree's effective stt/tts changed (a re-render with another

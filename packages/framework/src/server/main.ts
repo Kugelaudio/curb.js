@@ -267,6 +267,7 @@ const createVoiceHostAdapter = (options: {
             roomName,
             bundle,
             firstTurn: hosted.definition.firstTurn,
+            pipeline: hosted.definition.pipeline,
             client,
             ...(call.reporter === undefined ? {} : { reporter: call.reporter }),
             // Keep clips reachable for a while after hangup — the transcript stays

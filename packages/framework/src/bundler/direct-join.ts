@@ -465,6 +465,7 @@ export async function joinRoomAndServe(
       roomName,
       bundle,
       firstTurn: bundle.definition.firstTurn,
+      pipeline: bundle.definition.pipeline,
       reporter: config.reporter,
       client,
       // onClosed fires once, however the call ended: the room emptied, a hang-up, or

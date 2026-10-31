@@ -52,7 +52,8 @@ export type CurbAgentCallbacks = {
 };
 
 export class CurbVoiceAgent extends voice.Agent {
-  private readonly runTurn: CurbTurnRunner;
+  /** Runs one Curb turn. Protected so a project's subclass can drive it (`defineAgent({ pipeline })`). */
+  protected readonly runTurn: CurbTurnRunner;
   private readonly callbacks: CurbAgentCallbacks;
   private readonly clips: ConversationClips | undefined;
   private readonly reporter: CallReporter | undefined;
@@ -235,7 +236,7 @@ export class CurbVoiceAgent extends voice.Agent {
    * in the host: LiveKit's `conversation_item_added` reports interrupted
    * replies with their playback-synchronized transcript, and curb's history
    * entry is rewritten to the words that actually played.) */
-  private turnInputFrom(chatCtx: llm.ChatContext): string | null {
+  protected turnInputFrom(chatCtx: llm.ChatContext): string | null {
     const items = chatCtx.items;
     for (let i = items.length - 1; i >= 0; i -= 1) {
       const item = items[i]!;

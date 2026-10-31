@@ -113,6 +113,7 @@ export async function runVoiceWorkerJob(
         bundle,
         client,
         firstTurn: bundle.definition.firstTurn,
+        pipeline: bundle.definition.pipeline,
         ...call,
       }),
     );
