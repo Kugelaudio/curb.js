@@ -13,7 +13,7 @@ const IGNORED = [
   /^website\//,
   /^packages\/framework\/docs\//,
   /^\.github\/assets\//,
-  /^\.github\/workflows\/(pages|publish)\.yml$/,
+  /^\.github\/workflows\/pages\.yml$/,
   /^[^/]+\.md$/,
   /^(LICENSE|NOTICE|\.gitignore|cliff\.toml)$/,
 ];
@@ -24,6 +24,7 @@ const RULES = [
   [/^examples\/insurance-agent\//, ["examples", "smoke"]],
   [/^examples\//, ["examples"]],
   [/^compat\//, ["compat"]],
+  [/^\.github\/workflows\/publish\.yml$/, ["scripts"]],
   [/^scripts\/check-projects\./, ["scripts", "examples", "compat"]],
   [/^scripts\/self-host-smoke\./, ["smoke"]],
   [/^scripts\//, ["scripts"]],

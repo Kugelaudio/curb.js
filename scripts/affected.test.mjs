@@ -24,6 +24,10 @@ test("framework code runs what is built on it", () => {
   ]);
 });
 
+test("the publish workflow runs the scripts suite, which tests it", () => {
+  assert.deepEqual(affectedSuites([".github/workflows/publish.yml"]), ["scripts"]);
+});
+
 test("the release notes config runs nothing", () => {
   assert.deepEqual(affectedSuites(["cliff.toml"]), []);
 });

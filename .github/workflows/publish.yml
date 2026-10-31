@@ -116,8 +116,9 @@ jobs:
         run: node scripts/release-install-test.mjs out
       - name: Dry-run the publication
         run: |
+          # The ./ matters: npm reads out/x.tgz as the GitHub repository out/x.tgz.
           for name in curb.js create-curb.js; do
-            npm publish --dry-run --access public --tag "$DIST_TAG" "out/$name-$VERSION.tgz"
+            npm publish --dry-run --access public --tag "$DIST_TAG" "./out/$name-$VERSION.tgz"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -166,7 +167,7 @@ jobs:
             if npm view "$name@$VERSION" version >/dev/null 2>&1; then
               echo "$name@$VERSION is already on npm"
             else
-              npm publish --access public --tag "$DIST_TAG" "out/$name-$VERSION.tgz"
+              npm publish --access public --tag "$DIST_TAG" "./out/$name-$VERSION.tgz"
             fi
           done
       - name: Read the publication back
