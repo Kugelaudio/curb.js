@@ -96,7 +96,7 @@ function buildAgentCallParams(request: AgentRunRequest, options: AiSdkAgentOptio
     model,
     temperature,
     topP,
-    system: input.system,
+    instructions: input.system,
     // LlmMessage is a structural subset of the AI SDK's ModelMessage.
     messages: input.messages as ModelMessage[],
     tools: Object.fromEntries(
@@ -170,7 +170,7 @@ export async function* streamAiSdkAgent(
     // Rethrown from the error part by readAgentStream; the default would log it a second time.
     onError: () => {},
   });
-  return yield* readAgentStream(result.fullStream, request.signal);
+  return yield* readAgentStream(result.stream, request.signal);
 }
 
 /**
