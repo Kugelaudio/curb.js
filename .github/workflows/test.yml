@@ -46,7 +46,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['22', '24']
+        # A pull request runs the engines floor, which '22' would skip by resolving to the newest
+        # 22.x. main runs both majors the README promises.
+        node: ${{ github.event_name == 'pull_request' && fromJSON('["22.12"]') || fromJSON('["22.12", "24"]') }}
     env:
       # CPU binaries ship in npm; the Linux postinstall otherwise downloads CUDA from NuGet.
       ONNXRUNTIME_NODE_INSTALL: skip

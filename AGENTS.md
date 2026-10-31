@@ -150,7 +150,8 @@ edit a frozen project to make it pass.
   `>=22.12.0` (Vite's floor on the 22 line), and `bin/node-version.js` in each
   package reads that field and exits with `UnsupportedNodeVersion` before
   anything else loads. Change the floor there only, keep it a single `>=X.Y.Z`,
-  and keep the CI rows (Node 22 and Node 24) covering every major the README promises.
+  and keep the CI rows covering it: pull requests run the floor (Node 22.12), and `main` runs the
+  floor and Node 24, every major the README promises.
 - **Dependency advisories.** The root `overrides` lifts the `onnxruntime-node`
   that `@livekit/agents-plugin-silero` pins exactly (1.24.3) to the framework's
   own `^1.30.0`, which drops its vulnerable `adm-zip` 0.5 and `global-agent` 3
