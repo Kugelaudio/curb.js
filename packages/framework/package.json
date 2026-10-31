@@ -2,7 +2,7 @@
   "name": "curb",
   "version": "1.0.0",
   "private": true,
-  "description": "curb.js — React framework for authoring voice-first LLM agents: agents are React trees compiled into model context and tools, with a browser preview and a WebSocket agent server.",
+  "description": "The framework for production voice agents. Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

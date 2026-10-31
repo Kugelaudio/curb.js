@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 
 /** Every guide page in reading order. */
 const ALL_PAGES = [
-  { id: 'readme', file: 'README.md', title: 'Introduction', group: 'Getting Started', description: "Curb is a React framework for voice agents: the tree you render becomes the model's context and tools. How these docs are organized." },
+  { id: 'readme', file: 'README.md', title: 'Introduction', group: 'Getting Started', description: "Curb is a React framework for production voice agents: the tree you render becomes the model's context and tools. How these docs are organized." },
   { id: 'installation', file: 'installation.md', title: 'Installation', group: 'Getting Started', description: "Create a Curb project, sign in, talk to your agent and change it." },
   { id: 'project-structure', file: 'project-structure.md', title: 'Project structure', group: 'Getting Started', description: "What each file in a Curb project does, and where a skill lives." },
   { id: 'agents-and-skills', file: 'agents-and-skills.md', title: 'Agents and skills', group: 'Getting Started', description: "Write agent.tsx and your skills: what is in every request, and what the model opens when it needs it." },

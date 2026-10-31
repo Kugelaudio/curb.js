@@ -1,7 +1,7 @@
 {
   "name": "create-curb.js",
   "version": "1.0.1",
-  "description": "Create a KugelAudio voice agent: npm create curb.js my-agent",
+  "description": "Create a Curb voice agent: npm create curb.js my-agent",
   "license": "Apache-2.0",
   "homepage": "https://curbjs.com",
   "type": "module",

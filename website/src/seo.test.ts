@@ -1,6 +1,21 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { GUIDE_PAGES } from './guide'
-import { docsStructuredData, docsTitle, homeStructuredData, jsonLd, keywords, sitemapPaths, sitemapXml } from './seo'
+import {
+  OG_IMAGE_ALT,
+  OG_IMAGE_PATH,
+  SITE_DESCRIPTION,
+  SITE_HEADLINE,
+  SITE_LEDE_HTML,
+  SITE_TITLE,
+  docsStructuredData,
+  docsTitle,
+  homeStructuredData,
+  jsonLd,
+  keywords,
+  sitemapPaths,
+  sitemapXml,
+} from './seo'
 
 const site = new URL('https://curbjs.com')
 
@@ -20,6 +35,38 @@ describe('search metadata', () => {
     const list = keywords(['LiveKit', 'Testing']).split(', ')
     expect(list.slice(0, 2)).toEqual(['LiveKit', 'Testing'])
     expect(new Set(list).size).toBe(list.length)
+  })
+})
+
+describe('tagline', () => {
+  const repoFile = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
+  const packageDescription = (path: string) => (JSON.parse(repoFile(path)) as { description: string }).description
+  const tagline = SITE_HEADLINE.slice(0, -1).toLowerCase()
+
+  it('is the README tagline', () => {
+    expect(repoFile('README.md')).toContain(`<p><strong>${SITE_HEADLINE}</strong></p>`)
+  })
+
+  it('is the description of the framework package', () => {
+    expect(packageDescription('packages/framework/package.json')).toBe(`${SITE_HEADLINE} ${SITE_DESCRIPTION}`)
+  })
+
+  it('names Curb in the description of the create package', () => {
+    expect(packageDescription('packages/create-curb.js/package.json')).toContain('a Curb voice agent')
+  })
+
+  it('is the title and the alt text of the share image', () => {
+    expect(SITE_TITLE.toLowerCase()).toContain(tagline)
+    expect(OG_IMAGE_ALT.toLowerCase()).toContain(tagline)
+  })
+
+  it('bolds phrases of the description without changing its words', () => {
+    expect(SITE_LEDE_HTML.match(/<strong>/g)).toHaveLength(6)
+    expect(SITE_LEDE_HTML.replace(/<\/?strong>/g, '')).toBe(SITE_DESCRIPTION)
+  })
+
+  it('points the share image at a file the site serves', () => {
+    expect(existsSync(new URL(`../public${new URL(OG_IMAGE_PATH, 'https://curbjs.com').pathname}`, import.meta.url))).toBe(true)
   })
 })
 
