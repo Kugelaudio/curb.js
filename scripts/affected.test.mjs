@@ -21,6 +21,7 @@ test("framework code runs what is built on it", () => {
     "examples",
     "compat",
     "smoke",
+    "package",
   ]);
 });
 
@@ -32,10 +33,11 @@ test("the release notes config runs nothing", () => {
   assert.deepEqual(affectedSuites(["cliff.toml"]), []);
 });
 
-test("a scaffolder runs only the scaffolder tests", () => {
-  assert.deepEqual(affectedSuites(["packages/create-curb.js/bin/create-curb.js"]), ["scaffolders"]);
+test("a scaffolder runs the scaffolder tests and packs what it ships", () => {
+  assert.deepEqual(affectedSuites(["packages/create-curb.js/bin/create-curb.js"]), ["scaffolders", "package"]);
   assert.deepEqual(affectedSuites(["packages/create-curb.js/templates/default/README.md"]), [
     "scaffolders",
+    "package",
   ]);
 });
 
@@ -45,14 +47,20 @@ test("an example runs the examples, and the one the smoke test builds runs that 
 });
 
 test("a script runs what depends on it", () => {
-  assert.deepEqual(affectedSuites(["scripts/npm-package.mjs"]), ["scripts"]);
+  for (const file of ["npm-package", "release-install-test", "release-version"]) {
+    assert.deepEqual(affectedSuites([`scripts/${file}.mjs`]), ["scripts", "package"]);
+  }
   assert.deepEqual(affectedSuites(["scripts/check-projects.mjs"]), ["scripts", "examples", "compat"]);
 });
 
-test("the lockfile, this workflow and any unknown file run everything", () => {
-  for (const file of ["package-lock.json", ".github/workflows/test.yml", "something/new.txt"]) {
+test("the lockfile, the root manifest, this workflow and any unknown file run everything", () => {
+  for (const file of ["package-lock.json", "package.json", ".github/workflows/test.yml", "something/new.txt"]) {
     assert.deepEqual(affectedSuites([file]), SUITES);
   }
+});
+
+test("the docs of a package do not pack it", () => {
+  assert.deepEqual(affectedSuites(["packages/framework/docs/agent-guide/tools.md"]), []);
 });
 
 test("several files add up", () => {
