@@ -42,7 +42,8 @@ permissions:
   contents: read
 
 # One group per trigger: GitHub keeps one pending run per group, so a merge sharing a group with
-# a dispatch could cancel the waiting stable release.
+# a dispatch could cancel the waiting stable release. Nothing in progress is cancelled. A preview
+# that was only queued can be replaced by a newer merge, whose preview carries the same changes.
 concurrency:
   group: release-${{ github.event_name }}
   cancel-in-progress: false
