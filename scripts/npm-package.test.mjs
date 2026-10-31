@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { npmManifest, PACKAGES, stampTarball, unexpectedDifferences } from "./npm-package.mjs";
+import { buildOutput, npmManifest, PACKAGES, stampTarball, unexpectedDifferences } from "./npm-package.mjs";
 
 test("publishes the framework as curb.js at the stamped version, and leaves the rest alone", () => {
   const manifest = { name: "curb", version: "1.0.0", private: true, bin: { curb: "./bin/curb.js" } };
@@ -55,6 +55,32 @@ test("leaves no tarball behind when it refuses one", () => {
 
   assert.throws(() => stampTarball(join(work, "release.tgz"), out, { version: "9.9.9" }), /dropped\.txt/);
   assert.deepEqual(readdirSync(out), []);
+});
+
+test("names build output under .curb/, and nothing that only looks like it", () => {
+  const paths = ["src/test-fixtures/project/.curb/build/hosted-entry.mjs", "src/curb.ts", "docs/.curbish/a.md"];
+  assert.deepEqual(buildOutput(paths), ["src/test-fixtures/project/.curb/build/hosted-entry.mjs"]);
+});
+
+test("refuses a tarball that carries build output, and leaves nothing behind", () => {
+  const work = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
+  const release = join(work, "package");
+  mkdirSync(join(release, ".curb"), { recursive: true });
+  writeFileSync(join(release, ".curb", "entry.mjs"), "generated\n");
+  const manifest = { name: "curb", version: "1.0.0", private: true, files: [".curb"] };
+  writeFileSync(join(release, "package.json"), JSON.stringify(manifest));
+  execFileSync("tar", ["-czf", join(work, "release.tgz"), "-C", work, "package"]);
+  const out = join(work, "out");
+  mkdirSync(out);
+
+  assert.throws(() => stampTarball(join(work, "release.tgz"), out, { version: "9.9.9" }), /build output: \.curb/);
+  assert.deepEqual(readdirSync(out), []);
+});
+
+test("create-curb.js names the repository trusted publishing checks in its source too", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../packages/create-curb.js/package.json", import.meta.url), "utf8"));
+  assert.equal(manifest.repository.url, "git+https://github.com/Kugelaudio/curb.js.git");
+  assert.equal(npmManifest(manifest, "1.15.0").repository.url, manifest.repository.url);
 });
 
 test("stamps the version into the tarball and ships the release notes", () => {

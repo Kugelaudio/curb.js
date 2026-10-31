@@ -88,9 +88,10 @@ Inside an example project the same things are `npm run dev`, `npm run check`,
 Releases are built from source by `.github/workflows/publish.yml`, the one file npm's trusted
 publishers name. A merge to `main` that changes a published package publishes a preview,
 `<next minor>-preview.<n>`, to the npm dist-tag `preview` with a matching git tag. A person cuts a
-stable release by dispatching that workflow on `main` with `semver` and `dry_run`: it tags
-`v<version>`, publishes to `latest` and creates a GitHub Release. Both run the same verification
-and publish both `curb.js` and `create-curb.js`.
+stable release by dispatching that workflow on `main` with `semver` and `dry_run`: it publishes to
+`latest`, tags `v<version>` and creates a GitHub Release. Both run the same verification, publish
+both `curb.js` and `create-curb.js`, and tag only after the publish, so a tag always names a
+version npm holds.
 
 Tags hold the version: `scripts/release-version.mjs` computes it from the stable `v*` tags, npm and
 the CDN's `latest.json`, and `scripts/npm-package.mjs` stamps it into the tarballs. No workflow can

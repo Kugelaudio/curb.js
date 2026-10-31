@@ -23,6 +23,7 @@
     "bin",
     "docs",
     "src",
+    "!src/test-fixtures/**/.curb",
     "index.html",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md"

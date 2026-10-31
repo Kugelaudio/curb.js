@@ -41,7 +41,7 @@ test("a preview continues the line the preview dist-tag holds", () => {
   assert.equal(previewVersion({ ...sources, npmPreview: "1.15.0-preview.9" }), "1.15.0-preview.10");
 });
 
-test("a preview tag whose publish failed still uses up its number", () => {
+test("a preview tag ahead of the dist-tag still uses up its number", () => {
   const tags = ["v1.14.1", "v1.15.0-preview.3", "v1.15.0-preview.4"];
   assert.equal(previewVersion({ tags, npmPreview: "1.15.0-preview.3" }), "1.15.0-preview.5");
 });

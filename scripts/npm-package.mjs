@@ -8,13 +8,14 @@
 // `curb.js` on npm, because `curb` belongs to someone else there; projects keep
 // `import ... from "curb"` through the alias `"curb": "npm:curb.js@<version>"`. Only
 // package.json and the release notes may differ from the packed source: every other file is
-// compared by hash after packing, and any other difference fails the script.
+// compared by hash after packing, and any other difference fails the script. Build output
+// under `.curb/` fails it too: `files` ignores .gitignore, so a test run leaves it packable.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -58,6 +59,11 @@ export function unexpectedDifferences(before, after) {
     .sort();
 }
 
+/** The paths under a `.curb/` directory, which only a build or a test run writes. */
+export function buildOutput(paths) {
+  return [...paths].filter((path) => path.split(sep).includes(".curb")).sort();
+}
+
 function unpack(tarball) {
   const directory = mkdtempSync(join(tmpdir(), "curb-npm-"));
   execFileSync("tar", ["-xzf", tarball, "-C", directory]);
@@ -88,8 +94,11 @@ export function stampTarball(tarball, outDir, { version, notes }) {
 
   // Packed aside, so a tarball this script refuses is never left where publish reads it.
   const result = npmPack(source);
-  const changed = unexpectedDifferences(before, fileHashes(unpack(result)));
+  const after = fileHashes(unpack(result));
+  const changed = unexpectedDifferences(before, after);
   if (changed.length > 0) throw new Error(`npm pack changed more than package.json: ${changed.join(", ")}`);
+  const output = buildOutput(after.keys());
+  if (output.length > 0) throw new Error(`${manifest.name} would ship build output: ${output.join(", ")}`);
   const destination = join(resolve(outDir), `${manifest.name}-${version}.tgz`);
   copyFileSync(result, destination);
   return destination;

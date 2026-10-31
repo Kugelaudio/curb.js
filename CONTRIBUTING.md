@@ -54,17 +54,17 @@ the one message that lasts. The `pr-rules` check enforces the title and body.
 
 Previews need nothing: every merge that changes `packages/framework` or
 `packages/create-curb.js`, beyond their docs, publishes `<next minor>-preview.<n>` to the npm
-dist-tag `preview` and pushes a matching git tag. It never moves `latest`.
+dist-tag `preview`, then pushes a matching git tag. It never moves `latest`.
 
 To cut a stable release:
 
 1. Open **Actions > publish > Run workflow** on `main`, or run
    `gh workflow run publish.yml --ref main -f semver=minor -f dry_run=true`.
 2. Pick `semver`: `patch`, `minor` or `major`.
-3. With `dry_run` on, the run does everything except tag, publish and release. Its summary shows
+3. With `dry_run` on, the run does everything except publish, tag and release. Its summary shows
    the release notes.
-4. Run it again with `dry_run` off. It tags `v<version>`, publishes `curb.js` and
-   `create-curb.js` to `latest`, and creates the GitHub Release.
+4. Run it again with `dry_run` off. It publishes `curb.js` and `create-curb.js` to `latest`, tags
+   `v<version>`, and creates the GitHub Release.
 
 If a run fails after verification, use **Re-run failed jobs**: each step skips what is already
 done. The version comes from the tags, npm and the CDN, so nothing in the repository is bumped.

@@ -7,15 +7,16 @@ name: publish
 #
 #   preview   a merge to main that changes a published package. Publishes
 #             <next minor>-preview.<n> to the `preview` dist-tag, with a matching git tag.
-#   stable    a dispatch on main. Publishes the bumped version to `latest`, with a `v<version>`
-#             tag and a GitHub Release. Being able to dispatch is the gate. dry_run does
-#             everything except tag, publish and release.
+#   stable    a dispatch on main. Publishes the bumped version to `latest`, then adds a
+#             `v<version>` tag and a GitHub Release. Being able to dispatch is the gate. dry_run
+#             does everything except publish, tag and release.
 #
 # Tags hold the version (scripts/release-version.mjs). It is stamped into the tarballs at build
 # time, because no workflow can push a commit to main. The tarballs verify tests are the ones
-# publish sends. A tag pushed with GITHUB_TOKEN starts no workflow, so nothing here listens for
-# tags. A failed run is finished with "Re-run failed jobs": every step after verify skips what
-# is already done.
+# publish sends. The order is verify, publish, tag, release, so a tag only ever names a version
+# npm holds: a tag written first would count as a release that never happened. A tag pushed with
+# GITHUB_TOKEN starts no workflow, so nothing here listens for tags. A failed run is finished
+# with "Re-run failed jobs": every step after verify skips what is already done.
 
 on:
   push:
@@ -33,7 +34,7 @@ on:
         options: [patch, minor, major]
         required: true
       dry_run:
-        description: Do everything except tag, publish and release
+        description: Do everything except publish, tag and release
         type: boolean
         default: false
 
@@ -124,27 +125,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  tag:
+  publish:
     needs: [plan, verify]
     if: ${{ !inputs.dry_run }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - name: Tag the released commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GIT_TAG: ${{ needs.plan.outputs.git_tag }}
-        run: |
-          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GIT_TAG" --jq .object.sha 2>/dev/null); then
-            [[ "$existing" == "$GITHUB_SHA" ]] || { echo "$GIT_TAG is already on $existing" >&2; exit 1; }
-          else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$GIT_TAG" -f "sha=$GITHUB_SHA"
-          fi
-
-  publish:
-    needs: [plan, tag]
     runs-on: ubuntu-24.04
     environment:
       name: npm
@@ -168,6 +151,13 @@ jobs:
         with:
           name: release
           path: out
+      # Before the first publish: a package npm lacks cannot have a trusted publisher, so its
+      # publish would fail after curb.js went out, leaving half a release.
+      - name: Refuse half a release
+        run: |
+          for name in curb.js create-curb.js; do
+            npm view "$name" name >/dev/null || { echo "$name is not on npm; publish nothing until it is" >&2; exit 1; }
+          done
       - name: Publish what npm lacks
         run: |
           # curb.js first: create-curb.js pins it.
@@ -193,8 +183,26 @@ jobs:
             echo "$spec is on npm"
           done
 
-  release:
+  tag:
     needs: [plan, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the released commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIT_TAG: ${{ needs.plan.outputs.git_tag }}
+        run: |
+          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GIT_TAG" --jq .object.sha 2>/dev/null); then
+            [[ "$existing" == "$GITHUB_SHA" ]] || { echo "$GIT_TAG is already on $existing" >&2; exit 1; }
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$GIT_TAG" -f "sha=$GITHUB_SHA"
+          fi
+
+  release:
+    needs: [plan, tag]
     if: needs.plan.outputs.dist_tag == 'latest'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
