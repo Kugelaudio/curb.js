@@ -30,7 +30,7 @@ describe('the prompt for coding agents', () => {
   it('names the AGENTS.md the scaffold writes', () => {
     expect(prompt).toContain(CREATE_COMMAND)
     expect(prompt).toContain('AGENTS.md')
-    expect(existsSync(inRepo('packages/create-framework-app/templates/default/AGENTS.md'))).toBe(true)
+    expect(existsSync(inRepo('packages/create-curb.js/templates/default/AGENTS.md'))).toBe(true)
   })
 
   it('names only commands the CLI has', () => {
