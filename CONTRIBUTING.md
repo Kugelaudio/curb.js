@@ -37,6 +37,7 @@ the one message that lasts. The `pr-rules` check enforces the title and body.
 - **Title:** `type(scope)!: subject`. The scope and `!` are optional. The type is one of
   `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `ci` or `chore`. The subject starts with
   a lowercase letter and has no trailing period. The whole title is at most 100 characters.
+  Dependabot alone may capitalise the subject, since its titles always start with `Bump`.
 
   ```text
   feat(framework): add a hook that runs after a call

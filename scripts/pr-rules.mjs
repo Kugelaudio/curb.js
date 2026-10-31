@@ -9,6 +9,10 @@ import { fileURLToPath } from "node:url";
 export const TYPES = ["feat", "fix", "perf", "refactor", "docs", "test", "ci", "chore"];
 export const MAX_TITLE_LENGTH = 100;
 
+// Dependabot capitalises "Bump" and no setting changes that. The login is the author GitHub
+// records in the event payload, which nothing in a pull request can edit.
+export const DEPENDABOT_LOGIN = "dependabot[bot]";
+
 const TITLE_EXAMPLE = "feat(framework): add a hook that runs after a call";
 const BODY_EXAMPLE = "## What\n\nA hook that runs after a call.\n\n## Why\n\nProjects need the transcript.";
 
@@ -26,8 +30,8 @@ function failure(rule, problem, example) {
   return `${rule}: ${problem}\n  valid example: ${example}`;
 }
 
-/** What is wrong with this title, one message per broken rule. */
-export function titleErrors(title) {
+/** What is wrong with this title from this author's login, one message per broken rule. */
+export function titleErrors(title, author) {
   const errors = [];
   const fail = (rule, problem) => errors.push(failure(rule, problem, TITLE_EXAMPLE));
 
@@ -39,7 +43,9 @@ export function titleErrors(title) {
     fail("title-format", `use type(scope)!: subject, where type is one of ${TYPES.join(", ")}`);
     return errors;
   }
-  if (!/^\p{Ll}/u.test(subject)) fail("title-subject", "the subject must start with a lowercase letter");
+  if (author !== DEPENDABOT_LOGIN && !/^\p{Ll}/u.test(subject)) {
+    fail("title-subject", "the subject must start with a lowercase letter");
+  }
   if (subject.endsWith(".")) fail("title-subject", "the subject must not end with a period");
   return errors;
 }
@@ -73,7 +79,7 @@ export function bodyErrors(body) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { pull_request: pr } = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
-  const errors = [...titleErrors(pr.title), ...bodyErrors(pr.body)];
+  const errors = [...titleErrors(pr.title, pr.user?.login), ...bodyErrors(pr.body)];
   for (const error of errors) console.error(error);
   if (errors.length > 0) process.exit(1);
   console.log("pr-rules: the title and body pass");

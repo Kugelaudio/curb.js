@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { MAX_TITLE_LENGTH, TYPES, bodyErrors, titleErrors } from "./pr-rules.mjs";
+import { DEPENDABOT_LOGIN, MAX_TITLE_LENGTH, TYPES, bodyErrors, titleErrors } from "./pr-rules.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./pr-rules.mjs", import.meta.url));
 const TEMPLATE = readFileSync(
@@ -14,14 +14,23 @@ const TEMPLATE = readFileSync(
   "utf8",
 );
 
+const DEPENDABOT_TITLES = [
+  "chore(deps): Bump ai from 6.0.311 to 7.0.155",
+  "chore(deps): Bump vite from 7.3.7 to 8.3.5",
+  "chore(deps): Bump the minor-and-patch group with 33 updates",
+  "chore(deps): Bump typescript from 6.0.3 to 7.0.2 in /website",
+  "chore(deps): Bump the minor-and-patch group in /website with 2 updates",
+  "ci(deps): Bump actions/checkout from 6.1.0 to 7.0.1",
+];
+
 /** Runs the script as the workflow does, on an event payload written to a file. */
-function run(pullRequest, directory) {
-  const event = join(directory, "event.json");
-  writeFileSync(event, JSON.stringify({ pull_request: pullRequest }));
+function run(pullRequest, directory, event = {}) {
+  const path = join(directory, "event.json");
+  writeFileSync(path, JSON.stringify({ ...event, pull_request: pullRequest }));
   return spawnSync(process.execPath, [SCRIPT], {
     cwd: directory,
     encoding: "utf8",
-    env: { ...process.env, GITHUB_EVENT_PATH: event },
+    env: { ...process.env, GITHUB_EVENT_PATH: path },
   });
 }
 
@@ -147,6 +156,68 @@ test("shell metacharacters in a title and body are only text", () => {
     assert.ok(!invalid.stdout.includes(payload) && !invalid.stderr.includes(payload));
 
     assert.equal(existsSync(join(directory, "pwned")), false);
+  } finally {
+    rmSync(directory, { recursive: true });
+  }
+});
+
+test("Dependabot's real titles pass, and only for its exact login", () => {
+  for (const title of DEPENDABOT_TITLES) {
+    assert.ok([...title].length <= MAX_TITLE_LENGTH, title);
+    assert.deepEqual(titleErrors(title, DEPENDABOT_LOGIN), [], title);
+    for (const author of [
+      undefined,
+      null,
+      "",
+      "someone",
+      "dependabot",
+      "Dependabot[bot]",
+      "dependabot[bot] ",
+      "dependabot-preview[bot]",
+      "not-dependabot[bot]",
+    ]) {
+      assert.match(titleErrors(title, author)[0], /^title-subject: .*lowercase/, `${author}`);
+    }
+  }
+});
+
+test("a person's capitalised subject still fails", () => {
+  assert.match(titleErrors("chore(deps): Bump ai from 6.0.311 to 7.0.155", "someone")[0], /lowercase/);
+  assert.match(titleErrors("feat: Add a thing", "someone")[0], /^title-subject: /);
+});
+
+test("every other title rule still applies to Dependabot", () => {
+  const check = (title) => titleErrors(title, DEPENDABOT_LOGIN);
+  assert.match(check("Bump ai from 6.0.311 to 7.0.155")[0], /^title-format: /);
+  assert.match(check("deps: Bump ai from 6.0.311 to 7.0.155")[0], /^title-format: /);
+  assert.match(check("chore(deps): Bump ai from 6.0.311 to 7.0.155.")[0], /^title-subject: .*period/);
+  assert.match(check("chore(deps): Bump ".padEnd(MAX_TITLE_LENGTH + 1, "a"))[0], /^title-length: /);
+});
+
+test("the body rule still applies to Dependabot, whose real bodies pass it", () => {
+  assert.deepEqual(bodyErrors("Bumps [ai](https://example.com) from 6.0.311 to 7.0.155."), []);
+  assert.deepEqual(bodyErrors("Bumps the minor-and-patch group with 33 updates:"), []);
+  assert.equal(bodyErrors("").length, 1);
+});
+
+test("the script takes the author from the pull request and from nowhere else", () => {
+  const directory = mkdtempSync(join(tmpdir(), "pr-rules-"));
+  try {
+    const pullRequest = { title: DEPENDABOT_TITLES[0], body: "Bumps ai." };
+
+    const dependabot = { ...pullRequest, user: { login: DEPENDABOT_LOGIN } };
+    assert.equal(run(dependabot, directory).status, 0);
+
+    const person = { ...pullRequest, user: { login: "someone" } };
+    assert.equal(run(person, directory).status, 1);
+    assert.equal(run(person, directory, { sender: { login: DEPENDABOT_LOGIN } }).status, 1);
+    assert.equal(
+      run({ ...person, head: { ref: "dependabot/npm_and_yarn/ai-7.0.155" } }, directory).status,
+      1,
+    );
+    assert.equal(run({ ...person, title: `chore: Bump ${DEPENDABOT_LOGIN}` }, directory).status, 1);
+
+    assert.equal(run({ ...pullRequest, user: null }, directory).status, 1);
   } finally {
     rmSync(directory, { recursive: true });
   }
