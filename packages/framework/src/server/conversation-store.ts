@@ -392,7 +392,7 @@ function integerId(conversationId: string): number {
   return id;
 }
 
-export const DEFAULT_CONVERSATIONS_DB_PATH = ".data/conversations.jsonl";
+export const DEFAULT_CONVERSATIONS_PATH = ".data/conversations.jsonl";
 
 /** The file the store wrote before it was JSON lines, by its default name. */
 const LEGACY_HISTORY_FILE = "conversations.db";
@@ -418,8 +418,8 @@ let defaultStore: ConversationStore | null | undefined;
  * set it to `off` to disable. Disabled automatically under vitest so unit
  * tests never write a shared file, and in managed hosting because the platform
  * is already the durable conversation store. A broken path or a file that is not
- * a conversation journal throws at first use — the host must fail loudly rather
- * than silently not record.
+ * a conversation journal throws here, at server boot (`createAgentServer`) — the host
+ * must fail loudly rather than silently not record.
  */
 export function getDefaultConversationStore(): ConversationStore | null {
   if (defaultStore !== undefined) return defaultStore;
@@ -436,7 +436,7 @@ function defaultStorePath(): string | null {
   if (configured === "off" || configured === "0" || process.env.VITEST || isManagedRunner()) {
     return null;
   }
-  return configured ?? DEFAULT_CONVERSATIONS_DB_PATH;
+  return configured ?? DEFAULT_CONVERSATIONS_PATH;
 }
 
 /** A managed runner: the platform is already the durable conversation store. */

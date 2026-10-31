@@ -11,7 +11,7 @@
  */
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { ConversationStore, DEFAULT_CONVERSATIONS_DB_PATH, legacyHistoryNotice } from "../server/conversation-store.js";
+import { ConversationStore, DEFAULT_CONVERSATIONS_PATH, legacyHistoryNotice } from "../server/conversation-store.js";
 
 export const CONVERSATIONS_USAGE = `Usage: curb conversations [--last <n> | --id <id>] [--json]
 
@@ -99,7 +99,7 @@ export function conversationsCommand(
     out("Conversations are not recorded here (KUGEL_CONVERSATIONS_DB is off).");
     return 0;
   }
-  const relative = configured ?? DEFAULT_CONVERSATIONS_DB_PATH;
+  const relative = configured ?? DEFAULT_CONVERSATIONS_PATH;
   const path = isAbsolute(relative) ? relative : join(projectRoot, relative);
   // A project that never talked has no file yet, and reading must not create one.
   const store = existsSync(path) ? new ConversationStore(path) : null;
