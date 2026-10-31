@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -10,6 +11,9 @@ import {
   RUNTIME_PROTOCOL_VERSION,
 } from "./declarations.js";
 import type { BundleAsset } from "./assets.js";
+
+/** Whether this Node can stand in for a package a dependency layer lacks (22.15 and later). */
+const hasStandIns = "registerHooks" in nodeModule;
 
 let outDir: string;
 let projectDir: string;
@@ -110,11 +114,14 @@ describe("the agent's goals and experiments", () => {
   const projectWith = (source: string, files: Record<string, string> = {}): string => {
     const root = mkdtempSync(join(tmpdir(), "curb-agent-declarations-"));
     const all = { "package.json": '{ "name": "declarations-probe", "private": true, "type": "module" }\n', ...files };
-    for (const [path, contents] of Object.entries({ ...all, "src/agent/agent.ts": source })) {
+    write(root, { ...all, "src/agent/agent.ts": source });
+    return root;
+  };
+  const write = (root: string, files: Record<string, string>): void => {
+    for (const [path, contents] of Object.entries(files)) {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       writeFileSync(join(root, path), contents, "utf8");
     }
-    return root;
   };
   const BOOKED = 'export const agent = { app: () => null, goals: { booked: { tool: "book_slot" } } };\n';
 
@@ -162,11 +169,28 @@ describe("the agent's goals and experiments", () => {
       },
     );
     try {
-      for (const dependencyLayer of [true, false]) {
-        await expect(bundleAgentDeclarations({ projectRoot: root, dependencyLayer })).resolves.toEqual({
-          goals: [{ name: "booked", kind: "tool", tool: "book_slot" }],
-          experiments: [],
+      const declared = { goals: [{ name: "booked", kind: "tool", tool: "book_slot" }], experiments: [] };
+      if (hasStandIns) {
+        for (const dependencyLayer of [true, false]) {
+          await expect(bundleAgentDeclarations({ projectRoot: root, dependencyLayer })).resolves.toEqual(declared);
+        }
+      } else {
+        // Nothing stands in, so the layer build escapes, and the full install the builder falls
+        // back to has the real packages.
+        await expect(bundleAgentDeclarations({ projectRoot: root, dependencyLayer: true })).rejects.toMatchObject({
+          code: "layer_escape",
+          reason: "unresolved_import",
+          path: "absent-native-image",
         });
+        write(root, {
+          "node_modules/absent-native-image/package.json": '{ "name": "absent-native-image", "type": "module", "main": "index.js" }\n',
+          "node_modules/absent-native-image/index.js":
+            "export default () => ({ resize() {} });\nexport class Sharp {}\nexport const format = {};\n",
+          "node_modules/absent-native-addon/package.json": '{ "name": "absent-native-addon", "type": "module", "main": "index.js" }\n',
+          "node_modules/absent-native-addon/index.js": "export default {};\n",
+          "node_modules/absent-native-ffi/index.js": "exports.FfiClient = class FfiClient {};\n",
+        });
+        await expect(bundleAgentDeclarations({ projectRoot: root, dependencyLayer: false })).resolves.toEqual(declared);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -182,11 +206,17 @@ describe("the agent's goals and experiments", () => {
         code: "layer_escape",
         reason: "unresolved_import",
         path: "absent-native-image",
-        message: expect.stringMatching(/with a stand-in for absent-native-image, which the build inputs lack: .*weird-name/),
+        message: expect.stringMatching(
+          hasStandIns
+            ? /with a stand-in for absent-native-image, which the build inputs lack: .*weird-name/
+            : /Node could not resolve it in the build inputs/,
+        ),
       });
       // A full install has every package, so there a failure is the project's own.
       await expect(bundleAgentDeclarations({ projectRoot: root, dependencyLayer: false })).rejects.toThrow(
-        /cannot load the agent in src\/agent\/ to read its goals and experiments: .*weird-name/,
+        hasStandIns
+          ? /cannot load the agent in src\/agent\/ to read its goals and experiments: .*weird-name/
+          : /cannot load the agent in src\/agent\/ to read its goals and experiments: .*absent-native-image/,
       );
     } finally {
       rmSync(root, { recursive: true, force: true });

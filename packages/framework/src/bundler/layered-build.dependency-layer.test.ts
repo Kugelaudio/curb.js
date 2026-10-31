@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -58,6 +59,16 @@ export async function resolve(specifier, context, next) {
 const NFT_PROBE_REGISTER = `import { register } from "node:module";
 register(new URL("./hooks.mjs", import.meta.url));
 `;
+
+/** Whether this Node can stand in for a package a dependency layer lacks (22.15 and later). */
+const hasStandIns = "registerHooks" in nodeModule;
+
+/** The one JSON line an escape prints on stderr. */
+const escapeLines = (stderr: string): unknown[] =>
+  stderr
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line) as unknown);
 
 beforeAll(async () => {
   createLayeredProject();
@@ -163,6 +174,15 @@ describe("curb build --dependency-layer", () => {
         cwd: materializedProject,
         bin: mirror(join(frameworkRoot, "bin", "curb.js")),
       });
+      if (!hasStandIns) {
+        // Nothing stands in for the natives, so this is the escape, and the build the builder
+        // falls back to is the full one beforeAll ran, which holds the declarations.
+        expect(child.status, `${child.stdout}\n${child.stderr}`).toBe(75);
+        expect(escapeLines(child.stderr)).toEqual([{ code: "layer_escape", reason: "unresolved_import", path: "sharp" }]);
+        expect(existsSync(outDir)).toBe(false);
+        expect(declaredIn(emitManifestPath())).toEqual(DECLARED);
+        return;
+      }
       // 0, not 75: the declarations were read without a fallback to a full install.
       expect(child.status, `${child.stdout}\n${child.stderr}`).toBe(0);
       const built = readFileSync(join(outDir, MANIFEST_FILENAME), "utf8");
@@ -183,10 +203,7 @@ describe("curb build --dependency-layer", () => {
         bin: mirror(join(frameworkRoot, "bin", "curb.js")),
       });
       expect(escaped.status, `${escaped.stdout}\n${escaped.stderr}`).toBe(75);
-      const lines = escaped.stderr.split("\n").filter((line) => line.startsWith("{"));
-      expect(lines.map((line) => JSON.parse(line) as unknown)).toEqual([
-        { code: "layer_escape", reason: "unresolved_import", path: "sharp" },
-      ]);
+      expect(escapeLines(escaped.stderr)).toEqual([{ code: "layer_escape", reason: "unresolved_import", path: "sharp" }]);
       expect(existsSync(escapedOut)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
