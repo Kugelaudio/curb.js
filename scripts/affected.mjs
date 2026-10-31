@@ -11,7 +11,8 @@ export const SUITES = ["framework", "scaffolders", "scripts", "examples", "compa
 
 const IGNORED = [
   /^packages\/framework\/docs\/(?!agent-guide\/)/,
-  /^\.github\/assets\//,
+  /^\.github\/(assets|ISSUE_TEMPLATE)\//,
+  /^\.github\/(dependabot\.yml|AGENTS\.md)$/,
   /^(?!README\.md$)[^/]+\.md$/,
   /^(LICENSE|NOTICE|\.gitignore|cliff\.toml)$/,
 ];
@@ -27,7 +28,8 @@ const RULES = [
   [/^examples\/insurance-agent\//, ["examples", "smoke"]],
   [/^examples\//, ["examples"]],
   [/^compat\//, ["compat"]],
-  [/^\.github\/workflows\/publish\.yml$/, ["scripts"]],
+  // scripts/pr-rules.test.mjs reads the template, so an edit to it can fail that test.
+  [/^\.github\/(workflows\/(publish|pr-rules)\.yml|pull_request_template\.md)$/, ["scripts"]],
   [/^scripts\/check-projects\./, ["scripts", "examples", "compat"]],
   [/^scripts\/self-host-smoke\./, ["smoke"]],
   [/^scripts\/(npm-package|release-install-test|release-version)\./, ["scripts", "package"]],

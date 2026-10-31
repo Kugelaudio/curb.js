@@ -12,6 +12,12 @@ test("docs the site does not render run nothing", () => {
   );
 });
 
+test("repository settings no test reads run nothing", () => {
+  for (const file of [".github/dependabot.yml", ".github/AGENTS.md", ".github/ISSUE_TEMPLATE/bug_report.md"]) {
+    assert.deepEqual(affectedSuites([file]), []);
+  }
+});
+
 test("what the site reads runs the website suite", () => {
   for (const file of [
     "website/src/pages/index.astro",
@@ -41,8 +47,10 @@ test("framework code runs what is built on it", () => {
   ]);
 });
 
-test("the publish workflow runs the scripts suite, which tests it", () => {
-  assert.deepEqual(affectedSuites([".github/workflows/publish.yml"]), ["scripts"]);
+test("the files the scripts suite tests run that suite", () => {
+  for (const file of ["workflows/publish.yml", "workflows/pr-rules.yml", "pull_request_template.md"]) {
+    assert.deepEqual(affectedSuites([`.github/${file}`]), ["scripts"]);
+  }
 });
 
 test("the release notes config runs nothing", () => {
@@ -70,7 +78,14 @@ test("a script runs what depends on it", () => {
 });
 
 test("the lockfile, the root manifest, this workflow and any unknown file run everything", () => {
-  for (const file of ["package-lock.json", "package.json", ".github/workflows/test.yml", "something/new.txt"]) {
+  for (const file of [
+    "package-lock.json",
+    "package.json",
+    ".github/workflows/test.yml",
+    ".github/workflows/new.yml",
+    ".github/CODEOWNERS",
+    "something/new.txt",
+  ]) {
     assert.deepEqual(affectedSuites([file]), SUITES);
   }
 });
