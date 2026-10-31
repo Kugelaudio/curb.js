@@ -1,3 +1,6 @@
+// The channel a run releases to comes from the same expression everywhere, and a preview dispatch
+// needs nothing but the channel. The checks below read publish.yml as text.
+//
 // A tarball path in a workflow must reach npm as a path. npm reads a bare `out/x.tgz` as the
 // GitHub repository out/x.tgz and fails in git, which no check caught before the first release
 // run, because a path written any other way passes. So this runs real `npm publish --dry-run`
@@ -19,6 +22,15 @@ export function npmTarballArgs(text) {
     .split("\n")
     .filter((line) => /(^|\s)npm\s/.test(line))
     .flatMap((line) => [...line.matchAll(/"([^"\s]+\.tgz)"/g)].map((match) => match[1]));
+}
+
+const publishYml = readFileSync(join(workflows, "publish.yml"), "utf8");
+
+/** The lines of a workflow_dispatch input, up to the next input. */
+function dispatchInput(name) {
+  const match = new RegExp(`^      ${name}:\\n((?:        .*\\n)+)`, "m").exec(publishYml);
+  assert.ok(match, `publish.yml has no ${name} input`);
+  return match[1];
 }
 
 function tarballArgs() {
@@ -74,4 +86,23 @@ test("finds a bare path, the form npm takes for a repository", () => {
   const line = '            npm publish --access public --tag "$DIST_TAG" "out/$name-$VERSION.tgz"';
   assert.deepEqual(npmTarballArgs(line), ["out/$name-$VERSION.tgz"]);
   assert.deepEqual(npmTarballArgs('tarball="out/$name-$VERSION.tgz"'), []);
+});
+
+test("a dispatch chooses its channel, and preview is the default", () => {
+  const channel = dispatchInput("channel");
+  assert.match(channel, /options: \[preview, stable\]/);
+  assert.match(channel, /default: preview/);
+});
+
+test("a preview dispatch does not need a semver", () => {
+  const semver = dispatchInput("semver");
+  assert.doesNotMatch(semver, /required: true/);
+  assert.doesNotMatch(semver, /default:/, "a stable dispatch that forgets semver must fail, not guess");
+});
+
+test("the channel reads the same in the concurrency group and in plan, and a push is preview", () => {
+  const expression = "inputs.channel || 'preview'";
+  assert.ok(publishYml.includes(`group: release-\${{ ${expression} }}`));
+  assert.ok(publishYml.includes(`CHANNEL: \${{ ${expression} }}`));
+  assert.doesNotMatch(publishYml, /github\.event_name/);
 });
