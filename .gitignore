@@ -4,7 +4,7 @@ node_modules
 # Generated Vite dependency cache (including caches beside example projects).
 .vite/
 .framework/
-.curb/build/
+**/.curb/build/
 .env
 
 # MCP OAuth token stores — NEVER commit (contain live access tokens)
