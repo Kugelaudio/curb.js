@@ -21,7 +21,7 @@
  * What it does NOT cover: the receiver's own jitter buffer. Once the last
  * frame is on the track, the remaining tens of milliseconds of client-side
  * playout are not observable from the agent side by any API LiveKit exposes.
- * No timer is added to paper over that — see docs/agent-guide/orchestration.md.
+ * No timer is added to paper over that — see docs/agent-guide/voice-sessions.md.
  */
 
 /** The part of LiveKit's `SpeechHandle` a hang-up needs. Structural on

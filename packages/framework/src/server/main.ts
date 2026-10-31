@@ -52,11 +52,12 @@ import { createPreviewAgentBundle, createVoiceAgentBundle } from "../voice-host.
 import type { CallRegistrar } from "../hosted/call-link.js";
 import { openCallManagement, serveCall } from "../hosted/serve-call.js";
 import { logError, logInfo } from "./log.js";
+import { CURB_MARK } from "../brand.js";
 
 function oauthResultPage(title: string, detail: string): string {
   return `<!doctype html><meta charset="utf-8"><title>${title}</title>
 <body style="font-family: system-ui; display: grid; place-items: center; height: 100vh; margin: 0">
-<div style="text-align: center"><h1 style="font-size: 1.2rem">${title}</h1><p>${detail}</p></div></body>`;
+<div style="text-align: center">${CURB_MARK}<h1 style="font-size: 1.2rem">${title}</h1><p>${detail}</p></div></body>`;
 }
 
 /** OAuth redirect target for MCP servers. The provider registered this exact

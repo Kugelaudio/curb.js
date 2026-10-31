@@ -1,231 +1,7 @@
-# Hosting a Curb agent yourself
+# Host protocol
 
-A Curb agent needs no hosted platform. Everything below runs on your own machines with
-your own LiveKit deployment (LiveKit Cloud or self-hosted `livekit-server`) and your own
-provider keys. This page covers the four ways to run an agent and specifies **host
-protocol v1**, the HTTP contract between a Curb runner and whatever orchestrator starts
-it.
-
-## Ways to run an agent
-
-| Mode | Command | What it needs | Use it for |
-|---|---|---|---|
-| Dev | `npm run dev` (`curb dev`) | provider keys in `.env` | building the agent; preview, chat and voice on one port |
-| LiveKit worker | `npm start` (`curb start`) | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | a long-running worker that LiveKit dispatches rooms to |
-| Built artifact | `curb build`, then `node <entrypoint>` | Node only; no `npm install`, no TypeScript | shipping one self-contained directory to a server or container |
-| Managed runner | the built artifact with `CURB_MANAGEMENT_ADDR` + `CURB_MANAGEMENT_TOKEN` | an orchestrator that speaks host protocol v1 | your own control plane placing calls on warm runners |
-
-Every mode runs the same voice session, the framework's: the same providers, greeting,
-caller info and call identity ([orchestration.md](agent-guide/orchestration.md)). A
-project's `src/orchestration/` is not loaded by any of them.
-
-Dev and the LiveKit worker also serve host protocol v1 for the calls they run when
-`CURB_MANAGEMENT_ADDR` and `CURB_MANAGEMENT_TOKEN` are set: see
-[Management port in dev and worker mode](#management-port-in-dev-and-worker-mode).
-
-### Dev
-
-`curb dev` serves the preview on `http://127.0.0.1:4000`. See the project README for the
-loop itself. With no LiveKit configured, a call runs over the page's own connection to the
-dev server, so voice needs nothing else running. Such a call has no phone line, so a
-transfer is refused. With `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` set,
-calls use that deployment instead. All three are needed: `curb dev` does not start with only
-some of them set, and names the missing ones.
-
-A host that runs `curb dev` for someone else, where the browser cannot reach a LiveKit
-server beside it, sets `CURB_REALTIME_SESSION_URL` instead of handing over an API key and
-secret, which would mint tokens for any room. On every **Start call** `curb dev` sends a
-`POST` with no body to that URL and expects one fresh room for that call:
-
-```json
-{
-  "room": "preview-1f3a9c",
-  "agentUrl": "ws://livekit.example.com:7880",
-  "agentToken": "<a token for that room, as the agent>",
-  "callerUrl": "wss://livekit.example.com",
-  "callerToken": "<a token for that room, as the person calling>"
-}
-```
-
-The agent server joins with the agent token and the page with the caller token. A non-2xx answer fails the call with the body's `message`, so the
-host's own words ("try again in a moment") reach the preview. In this mode `LIVEKIT_URL`,
-`LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are refused, not ignored: `curb dev` does not
-start with one of them in the environment or `.env`, and a call does not start when one was
-added to `.env` since.
-
-### LiveKit worker (`npm start`)
-
-The scaffolded project's `npm start` registers a worker with your LiveKit deployment and
-waits to be dispatched:
-
-```bash
-export LIVEKIT_URL=wss://livekit.example.com
-export LIVEKIT_API_KEY=...
-export LIVEKIT_API_SECRET=...
-npm start
-```
-
-The worker registers under `CURB_AGENT_NAME` when it is set, otherwise under the `name` in
-the project's `package.json`, otherwise as `curb-agent`. Configure a LiveKit dispatch rule
-(room or SIP) that targets that name. Provider keys (`KUGELAUDIO_API_KEY` and so on) come
-from the project's `.env` or the process environment.
-
-### Provider keys
-
-Which providers an agent runs is authored in the agent, as `<Agent llm stt tts>` props
-from `curb/providers` (see [authoring.md](agent-guide/authoring.md)). The environment
-holds only the keys of the providers the agent actually uses; a missing one fails with an
-error naming it.
-
-| Provider prop | Variable |
-|---|---|
-| `kugelaudio.llm({ model? })` (default LLM) | `KUGELAUDIO_API_KEY`; `KUGELAUDIO_API_BASE` (default `https://api.eu.kugelaudio.com`), plus `/v1` |
-| `anthropic(model)` | `ANTHROPIC_API_KEY` |
-| `openai(model)`, `openai.stt()`, `openai.tts()` | `OPENAI_API_KEY` |
-| `openaiCompatible({ baseURL, model })` | `AGENT_LLM_API_KEY`, else `OPENAI_API_KEY`; optional |
-| `azure.stt()` (default STT) | `AZURE_SPEECH_KEY`; `AZURE_SPEECH_REGION` (default `eastus`) |
-| `kugelaudio.stt()` | `KUGELAUDIO_API_KEY`; `KUGELAUDIO_API_BASE` (default `https://api.kugelaudio.com`) |
-| `kugelaudio.tts()` (default TTS) | `KUGELAUDIO_API_KEY`; `KUGELAUDIO_API_BASE` (default `https://api.kugelaudio.com`) |
-| `deepgram.stt()` | `DEEPGRAM_API_KEY` |
-| `elevenlabs.stt()`, `elevenlabs.tts()` | `ELEVEN_API_KEY` (or `ELEVENLABS_API_KEY`) |
-| `cartesia.tts()` | `CARTESIA_API_KEY` |
-
-### Built artifact (`curb build`)
-
-```bash
-npx curb build --out dist
-```
-
-`dist/` is self-contained: the bundled agent, its traced runtime dependencies (including
-native modules for the build machine's OS and architecture) and `curb.bundle.json`. The
-manifest's `entrypoint` names the file to run; never hardcode it. The build starts the
-finished artifact once and renders every skill before it reports success; see
-[build-verification.md](build-verification.md). Build on the OS and architecture you
-deploy to (the manifest records it under `target`).
-
-The built entrypoint picks its mode from the environment, one of four:
-
-| Environment | Mode |
-|---|---|
-| `CURB_READINESS_PROBE=1` | load the bundle, construct the agent, exit 0; touches no media |
-| `CURB_MANAGEMENT_ADDR` (+ `CURB_MANAGEMENT_TOKEN`) | managed runner, below |
-| `CURB_REALTIME_URL` + `CURB_REALTIME_TOKEN` | join that one already-created room, serve one call, exit |
-| none of the above | LiveKit worker, exactly like `npm start` (needs the three `LIVEKIT_*` variables): the same job, under the same name (`CURB_AGENT_NAME`, otherwise the package name `curb build` baked in) |
-
-In the room-token modes the runner never sees `LIVEKIT_API_KEY` or `LIVEKIT_API_SECRET`:
-your orchestrator creates the room and mints a room-scoped token, and the runner removes
-the API credentials from its own environment.
-
-### Managed runner
-
-A managed runner is started before any call, pays its warmup (bundle, VAD model,
-provider plugins) once, announces `ready`, and then takes calls over an HTTP management
-port. It does not exit when a call ends; it exits after a drain empties it.
-
-```bash
-cd dist
-CURB_MANAGEMENT_ADDR=127.0.0.1:7071 \
-CURB_MANAGEMENT_TOKEN="$(openssl rand -hex 24)" \
-node "$(node -p 'require("./curb.bundle.json").entrypoint')"
-```
-
-Your orchestrator then places calls with `POST /v1/sessions`, handing each call a
-LiveKit URL and a room-scoped token. Everything it can say is host protocol v1.
-
-#### Several calls in one runner
-
-With `CURB_MAX_SESSIONS=N` a managed runner serves up to N calls of its one deployment at
-once, in one process. What Curb guarantees between them:
-
-- **Capacity is exact.** N starts are accepted; the next is refused with `409
-  runner_at_capacity` until a call has fully ended (its recording finished and its scratch
-  directory removed). A retry of a call already running is still answered as a repeat.
-  `CURB_MAX_SESSIONS` and the generation pins are read once, at boot: a runner restored
-  from a memory snapshot keeps the values it booted with, whatever its environment says
-  after the restore. `GET /v1/runner` and the ready line report the bound in force.
-- **One generation per runner.** A start pinned to another `deploymentId` or
-  `configurationVersion` than the runner's is refused with `409 generation_mismatch`. Each
-  pin is compared only when both the runner and the request state it, so set
-  `CURB_DEPLOYMENT_ID` on every runner that serves more than one call.
-- **Each call has its own identity.** The agent reads its call as `useSession().call`:
-  `sessionId` is the start request's, never the environment's. The runner's environment
-  (provider keys, `CURB_*` variables) is the same for every call on it; never read a
-  call's identity from `process.env`.
-- **Each call has its own scratch directory**, `useSession().call.scratchDir`: created
-  under `$TMPDIR` (mode `0700`, a random name) when the call starts, removed when it ends,
-  including when it fails to start or is stopped. No other call is given its path. If it
-  cannot be created, the call runs without one and the runner logs why; point `TMPDIR` at
-  a writable directory.
-- **Each call has its own conversation**: agent runtime, transcript, agent stores
-  (`createAgentStore`), app messages, live settings, debug clips and event-stream producer.
-  Shared by design: the loaded bundle, the VAD model, provider plugin modules, the MCP
-  manager and its connections, and the conversation sink.
-
-What Curb cannot guarantee: calls in one process run as one OS user. Agent code that
-writes outside its `scratchDir` (`os.tmpdir()` itself, a fixed path) or keeps state in a
-module-level variable shares it with every other call on the runner. Run one call per
-runner (the default) when calls must not share a process.
-
-### Management port in dev and worker mode
-
-`curb dev` and `curb start` open the same management port as a managed runner when both
-variables are set, so you can write and test your own host against a real agent without
-deploying anything:
-
-```bash
-CURB_MANAGEMENT_ADDR=127.0.0.1:7071 \
-CURB_MANAGEMENT_TOKEN="$(openssl rand -hex 24)" \
-npm start    # or: npm run dev
-```
-
-| Variable | Meaning |
-|---|---|
-| `CURB_MANAGEMENT_ADDR` | `host:port` to listen on. Absent: no port, nothing else changes. |
-| `CURB_MANAGEMENT_TOKEN` | Bearer token for every route but `/health`. Required: with the address but no token the port stays closed and the process says why. |
-
-`curb start` prints `curb: host protocol v1 on http://127.0.0.1:7071/v1 (calls by room name)`;
-`curb dev` shows the same address on its `Host` banner row.
-
-Here LiveKit dispatch (or the preview's **Start call**) places the calls, not your host.
-Every call the process runs is registered while it runs, **under its LiveKit room name as
-the session id**, and leaves the list when it ends. In worker mode that is also the agent's
-`useSession().call.sessionId`; in dev the agent's is its preview conversation's id
-(`preview-…`), which a voice call on that conversation keeps. In worker mode each job runs
-in its own process and registers its call with the worker over a private local socket, so
-one port covers every job of the worker. For those calls your host can:
-
-| Route | In dev and worker mode |
-|---|---|
-| `GET /v1/sessions`, `GET /v1/sessions/{id}` | the calls running now |
-| `GET /v1/runner/events?from=N` | their records (see "What a call's record contains"), plus what the voice session reports through the `reporter` it is handed |
-| `POST /v1/sessions/{id}/messages` | delivered to that call's `useMessage({ from: "host" })` handlers |
-| `PATCH /v1/sessions/{id}` | live settings, gated by `<Agent adjustable={{ host: [...] }}>` |
-| `DELETE /v1/sessions/{id}` | ends the call (`graceMs` lets the agent finish its sentence) |
-| `POST /v1/sessions`, `GET /v1/runner`, `POST /v1/runner/drain` | `501 runner_takes_no_calls`: LiveKit places, counts and drains the calls here; stop the worker with `SIGTERM` |
-
-With `askHost`, an agent in dev or worker mode now has a host to wait for: answer its
-`host` record on the events stream with a `HostMessage` whose `inReplyTo` is the record's
-`id`. Without the port, `askHost` rejects `HostUnavailableError` as before.
-
-```bash
-ADDR=127.0.0.1:7071
-auth=(-H "Authorization: Bearer $CURB_MANAGEMENT_TOKEN")
-
-curl -s "${auth[@]}" http://$ADDR/v1/sessions                       # which rooms have a call
-curl -sN "${auth[@]}" "http://$ADDR/v1/runner/events?from=0"        # follow them (another terminal)
-ROOM=curb-1a2b3c4d                                                   # a sessionId from the list
-
-curl -s "${auth[@]}" http://$ADDR/v1/sessions/$ROOM
-curl -s "${auth[@]}" -H 'content-type: application/json' \
-  -d '{"id":"m-1","name":"ops.notice","payload":{"text":"supervisor online"}}' \
-  http://$ADDR/v1/sessions/$ROOM/messages
-curl -s "${auth[@]}" -X PATCH -H 'content-type: application/json' \
-  -d '{"tts":{"voice":17}}' \
-  http://$ADDR/v1/sessions/$ROOM
-curl -s "${auth[@]}" -X DELETE "http://$ADDR/v1/sessions/$ROOM?reason=host_stop&graceMs=2000"
-```
-
-## Host protocol v1
+A host starts a built agent, gives it calls and follows them over this HTTP protocol.
+[Self-hosting](./hosting.md) covers when you need it.
 
 Curb owns this protocol; nothing in it is specific to any one host. The Zod schemas in
 `src/hosted/protocol.ts` are the source. `src/hosted/protocol.schema.json` is the same
@@ -233,7 +9,7 @@ contract as one JSON Schema 2020-12 document (every type under `$defs`) for host
 in other languages, and `src/hosted/protocol-fixtures/{valid,invalid}/<Type>.<case>.json`
 are examples every implementation must accept or refuse.
 
-### Runner environment
+## Runner environment
 
 | Variable | Meaning |
 |---|---|
@@ -246,7 +22,7 @@ are examples every implementation must accept or refuse.
 Provider keys for the agent's STT, LLM and TTS are ordinary environment variables of the
 runner process. A start request never carries secrets.
 
-### The ready line
+## The ready line
 
 Once warm, the runner prints one line on stdout. Hosts may rely on its exact prefix:
 
@@ -258,7 +34,7 @@ That is `curb-hosted`, a space, then a `LifecycleReady` JSON object with `event`
 first key. Every lifecycle record is also printed this way. A runner whose warmup fails
 never prints `ready` and exits non-zero.
 
-### Routes
+## Routes
 
 `GET /health` needs no auth and answers `200 {"ok":true,"protocolVersion":1,"versions":[1]}`.
 Every other route needs `Authorization: Bearer <token>`, else `401 {"error":"unauthorized"}`
@@ -288,7 +64,7 @@ Shapes (all in `protocol.schema.json`):
 - `clientContext` is what the caller's page or app said about this call, one string per key
   (`{"event": "webinar-11-04"}`); anything else is `400 invalid_request`. The call's agent
   reads each entry as `client.<key>`, set before its session starts, so the greeting can use
-  it ([agent guide](./agent-guide/orchestration.md#how-a-call-opens)). Per call, never in the
+  it ([agent guide](./voice-sessions.md#how-a-call-opens)). Per call, never in the
   environment. Curb passes it on as sent: your host decides its limits, and since a browser
   wrote it, never an identity or a permission.
 - `direction` is `outbound` when your host dialed the caller, `inbound` (the default) otherwise; the agent reads it as `call.direction`.
@@ -312,7 +88,7 @@ Shapes (all in `protocol.schema.json`):
 - In dev and worker mode, `POST /v1/sessions`, `GET /v1/runner` and `POST /v1/runner/drain`
   answer `501 runner_takes_no_calls` (see above).
 
-### Error codes
+## Error codes
 
 Every non-2xx body is `ErrorBody` = `{error, detail?, versions?, requested?, oldestRetained?, path?, issues?}`.
 Classify by `error`, never by `detail`, which is prose for humans.
@@ -331,7 +107,7 @@ protocol v1 answered some 404s with prose in `error`; treat any 404 on
 `not_adjustable` (403, with `path`) and `invalid_settings` (422, with `issues`) refuse a
 settings change as a whole (see "Live session settings").
 
-### Event stream
+## Event stream
 
 `GET /v1/runner/events?from=N` streams everything the runner has to say as NDJSON
 (`content-type: application/x-ndjson`), one `JournalRecord` per line:
@@ -353,7 +129,7 @@ Record classes:
 |---|---|---|
 | `conversation` | the session id | `{type: "turn", seq, at, speaker: "caller" \| "agent", text, final}` or `{type: "event", seq, at, kind: "curb.<name>", durationMs?, payload}` |
 | `lifecycle` | `runner` | `{event, ...}`: `ready{address, maxSessions, warmupMs}`, `call-started{session, room}`, `call-stopping{session, reason}`, `first-audio{session, monotonicMs, sinceStartMs}`, `draining{signal?, active}`, `ended{reason}` |
-| `host` | the session id | `{type: "host", seq, at, id, name, payload, expectsReply, inReplyTo?}`, a message from the agent to its host (next release) |
+| `host` | the session id | `{type: "host", seq, at, id, name, payload, expectsReply, inReplyTo?}`, a message from the agent to its host |
 
 **What a call's record contains.** Besides the turns and the `host` records, every call
 that keeps a record (a managed or direct-join runner, `curb dev` / `curb start` with a
@@ -389,7 +165,7 @@ and record the envelopes between `requested` and `oldestRetained` as lost.
 the event `curb.ended` (payload `{reason}`); EOF without it means the stream was cut. The
 runner's own terminal record is lifecycle `ended`, written before the listener closes.
 
-### Validating a host implementation
+## Validating a host implementation
 
 Decode every answer and every stream line against the matching `$defs` type of
 `protocol.schema.json`, and run your decoder over the fixtures: each file under
@@ -401,7 +177,7 @@ The Curb repository runs this end to end on every change (`npm run smoke:self-ho
 builds an example agent, starts it as a managed runner with no LiveKit credentials, and
 checks every answer against the schema.
 
-### curl walkthrough
+## curl walkthrough
 
 ```bash
 ADDR=127.0.0.1:7071
@@ -520,8 +296,8 @@ connects. Up to 32 are held per call; past that the message is refused with
 `409 runner_at_capacity` and its id is not taken, so retry it once the call is `connected`.
 A held message was already answered `202`, so if the agent refuses it on delivery the
 runner logs a warning and counts it instead. A direct-join runner (handed its one call at
-start) answers `501 runner_takes_no_calls` on this route: it has no host-to-agent path,
-but its agent-to-host records still leave over its events stream.
+start) answers `501 runner_takes_no_calls` on this route: it has no host-to-agent path, so
+an `askHost` there times out, but its agent-to-host records still leave over its events stream.
 
 ```bash
 curl -s "${auth[@]}" -H 'content-type: application/json' \
@@ -546,6 +322,27 @@ id, `seq` from the same per-call counter as the conversation:
 `HostMessage` whose `inReplyTo` is the record's `id`. `toHost` records have
 `expectsReply: false`. Which keys exist and what their payloads mean is agreed between
 your agent and your host; Curb only carries them.
+
+### Transfer on your own host
+
+`useTransferCall` and `<TransferCallTool>` work over these messages, so a host that can dial
+can offer transfers. The transfer asks with `askHost`, so it appears on the events stream as a
+`host` record with `expectsReply`:
+
+| Direction | Name | Payload |
+|---|---|---|
+| Agent to host | `call.transfer` | `{ to, ringTimeoutSeconds? }` |
+| Host to agent, as the reply | `call.transfer.accepted` | `{ transferId }` |
+| Host to agent, as the reply | `call.transfer.refused` | `{ code, message }`, passed to the agent as the outcome `refused` |
+| Host to agent, once the target answered or the dial failed | `call.transfer.result` | `{ transferId, outcome, dialStatus }`, with `outcome` one of `answered`, `no_answer`, `busy`, `failed`. Not a reply: it has no `inReplyTo` |
+
+Both replies set `inReplyTo` to the record's `id`.
+
+Dial the target into the call's LiveKit room. When it joins, the agent stops listening and
+speaking; when it leaves and the caller is still there, the agent takes the call back. A host
+that sends no reply in time gives the agent the outcome `failed`, with the code
+`transfer_no_reply`. A direct-join runner takes no host messages, so a transfer there ends the
+same way.
 
 ### Client side
 
@@ -663,7 +460,7 @@ the agent says so, per origin:
 import { Agent, useSession } from "curb";
 import { kugelaudio } from "curb/providers";
 
-export default function SupportAgent() {
+export function App() {
   return (
     <Agent
       llm={kugelaudio.llm()}
@@ -735,3 +532,9 @@ curl -s "${auth[@]}" -X PATCH -H 'content-type: application/json' \
 
 From the client: `agent.update(...)` in `curb/client` above, or the `curb.update` RPC with
 `livekit-client`. A change to a call that is still `starting` is applied once it connects.
+
+## Next steps
+
+- [Self-hosting](./hosting.md): the ways to run an agent.
+- [App messages](./app-messages.md): the agent's side.
+- [Mid-call changes](./mid-call-changes.md): what `adjustable` allows.

@@ -72,7 +72,7 @@ The **Context** tab shows what the model gets from your code, live:
   description and says **In use** (the skill the agent is on), **Read** (in the
   model's context from earlier), **Locked** (its route waits for a condition),
   or what it holds, such as **2 skills · 1 tool**. The chevron in front expands
-  it to its own tools, which work only while it is in use, and its sub-skills;
+  it to its own tools, which work only while it is loaded, and its sub-skills;
   the row opens it. The skill in use starts expanded.
 - **Built in**: what the framework adds on its own, such as ending the call or
   opening a skill.
@@ -153,7 +153,7 @@ session; selecting an earlier one restores its transcript and agent state (the
 skills it had open, its store data) without running any of its tools again, so
 you can continue it.
 
-- **What the agent did**, in order inside its turn: "Opened skill" for a skill
+- **What the agent did**, in order inside its turn: "Open skill" for a skill
   it read, and a row per tool call with its first arguments and its outcome,
   which expands to the full arguments and result.
 - **What the model read**, under the newest reply (and under older ones on
@@ -221,7 +221,7 @@ If the server stopped in the middle of a write, the cut-off last line is dropped
 the next time the file opens, with a warning naming its line; every record
 before it is kept. Any other line that is not a record stops the server with the
 file and line number, so fix or delete that line, or move the file away to start
-a new history. An older curb recorded to `.data/conversations.db`; that file is
+a new history. An older Curb recorded to `.data/conversations.db`; that file is
 not read (the startup log says so once) and can be deleted.
 
 The conversation list behind the conversation title reads this file:
@@ -307,5 +307,10 @@ What your sink has to guarantee, because of those retries:
 - `startConversation` is retried only after it rejected, so a rejection must
   mean no conversation was created.
 - Calls for one session never overlap and arrive in `seq` order, so a write
-  that keeps failing holds back the ones after it. curb puts no timeout on a
+  that keeps failing holds back the ones after it. Curb puts no timeout on a
   call; bound your own.
+
+## Next steps
+
+- [Testing](./testing.md): the same checks from the command line.
+- [Improve from real calls](./improve-from-calls.md): use a recorded conversation.

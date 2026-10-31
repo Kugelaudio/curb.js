@@ -1,5 +1,10 @@
 <div align="center">
-  <h1>curb.js</h1>
+  <h1>
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-on-dark.svg">
+      <img alt="Curb" src=".github/assets/logo-on-light.svg" width="220">
+    </picture>
+  </h1>
   <p><strong>The React framework for voice agents.</strong></p>
 
 <a href="https://kugelaudio.com"><img alt="Made by KugelAudio" src="https://img.shields.io/badge/MADE%20BY%20KugelAudio-000000.svg?style=for-the-badge&labelColor=000000"></a>
@@ -94,7 +99,7 @@ Whatever the component renders is what the agent knows and can do right now.
 You need Node.js 22.12 or newer.
 
 ```bash
-npm create kugelaudio my-agent
+npm create curb.js my-agent
 cd my-agent
 npx curb login         # sign in once in the browser
 npm run dev            # open http://127.0.0.1:4000
@@ -110,9 +115,6 @@ away.
 press **Start call** and speak. The starter agent is **Juno**, a personal
 assistant. Ask her "how does this work?".
 
-> Not on npm yet. For now, scaffold from a checkout of this repo:
-> `npm install` once at the root, then `npm run new -- ~/my-agent`.
-
 To update a project later, run `npm run upgrade` inside it.
 
 ## Hosting
@@ -121,7 +123,7 @@ A curb agent runs anywhere Node runs, with your own LiveKit and your own
 provider keys. Set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`,
 then run `npm start` to start the production worker. `npx curb build` packs
 the project into one self-contained directory. See
-[hosting.md](packages/framework/docs/hosting.md) for all the ways to run an
+[hosting.md](packages/framework/docs/agent-guide/hosting.md) for all the ways to run an
 agent.
 
 ### Deploy to KugelAudio
@@ -137,7 +139,7 @@ npx curb secrets push   # send your .env keys to the hosted agent
 npx curb deploy         # build and go live, prints a playground link
 ```
 
-See [deploy.md](packages/framework/docs/deploy.md) for flags and limits.
+See [deploying.md](packages/framework/docs/agent-guide/deploying.md) for flags and limits.
 
 ## Why it works well
 

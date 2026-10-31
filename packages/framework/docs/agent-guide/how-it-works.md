@@ -1,7 +1,7 @@
-# How it works — the renderer
+# How Curb works
 
-The short version: **curb is a real React renderer.** Just like `react-dom`
-takes a React tree and targets the browser DOM, curb takes your React tree and
+The short version: **Curb is a real React renderer.** Just like `react-dom`
+takes a React tree and targets the browser DOM, Curb takes your React tree and
 targets an LLM's context. Same React, same components, hooks, and state, a
 different render target.
 
@@ -10,23 +10,22 @@ different render target.
 React itself is two halves: the library you write components with, and a
 *reconciler* that turns those components into a tree of host nodes and keeps
 that tree in sync as state changes. `react-dom` plugs a browser-specific host
-into the reconciler; React Native plugs in a native-view host. curb plugs in
+into the reconciler; React Native plugs in a native-view host. Curb plugs in
 its own host (via `react-reconciler`) whose "host nodes" are not DOM elements
-but **semantic context nodes**: an instruction, a fact, a tool, a skill link,
-a gate.
+but **semantic context nodes**: an instruction, a fact, a tool, a skill link.
 
 So when you write:
 
 ```tsx
-<Instruction>Take the order.</Instruction>
-<Tool name="add_drink" schema={…} onSubmit={…} />
+<Instruction>Ask for the policy number.</Instruction>
+<Tool name="verify_policy" schema={…} onSubmit={…} />
 ```
 
 there is no DOM and no HTML. The reconciler builds a tree of those semantic
 nodes, and a compile step walks it into the two things a model actually needs:
 
 ```text
-React JSX -> semantic node tree -> { system prompt + knowledge, tool definitions }
+React JSX -> semantic node tree -> { system prompt, current context, tool definitions }
 ```
 
 That compiled output is what gets sent to the LLM.
@@ -91,8 +90,8 @@ decide what the caller hears:
   every turn.
 
 The preview shows the same tree, rendered on the server under Node, as
-interactive UI. See [preview.md](./preview.md) for how tools become forms,
-gates become cards, and a conversation exposes transcript, audio, and rewind.
+interactive UI. See [The preview](./preview.md) for how tools become forms and
+a conversation exposes transcript, audio, and rewind.
 
 ## Dates and time
 
@@ -111,3 +110,54 @@ and opens the current context the model reads last; it is never rendered into
 your tree, so it causes no context events. The model can resolve "tomorrow" or
 "next Tuesday" from it, so you do not need a date tool or a date in your
 prompt.
+
+## The mental model
+
+You are not building a web page. React renders an **agent-facing semantic
+tree** that the framework compiles into **LLM context and tools**:
+
+```text
+React JSX -> semantic page tree -> agent context + tools -> tool call -> state update -> re-render
+```
+
+- A conversation starts at the **agent level**: what `agent.tsx` renders (its
+  `<SystemPrompt>`, the `<Skills>` list, `<GlobalTools>` and MCP servers) is
+  in context on every turn, and no skill is loaded yet.
+- Plain JSX text becomes factual context the model reads.
+- `<Instruction>` becomes behavioral guidance.
+- `<Tool>` becomes a callable tool with a typed schema.
+- `<Skill>` links become one `read_skill` tool: the model opens a skill, and
+  pulls in its instructions and tools, only when the conversation needs it.
+  At most `maxLoadedSkills` (default 3) stay loaded, least-recently-used
+  evicted.
+- Conditional rendering is the security/flow model: a tool that is not
+  rendered **does not exist** for the model. Gate capabilities with state,
+  not with prompt text.
+
+There is no DOM, CSS, or layout. "Rendering" produces context.
+
+## One message, end to end
+
+1. A user message arrives (typed in the preview chat, or spoken: mic →
+   streaming STT → final transcript).
+2. The framework compiles the current tree: the system prompt, the agent
+   level's own text and tools, the loaded skills' text and instructions, and
+   every rendered tool, and calls the model.
+3. The model streams its reply. Tool calls are dispatched to your `onSubmit`
+   handlers; handlers update state (often a `createAgentStore` store).
+4. State changes re-render the tree → the model's context and tool surface
+   are already different for its next step. Skill loads (`read_skill`) work
+   the same way: the target skill's content joins the context.
+5. The final text is shown in chat, and on voice, streamed sentence-by-
+   sentence into TTS while the model is still writing, so speech starts
+   before the reply is finished. Speaking over the agent interrupts it
+   (barge-in) and cancels the rest.
+
+Every turn (tool inputs, results, and the context diff each one caused)
+is recorded, by default in `.data/conversations.jsonl` (see
+[The preview](./preview.md#recorded-conversations)).
+
+## Next steps
+
+- [What the model receives](./what-the-model-receives.md): the real requests.
+- [Architecture](./architecture.md): what runs where.

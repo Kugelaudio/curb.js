@@ -506,7 +506,7 @@ become a deployable artifact.
 | `requiredSecrets[]` | What the bundle needs injected. | `package.json` → `curb.requiredRuntimeSecrets`; each name becomes `{ required: true, phase: "runtime" }`. Values are never read or copied. An omitted key truthfully declares no required runtime secrets. |
 | `requiredCapabilities[]` | What the runner must grant. | Derived. Four are structural to every artifact this builder writes (`realtime.audio`, `provider.llm`, `provider.stt`, `provider.tts`) because the generated worker unconditionally starts a voice session; `integration.mcp` is added when the shipped agent source declares an MCP server. |
 | `goals[]` | What counts as a successful call: `{ name, description?, kind: "tool", tool }` or `{ name, description?, kind: "judge", criterion }`. | `defineAgent({ goals })`, sorted by name; `[]` when none. |
-| `experiments[]` | The agent's A/B experiments: `{ name, description?, variants: [{ name, weight }], fromClient? }`. A host assigns each call a variant of each and passes it in the start request's `experiments` ([hosting.md](./hosting.md)). | `defineAgent({ experiments })`, experiments and variants sorted by name (the order the assignment walks); `[]` when none. |
+| `experiments[]` | The agent's A/B experiments: `{ name, description?, variants: [{ name, weight }], fromClient? }`. A host assigns each call a variant of each and passes it in the start request's `experiments` ([hosting.md](./agent-guide/hosting.md)). | `defineAgent({ experiments })`, experiments and variants sorted by name (the order the assignment walks); `[]` when none. |
 
 `goals` and `experiments` are values in the agent's module, so every build imports
 `src/agent/agent.tsx` (not its skills) to read them, the way `curb check` does, and writes

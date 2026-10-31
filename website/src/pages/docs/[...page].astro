@@ -1,0 +1,18 @@
+---
+import { render } from 'astro:content'
+import Docs from '../../layouts/Docs.astro'
+import { type GuidePageId } from '../../guide'
+import { guideEntries } from '../../guide-entries'
+
+export async function getStaticPaths() {
+  return (await guideEntries()).map(({ page, entry }) => ({
+    params: { page: page.id === 'readme' ? undefined : page.id },
+    props: { entry, page },
+  }))
+}
+
+const { entry, page } = Astro.props
+const { Content, headings } = await render(entry)
+---
+
+<Docs id={page.id as GuidePageId} title={page.title} headings={headings}><Content /></Docs>

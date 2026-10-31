@@ -27,12 +27,12 @@ Commands:
              transcript with pass or fail per check; exits 1 when one fails (<filter>, --json;
              see curb test --help).
   conversations
-             Print the recorded conversations of curb dev, say and test with every tool call
+             Print the recorded conversations of curb dev and curb say with every tool call
              and result, to see what went wrong (--last <n>, --id <id>, --json).
   start      Run the agent's LiveKit voice worker in production mode; the framework runs
              the voice session.
              With CURB_MANAGEMENT_ADDR and CURB_MANAGEMENT_TOKEN set, dev and start also
-             serve host protocol v1 for the calls they run (see docs/hosting.md).
+             serve host protocol v1 for the calls they run (see docs/agent-guide/host-protocol.md).
   server     Start only the agent WebSocket server (no preview); --port <n> as for dev.
   build      Bundle the project into dist/ so it starts with no npm install and no tsc.
              The finished artifact is started in isolation to prove it runs
@@ -44,7 +44,7 @@ Commands:
   --version  Print the curb version.
   --help     Print this help (curb <command> --help prints it too, and runs nothing).
 
-KugelAudio hosting (see docs/deploy.md):
+KugelAudio hosting (see docs/agent-guide/deploying.md):
   login      Sign in with your KugelAudio account in the browser (--url <web> for another app URL,
              --no-open to only print the sign-in URL). Stored in ~/.config/curb/; a Curb project
              then runs on your login, with no key in .env (a KUGELAUDIO_API_KEY you set wins).

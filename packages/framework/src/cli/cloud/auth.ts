@@ -12,6 +12,7 @@ import {
   revokeSession,
   writeCredentials,
 } from "./credentials.js";
+import { CURB_MARK } from "../../brand.js";
 import { requestJson } from "./http.js";
 
 /**
@@ -178,7 +179,7 @@ interface Callback {
 const PAGE = (title: string, text: string) =>
   `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
   `<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;line-height:1.5">` +
-  `<h1 style="font-size:1.25rem">${title}</h1><p>${text}</p></body>`;
+  `${CURB_MARK}<h1 style="font-size:1.25rem">${title}</h1><p>${text}</p></body>`;
 
 /** Starts the loopback listener; `code` settles on the first valid callback, a cancel, or the timeout. */
 async function listenForCallback(state: string, timeoutMs: number): Promise<Callback> {

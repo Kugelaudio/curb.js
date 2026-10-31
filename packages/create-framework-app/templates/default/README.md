@@ -10,7 +10,7 @@ Sign in with `npx curb login`; there is no key to copy. Every curb command in th
 then runs on your login: KugelAudio's EU-hosted LLM thinks, Kugel Ear listens and Kugel TTS
 speaks. A deployed agent gets its access from KugelAudio. Prefer an API key (CI, a server)?
 Set `KUGELAUDIO_API_KEY` in `.env`; it wins over the login. Another provider's key goes in
-`.env` too, which `create-curb-app` already wrote.
+`.env` too, which `npm create curb.js` already wrote.
 
 ```bash
 npx curb login            # sign in in the browser; Curb uses your login
@@ -49,8 +49,8 @@ npx curb deploy
 
 `deploy` prints the playground URL where you can call the live agent. Your `.env` is
 never uploaded; `secrets push` sends its values and prints only their names. Details:
-`node_modules/curb/docs/deploy.md`. To run the voice worker on your own LiveKit instead,
-see `node_modules/curb/docs/hosting.md`.
+`node_modules/curb/docs/agent-guide/deploying.md`. To run the voice worker on your own LiveKit instead,
+see `node_modules/curb/docs/agent-guide/hosting.md`.
 
 ## Learn more
 

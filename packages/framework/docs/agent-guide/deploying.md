@@ -1,11 +1,20 @@
-# Deploying to KugelAudio
+# Deploying
 
-Curb runs anywhere Node runs ([hosting.md](hosting.md)). If you want KugelAudio to host
-the agent instead, with no servers of your own, four commands take a local project to a
-live agent:
+Curb runs anywhere Node runs. You have two ways to put an agent live:
+
+| Where | How | Read |
+|---|---|---|
+| KugelAudio | `npx curb deploy`, with no servers of your own | This page |
+| Your own servers | `curb start` or a built artifact | [Self-hosting](./hosting.md) |
+
+Hosting on KugelAudio is in closed alpha and switched on per organization. Phone numbers, GitHub
+deploys and how a hosted agent runs are in the
+[KugelAudio docs](https://docs.kugelaudio.com/hosted-agents/quickstart).
+
+Four commands take a local project to a live agent on KugelAudio:
 
 ```bash
-npm create kugelaudio my-agent
+npm create curb.js my-agent
 cd my-agent && npx curb login
 npx curb secrets push
 npx curb deploy
@@ -32,7 +41,7 @@ Run in a Curb project, the sign-in page also asks which organization and project
 an API key in ("Curb CLI on <computer>", revocable on the API keys page). The CLI keeps it
 beside the session in `~/.config/curb/project-keys.json` (mode 0600), never in the project
 and never printed, and saves that project in `.curb/link.json` when there is no link yet, so
-the first `curb deploy` deploys there. Every curb command in the project then runs on your
+the first `curb deploy` deploys there. Every Curb command in the project then runs on your
 login: there is no key to copy. `npx curb logout` deletes the stored keys too.
 
 Prefer an API key (CI, a server)? Set `KUGELAUDIO_API_KEY` in `.env` or the environment; it
@@ -127,7 +136,7 @@ it keeps current with a short-lived token for one agent and one environment:
 asks which agent: `.curb/link.json` and `--agent` play no part. `curb login` and
 `curb secrets push` are refused with the reason; set the agent's secrets in the dashboard.
 
-When the file carries `kugelaudioApiKey` (and, optionally, `kugelaudioApiBase`), every curb
+When the file carries `kugelaudioApiKey` (and, optionally, `kugelaudioApiBase`), every Curb
 command runs the project on that key unless `.env` or the environment sets
 `KUGELAUDIO_API_KEY`: `curb dev`, `curb test`, `curb say` and the preview reach KugelAudio's
 models with nothing to set. A running `curb dev` re-reads the file every 30 seconds, so it
@@ -145,3 +154,42 @@ moves onto each renewed key, and `curb check` lists the key as coming from the w
 
 Any other refusal is printed with its HTTP status, error code and correlation id; quote the
 correlation id when you contact support. Set `DEBUG=1` for a stack trace.
+
+## Test a change on a test copy first
+
+Keep a second agent as a test copy. Deploy each change to it first, call it, and deploy
+the same project to your live agent only once it works. Until then your live agent keeps
+answering its numbers and widgets with the version it has.
+
+**With your coding agent:** ask it to create the test copy (`agent_create`), give it the
+same variables (`agent_set_secrets`), deploy the project to it and give you its
+Playground link. Once your call works, ask it to deploy the same project to the live agent.
+
+**From a terminal:**
+
+```bash
+cat .curb/link.json      # "agentId" is your live agent's id: note it
+rm .curb/link.json
+npx curb secrets push    # choose "Create a new agent" and name it, for example my-agent-test
+npx curb deploy          # deploys the test copy and ends with its Playground link
+```
+
+`curb secrets push` prints the test copy's id when it creates it. Call the test copy in
+its Playground. When it works, deploy the same project to the live agent:
+
+```bash
+npx curb deploy --agent <live-agent-id>
+```
+
+`--agent` also links the project to the agent you name, so name one on every `deploy`
+and `secrets push` from then on: `--agent <test-agent-id>` first, then
+`--agent <live-agent-id>`.
+
+The test copy needs the same variables as the live agent. Its calls are billed like any
+other (see [pricing](https://kugelaudio.com/pricing)). To call it from your phone, add
+your phone to its [test line](https://docs.kugelaudio.com/hosted-agents/phone-numbers#call-your-agent-from-your-own-phone).
+
+## Next steps
+
+- [Upgrading](./upgrading.md): keep Curb up to date.
+- [Goals and experiments](./goals-and-experiments.md): measure what works on real calls.

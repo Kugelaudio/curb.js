@@ -58,7 +58,7 @@ use this exact release instead.
 Example (into the empty current folder; .env gets an empty line for each other
 provider key the environment does not hold, for the user to fill in; KugelAudio
 runs on npx curb login, or on a KUGELAUDIO_API_KEY you set):
-  npm create kugelaudio .
+  npm create curb.js .
 `;
 
 function fail(message) {

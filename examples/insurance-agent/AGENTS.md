@@ -7,7 +7,7 @@ the `"curb"` package.
 
 **Read the full guide before authoring:**
 `node_modules/curb/docs/agent-guide/README.md` (mental model + workflow),
-then `authoring.md` (components, state, patterns) and `diagnostics.md`
+then `agents-and-skills.md`, `tools.md`, `state.md` and `diagnostics.md`
 (the check/fix loop and every diagnostic code).
 
 ## Commands
