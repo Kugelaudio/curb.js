@@ -27,7 +27,7 @@ curb.js/
 │   ├── src/server/            # WS agent server, LiveKit voice host, conversation store
 │   ├── src/preview/           # browser preview app (served by `curb dev`)
 │   └── src/test-fixtures/project/  # hermetic fixture project used by the test suite
-├── packages/create-curb-app/  # project scaffolder (npm create curb.js <dir>);
+├── packages/create-curb.js/   # project scaffolder (npm create curb.js <dir>);
 │                              # template lives in templates/default/
 ├── examples/insurance-agent/  # complete agent project (default demo; the template)
 └── examples/ops-agent/        # MCP-heavy second example
@@ -75,6 +75,8 @@ npm run dev        # curb dev on examples/insurance-agent (everything on http://
 npm test           # framework package suite (vitest, hermetic via the fixture project)
 npm run check:examples  # curb check + curb build on every example
 npm run check:compat    # the same on projects frozen from older releases (compat/README.md)
+node scripts/npm-package.mjs <version> <out-dir>  # the tarballs npm receives
+node scripts/release-install-test.mjs <out-dir>   # scaffold, check and build from those tarballs
 npm run build      # tsc type-check build of the package
 npm run check      # authoring diagnostics of the insurance example
 npm run server     # headless agent WS server (insurance example)
@@ -83,29 +85,23 @@ npm run server     # headless agent WS server (insurance example)
 Inside an example project the same things are `npm run dev`, `npm run check`,
 `curb server`.
 
-Releases come from merges: a merge to `main` that changes the framework reaches npm, the CDN
-and a GitHub release. The commit subject is the changelog line, `!` makes a
-major version, and `CHANGELOG.md` lives on the public repository. `curb upgrade` reads the
-CDN's `curb/latest.json` inside a scaffolded project to repoint its `"curb"` dependency at
-the newest tarball and reinstall (repo-linked `file:` projects update via git instead).
+Releases are built from source by `.github/workflows/publish.yml`, the one file npm's trusted
+publishers name. A merge to `main` that changes a published package publishes a preview,
+`<next minor>-preview.<n>`, to the npm dist-tag `preview` with a matching git tag. A person cuts a
+stable release by dispatching that workflow on `main` with `semver` and `dry_run`: it tags
+`v<version>`, publishes to `latest` and creates a GitHub Release. Both run the same verification
+and publish both `curb.js` and `create-curb.js`.
 
-## Tests by area
+Tags hold the version: `scripts/release-version.mjs` computes it from the stable `v*` tags, npm and
+the CDN's `latest.json`, and `scripts/npm-package.mjs` stamps it into the tarballs. No workflow can
+push to `main`, so nothing bumps `package.json` in the repository. Commit subjects become the
+release notes through git-cliff (`cliff.toml`), so write them for someone using Curb. `CHANGELOG.md`
+stops at 1.14.1; GitHub Releases hold what came after.
 
-`npm test` runs every area; `npx vitest run --project <area>` in `packages/framework` runs one.
-
-| Area | Covers |
-| --- | --- |
-| `api` | the public API: every export and CLI command, in `src/public-api.txt` |
-| `cli` | the `curb` commands |
-| `build` | `curb build` and the bundler |
-| `server` | conversations, voice and the WebSocket server |
-| `protocol` | host protocol v1 and `curb/client` |
-| `preview` | the browser preview |
-| `core` | everything else: authoring, runtime, providers |
-
-A changed `public-api.txt` is a change to what projects depend on: removing or renaming a line
-needs `feat(framework)!:`. A failing `check:compat` means real projects break the same way; never
-edit a frozen project to make it pass.
+The framework is `curb` here and `curb.js` on npm, so a project depends on
+`"curb": "npm:curb.js@<version>"` and keeps `import ... from "curb"`. `curb upgrade` follows the
+source a project uses: an npm alias reads npm's dist-tags (`--preview` for the preview channel), a
+CDN tarball reads the CDN's `curb/latest.json`, and a repo-linked `file:` project updates via git.
 
 ## Tests by area
 

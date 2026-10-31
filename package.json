@@ -7,10 +7,10 @@
     "examples/*"
   ],
   "scripts": {
-    "new": "create-curb-app",
+    "new": "create-curb.js",
     "dev": "npm run dev --workspace examples/insurance-agent",
     "check": "npm run check --workspace examples/insurance-agent",
-    "test": "npm test --workspace packages/framework --workspace packages/create-framework-app --workspace packages/create-curb.js && node --test \"scripts/*.test.mjs\"",
+    "test": "npm test --workspace packages/framework --workspace packages/create-curb.js && node --test \"scripts/*.test.mjs\"",
     "build": "npm run build --workspace packages/framework",
     "smoke:self-host": "node scripts/self-host-smoke.mjs",
     "check:independence": "node scripts/check-independence.mjs",

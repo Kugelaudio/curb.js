@@ -11,4 +11,4 @@ npm run dev
 
 `npx curb login` signs you in once in your browser. `npm run dev` gives you a link to talk to your agent.
 
-This package starts the newest release of Curb's project creator, `create-curb-app`.
+To try the newest preview, create the project with `npm create curb.js@preview my-agent`.

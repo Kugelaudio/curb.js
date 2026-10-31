@@ -15,6 +15,17 @@ agent runs on KugelAudio with one sign-in.
 Create the project in the folder itself rather than in a subfolder: a coding agent started there
 then loads the project's `.mcp.json`, `CLAUDE.md` and `AGENTS.md`.
 
+The project depends on `"curb": "npm:curb.js@<version>"`: Curb is `curb.js` on npm, and your code
+imports it as `curb`.
+
+To try the newest preview instead of the stable version:
+
+```bash
+npm create curb.js@preview .
+```
+
+An existing project moves to a preview with `npx curb upgrade --preview` ([Upgrading](./upgrading.md)).
+
 ## Sign in
 
 ```bash

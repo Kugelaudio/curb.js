@@ -172,7 +172,7 @@ describe("watchProject", () => {
 
   it("reports no change for files written before it started, nor for directories", () => {
     // macOS replays the creation of files written just before a watch begins: the project a
-    // test (or create-curb-app) wrote a moment ago. None of them changed since.
+    // test (or create-curb.js) wrote a moment ago. None of them changed since.
     writeFileSync(join(root, "src", "agent", "agent.tsx"), "export {};\n");
     mkdirSync(join(root, "src", "lib"));
     writeFileSync(join(root, "src", "lib", "greeting.ts"), "export const greeting = 1;\n");

@@ -1,4 +1,4 @@
-// create-curb-app refuses a Node.js older than its `engines.node`, by name, instead of
+// create-curb.js refuses a Node.js older than its `engines.node`, by name, instead of
 // failing later with an unrelated error.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -18,15 +18,15 @@ test("the published engines.node is a single floor the check can read", () => {
 
 test("a Node older than the floor is refused by name", () => {
   for (const version of ["22.11.9", "21.7.3", "20.19.0", "18.20.4"]) {
-    const message = unsupportedNodeMessage("create-curb-app", ">=22.12.0", version);
-    assert.match(message, /^UnsupportedNodeVersion: create-curb-app needs Node\.js >=22\.12\.0/);
+    const message = unsupportedNodeMessage("create-curb.js", ">=22.12.0", version);
+    assert.match(message, /^UnsupportedNodeVersion: create-curb.js needs Node\.js >=22\.12\.0/);
     assert.match(message, new RegExp(`this is Node\\.js ${version.replaceAll(".", "\\.")}\\.`));
   }
 });
 
 test("the floor and every newer Node are accepted", () => {
   for (const version of ["22.12.0", "22.23.3", "24.0.0", "26.12.0"]) {
-    assert.equal(unsupportedNodeMessage("create-curb-app", ">=22.12.0", version), null);
+    assert.equal(unsupportedNodeMessage("create-curb.js", ">=22.12.0", version), null);
   }
 });
 

@@ -63,7 +63,7 @@ jobs:
         if: contains(needs.affected.outputs.suites, 'framework')
       - run: npm test --workspace packages/framework
         if: contains(needs.affected.outputs.suites, 'framework')
-      - run: npm test --workspace packages/create-framework-app --workspace packages/create-curb.js
+      - run: npm test --workspace packages/create-curb.js
         if: contains(needs.affected.outputs.suites, 'scaffolders')
       - run: node --test "scripts/*.test.mjs"
         if: contains(needs.affected.outputs.suites, 'scripts')

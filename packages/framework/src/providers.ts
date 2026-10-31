@@ -150,7 +150,7 @@ export type ProviderProps = {
   tts?: TtsDescriptor;
 };
 
-/** A scaffold placeholder create-curb-app was supposed to replace, e.g. `{{AGENT_MODEL}}`. */
+/** A scaffold placeholder create-curb.js was supposed to replace, e.g. `{{AGENT_MODEL}}`. */
 const PLACEHOLDER = /\{\{\s*[A-Z0-9_]+\s*\}\}/;
 
 /**

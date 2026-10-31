@@ -1,7 +1,7 @@
 // Refuses a Node.js older than this package's `engines.node`, by name, before
 // anything version-sensitive loads. `engines` alone only makes npm warn, and an
 // old Node then fails much later with an unrelated syntax or API error.
-// `packages/create-framework-app/bin/node-version.js` is the same check for
+// `packages/create-curb.js/bin/node-version.js` is the same check for
 // the scaffolder, which ships as its own package.
 import { readFileSync } from "node:fs";
 

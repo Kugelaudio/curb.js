@@ -114,7 +114,7 @@ import { azure, deepgram, kugelaudio } from "curb/providers";
 `azure.stt()` + `kugelaudio.tts()` (the defaults) and `kugelaudio.stt()` are the
 framework-native paths; `deepgram.stt`, `elevenlabs.stt/tts`, `cartesia.tts` and
 `openai.stt/tts` lazy-load the matching `@livekit/agents-plugin-*` package,
-resolved from the consuming project's node_modules. `create-curb-app` asks
+resolved from the consuming project's node_modules. `create-curb.js` asks
 which ones at scaffold time, writes them as props and installs only those
 plugin packages. Keys stay in the environment under each plugin's canonical
 name (`DEEPGRAM_API_KEY`, `ELEVEN_API_KEY`, `CARTESIA_API_KEY`,

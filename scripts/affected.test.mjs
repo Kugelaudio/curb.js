@@ -24,9 +24,13 @@ test("framework code runs what is built on it", () => {
   ]);
 });
 
+test("the release notes config runs nothing", () => {
+  assert.deepEqual(affectedSuites(["cliff.toml"]), []);
+});
+
 test("a scaffolder runs only the scaffolder tests", () => {
   assert.deepEqual(affectedSuites(["packages/create-curb.js/bin/create-curb.js"]), ["scaffolders"]);
-  assert.deepEqual(affectedSuites(["packages/create-framework-app/templates/default/README.md"]), [
+  assert.deepEqual(affectedSuites(["packages/create-curb.js/templates/default/README.md"]), [
     "scaffolders",
   ]);
 });

@@ -15,12 +15,11 @@ const IGNORED = [
   /^\.github\/assets\//,
   /^\.github\/workflows\/(pages|publish)\.yml$/,
   /^[^/]+\.md$/,
-  /^(LICENSE|NOTICE|\.gitignore)$/,
+  /^(LICENSE|NOTICE|\.gitignore|cliff\.toml)$/,
 ];
 
 const RULES = [
   [/^packages\/framework\//, ["framework", "examples", "compat", "smoke"]],
-  [/^packages\/create-framework-app\//, ["scaffolders"]],
   [/^packages\/create-curb\.js\//, ["scaffolders"]],
   [/^examples\/insurance-agent\//, ["examples", "smoke"]],
   [/^examples\//, ["examples"]],
