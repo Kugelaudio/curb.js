@@ -252,6 +252,7 @@ curb check
 curb conversations
 curb deploy
 curb dev
+curb info
 curb login
 curb logout
 curb say

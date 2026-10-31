@@ -13,6 +13,7 @@ Run `npx curb <command>` from the project root. `--help` prints the usage and ru
 | `curb server` | Only the agent WebSocket server |
 | `curb build` | Bundles the project and proves the bundle starts |
 | `curb upgrade` | Updates the project's `curb` dependency |
+| `curb info` | Prints the facts a bug report needs |
 | `curb login` | Signs in to KugelAudio in the browser |
 | `curb logout` | Signs out |
 | `curb deploy` | Uploads the project and makes it live |
@@ -91,6 +92,16 @@ prove it runs ([Self-hosting](./hosting.md#built-artifact-curb-build)).
 
 Updates the project's `curb` dependency to the latest published version ([Upgrading](./upgrading.md)).
 `--check` only reports.
+
+## `curb info`
+
+Prints what a bug report needs: the versions of Curb, Node and npm, the OS and architecture, the
+project's `curb` dependency, its LLM, STT and TTS providers, and whether each expected environment
+variable is set. Paste the output into the issue.
+
+It prints variable names only, never a value, and it starts nothing: the providers are read from the
+source, so one set by anything but a direct call such as `tts={kugelaudio.tts()}` shows as `set in code`.
+Outside a project it says so and prints the versions.
 
 ## `curb login`
 

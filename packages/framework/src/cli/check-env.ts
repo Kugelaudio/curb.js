@@ -8,6 +8,7 @@ import { bundleRequiredSecrets } from "../bundler/declarations.js";
 import { LLM_KEYS, PLATFORM_PROVIDED, SPEECH_KEYS, type Env, type ProviderVariable } from "../provider-keys.js";
 import { agentAppElement } from "../routing.js";
 import { AgentSiteRuntime } from "../runtime.js";
+import type { LlmProviderId, SttProviderId, TtsProviderId } from "../providers.js";
 import type { ProviderSettings } from "../session-settings.js";
 import type { StoredProjectKey } from "./cloud/credentials.js";
 import { runsOnHostKey } from "./cloud/host-model-key.js";
@@ -43,8 +44,11 @@ export type Configuration = {
 };
 
 /** The providers a conversation runs on at one place in the agent: the agent level (`where`
- * is "") or a skill, while it is the active one. */
-export type ProviderUse = { where: string; settings: ProviderSettings };
+ * is "") or a skill, while it is the active one. A slot is absent when the place does not say. */
+export type ProviderUse = {
+  where: string;
+  settings: { [Slot in keyof ProviderSettings]?: Pick<ProviderSettings[Slot], "provider"> };
+};
 
 /** One place the project's code reads a variable from `process.env`. */
 type EnvRead = { name: string; file: string; line: number; column: number };
@@ -58,6 +62,8 @@ type EnvRead = { name: string; file: string; line: number; column: number };
 export async function checkConfiguration(options: {
   projectRoot: string;
   agent: DiscoveredAgent | null;
+  /** The providers, when the caller knows them without rendering `agent`. */
+  uses?: ProviderUse[];
   agentId: string;
   env?: Env;
   /** The key `curb login` stored that this run uses (see `useLoginKey`), when it uses one. */
@@ -66,8 +72,8 @@ export async function checkConfiguration(options: {
   const { projectRoot, agent, agentId } = options;
   const env = projectEnvironment(projectRoot, options.env ?? process.env);
 
-  let uses: ProviderUse[] | null = null;
-  if (agent) {
+  let uses = options.uses ?? null;
+  if (!uses && agent) {
     try {
       uses = agentProviderUses(agent);
     } catch {
@@ -175,10 +181,12 @@ export function providerKeys(uses: readonly ProviderUse[], env: Env): Configurat
   };
   for (const { where, settings } of uses) {
     for (const slot of ["llm", "stt", "tts"] as const) {
-      const keys = slot === "llm" ? LLM_KEYS[settings.llm.provider] : SPEECH_KEYS[settings[slot].provider];
+      const provider = settings[slot]?.provider;
+      if (!provider) continue;
+      const keys = slot === "llm" ? LLM_KEYS[provider as LlmProviderId] : SPEECH_KEYS[provider as SttProviderId | TtsProviderId];
       // A provider no factory builds is a type error, which the type check reports.
       if (!keys) continue;
-      for (const variable of [keys.key, ...(keys.also ?? [])]) read(variable, `${slot} ${settings[slot].provider}`, where);
+      for (const variable of [keys.key, ...(keys.also ?? [])]) read(variable, `${slot} ${provider}`, where);
     }
   }
   return [...found].map(([name, { set, optional, users }]) => ({
@@ -250,7 +258,7 @@ const isSet = (env: Env, name: string) => Boolean(env[name]?.trim());
 
 /** The environment the agent runs with: the project's .env under the real environment, as
  * `curb dev` composes it. */
-function projectEnvironment(projectRoot: string, env: Env): Env {
+export function projectEnvironment(projectRoot: string, env: Env): Env {
   const file = join(projectRoot, ".env");
   return { ...(existsSync(file) ? parseEnv(readFileSync(file, "utf8")) : {}), ...env };
 }
@@ -283,7 +291,7 @@ function findEnvReads(projectRoot: string): EnvRead[] {
   return sourceFiles(projectRoot).flatMap((file) => envReadsIn(readFileSync(join(projectRoot, file), "utf8"), file));
 }
 
-function sourceFiles(projectRoot: string): string[] {
+export function sourceFiles(projectRoot: string): string[] {
   const files: string[] = [];
   const visitDir = (dir: string) => {
     for (const entry of readdirSync(join(projectRoot, dir), { withFileTypes: true })) {
@@ -299,22 +307,26 @@ function sourceFiles(projectRoot: string): string[] {
   return files.sort();
 }
 
-type AstNode = { type: string; loc?: { start: { line: number; column: number } } | null; [key: string]: unknown };
+export type AstNode = { type: string; loc?: { start: { line: number; column: number } } | null; [key: string]: unknown };
 
-function envReadsIn(code: string, file: string): EnvRead[] {
-  let ast: unknown;
+/** The parsed source, or null when it does not parse. */
+export function parseSource(code: string, file: string): unknown {
   try {
-    ast = parse(code, {
+    return parse(code, {
       sourceType: "module",
       errorRecovery: true,
       // JSX only in .tsx/.jsx: in a .ts file `<T>value` is a type assertion.
       plugins: file.endsWith("x") ? ["jsx", "typescript"] : ["typescript"],
     });
   } catch {
-    // KEEP-JUSTIFIED: the type check reports why this file does not parse; its reads are
+    // KEEP-JUSTIFIED: the type check reports why this file does not parse; what it holds is
     // found once it does.
-    return [];
+    return null;
   }
+}
+
+function envReadsIn(code: string, file: string): EnvRead[] {
+  const ast = parseSource(code, file);
   const reads: EnvRead[] = [];
   const read = (name: string | undefined, at: AstNode) => {
     if (name && ENV_NAME.test(name) && at.loc) {
@@ -335,7 +347,7 @@ function envReadsIn(code: string, file: string): EnvRead[] {
   return reads.sort((left, right) => left.line - right.line || left.column - right.column);
 }
 
-const isNode = (value: unknown): value is AstNode =>
+export const isNode = (value: unknown): value is AstNode =>
   typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
 
 /** `process.env` itself (also `process?.env`). */
@@ -368,7 +380,7 @@ function staticKey(key: unknown, computed: unknown): string | undefined {
 const METADATA_KEYS = new Set(["loc", "extra", "comments", "leadingComments", "trailingComments", "innerComments", "errors"]);
 
 /** Every node under `node`, depth first. */
-function walk(node: unknown, visit: (node: AstNode) => void): void {
+export function walk(node: unknown, visit: (node: AstNode) => void): void {
   if (Array.isArray(node)) {
     for (const child of node) walk(child, visit);
     return;

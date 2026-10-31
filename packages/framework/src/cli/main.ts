@@ -41,6 +41,8 @@ Commands:
              --dependency-layer <descriptor.json> builds only the app layer, and exits 75
              when the project reaches past the recorded build inputs.
   upgrade    Update this project's curb dependency to the latest published version (--check to only report).
+  info       Print the versions, providers and environment variable names a bug report needs.
+             Runs anywhere and starts nothing. Prints names only, never a value.
   --version  Print the curb version.
   --help     Print this help (curb <command> --help prints it too, and runs nothing).
 
@@ -318,6 +320,11 @@ async function upgrade(): Promise<void> {
   await runUpgrade(process.argv.slice(3));
 }
 
+async function info(): Promise<void> {
+  const { infoReport } = await import("./info.js");
+  console.log(await infoReport(resolveProjectRoot()));
+}
+
 async function cloudCommand(name: "login" | "logout" | "deploy" | "secrets"): Promise<void> {
   const cloud = await import("./cloud/commands.js");
   const args = process.argv.slice(3);
@@ -339,6 +346,7 @@ const commands: Record<string, () => Promise<void>> = {
   server,
   build,
   upgrade,
+  info,
   conversations,
   login: () => cloudCommand("login"),
   logout: () => cloudCommand("logout"),
