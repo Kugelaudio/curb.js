@@ -102,7 +102,8 @@ prove it runs ([Self-hosting](./hosting.md#built-artifact-curb-build)).
 ## `curb upgrade`
 
 Updates the project's `curb` dependency to the latest version on npm ([Upgrading](./upgrading.md)).
-`--check` only reports, and `--preview` takes the newest preview.
+`--check` only reports, and `--preview` takes the newest preview. It takes no version and refuses
+any other argument; to pin one, run `npm install curb@npm:curb.js@<version>`.
 
 ## `curb info`
 

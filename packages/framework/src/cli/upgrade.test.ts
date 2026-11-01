@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -227,6 +227,23 @@ describe("where a project's upgrade reads from", () => {
     const { dir, asked } = project("npm:curb.js@1.0.0", { [url]: { latest: newest } });
     await runUpgrade(["--check"], dir);
     expect(asked).toEqual([url]);
+  });
+
+  it("refuses an argument it does not take, and changes nothing", async () => {
+    for (const [arg, hint] of [["--chek", /Did you mean --check\?/], ["9.9.9", /takes --check, --preview/]] as const) {
+      const { dir, asked } = project("npm:curb.js@1.0.0", { [distTags]: { latest: newest } });
+      const before = readFileSync(join(dir, "package.json"), "utf8");
+      await expect(runUpgrade([arg], dir)).rejects.toThrow(hint);
+      expect(asked).toEqual([]);
+      expect(readFileSync(join(dir, "package.json"), "utf8")).toBe(before);
+    }
+  });
+
+  it("names the file when package.json is not JSON", async () => {
+    const { dir, asked } = project("npm:curb.js@1.0.0", {});
+    writeFileSync(join(dir, "package.json"), "{bad");
+    await expect(runUpgrade(["--check"], dir)).rejects.toThrow(`${join(dir, "package.json")} is not valid JSON`);
+    expect(asked).toEqual([]);
   });
 
   it("names the channel when npm has no such dist-tag", async () => {

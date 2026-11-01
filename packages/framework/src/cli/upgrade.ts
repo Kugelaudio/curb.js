@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { curbVersion } from "../version.js";
+import { rejectUnknownArguments } from "./args.js";
 
 /** An env override with no trailing slash, for a project behind a registry mirror. */
 export function npmRegistry(env: NodeJS.ProcessEnv = process.env): string {
@@ -149,6 +150,8 @@ function notOnNpmMessage(spec: string, tag: string): string {
 
 /** The `curb upgrade` command. Throws with an actionable message on failure (the CLI maps that to exit 1). */
 export async function runUpgrade(args: string[], cwd = process.cwd()): Promise<void> {
+  // A typo must not read as a plain `curb upgrade`, which rewrites package.json and installs.
+  rejectUnknownArguments(args, "upgrade", { flags: ["--check", "--preview"], values: {} });
   const checkOnly = args.includes("--check");
   const preview = args.includes("--preview");
   const pkgPath = join(cwd, "package.json");
@@ -156,7 +159,13 @@ export async function runUpgrade(args: string[], cwd = process.cwd()): Promise<v
     throw new Error(`No package.json in ${cwd}. Run \`curb upgrade\` from your project root.`);
   }
   const pkgText = readFileSync(pkgPath, "utf8");
-  const spec = curbDepSpec(pkgText);
+  let spec: string | null;
+  try {
+    spec = curbDepSpec(pkgText);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`${pkgPath} is not valid JSON (${reason}). Fix it, then run \`curb upgrade\` again.`);
+  }
   if (spec === null) {
     throw new Error(
       `package.json in ${cwd} has no "curb" dependency, so this is not a curb project. Run \`curb upgrade\` from a project created with \`npm create curb.js\`.`,
