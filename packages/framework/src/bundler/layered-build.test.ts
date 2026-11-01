@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { MANIFEST_FILENAME } from "./bundle-digest.js";
 import { runCurbBuild } from "./index.js";
@@ -199,16 +199,13 @@ describe("curb build --emit-layers", () => {
     expect(record.inputs).toContain(inFramework("src/bundler/index.ts"));
     // Portable LiveKit JavaScript is an input because esbuild owns it. Only the compiled
     // binding packages remain external and are copied into the dependency layer.
-    const agentsManifest = join(frameworkRoot, "node_modules/@livekit/agents/package.json");
-    expect(existsSync(agentsManifest)).toBe(true);
-    expect(record.inputs).toContain(inFramework("node_modules/@livekit/agents/package.json"));
-    const hoistedAgentsManifest = resolve(
-      frameworkRoot,
-      "..",
-      "..",
-      "node_modules/@livekit/agents/package.json",
-    );
-    expect(record.inputs).not.toContain(toPosix(relative(projectRoot, hoistedAgentsManifest)));
+    // Nested under the framework or hoisted, depending on what the rest of the install wants.
+    let agentsDir = frameworkRoot;
+    while (!existsSync(join(agentsDir, "node_modules/@livekit/agents/package.json"))) agentsDir = dirname(agentsDir);
+    const agentsManifest = join(agentsDir, "node_modules/@livekit/agents/package.json");
+    expect(record.inputs.filter((path) => path.endsWith("/@livekit/agents/package.json"))).toEqual([
+      toPosix(relative(projectRoot, agentsManifest)),
+    ]);
 
     expect(record.edges).toContainEqual({
       importer: AGENT,
