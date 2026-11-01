@@ -78,7 +78,7 @@ jobs:
         run: |
           echo "A release runs on main, and this run is on $GITHUB_REF." >&2
           exit 1
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -104,7 +104,7 @@ jobs:
       GIT_TAG: ${{ needs.plan.outputs.git_tag }}
       DIST_TAG: ${{ needs.plan.outputs.dist_tag }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -148,7 +148,7 @@ jobs:
     environment:
       name: npm
       deployment: false
-    timeout-minutes: 10
+    timeout-minutes: 25
     permissions:
       contents: read
       id-token: write
@@ -190,7 +190,7 @@ jobs:
             spec="$name@$VERSION"
             tarball="out/$name-$VERSION.tgz"
             expected="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
-            for attempt in 1 2 3 4 5 6; do
+            for attempt in $(seq 1 60); do
               found=$(npm view "$spec" dist.integrity 2>/dev/null) || found=""
               [[ "$found" == "$expected" ]] && break
               sleep 10
