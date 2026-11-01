@@ -23,7 +23,6 @@ test("what the site reads runs the website suite", () => {
     "website/src/pages/index.astro",
     "website/package-lock.json",
     "packages/framework/docs/agent-guide/tools.md",
-    ".github/workflows/pages.yml",
     "README.md",
   ]) {
     assert.deepEqual(affectedSuites([file]), ["website"]);
@@ -53,6 +52,10 @@ test("the files the scripts suite tests run that suite", () => {
   for (const file of ["workflows/publish.yml", "workflows/pr-rules.yml", "pull_request_template.md"]) {
     assert.deepEqual(affectedSuites([`.github/${file}`]), ["scripts"]);
   }
+});
+
+test("the pages workflow runs the site and the tests that read it", () => {
+  assert.deepEqual(affectedSuites([".github/workflows/pages.yml"]), ["scripts", "website"]);
 });
 
 test("the release notes config runs nothing", () => {
