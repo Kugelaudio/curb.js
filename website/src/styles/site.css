@@ -1053,10 +1053,11 @@ a:hover > h3 span {
   stroke-width: 2;
 }
 
+/* Each line is a third of its half of the outline, so the two never close into a full border. */
 .deploy-trace path {
   opacity: 0;
-  stroke-dasharray: 1 1;
-  stroke-dashoffset: 1;
+  stroke-dasharray: 0.33 2;
+  stroke-dashoffset: 0.33;
 }
 
 .deploy-live .deploy-tile {
@@ -1742,16 +1743,11 @@ a:hover > h3 span {
   }
 }
 
-/* A tile takes 12% of the loop: the arcs leave the left edge, meet as a border, and close on the right edge. */
+/* A tile takes 12% of the loop: the two lines leave its left edge, run round it and close on its right edge. */
 @keyframes deploy-trace {
   0% {
     opacity: 1;
-    stroke-dashoffset: 1;
-  }
-  5%,
-  7% {
-    opacity: 1;
-    stroke-dashoffset: 0;
+    stroke-dashoffset: 0.33;
   }
   11.9% {
     opacity: 1;
