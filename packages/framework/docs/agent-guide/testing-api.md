@@ -72,6 +72,13 @@ Builds a valid event from a type and the fields you care about. The rest is a pl
 It throws on what no real call produces, such as `goals` on a `call.ended` event or a `transcript` on
 a call whose `content` is `not_stored`.
 
+## Version history
+
+| Version | Changes |
+|---|---|
+| v1.15.0 | `runHook` and `buildCallEvent` added |
+| v1.4.33 | `curb/testing` introduced with `scenario` |
+
 ## Next steps
 
 - [Testing guide](./testing.md): `curb check`, `curb say` and `curb test`.

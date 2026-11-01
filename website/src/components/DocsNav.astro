@@ -1,16 +1,31 @@
 ---
-import { GUIDE_GROUPS, GUIDE_PAGES, pageUrl, type GuidePageId } from '../guide'
+import { GUIDE_GROUPS, GUIDE_PAGES, childrenOf, pageUrl, type GuidePageId } from '../guide'
 
 const { id } = Astro.props as { id: GuidePageId }
-const groups = GUIDE_GROUPS.map((group) => ({ group, pages: GUIDE_PAGES.filter((page) => page.group === group) }))
+const groups = GUIDE_GROUPS.map((group) => ({ group, pages: GUIDE_PAGES.filter((page) => page.group === group && !('parent' in page)) }))
 ---
 
 {groups.map(({ group, pages }, index) => (
-  <details class="docs-section" data-group={group} open={index === 0 || pages.some((page) => page.id === id)}>
+  <details class="docs-section" data-group={group} open={index === 0 || GUIDE_PAGES.some((page) => page.group === group && page.id === id)}>
     <summary class="docs-group">
       {group}
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" /></svg>
     </summary>
-    <ul>{pages.map((page) => <li><a href={pageUrl(page.id)} aria-current={page.id === id ? 'page' : undefined}>{page.title}</a></li>)}</ul>
+    <ul>{pages.map((page) => {
+      const children = childrenOf(page.id)
+      const link = <a href={pageUrl(page.id)} aria-current={page.id === id ? 'page' : undefined}>{page.title}</a>
+      if (children.length === 0) return <li>{link}</li>
+      return (
+        <li>
+          <details class="docs-sub" open={page.id === id || children.some((child) => child.id === id)}>
+            <summary>
+              {link}
+              <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" /></svg>
+            </summary>
+            <ul>{children.map((child) => <li><a href={pageUrl(child.id)} aria-current={child.id === id ? 'page' : undefined}>{child.title}</a></li>)}</ul>
+          </details>
+        </li>
+      )
+    })}</ul>
   </details>
 ))}

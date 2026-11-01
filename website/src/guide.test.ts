@@ -1,14 +1,17 @@
 import { readdirSync, readFileSync } from 'node:fs'
+import { posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { guideHref, guideLinkText } from './guide-links'
 import { GUIDE_GROUPS, GUIDE_PAGES, markdownUrl, neighbours, pagesToBuild, pageUrl } from './guide'
 
 const guide = fileURLToPath(new URL('../../packages/framework/docs/agent-guide', import.meta.url))
+const guideFiles = () =>
+  readdirSync(guide, { recursive: true, encoding: 'utf8' }).filter((name) => name.endsWith('.md'))
 
 describe('the guide table', () => {
   it('lists every guide page, so a new one cannot go unpublished', () => {
-    const files = readdirSync(guide).filter((name) => name.endsWith('.md'))
+    const files = guideFiles()
     const pages = GUIDE_PAGES.map((page) => page.file).filter((file) => !file.startsWith('..'))
     expect(pages.sort()).toEqual(files.sort())
   })
@@ -19,7 +22,7 @@ describe('the guide table', () => {
   })
 
   it('has no em dashes, outside the requests printed from a real run', () => {
-    const lines = readdirSync(guide).flatMap((name) => {
+    const lines = guideFiles().flatMap((name) => {
       const text = readFileSync(`${guide}/${name}`, 'utf8').replace(/<!-- request: [\s\S]*?\n```\n/g, '')
       return text.split('\n').filter((line) => line.includes('\u2014')).map((line) => `${name}: ${line}`)
     })
@@ -27,12 +30,12 @@ describe('the guide table', () => {
   })
 
   it('links only to guide pages, so no link leaves the site for a file it does not serve', () => {
-    const files = new Set(readdirSync(guide))
-    const broken = readdirSync(guide).flatMap((name) =>
+    const files = new Set(guideFiles())
+    const broken = guideFiles().flatMap((name) =>
       [...readFileSync(`${guide}/${name}`, 'utf8').matchAll(/\]\(([^)#\s]+)[^)]*\)/g)]
         .map((match) => match[1])
         .filter((href) => !/^([a-z]+:|\/)/.test(href))
-        .filter((href) => !(href.startsWith('./') && files.has(href.slice(2))))
+        .filter((href) => !files.has(posix.join(posix.dirname(name), href)))
         .map((href) => `${name}: ${href}`),
     )
     expect(broken).toEqual([])
@@ -63,6 +66,12 @@ describe('guideHref', () => {
     expect(guideHref('./README.md')).toBe('/docs/')
     expect(guideHref('#local')).toBe('#local')
     expect(guideHref('https://example.com/a.md')).toBe('https://example.com/a.md')
+  })
+
+  it('resolves a link from a nested page', () => {
+    expect(guideHref('./skill.md', 'components/tool.md')).toBe('/docs/components/skill/')
+    expect(guideHref('../state.md#locks', 'components/tool.md')).toBe('/docs/state/#locks')
+    expect(guideHref('./components/tool.md')).toBe('/docs/components/tool/')
   })
 
   it('names a link to a guide file by its page title', () => {

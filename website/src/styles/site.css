@@ -1813,8 +1813,26 @@ a:hover > h3 span {
   transition: transform 160ms var(--ease);
 }
 
-.docs-section[open] summary svg {
+.docs-section[open] > summary svg,
+.docs-sub[open] > summary svg {
   transform: rotate(90deg);
+}
+
+.docs-section:not([open]) > summary svg,
+.docs-sub:not([open]) > summary svg {
+  transform: none;
+}
+
+.docs-sub summary {
+  margin: 0;
+}
+
+/* A reference page is titled by its name: `<Tool>`, with no box around the heading. */
+.prose h1 code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.9em;
 }
 
 .docs-section ul {

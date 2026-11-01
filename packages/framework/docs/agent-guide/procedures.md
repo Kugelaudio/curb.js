@@ -52,4 +52,4 @@ remember, give each step its own tool that writes to a store, as in
 ## Next steps
 
 - [Confirmations](./confirmations.md): ask for a yes before the last tool runs.
-- [Components](./components.md#procedure): every prop of `<Procedure>`.
+- [Components](./components/procedure.md): every prop of `<Procedure>`.
