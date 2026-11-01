@@ -130,3 +130,12 @@ test("the test workflow cannot publish", () => {
   assert.doesNotMatch(steps, /^\s*environment:/m);
   assert.doesNotMatch(steps, /NODE_AUTH_TOKEN|NPM_TOKEN|secrets\./);
 });
+
+test("npm gets ten minutes per package to serve a publication, inside the job's timeout", () => {
+  const job = publishYml.slice(publishYml.indexOf("\n  publish:\n"), publishYml.indexOf("\n  tag:\n"));
+  const attempts = Number(/for attempt in \$\(seq 1 (\d+)\)/.exec(job)?.[1]);
+  const seconds = Number(/sleep (\d+)/.exec(job)?.[1]);
+  const timeout = Number(/timeout-minutes: (\d+)/.exec(job)?.[1]);
+  assert.ok(attempts * seconds >= 600, `the read-back waits ${attempts * seconds} s`);
+  assert.ok(timeout * 60 > 2 * attempts * seconds, `${timeout} minutes does not fit both packages`);
+});

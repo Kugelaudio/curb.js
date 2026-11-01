@@ -3,8 +3,9 @@ name: test
 # Linux only for now. A pull request runs only the suites its changes can affect
 # (scripts/affected.mjs); main runs them all. check:independence always runs, on everything.
 # gate is the required check: it always reports, so a pull request that skips test can merge.
-# Every job runs on curb-js-runner, this repository's self-hosted runner. It takes one job at a
-# time, so the legs of a matrix run one after another.
+# The test job runs on curb-js-runner, this repository's self-hosted runner. It takes one job at a
+# time, so the legs of a matrix run one after another. affected suites and gate take seconds and
+# run on curb-js-light, a runner of their own, so they never wait behind a test job.
 
 on:
   push:
@@ -27,12 +28,12 @@ concurrency:
 jobs:
   affected:
     name: affected suites
-    runs-on: curb-js-runner
+    runs-on: curb-js-light
     timeout-minutes: 5
     outputs:
       suites: ${{ steps.affected.outputs.suites }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
       - id: affected
@@ -55,7 +56,7 @@ jobs:
       # CPU binaries ship in npm; the Linux postinstall otherwise downloads CUDA from NuGet.
       ONNXRUNTIME_NODE_INSTALL: skip
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
@@ -94,7 +95,7 @@ jobs:
   gate:
     needs: [affected, test]
     if: always()
-    runs-on: curb-js-runner
+    runs-on: curb-js-light
     timeout-minutes: 5
     steps:
       - env:
