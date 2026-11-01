@@ -16,7 +16,7 @@ Create the project in the folder itself rather than in a subfolder: a coding age
 then loads the project's `.mcp.json`, `CLAUDE.md` and `AGENTS.md`.
 
 The project depends on `"curb": "npm:curb.js@<version>"`: Curb is `curb.js` on npm, and your code
-imports it as `curb`.
+imports it as `curb`. `npm create curb` is the same installer under a shorter name.
 
 To try the newest preview instead of the stable version:
 

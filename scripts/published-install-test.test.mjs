@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { waitForVersion, withRetries } from "./published-install-test.mjs";
+import { PACKAGES, waitForVersion, withRetries } from "./published-install-test.mjs";
 
 const wait = async () => {};
 const publishYml = readFileSync(fileURLToPath(new URL("../.github/workflows/publish.yml", import.meta.url)), "utf8");
@@ -14,6 +14,10 @@ function job(name) {
   const next = publishYml.slice(start + 1).search(/\n {2}(?:# .*\n {2})*[a-z]+:\n/);
   return next === -1 ? publishYml.slice(start) : publishYml.slice(start, start + 1 + next);
 }
+
+test("every package publish.yml sends is waited for", () => {
+  assert.ok(publishYml.includes(`for name in ${PACKAGES.join(" ")}; do`));
+});
 
 test("waiting ends as soon as npm serves the version, through a lag and an error", async () => {
   const answers = ["", "1.0.0", "1.1.0", "unreached"];

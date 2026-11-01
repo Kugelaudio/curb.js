@@ -3,10 +3,10 @@
 //
 //   node scripts/release-install-test.mjs <tarball-dir>
 //
-// A local registry serves the two tarballs and sends every other package on to npm, so the
-// real `npm create curb.js` runs in an empty folder before anything is published. The project
-// it creates must depend on `"curb": "npm:curb.js@<version>"`, and `curb check`, `curb build`
-// (verification on) and `curb upgrade --check` must all work through that alias. The command
+// A local registry serves the tarballs and sends every other package on to npm, so the real
+// `npm create curb.js` runs in an empty folder before anything is published, and `npm create curb`
+// beside it must write the same files. The project it creates must depend on
+// `"curb": "npm:curb.js@<version>"`, and `curb check`, `curb build` (verification on) and `curb upgrade --check` must all work through that alias. The command
 // must also start outside a project, where it has no generated tsconfig to read.
 
 import { execFileSync, spawn } from "node:child_process";
@@ -14,12 +14,16 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { fileHashes } from "./npm-package.mjs";
+
 const UPSTREAM = "https://registry.npmjs.org";
-const RELEASE_TARBALL = /^(curb\.js|create-curb\.js)-(.+)\.tgz$/;
+const RELEASE_TARBALL = /^(curb\.js|create-curb\.js|create-curb)-(.+)\.tgz$/;
+// Only installing writes these, and the second project skips it.
+const INSTALLED = /^(node_modules|package-lock\.json)(\/|$)/;
 
 /** The channel a version is published on, as its npm dist-tag. */
 export function channelOf(version) {
@@ -52,8 +56,8 @@ export function readTarballs(directory) {
   });
   const version = found[0]?.manifest.version;
   const names = found.map(({ manifest }) => manifest.name).sort();
-  if (names.join() !== "create-curb.js,curb.js" || found.some(({ manifest }) => manifest.version !== version)) {
-    throw new Error(`${directory} must hold curb.js and create-curb.js at one version, found ${found.map(({ file }) => file)}`);
+  if (names.join() !== "create-curb,create-curb.js,curb.js" || found.some(({ manifest }) => manifest.version !== version)) {
+    throw new Error(`${directory} must hold curb.js, create-curb.js and create-curb at one version, found ${found.map(({ file }) => file)}`);
   }
   return { tarballs: found, version };
 }
@@ -101,6 +105,22 @@ export function expect(condition, message) {
   if (!condition) throw new Error(`release install test: ${message}`);
 }
 
+/** The paths that differ between two scaffolded projects, what installing writes aside. */
+export function projectDifferences(first, second) {
+  const scaffolded = (path) => !INSTALLED.test(path);
+  const [a, b] = [fileHashes(first, scaffolded), fileHashes(second, scaffolded)];
+  return [...new Set([...a.keys(), ...b.keys()])].filter((path) => a.get(path) !== b.get(path)).sort();
+}
+
+/** Creates a project in a folder named like `project` and fails unless it matches `project`. */
+export async function expectSameProject(project, spec, base, { env }) {
+  const twin = join(base, "twin", basename(project));
+  mkdirSync(twin, { recursive: true });
+  await run("npm", ["create", "--yes", spec, ".", "--", "--skip-git", "--skip-install"], { cwd: twin, env });
+  const different = projectDifferences(project, twin);
+  expect(different.length === 0, `npm create ${spec} wrote a different project: ${different.join(", ")}`);
+}
+
 async function main([directory]) {
   if (!directory) throw new Error("usage: release-install-test.mjs <tarball-dir>");
   const { tarballs, version } = readTarballs(resolve(directory));
@@ -122,6 +142,7 @@ async function main([directory]) {
   try {
     const spec = channel === "preview" ? "curb.js@preview" : "curb.js";
     await run("npm", ["create", "--yes", spec, ".", "--", "--skip-git"], { cwd: project, env });
+    await expectSameProject(project, channel === "preview" ? "curb@preview" : "curb", work, { env });
 
     const manifest = JSON.parse(readFileSync(join(project, "package.json"), "utf8"));
     const expected = `npm:curb.js@${version}`;

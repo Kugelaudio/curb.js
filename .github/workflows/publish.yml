@@ -131,7 +131,7 @@ jobs:
       - name: Dry-run the publication
         run: |
           # The ./ matters: npm reads out/x.tgz as the GitHub repository out/x.tgz.
-          for name in curb.js create-curb.js; do
+          for name in curb.js create-curb.js create-curb; do
             npm publish --dry-run --access public --tag "$DIST_TAG" "./out/$name-$VERSION.tgz"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -148,7 +148,7 @@ jobs:
     environment:
       name: npm
       deployment: false
-    timeout-minutes: 25
+    timeout-minutes: 35
     permissions:
       contents: read
       id-token: write
@@ -171,13 +171,13 @@ jobs:
       # publish would fail after curb.js went out, leaving half a release.
       - name: Refuse half a release
         run: |
-          for name in curb.js create-curb.js; do
+          for name in curb.js create-curb.js create-curb; do
             npm view "$name" name >/dev/null || { echo "$name is not on npm; publish nothing until it is" >&2; exit 1; }
           done
       - name: Publish what npm lacks
         run: |
-          # curb.js first: create-curb.js pins it.
-          for name in curb.js create-curb.js; do
+          # curb.js first: create-curb.js and create-curb pin it.
+          for name in curb.js create-curb.js create-curb; do
             if npm view "$name@$VERSION" version >/dev/null 2>&1; then
               echo "$name@$VERSION is already on npm"
             else
@@ -186,7 +186,7 @@ jobs:
           done
       - name: Read the publication back
         run: |
-          for name in curb.js create-curb.js; do
+          for name in curb.js create-curb.js create-curb; do
             spec="$name@$VERSION"
             tarball="out/$name-$VERSION.tgz"
             expected="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"

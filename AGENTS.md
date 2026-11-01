@@ -27,7 +27,7 @@ curb.js/
 │   ├── src/server/            # WS agent server, LiveKit voice host, conversation store
 │   ├── src/preview/           # browser preview app (served by `curb dev`)
 │   └── src/test-fixtures/project/  # hermetic fixture project used by the test suite
-├── packages/create-curb.js/   # project scaffolder (npm create curb.js <dir>);
+├── packages/create-curb.js/   # project scaffolder (npm create curb.js <dir>), also on npm as create-curb;
 │                              # template lives in templates/default/
 ├── examples/insurance-agent/  # complete agent project (default demo; the template)
 └── examples/ops-agent/        # MCP-heavy second example
@@ -91,8 +91,10 @@ publishers name. A merge to `main` that changes a published package publishes a 
 workflow on `main` with `channel=preview` does the same on demand. A person cuts a stable release by
 dispatching it with `channel=stable`, `semver` and `dry_run`: it publishes to
 `latest`, tags `v<version>` and creates a GitHub Release. Both run the same verification, publish
-both `curb.js` and `create-curb.js`, and tag only after the publish, so a tag always names a
-version npm holds. Each publish then runs `scripts/published-install-test.mjs` from the public
+`curb.js`, `create-curb.js` and `create-curb`, and tag only after the publish, so a tag always names a
+version npm holds. `create-curb` is `packages/create-curb.js` packed a second time under the shorter
+name, so `npm create curb` runs the same files; docs and the site still lead with `npm create
+curb.js`. Each publish then runs `scripts/published-install-test.mjs` from the public
 registry on Node 22.12 and 24; it fails the run without holding back the tag or the release.
 
 Tags hold the version: `scripts/release-version.mjs` computes it from the stable `v*` tags and npm,

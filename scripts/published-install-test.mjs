@@ -5,7 +5,8 @@
 //
 // release-install-test.mjs tried the tarballs before they went out, through a local registry.
 // This runs after the publish, with nothing of this repository in the path: the real
-// `npm create curb.js@<version>` in an empty folder, then `curb --version`, `curb check` and
+// `npm create curb.js@<version>` in an empty folder, `npm create curb@<version>` beside it to
+// compare, then `curb --version`, `curb check` and
 // `curb upgrade --check`. npm can take minutes to serve a publication, so it waits the way
 // publish.yml's read-back does, and a registry that lags past `npm view` gets another try.
 
@@ -16,9 +17,9 @@ import { join } from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { channelOf, expect, run } from "./release-install-test.mjs";
+import { channelOf, expect, expectSameProject, run } from "./release-install-test.mjs";
 
-export const PACKAGES = ["curb.js", "create-curb.js"];
+export const PACKAGES = ["curb.js", "create-curb.js", "create-curb"];
 
 /** Resolves once `read()` answers `version`; throws after `attempts` tries. */
 export async function waitForVersion(spec, version, read, { attempts = 60, wait = () => delay(10_000) } = {}) {
@@ -71,6 +72,7 @@ async function main([version]) {
       mkdirSync(project);
       await run("npm", ["create", "--yes", `curb.js@${version}`, ".", "--", "--skip-git"], { cwd: project, env });
     });
+    await expectSameProject(project, `curb@${version}`, work, { env });
 
     const manifest = JSON.parse(readFileSync(join(project, "package.json"), "utf8"));
     const expected = `npm:curb.js@${version}`;

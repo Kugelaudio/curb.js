@@ -88,7 +88,7 @@ jobs:
           node scripts/npm-package.mjs "$VERSION" out
           node scripts/release-install-test.mjs out
           # The ./ matters: npm reads out/x.tgz as the GitHub repository out/x.tgz.
-          for name in curb.js create-curb.js; do
+          for name in curb.js create-curb.js create-curb; do
             npm publish --dry-run --access public --tag preview "./out/$name-$VERSION.tgz"
           done
 
