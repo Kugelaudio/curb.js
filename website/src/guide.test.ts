@@ -41,6 +41,17 @@ describe('the guide table', () => {
     expect(broken).toEqual([])
   })
 
+  // The docs server pairs llms-full.txt's sections with llms.txt's entries by position.
+  it('keeps llms.txt and llms-full.txt in the same order, one section per entry', () => {
+    const indexed = GUIDE_GROUPS.flatMap((group) => GUIDE_PAGES.filter((page) => page.group === group))
+    expect(indexed.map((page) => page.id)).toEqual(GUIDE_PAGES.map((page) => page.id))
+
+    const changelog = fileURLToPath(new URL('../../CHANGELOG.md', import.meta.url))
+    const files = [...guideFiles().map((name) => `${guide}/${name}`), changelog]
+    const splitting = files.filter((file) => readFileSync(file, 'utf8').includes('\n\n---\n\n'))
+    expect(splitting).toEqual([])
+  })
+
   it('serves the overview as the docs home', () => {
     expect(pageUrl('readme')).toBe('/docs/')
     expect(markdownUrl('readme')).toBe('/docs/index.md')
