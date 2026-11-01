@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CloudClient } from "./client.js";
-import { deploy } from "./deploy.js";
+import { deploy, deployDescription } from "./deploy.js";
 import { type FakeCloud, fakeCredentials, sequence, startFakeCloud } from "./fake-cloud.test-support.js";
 import { type Prompter, readLink, reportHostedAgentsAccess, resolveTarget, writeLink } from "./link.js";
 
@@ -383,6 +383,52 @@ describe("deploy", () => {
     expect(cloud.requests.some((request) => request.path.startsWith("/store/"))).toBe(false);
   });
 
+  it("sends the description in the revision's body", async () => {
+    routeHappyPath();
+    await deploy({ client, link: link(), root, activate: true, description: "Greet callers in German", log, pollIntervalMs: 1, sleep: async () => {} });
+
+    const revision = platformCalls().find((request) => request.path === "/v1/agents/projects/pp-a/revisions")!;
+    expect(revision.json()).toMatchObject({ adapter: "archive", description: "Greet callers in German" });
+    expect(lines).toContain("Revision rev-1.");
+  });
+
+  it("leaves the description out of the revision's body when there is none", async () => {
+    routeHappyPath();
+    await deploy({ client, link: link(), root, activate: true, log, pollIntervalMs: 1, sleep: async () => {} });
+
+    const revision = platformCalls().find((request) => request.path === "/v1/agents/projects/pp-a/revisions")!;
+    expect(revision.json()).not.toHaveProperty("description");
+  });
+
+  it("says the description applies to the reused revision when the source is unchanged", async () => {
+    routeHappyPath();
+    cloud.route("POST /v1/agents/projects/pp-a/revisions", { status: 200, body: { revisionId: "rev-1", deduplicated: true } });
+    await deploy({ client, link: link(), root, activate: true, description: "Greet callers in German", log, pollIntervalMs: 1, sleep: async () => {} });
+
+    expect(lines).toContain('Revision rev-1 (unchanged source, reused). Its description is now "Greet callers in German".');
+  });
+
+  it("keeps the plain line for a reused revision without a description", async () => {
+    routeHappyPath();
+    cloud.route("POST /v1/agents/projects/pp-a/revisions", { status: 200, body: { revisionId: "rev-1", deduplicated: true } });
+    await deploy({ client, link: link(), root, activate: true, log, pollIntervalMs: 1, sleep: async () => {} });
+
+    expect(lines).toContain("Revision rev-1 (unchanged source, reused).");
+  });
+
+  it("stops on the platform's revision_invalid_argument with its message, and activates nothing", async () => {
+    routeHappyPath();
+    cloud.route("POST /v1/agents/projects/pp-a/revisions", {
+      status: 400,
+      body: { code: "revision_invalid_argument", category: "validation", retryable: false, message: "The description has a control character", correlationId: "corr-7" },
+    });
+
+    await expect(
+      deploy({ client, link: link(), root, activate: true, description: "Greet callers in German", log, sleep: async () => {} }),
+    ).rejects.toThrow("The description has a control character (HTTP 400, revision_invalid_argument, correlation corr-7)");
+    expect(platformCalls().some((request) => request.path.endsWith("/activations"))).toBe(false);
+  });
+
   it("names the platform code and correlation id for any other refusal", async () => {
     cloud.route("POST /v1/agents/projects/pp-a/uploads", {
       status: 413,
@@ -391,5 +437,32 @@ describe("deploy", () => {
     await expect(
       deploy({ client, link: link(), root, activate: true, log, sleep: async () => {} }),
     ).rejects.toThrow("The archive is too large (HTTP 413, upload_too_large, correlation corr-9)");
+  });
+});
+
+describe("deployDescription", () => {
+  it("takes the first line, trimmed", () => {
+    expect(deployDescription("  Greet callers in German  ")).toBe("Greet callers in German");
+    expect(deployDescription("Greet callers in German\n\nThe rest is ignored.")).toBe("Greet callers in German");
+    expect(deployDescription("Greet callers in German\r\nThe rest")).toBe("Greet callers in German");
+  });
+
+  it("takes 160 characters and refuses 161, counting an emoji as one, and never cuts", () => {
+    expect(deployDescription("a".repeat(160))).toBe("a".repeat(160));
+    expect(deployDescription("😀".repeat(160))).toBe("😀".repeat(160));
+    expect(() => deployDescription("a".repeat(161))).toThrow(
+      "[CURB_DEPLOY_MESSAGE_INVALID] The deploy message is 161 characters, and the limit is 160.\n" +
+        'Fix: Pass a short summary, such as npx curb deploy -m "Greet callers in German".',
+    );
+  });
+
+  it("measures only the first line", () => {
+    expect(deployDescription(`Short\n${"a".repeat(500)}`)).toBe("Short");
+  });
+
+  it("refuses a message with nothing on its first line", () => {
+    for (const empty of ["   ", "\nGreet callers in German"]) {
+      expect(() => deployDescription(empty)).toThrow("[CURB_DEPLOY_MESSAGE_INVALID] The deploy message has nothing on its first line.");
+    }
   });
 });

@@ -152,8 +152,11 @@ with the `kugelaudio` tools: `agent_create` (once), `agent_create_upload`, `agen
 ```bash
 npx curb login --no-open  # once; prints a sign-in link and waits up to 5 minutes
 npx curb secrets push     # the .env keys onto the hosted agent; prints names, never values
-npx curb deploy           # build and go live; prints the playground URL
+npx curb deploy -m "Greet callers in German"  # build and go live; prints the playground URL
 ```
+
+Always pass `-m` with a short imperative summary of the change, at most 160 characters: it
+names the version in the dashboard, which otherwise shows `Version N`.
 
 Not signed in? Do not stop there: run `npx curb login --no-open` in the background, give
 the user the link it prints to open in their browser on this machine, and go on once it

@@ -139,6 +139,7 @@ Hosted deploys do not accept a project that installs Curb from npm yet.
 | Option | What it does |
 |---|---|
 | `--agent <id>` | Chooses the agent |
+| `-m`, `--message <text>` | Names this version in the dashboard: a short summary, at most 160 characters |
 | `--no-activate` | Builds without going live |
 | `--json` | Prints the result as one JSON line |
 

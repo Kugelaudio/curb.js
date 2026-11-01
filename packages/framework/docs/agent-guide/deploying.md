@@ -87,6 +87,7 @@ Live. Try it in the playground: https://www.kugelaudio.com/dashboard/.../playgro
 | Flag | Meaning |
 |---|---|
 | `--agent <id>` | Deploy to this agent (and link the project to it). |
+| `-m`, `--message <text>` | A short summary of this version, shown in the dashboard instead of `Version N`. |
 | `--no-activate` | Build and prove the deployment starts, but leave the live one serving. |
 | `--json` | For a program running the deploy: the progress goes to stderr, and stdout carries one line, the result as a JSON object. A failed deploy prints nothing on stdout and exits non-zero. |
 
@@ -97,6 +98,18 @@ With `--json`, stdout reads:
 ```
 
 `state` is `ready` with `--no-activate`.
+
+**Name each version.** Pass a short imperative summary of what changed, and always do when a
+coding agent deploys:
+
+```bash
+npx curb deploy -m "Greet callers in German"
+```
+
+Only the first line is sent, trimmed, and it can be at most 160 characters. A longer message is
+refused, never cut, and so is one the platform rejects (`curb deploy` prints its reason and exits
+non-zero). When the source has not changed, the deploy reuses the existing version and gives it
+the new summary, and the output says so.
 
 **Which agent.** The first `deploy` or `secrets push` in a project asks which of your agents
 to use, or creates a new one, and saves the choice in `.curb/link.json`; later runs reuse it.

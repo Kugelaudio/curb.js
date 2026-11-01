@@ -172,3 +172,63 @@ describe("curb deploy --json", () => {
     expect(stderr.join("\n")).toContain("Revision rev-1");
   });
 });
+
+describe("curb deploy --message", () => {
+  function routeDeploy() {
+    cloud.route("POST /v1/agents/projects/pp-a/uploads", {
+      status: 201,
+      body: { uploadObjectKey: "uploads/u1.tar.gz", url: `${cloud.url}/store/u1`, method: "PUT", headers: {} },
+    });
+    cloud.route("PUT /store/u1", { status: 200 });
+    cloud.route("POST /v1/agents/projects/pp-a/revisions", { status: 201, body: { revisionId: "rev-1" } });
+    cloud.route("POST /v1/agents/environments/env-dev/activations", { status: 200, body: { state: "activated", deploymentId: "dep-1" } });
+    cloud.route("GET /v1/agents/environments/env-dev/deployments", { body: { deployments: [] } });
+  }
+
+  async function run(args: string[]): Promise<void> {
+    const root = join(dir, "project");
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "agent", dependencies: { curb: "*" } }));
+    writeFileSync(join(root, "src", "agent.tsx"), "export default null;\n");
+    const logged = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv(PLATFORM_TOKEN_FILE_ENV, tokenFile({ ...valid(), expiresAt: new Date(Date.now() + 3_600_000).toISOString() }));
+    vi.stubEnv("AGENT_PROJECT_DIR", root);
+    try {
+      await deployCommand(args);
+    } finally {
+      logged.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  }
+
+  const revision = () =>
+    cloud.requests.find((request) => request.path === "/v1/agents/projects/pp-a/revisions")?.json() as Record<string, unknown>;
+
+  it.each([
+    ["-m", ["-m", "Greet callers in German"]],
+    ["--message", ["--message", "Greet callers in German"]],
+    ["--message=", ["--message=Greet callers in German"]],
+    ["several lines", ["-m", "  Greet callers in German\n\nAnd more detail."]],
+  ])("sends the summary from %s", async (_, args) => {
+    routeDeploy();
+    await run(args);
+    expect(revision().description).toBe("Greet callers in German");
+  });
+
+  it("sends no description without the flag", async () => {
+    routeDeploy();
+    await run([]);
+    expect(revision()).not.toHaveProperty("description");
+  });
+
+  it("refuses a message that is too long before it uploads anything", async () => {
+    routeDeploy();
+    await expect(run(["-m", "a".repeat(161)])).rejects.toThrow("[CURB_DEPLOY_MESSAGE_INVALID] The deploy message is 161 characters");
+    expect(cloud.requests).toEqual([]);
+  });
+
+  it("refuses -m with nothing after it", async () => {
+    await expect(run(["-m"])).rejects.toThrow("-m needs a value.");
+    expect(cloud.requests).toEqual([]);
+  });
+});
