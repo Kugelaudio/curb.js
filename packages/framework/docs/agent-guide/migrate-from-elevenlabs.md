@@ -206,8 +206,8 @@ your callers. [Deploy](./deploying.md) the agent, call it on the
 [test line](https://docs.kugelaudio.com/hosted-agents/phone-numbers#call-your-agent-from-your-own-phone), and try the
 names, numbers and spellings that matter to your business.
 
-To check how real calls are heard, transcribe a few exported recordings with
-[speech to text](https://docs.kugelaudio.com/features/speech-to-text), including noisy calls and spelled names.
+To check how real calls are heard, read the transcripts of a few test calls, including noisy calls
+and spelled names.
 
 ## 5. Move your phone numbers
 
