@@ -981,120 +981,112 @@ a:hover > h3 span {
   color: var(--ink);
 }
 
-.hosting {
-  margin-top: 2.5rem;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-}
-
-.hosting figure {
-  margin: 0;
-  padding: 1.5rem;
-}
-
 .deploy {
+  --tile: clamp(3rem, 9vw, 5rem);
+  position: relative;
+  margin-top: 3.5rem;
+}
+
+.deploy ol {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.deploy-step {
-  position: relative;
-  padding: 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  line-height: 1.35;
-}
-
-.deploy-step + .deploy-step::before {
+/* The line runs from the middle of the first tile to the middle of the last. */
+.deploy::before {
   position: absolute;
-  top: 50%;
-  right: 100%;
-  width: calc(1.5rem + 1px);
+  top: calc(var(--tile) / 2);
+  right: 10%;
+  left: 10%;
   height: 1px;
   background: var(--line-strong);
   content: '';
 }
 
-.deploy-step strong,
-.deploy-step span {
-  display: block;
-}
-
-.deploy-step strong {
-  margin-bottom: 0.15rem;
+.deploy li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  color: var(--ink);
   font-size: 0.9375rem;
   font-weight: 500;
 }
 
-.deploy-step span {
-  color: var(--ink-muted);
+.deploy-tile {
+  display: grid;
+  place-items: center;
+  width: var(--tile);
+  height: var(--tile);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface);
 }
 
-.deploy-live {
+.deploy-tile svg {
+  width: 44%;
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.deploy-tile .deploy-mark {
+  fill: var(--ink-soft);
+  stroke: none;
+}
+
+.deploy-live .deploy-tile {
   border-color: var(--line-strong);
   background: var(--surface-raised);
 }
 
-.deploy-live i {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 0.4rem;
+.deploy-tile .deploy-ring {
+  stroke: var(--line-strong);
+}
+
+.deploy-tile .deploy-core {
+  fill: var(--accent);
+  stroke: none;
+}
+
+.deploy-dot {
+  position: absolute;
+  top: calc(var(--tile) / 2 - 3px);
+  left: 10%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3px;
   border-radius: 50%;
   background: var(--accent);
-  vertical-align: 0.1em;
 }
 
-.hosting-paths {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-top: 1px solid var(--line);
-}
-
-.hosting-paths > div {
-  display: flex;
-  flex-direction: column;
-  padding: 1.5rem;
-}
-
-.hosting-paths > div + div {
-  border-left: 1px solid var(--line);
-}
-
-.hosting-paths h3 {
-  margin: 0 0 0.35rem;
-}
-
-.hosting-paths p,
-.hosting-paths ul {
-  margin: 0 0 0.75rem;
-  font-size: 0.9375rem;
-  line-height: 1.5;
-}
-
-.hosting-paths ul {
-  padding-left: 1.1rem;
-}
-
-.hosting-paths code {
-  color: var(--ink);
-  font-family: inherit;
-  font-size: inherit;
-}
-
-.hosting-paths .hosting-actions {
+.hosting {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  gap: 1rem 3rem;
   align-items: center;
-  margin: auto 0 0;
-  padding-top: 0.75rem;
+  justify-content: space-between;
+  margin-top: 3rem;
+}
+
+.hosting .note {
+  flex: 1 1 24rem;
+  max-width: 32rem;
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.hosting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+  margin: 0;
 }
 
 .start {
@@ -1402,43 +1394,14 @@ a:hover > h3 span {
   }
 
   .diagrams,
-  .foundation,
-  .hosting-paths {
+  .foundation {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .diagrams a + a,
-  .foundation a + a,
-  .hosting-paths > div + div {
+  .foundation a + a {
     border-top: 1px solid var(--line);
     border-left: 0;
-  }
-
-  /* Top to bottom, so the words stay at reading size on a phone. */
-  .deploy {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1rem;
-  }
-
-  .deploy-step + .deploy-step::before {
-    top: auto;
-    right: auto;
-    bottom: 100%;
-    left: 1.5rem;
-    width: 1px;
-    height: calc(1rem + 1px);
-  }
-
-  .deploy-step {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0 1rem;
-    align-items: baseline;
-    justify-content: space-between;
-  }
-
-  .deploy-step strong {
-    margin-bottom: 0;
   }
 
   .links {
@@ -1598,28 +1561,28 @@ a:hover > h3 span {
     animation-delay: 2.2s;
   }
 
-  .is-live .deploy-step {
+  .is-live .deploy-dot {
+    animation: deploy-flow 6s linear infinite;
+  }
+
+  .is-live .deploy-tile {
     animation: lit-box 6s var(--ease) infinite;
   }
 
-  .is-live .deploy-step:nth-child(2) {
-    animation-delay: 0.6s;
+  .is-live li:nth-child(2) .deploy-tile {
+    animation-delay: 1.05s;
   }
 
-  .is-live .deploy-step:nth-child(3) {
-    animation-delay: 1.2s;
+  .is-live li:nth-child(3) .deploy-tile {
+    animation-delay: 2.1s;
   }
 
-  .is-live .deploy-step:nth-child(4) {
-    animation-delay: 1.8s;
+  .is-live li:nth-child(4) .deploy-tile {
+    animation-delay: 3.15s;
   }
 
-  .is-live .deploy-step:nth-child(5) {
-    animation-delay: 2.4s;
-  }
-
-  .is-live .deploy-step:nth-child(6) {
-    animation-delay: 3s;
+  .is-live li:nth-child(5) .deploy-tile {
+    animation-delay: 4.2s;
   }
 
   .is-playing .line {
@@ -1763,13 +1726,30 @@ a:hover > h3 span {
 /* The same as lit, for a box drawn in HTML. */
 @keyframes lit-box {
   0%,
-  26%,
+  18%,
   100% {
     border-color: var(--line);
   }
-  8%,
-  16% {
+  4%,
+  8% {
     border-color: var(--ink-soft);
+  }
+}
+
+/* The dot lands on each tile as that tile lights, then rests before the next push. */
+@keyframes deploy-flow {
+  0% {
+    left: 10%;
+    opacity: 1;
+  }
+  70% {
+    left: 90%;
+    opacity: 1;
+  }
+  76%,
+  100% {
+    left: 90%;
+    opacity: 0;
   }
 }
 

@@ -66,13 +66,6 @@ const foundation = [
   { href: 'https://zod.dev', title: 'TypeScript and Zod', text: 'Typed tools, with inputs validated before your code runs.' },
 ]
 
-const hosted = [
-  'Phone numbers, bought or your own',
-  'A test copy to call before a change goes live',
-  'Secrets that nothing can read back',
-  'An earlier version back live to roll back',
-]
-
 const steps = [
   { id: 'create', title: 'Create', command: 'npm create curb.js .', text: 'In an empty folder. Keep the defaults and the agent runs on KugelAudio with one sign-in.' },
   { id: 'login', title: 'Sign in', command: 'npx curb login', text: 'Opens your browser once. There is no key to copy.' },
@@ -189,35 +182,15 @@ const steps = [
     </section>
 
     <section class="block">
-      <h2>Host it on KugelAudio, or on your own servers</h2>
-      <p class="block-lede">Curb runs anywhere Node runs. On KugelAudio there are no servers to run: connect a GitHub repository, and every push is built, checked and put live.</p>
+      <h2>Push, and it’s live</h2>
+      <p class="block-lede">Connect a GitHub repository to KugelAudio, and every push that passes its checks goes live. Or run Curb on your own servers.</p>
+      <Deploy />
       <div class="hosting">
-        <figure>
-          <Deploy />
-          <figcaption>If the build or the check fails, the version that was live keeps answering.</figcaption>
-        </figure>
-        <div class="hosting-paths">
-          <div>
-            <h3>KugelAudio, in closed alpha</h3>
-            <p>Hosting is switched on per organization, so there is no open <span class="nowrap">sign-up</span> yet.</p>
-            <ul>
-              {hosted.map((item) => <li>{item}</li>)}
-            </ul>
-            <p><strong>Not yet for projects from npm.</strong> Hosted deploys do not accept a project that installs Curb from npm, and <code>npm create curb.js</code> creates exactly that. Such a project goes live on your own servers today.</p>
-            <p class="hosting-actions">
-              <a class="button button-quiet" href="mailto:hello@kugelaudio.com?subject=Hosting%20on%20KugelAudio">Ask for access</a>
-              <a href="/docs/deploying/">What deploys today</a>
-            </p>
-          </div>
-          <div>
-            <h3>Your own servers, today</h3>
-            <p>Curb needs no hosted platform. Run every project on your machines, with your own LiveKit and provider keys.</p>
-            <p><code>curb build</code> gives you one self-contained directory that needs only Node, to ship to a server or a container.</p>
-            <p class="hosting-actions">
-              <a class="button button-quiet" href="/docs/hosting/">Self-hosting guide</a>
-            </p>
-          </div>
-        </div>
+        <p class="note"><strong>Closed alpha, switched on per organization.</strong> Projects from <code class="nowrap">npm create curb.js</code> can’t deploy there yet; they run on your own servers.</p>
+        <p class="hosting-actions">
+          <a class="button button-quiet" href="mailto:hello@kugelaudio.com?subject=Hosting%20on%20KugelAudio">Ask for access</a>
+          <a href="/docs/hosting/">Self-hosting guide</a>
+        </p>
       </div>
     </section>
 
