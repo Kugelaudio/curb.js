@@ -1,12 +1,34 @@
 {
   "name": "create-curb.js",
   "version": "1.0.1",
-  "description": "Create a Curb voice agent: npm create curb.js my-agent",
+  "description": "Create a Curb voice agent with one command. The framework for production voice agents.",
+  "keywords": [
+    "curb",
+    "curb.js",
+    "scaffold",
+    "starter",
+    "template",
+    "cli",
+    "voice-agent",
+    "voice-ai",
+    "agent-framework",
+    "conversational-ai",
+    "react",
+    "typescript"
+  ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "KugelAudio GmbH",
+    "url": "https://kugelaudio.com"
+  },
   "homepage": "https://curbjs.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Kugelaudio/curb.js.git"
+    "url": "git+https://github.com/Kugelaudio/curb.js.git",
+    "directory": "packages/create-curb.js"
+  },
+  "bugs": {
+    "url": "https://curbjs.com/docs/reporting-a-bug/"
   },
   "type": "module",
   "engines": {

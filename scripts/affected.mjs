@@ -18,9 +18,10 @@ const IGNORED = [
 ];
 
 const RULES = [
-  // The site renders the agent guide, and website/src/seo.test.ts holds the README and both
+  // The site renders the agent guide, and website/src/seo.test.ts holds every README and both
   // manifests to its tagline.
   [/^(website\/|README\.md$|\.github\/workflows\/pages\.yml$|packages\/framework\/docs\/agent-guide\/)/, ["website"]],
+  [/^packages\/(framework|create-curb\.js)\/README\.md$/, ["package", "website"]],
   [/^packages\/framework\/package\.json$/, ["framework", "examples", "compat", "smoke", "package", "website"]],
   [/^packages\/create-curb\.js\/package\.json$/, ["scaffolders", "package", "website"]],
   [/^packages\/framework\//, ["framework", "examples", "compat", "smoke", "package"]],

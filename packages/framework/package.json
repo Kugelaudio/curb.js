@@ -3,7 +3,36 @@
   "version": "1.0.0",
   "private": true,
   "description": "The framework for production voice agents. Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships.",
+  "keywords": [
+    "curb",
+    "voice-agent",
+    "voice-ai",
+    "ai-agent",
+    "agent-framework",
+    "conversational-ai",
+    "react",
+    "typescript",
+    "livekit",
+    "llm",
+    "mcp",
+    "speech-to-text",
+    "text-to-speech",
+    "telephony"
+  ],
   "license": "Apache-2.0",
+  "author": {
+    "name": "KugelAudio GmbH",
+    "url": "https://kugelaudio.com"
+  },
+  "homepage": "https://curbjs.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kugelaudio/curb.js.git",
+    "directory": "packages/framework"
+  },
+  "bugs": {
+    "url": "https://curbjs.com/docs/reporting-a-bug/"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
