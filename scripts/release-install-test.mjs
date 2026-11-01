@@ -6,7 +6,8 @@
 // A local registry serves the two tarballs and sends every other package on to npm, so the
 // real `npm create curb.js` runs in an empty folder before anything is published. The project
 // it creates must depend on `"curb": "npm:curb.js@<version>"`, and `curb check`, `curb build`
-// (verification on) and `curb upgrade --check` must all work through that alias.
+// (verification on) and `curb upgrade --check` must all work through that alias. The command
+// must also start outside a project, where it has no generated tsconfig to read.
 
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -128,6 +129,13 @@ async function main([directory]) {
     const installed = JSON.parse(readFileSync(join(project, "node_modules/curb/package.json"), "utf8"));
     expect(installed.name === "curb.js" && installed.version === version, `installed ${installed.name}@${installed.version}`);
     expect(existsSync(join(project, "node_modules/.bin/curb")), "the alias installed no curb command");
+
+    const curb = join(project, "node_modules/.bin/curb");
+    for (const cwd of [work, join(project, "src")]) {
+      const printed = await run(curb, ["--version"], { cwd, env });
+      expect(printed.includes(version), `\`curb --version\` in ${cwd} printed ${printed}`);
+      await run(curb, ["info"], { cwd, env });
+    }
 
     await run("npx", ["curb", "check"], { cwd: project, env });
     await run("npx", ["curb", "build", "--out", join(work, "dist")], { cwd: project, env });
