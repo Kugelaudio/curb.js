@@ -1043,10 +1043,14 @@ a:hover > h3 span {
   stroke: none;
 }
 
+/* Half a border past the padding box, so the outline runs down the middle of the tile's border. */
 .deploy-tile .deploy-trace {
   position: absolute;
-  inset: -1px;
-  width: calc(100% + 2px);
+  top: -0.5px;
+  left: -0.5px;
+  width: calc(100% + 1px);
+  max-width: none;
+  height: calc(100% + 1px);
   overflow: visible;
   stroke: var(--accent);
   stroke-linecap: butt;
