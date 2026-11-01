@@ -41,7 +41,7 @@ async function scannedDependencies(withPlugin: boolean): Promise<string[]> {
     cacheDir,
     logLevel: "silent",
     resolve: { alias: { "@": src } },
-    optimizeDeps: withPlugin ? { esbuildOptions: { plugins: [scanAliasPlugin(src)] } } : {},
+    optimizeDeps: withPlugin ? { rolldownOptions: { plugins: [scanAliasPlugin(src)] } } : {},
     server: { middlewareMode: true, hmr: false },
   });
   try {

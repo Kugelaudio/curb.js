@@ -4,8 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import type { Plugin as EsbuildPlugin } from "esbuild";
-import { searchForWorkspaceRoot, type InlineConfig } from "vite";
+import { searchForWorkspaceRoot, type InlineConfig, type Rolldown } from "vite";
 import { resolveContextDir } from "../project.node.js";
 import { VITE_HMR_PATH } from "../server/hmr-path.js";
 import { contextIndexPlugin } from "./context-index-plugin.js";
@@ -61,7 +60,7 @@ export function createPreviewConfig(options: {
       ],
       // The scan follows the preview's own `@/` imports into the framework source, so
       // what its components import is found and pre-bundled when the server starts.
-      esbuildOptions: { plugins: [scanAliasPlugin(join(packageRoot, "src"))] },
+      rolldownOptions: { plugins: [scanAliasPlugin(join(packageRoot, "src"))] },
     },
     plugins: [
       // Exclude the prebundled deps cache from the Babel pass: it lives in
@@ -126,16 +125,17 @@ function installedDependencies(projectRoot: string): string[] {
  * components import (@base-ui/react, clsx, tailwind-merge) was never pre-bundled and the
  * page fetched it as hundreds of single files. Resolved here, the scan reads those files.
  */
-export function scanAliasPlugin(srcDir: string): EsbuildPlugin {
+export function scanAliasPlugin(srcDir: string): Rolldown.Plugin {
   // The scan resolves a relative path against its importer, so the importer is a file at
   // the root of `src`; a `.js` import then maps to its `.ts`/`.tsx` source as anywhere else.
   const importer = join(srcDir, "index.ts");
   return {
     name: "curb-scan-alias",
-    setup(build) {
-      build.onResolve({ filter: /^@\// }, (args) =>
-        build.resolve(`./${args.path.slice(2)}`, { resolveDir: srcDir, kind: args.kind, importer }),
-      );
+    resolveId: {
+      filter: { id: /^@\// },
+      handler(id, _importer, options) {
+        return this.resolve(`./${id.slice(2)}`, importer, options);
+      },
     },
   };
 }
