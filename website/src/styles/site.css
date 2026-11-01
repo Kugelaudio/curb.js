@@ -987,7 +987,9 @@ a:hover > h3 span {
   margin-top: 3.5rem;
 }
 
+/* Above the line and the dot, so the dot passes behind each tile. */
 .deploy ol {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 0;
@@ -1017,12 +1019,13 @@ a:hover > h3 span {
 }
 
 .deploy-tile {
+  position: relative;
   display: grid;
   place-items: center;
   width: var(--tile);
   height: var(--tile);
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: 15%;
   background: var(--surface);
 }
 
@@ -1038,6 +1041,22 @@ a:hover > h3 span {
 .deploy-tile .deploy-mark {
   fill: var(--ink-soft);
   stroke: none;
+}
+
+.deploy-tile .deploy-trace {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  overflow: visible;
+  stroke: var(--accent);
+  stroke-linecap: butt;
+  stroke-width: 2;
+}
+
+.deploy-trace path {
+  opacity: 0;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
 }
 
 .deploy-live .deploy-tile {
@@ -1562,27 +1581,27 @@ a:hover > h3 span {
   }
 
   .is-live .deploy-dot {
-    animation: deploy-flow 6s linear infinite;
+    animation: deploy-flow 9s linear infinite;
   }
 
-  .is-live .deploy-tile {
-    animation: lit-box 6s var(--ease) infinite;
+  .is-live .deploy-trace path {
+    animation: deploy-trace 9s ease-in-out infinite;
   }
 
-  .is-live li:nth-child(2) .deploy-tile {
-    animation-delay: 1.05s;
+  .is-live li:nth-child(2) .deploy-trace path {
+    animation-delay: 1.62s;
   }
 
-  .is-live li:nth-child(3) .deploy-tile {
-    animation-delay: 2.1s;
+  .is-live li:nth-child(3) .deploy-trace path {
+    animation-delay: 3.24s;
   }
 
-  .is-live li:nth-child(4) .deploy-tile {
-    animation-delay: 3.15s;
+  .is-live li:nth-child(4) .deploy-trace path {
+    animation-delay: 4.86s;
   }
 
-  .is-live li:nth-child(5) .deploy-tile {
-    animation-delay: 4.2s;
+  .is-live li:nth-child(5) .deploy-trace path {
+    animation-delay: 6.48s;
   }
 
   .is-playing .line {
@@ -1723,32 +1742,64 @@ a:hover > h3 span {
   }
 }
 
-/* The same as lit, for a box drawn in HTML. */
-@keyframes lit-box {
-  0%,
-  18%,
-  100% {
-    border-color: var(--line);
+/* A tile takes 12% of the loop: the arcs leave the left edge, meet as a border, and close on the right edge. */
+@keyframes deploy-trace {
+  0% {
+    opacity: 1;
+    stroke-dashoffset: 1;
   }
-  4%,
-  8% {
-    border-color: var(--ink-soft);
+  5%,
+  7% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+  11.9% {
+    opacity: 1;
+    stroke-dashoffset: -1;
+  }
+  12%,
+  100% {
+    opacity: 0;
+    stroke-dashoffset: -1;
   }
 }
 
-/* The dot lands on each tile as that tile lights, then rests before the next push. */
+/* The gaps take 6% each and are the same on every screen, so the dot leaves as a tile's arcs close and arrives as the next tile's leave. */
 @keyframes deploy-flow {
-  0% {
-    left: 10%;
+  0%,
+  11.9% {
+    left: calc(10% + var(--tile) / 2);
+    opacity: 0;
+  }
+  12% {
+    left: calc(10% + var(--tile) / 2);
     opacity: 1;
   }
-  70% {
-    left: 90%;
+  18% {
+    left: calc(30% - var(--tile) / 2);
+  }
+  30% {
+    left: calc(30% + var(--tile) / 2);
+  }
+  36% {
+    left: calc(50% - var(--tile) / 2);
+  }
+  48% {
+    left: calc(50% + var(--tile) / 2);
+  }
+  54% {
+    left: calc(70% - var(--tile) / 2);
+  }
+  66% {
+    left: calc(70% + var(--tile) / 2);
+  }
+  72% {
+    left: calc(90% - var(--tile) / 2);
     opacity: 1;
   }
-  76%,
+  72.1%,
   100% {
-    left: 90%;
+    left: calc(90% - var(--tile) / 2);
     opacity: 0;
   }
 }
