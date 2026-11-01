@@ -25,6 +25,7 @@ export function npmTarballArgs(text) {
 }
 
 const publishYml = readFileSync(join(workflows, "publish.yml"), "utf8");
+const testYml = readFileSync(join(workflows, "test.yml"), "utf8");
 
 /** The lines of a workflow_dispatch input, up to the next input. */
 function dispatchInput(name) {
@@ -66,8 +67,8 @@ async function dryRun(t, arg) {
   });
 }
 
-test("the workflows publish both tarballs, in the dry run and for real", () => {
-  assert.deepEqual(tarballArgs().length, 2);
+test("the workflows publish both tarballs, in both dry runs and for real", () => {
+  assert.deepEqual(tarballArgs().length, 3);
 });
 
 test("npm reads every tarball path in a workflow as a file", async (t) => {
@@ -105,4 +106,36 @@ test("the channel reads the same in the concurrency group and in plan, and a pus
   assert.ok(publishYml.includes(`group: release-\${{ ${expression} }}`));
   assert.ok(publishYml.includes(`CHANNEL: \${{ ${expression} }}`));
   assert.doesNotMatch(publishYml, /github\.event_name/);
+});
+
+test("the package suite runs publish.yml's tarball commands", () => {
+  for (const command of [
+    'node scripts/npm-package.mjs "$VERSION" out',
+    "node scripts/release-install-test.mjs out",
+    'for name in curb.js create-curb.js; do',
+    '"./out/$name-$VERSION.tgz"',
+  ]) {
+    assert.ok(publishYml.includes(command), `publish.yml no longer runs ${command}`);
+    assert.ok(testYml.includes(command), `test.yml no longer runs ${command}`);
+  }
+});
+
+test("the test workflow cannot publish", () => {
+  const steps = testYml.replace(/^\s*#.*$/gm, "");
+  const publishes = steps.split("\n").filter((line) => /(^|\s)npm publish\s/.test(line));
+  assert.equal(publishes.length, 1);
+  assert.match(publishes[0], /--dry-run/);
+  assert.doesNotMatch(publishes[0], /--tag latest/);
+  assert.doesNotMatch(steps, /id-token/);
+  assert.doesNotMatch(steps, /^\s*environment:/m);
+  assert.doesNotMatch(steps, /NODE_AUTH_TOKEN|NPM_TOKEN|secrets\./);
+});
+
+test("npm gets ten minutes per package to serve a publication, inside the job's timeout", () => {
+  const job = publishYml.slice(publishYml.indexOf("\n  publish:\n"), publishYml.indexOf("\n  tag:\n"));
+  const attempts = Number(/for attempt in \$\(seq 1 (\d+)\)/.exec(job)?.[1]);
+  const seconds = Number(/sleep (\d+)/.exec(job)?.[1]);
+  const timeout = Number(/timeout-minutes: (\d+)/.exec(job)?.[1]);
+  assert.ok(attempts * seconds >= 600, `the read-back waits ${attempts * seconds} s`);
+  assert.ok(timeout * 60 > 2 * attempts * seconds, `${timeout} minutes does not fit both packages`);
 });
