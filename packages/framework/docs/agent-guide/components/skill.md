@@ -15,7 +15,7 @@ function Skill(props: SkillProps): ReactNode;
 | `path` | `string` | The skill's path: `/claims` for `src/agent/claims/` |
 | `description` | `string` | When the model should open it. Defaults to the description in the skill's own meta |
 | `llm`, `stt`, `tts` | providers | Replace the `<Agent>`'s while this skill is the active one |
-| `children` | `ReactNode` | The name the model reads. Without it, the name in the context is blank |
+| `children` | `ReactNode` | The name the model reads. Without it, the skill's `meta.title`, else a title made from its path |
 
 ## Example
 
@@ -29,5 +29,6 @@ function Skill(props: SkillProps): ReactNode;
 
 | Version | Changes |
 |---|---|
+| v1.16.0 | A link without children takes its name from the skill, and is never blank |
 | v1.2.6 | `llm`, `stt` and `tts` added |
 | v0.1.2 | `<Skill>` introduced |

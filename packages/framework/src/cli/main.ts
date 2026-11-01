@@ -15,7 +15,7 @@ const USAGE = `Usage: curb <command>
 Run from your project root (the directory containing src/agent/).
 
 Commands:
-  dev        Start everything — preview, chat, voice agent — on one port (default 4000)
+  dev        Start everything (preview, chat, voice agent) on one port (default 4000)
              and open the preview in your browser (--no-open or CURB_NO_OPEN=1 to skip).
              Saving a file under src/ (or context/*.md, .env) reloads the agent.
              --port <n> serves on exactly that port.

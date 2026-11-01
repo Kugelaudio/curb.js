@@ -48,8 +48,9 @@ a string of at most 256 characters. To try it locally, see
 [Testing](./testing.md) ("Page info: `client.*`").
 
 `defineAgent` refuses a `say` with no words (`AGENT_INVALID_AUTHORING_PROP`).
-A function that returns none is reported when the conversation opens, and the
-conversation goes on without the line.
+A function that returns none, or throws, is reported when the conversation opens, and the
+conversation goes on without the line. In a typed conversation the error appears in the preview and
+the first message still gets its answer.
 
 A phone call has no page to show a notice on. To tell a caller that the call is recorded, use
 `firstTurn: { say }` for exact words, or `firstTurn: "agent"` and put the rule in `<SystemPrompt>`,
