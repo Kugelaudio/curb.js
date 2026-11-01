@@ -991,7 +991,7 @@ a:hover > h3 span {
 .deploy ol {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1001,8 +1001,8 @@ a:hover > h3 span {
 .deploy::before {
   position: absolute;
   top: calc(var(--tile) / 2);
-  right: 10%;
-  left: 10%;
+  right: calc(100% / 6);
+  left: calc(100% / 6);
   height: 1px;
   background: var(--line-strong);
   content: '';
@@ -1077,7 +1077,7 @@ a:hover > h3 span {
 .deploy-dot {
   position: absolute;
   top: calc(var(--tile) / 2 - 3px);
-  left: 10%;
+  left: calc(100% / 6);
   width: 7px;
   height: 7px;
   margin-left: -3px;
@@ -1582,11 +1582,11 @@ a:hover > h3 span {
   }
 
   .is-live .deploy-dot {
-    animation: deploy-flow 9s linear infinite;
+    animation: deploy-flow 6s linear infinite;
   }
 
   .is-live .deploy-trace path {
-    animation: deploy-trace 9s ease-in-out infinite;
+    animation: deploy-trace 6s ease-in-out infinite;
   }
 
   .is-live li:nth-child(2) .deploy-trace path {
@@ -1595,14 +1595,6 @@ a:hover > h3 span {
 
   .is-live li:nth-child(3) .deploy-trace path {
     animation-delay: 3.24s;
-  }
-
-  .is-live li:nth-child(4) .deploy-trace path {
-    animation-delay: 4.86s;
-  }
-
-  .is-live li:nth-child(5) .deploy-trace path {
-    animation-delay: 6.48s;
   }
 
   .is-playing .line {
@@ -1743,59 +1735,47 @@ a:hover > h3 span {
   }
 }
 
-/* A tile takes 12% of the loop: the two lines leave its left edge, run round it and close on its right edge. */
+/* A tile takes 18% of the loop: the two lines leave its left edge, run round it and close on its right edge. */
 @keyframes deploy-trace {
   0% {
     opacity: 1;
     stroke-dashoffset: 0.33;
   }
-  11.9% {
+  17.9% {
     opacity: 1;
     stroke-dashoffset: -1;
   }
-  12%,
+  18%,
   100% {
     opacity: 0;
     stroke-dashoffset: -1;
   }
 }
 
-/* The gaps take 6% each and are the same on every screen, so the dot leaves as a tile's arcs close and arrives as the next tile's leave. */
+/* The gaps take 9% each and are the same on every screen, so the dot leaves as a tile's lines close and arrives as the next tile's leave. */
 @keyframes deploy-flow {
   0%,
-  11.9% {
-    left: calc(10% + var(--tile) / 2);
+  17.9% {
+    left: calc(100% / 6 + var(--tile) / 2);
     opacity: 0;
   }
-  12% {
-    left: calc(10% + var(--tile) / 2);
+  18% {
+    left: calc(100% / 6 + var(--tile) / 2);
     opacity: 1;
   }
-  18% {
-    left: calc(30% - var(--tile) / 2);
-  }
-  30% {
-    left: calc(30% + var(--tile) / 2);
-  }
-  36% {
+  27% {
     left: calc(50% - var(--tile) / 2);
   }
-  48% {
+  45% {
     left: calc(50% + var(--tile) / 2);
   }
   54% {
-    left: calc(70% - var(--tile) / 2);
-  }
-  66% {
-    left: calc(70% + var(--tile) / 2);
-  }
-  72% {
-    left: calc(90% - var(--tile) / 2);
+    left: calc(500% / 6 - var(--tile) / 2);
     opacity: 1;
   }
-  72.1%,
+  54.1%,
   100% {
-    left: calc(90% - var(--tile) / 2);
+    left: calc(500% / 6 - var(--tile) / 2);
     opacity: 0;
   }
 }
