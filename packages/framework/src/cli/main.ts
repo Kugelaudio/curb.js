@@ -29,14 +29,15 @@ Commands:
   hook       Run the agent's afterCall or afterEvaluation once, on a call from a fixture file,
              with the project's .env; nothing else fires them on this machine (see curb hook --help).
   conversations
-             Print the recorded conversations of curb dev and curb say with every tool call
+             Print the recorded conversations of curb dev with every tool call
              and result, to see what went wrong (--last <n>, --id <id>, --json).
   start      Run the agent's LiveKit voice worker in production mode; the framework runs
              the voice session.
              With CURB_MANAGEMENT_ADDR and CURB_MANAGEMENT_TOKEN set, dev and start also
              serve host protocol v1 for the calls they run (see docs/agent-guide/host-protocol.md).
   server     Start only the agent WebSocket server (no preview); --port <n> as for dev.
-  build      Bundle the project into dist/ so it starts with no npm install and no tsc.
+  build      Bundle the project into .curb/standalone (--out <dir> for another folder) so it
+             starts with no npm install and no tsc.
              The finished artifact is started in isolation to prove it runs
              (--no-verify to skip that check).
              --emit-layers <dir> also records the dependency layer split for a hosted builder;

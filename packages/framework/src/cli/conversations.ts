@@ -1,8 +1,9 @@
 /**
  * `curb conversations`: the project's recorded conversations, to see what went wrong and
- * improve the agent. Every conversation `curb dev` (typed and voice), `curb say` and
- * `curb test` run is mirrored into `.data/conversations.jsonl` (server/conversation-store.ts),
- * with every tool call, its input and its result. Reads only; nothing leaves the machine.
+ * improve the agent. Every conversation `curb dev` runs (typed and voice) is mirrored into
+ * `.data/conversations.jsonl` (server/conversation-store.ts), with every tool call, its input
+ * and its result. `curb say` and `curb test` keep their own record and turn this off
+ * (headless-project.ts). Reads only; nothing leaves the machine.
  *
  *   curb conversations                 the last 3, newest last
  *   curb conversations --last 10       the last 10
@@ -15,7 +16,7 @@ import { ConversationStore, DEFAULT_CONVERSATIONS_PATH, legacyHistoryNotice } fr
 
 export const CONVERSATIONS_USAGE = `Usage: curb conversations [--last <n> | --id <id>] [--json]
 
-Prints the project's recorded conversations (curb dev, curb say) with every
+Prints the project's recorded conversations (curb dev) with every
 message, tool call, tool input and tool result, newest last. Read them to see where the agent
 went wrong before changing it.
 
@@ -115,7 +116,7 @@ export function conversationsCommand(
     if (conversations.length === 0) {
       out(options.id !== null
         ? `No conversation ${options.id} in ${relative}.`
-        : `No conversations recorded yet in ${relative}: talk to the agent (npm run dev), or run npx curb say or npx curb test.`);
+        : `No conversations recorded yet in ${relative}: talk to the agent in the preview (npm run dev). curb say and curb test are not recorded.`);
       return options.id !== null ? 1 : 0;
     }
     for (const line of formatConversations(conversations)) out(line);

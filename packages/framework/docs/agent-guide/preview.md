@@ -100,8 +100,8 @@ On a page, a `<Procedure>` renders as a stepper whose button advances it one
 step, the same transition the model would drive. Knowledge (`<Text>`, plain JSX
 text) renders as readable documents, and the system prompt and every multi-line
 `<Instruction>` and `<Text>` render as formatted text: paragraphs, headings,
-lists and line breaks, the structure the model reads (see "Writing prose" in
-`authoring.md`).
+lists and line breaks, the structure the model reads (see
+[Components](./components.md)).
 
 The address bar follows what is open, so a link opens the same view:
 `/skill/<path>` a skill's page, `/graph` the graph, `/system-prompt` the
@@ -111,7 +111,7 @@ instructions, `/tools` the tools and `/diagnostics` the problems.
 
 **Try** beside a tool opens a form built from its schema: a field per input,
 labelled with its name, its description as help, marked optional where it is.
-A tool with `tryWith` (see `authoring.md`) opens with those values filled in.
+A tool with `tryWith` (see [Tools](./tools.md)) opens with those values filled in.
 When the agent called the tool in this conversation, **Use these** fills in the
 arguments it used. **Run** runs the tool's `onSubmit` once with your values,
 exactly as if the model had called it, and shows what it returned, or why it

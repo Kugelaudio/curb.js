@@ -471,8 +471,8 @@ input and sends the rest.
 ## Experiment variants: `experiment.*`
 
 An agent that declares `defineAgent({ experiments })` gets one variant of each
-per call, read with `useVariant(name)` (see [Agents and skills](./agents-and-skills.md),
-"Goals and A/B experiments"). A hosting platform assigns them. Locally they are
+per call, read with `useVariant(name)` (see
+[Goals and experiments](./goals-and-experiments.md)). A hosting platform assigns them. Locally they are
 drawn by the same rule:
 
 - `curb dev`: every preview conversation draws its own, from a session id of

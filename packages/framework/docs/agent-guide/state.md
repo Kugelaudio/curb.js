@@ -75,7 +75,7 @@ session info (e.g. caller ID on the voice bridge), selector-based. `useClient()`
 caller's page and are forgeable: prefill with them, but never lock a branch like the one
 above on them (see [Knowing the caller](./knowing-the-caller.md#client-is-written-by-the-page)).
 `useVariant(name)` reads the call's variant of an experiment (`experiment.<name>`; see
-"Goals and A/B experiments" above).
+[Goals and experiments](./goals-and-experiments.md)).
 
 ## Unlock a tool only after a check
 
