@@ -22,7 +22,9 @@
   "overrides": {
     "@livekit/agents-plugin-silero": {
       "onnxruntime-node": "^1.30.0"
-    }
+    },
+    "glob": "^14.0.2",
+    "minimatch": "^11.0.2"
   },
   "allowScripts": {
     "esbuild": true,

@@ -166,6 +166,21 @@ edit a frozen project to make it pass.
   `shadcn`'s CLI (`fast-glob` -> `micromatch`); Curb imports nothing from
   `shadcn` but `shadcn/tailwind.css`, so no glob is ever expanded. Drop the
   override once silero's pin reaches a fixed `onnxruntime-node`.
+  The overrides also lift `glob` to `^14.0.2` (GHSA-3g3m-2fjr-6pw4) and `minimatch`
+  to `^11.0.2` (GHSA-g3hv-75wg-m249), which no parent allows yet: `@vercel/nft` and
+  `@livekit/throws-transformer` want `glob` 13, and `shadcn`'s `@ts-morph/common`
+  wants `minimatch` 10. A scaffolded project keeps those older copies, since root
+  overrides stop at this repository, and neither advisory is reachable there
+  either. Only `curb build` runs `glob`, through `@vercel/nft`, which passes no
+  `AbortSignal` and takes its patterns from the code it traces; neither package is
+  in the artifact, and `throws-transformer` uses `glob` only in its `throws-check`
+  CLI. After changing an override, run `npm update <name>`, because
+  `npm install --package-lock-only` keeps the locked version. Drop the `glob`
+  override once `@vercel/nft` and `throws-transformer` allow `^14.0.2`, and the
+  `minimatch` one once `@ts-morph/common` allows `^11.0.2`. `deepmerge`
+  (GHSA-gcqx-w48m-w2h4, no patched release) arrives only through `shadcn` and
+  `@shadcn/registry`; Curb imports nothing from `shadcn` but
+  `shadcn/tailwind.css`, so no merge ever runs.
 - **Workflows** follow [`.github/AGENTS.md`](.github/AGENTS.md).
 - Validate CLI/host changes by actually booting: `curb check` +
   `curb dev` from `examples/insurance-agent`, not just the unit suite.
