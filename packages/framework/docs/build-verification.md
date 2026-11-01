@@ -41,7 +41,7 @@ Three details are load-bearing and easy to undo by accident:
   started nothing.
 
 `--no-verify` skips it, for anyone who wants the artifact without the check; the
-build then prints `verified NO — the artifact was not started, so it is not known
+build then prints `verified NO: the artifact was not started, so it is not known
 to run`. `--no-trace` skips it too, since a bundle without its runtime tree
 cannot start.
 

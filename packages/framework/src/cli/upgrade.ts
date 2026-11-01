@@ -226,7 +226,7 @@ export function notifyIfUpdateAvailable(projectRoot: string): void {
     const latest = await fetchNpmVersion(npmRegistry(), "latest", 3_000);
     const current = curbVersion();
     if (resolveUpgrade({ current, latest }) === "upgrade") {
-      console.log(`[curb] update available: v${current} → v${latest} — run \`curb upgrade\``);
+      console.log(`[curb] update available: v${current} → v${latest}: run \`curb upgrade\``);
     }
   })().catch(() => {
     // KEEP-JUSTIFIED: the update notice is best-effort telemetry; it must never break or delay dev.

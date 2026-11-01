@@ -291,11 +291,11 @@ async function build(): Promise<void> {
     }
   } else if (result.layers?.mode === "hit") {
     console.log(
-      "  verified NO — a dependency-layer build holds only the app layer; the deployment's " +
+      "  verified NO: a dependency-layer build holds only the app layer; the deployment's " +
         "readiness probe starts the assembled artifact",
     );
   } else {
-    console.log("  verified NO — the artifact was not started, so it is not known to run");
+    console.log("  verified NO: the artifact was not started, so it is not known to run");
   }
 
   // Warnings are classified, not swallowed and not dumped. ~90 benign warnings would
@@ -316,8 +316,8 @@ async function build(): Promise<void> {
 
   if (summary.unclassified.length > 0) {
     console.log(
-      `\n  \u001b[31m${summary.unclassified.length} UNRECOGNISED warning(s)\u001b[0m ` +
-        "— each may be a module missing at runtime:",
+      `\n  \u001b[31m${summary.unclassified.length} UNRECOGNISED warning(s)\u001b[0m, ` +
+        "each may be a module missing at runtime:",
     );
     for (const warning of summary.unclassified) console.log(`    - ${warning}`);
   }
