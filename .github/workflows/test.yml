@@ -66,13 +66,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # A self-hosted runner keeps ~/.npm on its own disk, so only a hosted one restores it from
+      # GitHub's cache.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci --prefer-offline --no-audit --no-fund
-      - run: npm run build
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
+      # A damaged cache fails npm ci instead of being refetched, so it goes and the install runs again.
+      - run: npm ci --prefer-offline --no-audit --no-fund || { npm cache clean --force && npm ci --prefer-offline --no-audit --no-fund; }
+      # tsc skips output it believes is written, so the tsbuildinfo and the output are kept together.
+      - name: npm run build
         if: contains(needs.affected.outputs.suites, 'framework')
+        env:
+          TSC_CACHE: ${{ hashFiles('package-lock.json') }}-${{ matrix.node }}
+        run: npm run build --workspace packages/framework -- --incremental --tsBuildInfoFile "$HOME/.cache/curb-tsc/$TSC_CACHE/info" --outDir "$HOME/.cache/curb-tsc/$TSC_CACHE/dist"
       - run: npm test --workspace packages/framework
         if: contains(needs.affected.outputs.suites, 'framework')
       - run: npm test --workspace packages/create-curb.js
@@ -114,9 +121,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-          cache: npm
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: website/package-lock.json
-      - run: npm ci --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund || { npm cache clean --force && npm ci --no-audit --no-fund; }
         working-directory: website
       - run: npm test
         working-directory: website
