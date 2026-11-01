@@ -11,7 +11,7 @@ const ALL_PAGES = [
   { id: 'instructions-and-context', file: 'instructions-and-context.md', title: 'Instructions and context', group: 'Getting Started', description: "Write what the model reads: instructions, facts and files from context/." },
   { id: 'voice', file: 'voice.md', title: 'Voice', group: 'Getting Started', description: "Choose the LLM, speech-to-text and text-to-speech of an agent, and of each skill." },
   { id: 'testing', file: 'testing.md', title: 'Testing', group: 'Getting Started', description: "Test an agent from the command line: curb check, curb say and curb test." },
-  { id: 'deploying', file: 'deploying.md', title: 'Deploying', group: 'Getting Started', description: "Put an agent live with curb deploy, or on your own servers." },
+  { id: 'deploying', file: 'deploying.md', title: 'Deploying', group: 'Getting Started', description: "Put an agent live on your own servers, and what hosted deploys accept today." },
   { id: 'upgrading', file: 'upgrading.md', title: 'Upgrading', group: 'Getting Started', description: "Update Curb in a project, and what to do after an upgrade." },
   { id: 'human-handoff', file: 'human-handoff.md', title: 'Human handoff', group: 'Guides', description: "Put the caller through to a person, with a way out when nobody answers." },
   { id: 'complex-handoffs', file: 'complex-handoffs.md', title: 'Complex handoffs', group: 'Guides', description: "Hand over by code, to a skill with its own voice, or to a person with a note." },

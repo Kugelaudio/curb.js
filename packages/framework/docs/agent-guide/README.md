@@ -13,7 +13,7 @@ microphone.
 
 The docs have four parts:
 
-- **Getting Started**: read in order. It takes you from an empty folder to a deployed insurance
+- **Getting Started**: read in order. It takes you from an empty folder to a finished insurance
   agent, one feature at a time.
 - **Guides**: one task per page, such as handing a call to a person. Read the one you need.
 - **Concepts**: how Curb works underneath, for when you want the full picture.
