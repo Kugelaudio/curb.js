@@ -59,8 +59,8 @@ export function stableVersion({ tags, npmLatest, semver }) {
 export function previewVersion({ tags, npmLatest, npmPreview }) {
   const [major, minor] = baseParts({ tags, npmLatest });
   const next = [major, minor + 1, 0];
-  // Tags are pushed after a publish, so they name published versions. They count too because
-  // the dist-tag can lag a publish that just finished, and that number must not be reused.
+  // Tags count too because the dist-tag can lag a publish that just finished, and a tag is written
+  // just before its publish. Either way that number must not be reused.
   const previews = [npmPreview, ...tagVersions(tags)].map(previewParts).filter(Boolean);
   const newest = previews.reduce((high, parts) => (!high || compareParts(parts, high) > 0 ? parts : high), null);
   // A line already above the next minor goes on, so `preview` never moves backwards.
