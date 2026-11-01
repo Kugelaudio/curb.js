@@ -21,7 +21,7 @@ npx curb upgrade --check
 
 ## Try a preview
 
-Every change to Curb is published as a preview on npm before it reaches a stable release. Move a
+Every code change to Curb is published as a preview on npm before it reaches a stable release. Move a
 project to the newest one with:
 
 ```bash
@@ -39,8 +39,8 @@ npm install curb@npm:curb.js@latest
 ## Move an older project to npm
 
 Curb is published to npm only, so a project that depends on `npm:curb.js@<version>` gets every
-update. `curb upgrade` stops on any other `curb` dependency, such as a tarball URL, and names this
-command, which changes the dependency:
+update, and a repo-linked `file:` dependency updates with git. `curb upgrade` stops on any other
+`curb` dependency, such as a tarball URL, and names this command, which changes the dependency:
 
 ```bash
 npm install curb@npm:curb.js@latest

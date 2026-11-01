@@ -71,7 +71,8 @@ Configuration (names only, never values; looked up in .env and the environment):
     KUGELAUDIO_API_KEY  set      llm kugelaudio, stt kugelaudio, tts kugelaudio
   Project code:
     ORDERS_API_URL      missing  src/agent/orders/skill.tsx:11
-  A missing value does not fail the check: set it in .env to run locally; a hosted agent gets it from the platform.
+  A missing value does not fail the check: set it in .env to run locally.
+  A hosted agent gets ORDERS_API_URL only from `npx curb secrets push` (which sends .env) or the agent's Variables page in the dashboard.
 ```
 
 ## 2. `curb say`: does it behave?
@@ -217,7 +218,7 @@ calling a tool that refused its input; read the refused lines above it.
 `skillPath` is the skill the agent read last, and `""` while it has read none: a
 conversation starts at the agent level, `agent.tsx` alone, and the text output
 says `no skill read`. `errors` holds `{ "kind", "message" }` with `kind` one of
-`failed`, `timeout`, `busy` or `step_limit`. `opening` is `{ "reply", "toolCalls", "errors" }` on the
+`failed`, `timeout`, `busy`, `step_limit` or `empty_reply`. `opening` is `{ "reply", "toolCalls", "errors" }` on the
 turn that opened the conversation of an agent that speaks first, and `null`
 otherwise. `confirmation` is `{ "tool", "readBack", "answer", "verdict", "ran" }`
 when the caller's words answered a held action, and `null` otherwise. A tool
@@ -434,8 +435,8 @@ scenario file that cannot be loaded is reported as
 ## Page info: `client.*`
 
 A page the agent is embedded in can send page info about itself, which the
-agent reads as `client.<key>` session info (see [Agents and skills](./agents-and-skills.md),
-"Who speaks first", for what it is and why it is untrusted). Every way of
+agent reads as `client.<key>` session info (see [Who speaks first](./who-speaks-first.md)
+for what it is and why it is untrusted). Every way of
 talking to the agent locally can send it, held to the same limits, and it is on
 the conversation before the agent opens, so a `firstTurn: { say }` function
 reads it:

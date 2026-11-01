@@ -26,6 +26,18 @@ describe('the guide table', () => {
     expect(lines).toEqual([])
   })
 
+  it('links only to guide pages, so no link leaves the site for a file it does not serve', () => {
+    const files = new Set(readdirSync(guide))
+    const broken = readdirSync(guide).flatMap((name) =>
+      [...readFileSync(`${guide}/${name}`, 'utf8').matchAll(/\]\(([^)#\s]+)[^)]*\)/g)]
+        .map((match) => match[1])
+        .filter((href) => !/^([a-z]+:|\/)/.test(href))
+        .filter((href) => !(href.startsWith('./') && files.has(href.slice(2))))
+        .map((href) => `${name}: ${href}`),
+    )
+    expect(broken).toEqual([])
+  })
+
   it('serves the overview as the docs home', () => {
     expect(pageUrl('readme')).toBe('/docs/')
     expect(markdownUrl('readme')).toBe('/docs/index.md')

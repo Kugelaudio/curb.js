@@ -32,6 +32,7 @@ export const agent = defineAgent({ app: App, timeZone: "Europe/Berlin", firstTur
 | `experiments` | object | | A/B experiments, by name |
 | `afterCall` | `CallHook` | | Runs once the call is over ([After-call code](./after-call-code.md)) |
 | `afterEvaluation` | `CallHook` | | Runs once the call's goals are judged |
+| `pipeline` | object | | Changes the LiveKit pipeline of voice calls ([Override the LiveKit pipeline](./livekit-pipeline.md)) |
 | `preview` | `{ suggestedPrompts?, chatPlaceholder? }` | | Hints for the preview. Never reach the model |
 
 It refuses a time zone that does not exist, a `firstTurn` no conversation can open with, goals or

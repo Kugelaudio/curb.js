@@ -43,9 +43,8 @@ combination at startup rather than letting the service reject the first spoken
 turn of a live call. Find both in the console under
 `/dashboard/<org>/<project>/dictionaries`: the project id is in the URL.
 
-Omitting `dictionaryIds` entirely applies the project's own default selection.
-Passing an empty array is a different thing: it opts out of every dictionary,
-including the defaults.
+Omitting `dictionaryIds` applies the project's own default selection, and so does
+an empty array, which is dropped before the request.
 
 ## Next steps
 

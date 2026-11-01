@@ -16,7 +16,7 @@ export function Claims() {
   const [claimId, setClaimId] = useState<string | null>(null);
   const [supervisorOnline, setSupervisorOnline] = useState(false);
 
-  // From the caller's app. The return value is the reply to the app's send.
+  // From the caller's app. The return value is the reply to the app's ask.
   useMessage("claim-submitted", {
     from: "client",
     schema: z.object({ claimId: z.string() }),

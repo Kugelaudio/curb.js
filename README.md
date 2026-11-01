@@ -226,7 +226,7 @@ export const agent = defineAgent({ app: App });
 From here it grows like any React app:
 
 - **`createAgentStore`**: state shared across skills.
-- **`<Gate>`**: content and tools unlocked only after a check, like an order number.
+- **Conditional rendering**: content and tools unlocked only after a check, like an order number.
 - **`<Procedure>`**: a step-by-step workflow the agent follows.
 - **`<Mcp>`**: tools from any MCP server, like Linear or Notion.
 - **`useAgentInfo`**: outside data, like the caller's phone number.
@@ -234,7 +234,7 @@ From here it grows like any React app:
 ## The dev loop
 
 The preview turns your agent into a UI you can click through: tools become
-forms, a `<Gate>` becomes a login card, a `<Procedure>` a stepper. Anything the
+forms, a `<Procedure>` a stepper. Anything the
 model can do, you can do by hand.
 
 - **Type or talk** in the same conversation.
@@ -259,7 +259,7 @@ The docs live on [curbjs.com](https://curbjs.com/docs/):
 
 ```text
 curb.js/
-  packages/framework/             # the framework (published as "curb")
+  packages/framework/             # the framework (published as "curb.js")
   packages/create-curb.js/        # the scaffolder (npm create curb.js)
   examples/insurance-agent/       # a bigger demo: claims, gate, procedure
   examples/ops-agent/             # an MCP-heavy example

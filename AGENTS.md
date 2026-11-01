@@ -16,7 +16,7 @@ example projects):
 
 ```text
 curb.js/
-├── packages/framework/        # The framework package (published as "curb")
+├── packages/framework/        # The framework package (published as "curb.js")
 │   ├── bin/curb.js       # CLI shim: generates the spanning tsx tsconfig, registers tsx
 │   ├── src/cli/main.ts        # CLI commands: dev / check / start / server / upgrade
 │   ├── src/vite/              # Preview Vite config (the page never imports agent code)

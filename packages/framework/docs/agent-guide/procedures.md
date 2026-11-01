@@ -1,6 +1,6 @@
 # Step-by-step procedures
 
-Some conversations must happen in order. `<Procedure>` gives the model one step at a time, and what
+Some conversations must happen in order. `<Procedure>` shows the model the steps up to the current one, and what
 you pass as `completed` exists only once every step is done.
 
 An ordered flow, whose last tool exists only once every step is done:

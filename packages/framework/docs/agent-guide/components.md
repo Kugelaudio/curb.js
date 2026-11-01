@@ -13,7 +13,7 @@ Everything an agent renders, imported from `curb`.
 | `Text` | Factual context |
 | `Tool` | What the model can call |
 | `Field` | One input field of a `Tool`, written as a child |
-| `ErrorMessage` | What the model reads when a field's input is invalid |
+| `ErrorMessage` | An error the model reads in its context |
 | `Procedure` | An ordered flow of steps |
 | `Step` | One step of a `Procedure` |
 | `Mcp` | Tools from an MCP server |
@@ -66,7 +66,7 @@ One link to a skill folder under `src/agent/`. The model opens it with `read_ski
 
 ```tsx
 <Skills>
-  <Skill path="/claims" description="Reporting a claim or asking about an open one." />
+  <Skill path="/claims" description="Reporting a claim or asking about an open one.">Claims</Skill>
 </Skills>
 ```
 
@@ -170,21 +170,23 @@ for a few flat fields.
 
 ## `<ErrorMessage>`
 
-What the model reads when the input of a field is invalid.
+An error the model reads in its context on its next step. Input a tool refuses gets its message
+without this ([Tools](./tools.md)).
 
 | Prop | Type | What it does |
 |---|---|---|
-| `source` | `string` | The field it belongs to |
+| `source` | `string` | Where the error came from: a tool's name, or `mcp:<server>` |
 
 ## `<Procedure>`
 
-An ordered flow of `<Step>`s. The model gets one step at a time and the `advanceTool` to move on
+An ordered flow of `<Step>`s. The model sees the steps up to the current one and gets the
+`advanceTool` to move on
 ([Step-by-step procedures](./procedures.md)).
 
 | Prop | Type | Default | What it does |
 |---|---|---|---|
 | `title` | `string` | | The flow's name |
-| `advanceTool` | `{ name, description?, onCall? }` | `complete_procedure_step` | The tool that finishes a step. It takes no input |
+| `advanceTool` | `{ name, description?, onCall? }` | `complete_procedure_step` | The tool that finishes a step. It takes no input, and an `onCall` replaces the built-in advance |
 | `completed` | `ReactNode` | | Rendered once every step is done |
 | `onComplete` | `() => void` | | Runs when the last step is done |
 | `initialStep` | `number` | `1` | Where it starts. Steps count from 1 |
@@ -193,7 +195,8 @@ An ordered flow of `<Step>`s. The model gets one step at a time and the `advance
 
 ## `<Step>`
 
-One step of a `<Procedure>`. Its children render only during that step.
+One step of a `<Procedure>`. Its children render from that step on: finished steps stay in the
+context, and later ones stay hidden.
 
 | Prop | Type | What it does |
 |---|---|---|

@@ -38,7 +38,7 @@ export default scenario({
 | Helper | Passes when |
 |---|---|
 | `called(tool, input?)` | The agent ran the tool without a refusal. With `input`, only a call with those values counts |
-| `notCalled(tool)` | The agent never called the tool, not even in a refused call |
+| `notCalled(tool)` | The tool never ran. A refused or held call still passes |
 | `said(text)` | A reply contains the text, ignoring case, or matches the pattern |
 | `endedCall()` | The agent ended the call itself |
 | `check(name, pass, detail?)` | `pass` is true |

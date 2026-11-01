@@ -33,7 +33,7 @@ comes next ([Complex handoffs](./complex-handoffs.md)).
 const path = useRoutePath();
 ```
 
-The active skill's path, or `""` before the model has read a skill.
+The path of the skill this component renders in, or `null` at the agent level.
 
 ## `useAgentInfo`
 
@@ -67,7 +67,7 @@ const { settings, call } = useSession();
 | `call.sessionId` | The host's id for this call. On a LiveKit worker, the room name; in `curb dev`, the preview conversation's id |
 | `call.scratchDir` | A writable directory of this call's own, removed when the call ends. Not set in `curb dev` |
 
-`call` is set on every route. Read a call's identity here, never from `process.env`: a runner that
+`call` is set on every route that runs a call, and absent under `curb say` and `curb test`. Read a call's identity here, never from `process.env`: a runner that
 serves several calls has one environment for all of them.
 
 ## `useVariant`
