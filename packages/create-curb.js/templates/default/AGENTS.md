@@ -68,8 +68,8 @@ A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person
 4. `npm run dev`: the browser preview with chat and voice on http://127.0.0.1:4000. Open it in the person's own browser yourself (`open http://127.0.0.1:4000` on macOS, `xdg-open` on Linux, `start` on Windows): a browser built into an app, like the Claude app's Browser pane, blocks the microphone, so a call there fails.
 
 **To improve the agent, read its recent conversations first.** `npx curb conversations`
-prints the last ones the preview and `curb say` ran, with every tool call, its
-input and its result (`--last <n>`, `--id <id>`, `--json`). Calls to the hosted agent are
+prints the last ones the preview ran, with every tool call, its input and its
+result (`--last <n>`, `--id <id>`, `--json`). Calls to the hosted agent are
 read with the `kugelaudio` MCP server's `agent_list_calls`, `agent_get_call` and
 `agent_get_call_timeline` where it is signed in. Find where the agent went wrong, fix that,
 and turn the conversation into a scenario so it stays fixed.
@@ -90,7 +90,7 @@ src/agent/agent.tsx         the agent, where every conversation starts: <Agent l
 src/agent/<name>/skill.tsx  one folder per skill, opened when needed; nested folders are sub-skills
 context/*.md                knowledge a skill reads with <Text src="file.md" />
 .env                        other providers' keys, an optional KUGELAUDIO_API_KEY; never commit it
-.data/conversations.jsonl   every local conversation: tool calls, inputs, results
+.data/conversations.jsonl   every preview conversation: tool calls, inputs, results
 ```
 
 ## Rules
@@ -128,7 +128,7 @@ context/*.md                knowledge a skill reads with <Text src="file.md" />
 - **What counts as a successful call is code too**: `defineAgent({ goals, experiments })`
   names each goal (a tool that must succeed, or a sentence a judge checks) and each A/B test
   with its weighted variants, and `useVariant("<test>")` reads the call's variant. The
-  dashboard only shows the results; `authoring.md` ("Goals and A/B experiments") has the rules.
+  dashboard only shows the results; `goals-and-experiments.md` has the rules.
 - Tool names are unique snake_case verbs. Zod `.describe()` texts and error messages are
   read by the model, so phrase them as the next step.
 

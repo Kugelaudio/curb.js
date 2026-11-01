@@ -72,7 +72,8 @@ fires a hook on your machine. Exits 1 when the hook failed
 
 ## `curb conversations`
 
-Prints recorded conversations of `curb dev` and `curb say`, with every tool call and result.
+Prints the recorded conversations of `curb dev`, with every tool call and result. `curb say` keeps its
+conversation in `.curb/say-session.json` and `curb test` prints its transcripts, so neither is recorded.
 
 | Option | What it does |
 |---|---|
@@ -91,7 +92,7 @@ Starts only the agent WebSocket server. `--port <n>` as for `curb dev`.
 
 ## `curb build`
 
-Bundles the project into `dist/`, starts the finished artifact on its own and renders every skill to
+Bundles the project into `.curb/standalone`, starts the finished artifact on its own and renders every skill to
 prove it runs ([Self-hosting](./hosting.md#built-artifact-curb-build)).
 
 | Option | What it does |

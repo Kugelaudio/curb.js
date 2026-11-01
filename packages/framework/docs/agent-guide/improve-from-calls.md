@@ -11,7 +11,7 @@ script to start: the call is the test.
 | `curb dev` preview | **Copy for coding agent** in the conversation header: the transcript with the skill map, the tools and the system prompt ([The preview](./preview.md#copy-for-coding-agent)) |
 | Hosted agent, dashboard | Open the call on the **Calls** page, open the **Copy or download** menu, choose **Copy transcript**: every turn and tool call as Markdown |
 | Hosted agent, coding agent connected | Name the call; the agent reads it with `agent_get_call` and `agent_get_call_timeline` |
-| `curb dev`, `curb say` | `npx curb conversations --last 5` |
+| `curb dev`, with no copy button at hand | `npx curb conversations --last 5` |
 
 ## 2. Have the coding agent improve it
 

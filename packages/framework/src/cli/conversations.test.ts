@@ -72,6 +72,7 @@ describe("curb conversations", () => {
     const lines: string[] = [];
     expect(conversationsCommand([], root, (line) => lines.push(line), {})).toBe(0);
     expect(lines[0]).toMatch(/No conversations recorded yet/);
+    expect(lines[0]).toMatch(/curb say and curb test are not recorded/);
     expect(existsSync(join(root, ".data", "conversations.jsonl"))).toBe(false);
   });
 

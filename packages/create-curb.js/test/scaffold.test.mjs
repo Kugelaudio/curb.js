@@ -111,6 +111,17 @@ test("AGENTS.md names only the MCP server's tools, under their current names", (
 });
 
 // a new project needs exactly one key, and a hosted agent none of its own.
+test("every guide page AGENTS.md and the guide name in backticks ships", () => {
+  const guide = fileURLToPath(new URL("../../framework/docs/agent-guide", import.meta.url));
+  const pages = readdirSync(guide).filter((file) => file.endsWith(".md"));
+  const sources = [join(template, "AGENTS.md"), ...pages.map((file) => join(guide, file))];
+  const named = sources.flatMap((source) =>
+    [...readFileSync(source, "utf8").matchAll(/`([a-z][a-z-]*\.md)`/g)].map((match) => match[1]),
+  );
+  assert.ok(named.length > 0);
+  assert.deepEqual([...new Set(named)].filter((page) => !pages.includes(page)), []);
+});
+
 test("the default agent runs on KugelAudio's LLM, Kugel Ear and Kugel TTS, all on the one KugelAudio key", (t) => {
   const project = scaffold(t);
   const agent = readFileSync(join(project, "src/agent/agent.tsx"), "utf8");
