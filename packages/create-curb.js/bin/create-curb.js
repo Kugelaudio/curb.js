@@ -12,6 +12,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -117,6 +118,9 @@ if (!/^[a-z0-9][a-z0-9._-]*$/.test(appName)) {
   fail(
     `"${appName}" is not a valid project name — use lowercase letters, digits, ".", "_", "-" (npm package name rules).`,
   );
+}
+if (existsSync(targetDir) && !statSync(targetDir).isDirectory()) {
+  fail(`${targetDir} is a file. Choose a new directory.`);
 }
 if (existsSync(targetDir) && readdirSync(targetDir).length > 0) {
   fail(`${targetDir} already exists and is not empty. Choose a new directory.`);
@@ -301,8 +305,12 @@ const envValues = finalizeEnv();
 
 // -------------------------------------------------------------- copy template
 const templateDir = resolve(dirname(fileURLToPath(import.meta.url)), "../templates/default");
-mkdirSync(targetDir, { recursive: true });
-cpSync(templateDir, targetDir, { recursive: true });
+try {
+  mkdirSync(targetDir, { recursive: true });
+  cpSync(templateDir, targetDir, { recursive: true });
+} catch (error) {
+  fail(`Cannot create the project in ${targetDir} (${error.code ?? error.message}). Choose a directory you can write to.`);
+}
 
 // npm strips .gitignore from published tarballs, so the template ships it without the
 // leading dot. The project carries no .npmrc: hosted builds refuse one.
