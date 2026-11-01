@@ -92,7 +92,8 @@ workflow on `main` with `channel=preview` does the same on demand. A person cuts
 dispatching it with `channel=stable`, `semver` and `dry_run`: it publishes to
 `latest`, tags `v<version>` and creates a GitHub Release. Both run the same verification, publish
 both `curb.js` and `create-curb.js`, and tag only after the publish, so a tag always names a
-version npm holds.
+version npm holds. Each publish then runs `scripts/published-install-test.mjs` from the public
+registry on Node 22.12 and 24; it fails the run without holding back the tag or the release.
 
 Tags hold the version: `scripts/release-version.mjs` computes it from the stable `v*` tags and npm,
 and `scripts/npm-package.mjs` stamps it into the tarballs. No workflow can
