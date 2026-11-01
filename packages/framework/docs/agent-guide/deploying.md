@@ -195,5 +195,6 @@ your phone to its [test line](https://docs.kugelaudio.com/hosted-agents/phone-nu
 
 ## Next steps
 
+- [Connecting to a running agent](./connecting.md): how your app and your backend talk to it.
 - [Upgrading](./upgrading.md): keep Curb up to date.
 - [Goals and experiments](./goals-and-experiments.md): measure what works on real calls.

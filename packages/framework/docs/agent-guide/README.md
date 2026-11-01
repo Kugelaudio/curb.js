@@ -54,3 +54,4 @@ says. [What the model receives](./what-the-model-receives.md) shows the real req
 
 - [Installation](./installation.md): create your first agent.
 - [How Curb works](./how-it-works.md): the renderer and the turn loop.
+- [Connecting to a running agent](./connecting.md): how your app and your backend talk to an agent.

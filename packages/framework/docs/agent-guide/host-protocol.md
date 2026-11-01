@@ -1,5 +1,10 @@
 # Host protocol
 
+This page is for whoever builds a host: the program that runs a Curb runner on your own servers.
+Its routes are the runner's own, and only that program reaches them. Building an app or a backend
+that talks to an agent? Start with [Connecting to a running agent](./connecting.md). On KugelAudio,
+the platform is the host and you use its API instead.
+
 A host starts a built agent, gives it calls and follows them over this HTTP protocol.
 [Self-hosting](./hosting.md) covers when you need it.
 
@@ -545,6 +550,8 @@ From the client: `agent.update(...)` in `curb/client` above, or the `curb.update
 `livekit-client`. A change to a call that is still `starting` is applied once it connects.
 
 ## Next steps
+
+- [Connecting to a running agent](./connecting.md): what your app and your backend use.
 
 - [Self-hosting](./hosting.md): the ways to run an agent.
 - [App messages](./app-messages.md): the agent's side.
