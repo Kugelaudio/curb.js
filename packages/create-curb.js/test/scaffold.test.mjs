@@ -155,6 +155,22 @@ for (const stdin of ["closed", "tty-less pipe"]) {
   });
 }
 
+test("a target that cannot be created is refused with a message, not a stack trace", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "create-curb-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = join(root, "taken");
+  writeFileSync(file, "");
+  for (const [target, message] of [
+    [file, /is a file\. Choose a new directory\./],
+    [join(file, "app"), /Cannot create the project in .*Choose a directory you can write to\./],
+  ]) {
+    const result = run(root, [target]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, message);
+    assert.doesNotMatch(result.stderr, /\n\s+at /);
+  }
+});
+
 test("--yes is accepted and changes nothing", (t) => {
   const project = scaffold(t, ["--yes"]);
   assert.match(readFileSync(join(project, "src/agent/agent.tsx"), "utf8"), /llm=\{kugelaudio\.llm\(\)\}/);
