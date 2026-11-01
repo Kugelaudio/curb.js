@@ -24,6 +24,7 @@ const ALL_PAGES = [
   { id: 'pronunciation', file: 'pronunciation.md', title: 'Pronunciation', group: 'Guides', description: "Make the agent hear and say your product's names correctly." },
   { id: 'custom-llm', file: 'custom-llm.md', title: 'Your own LLM', group: 'Guides', description: "Run an agent on Anthropic, OpenAI or any OpenAI-compatible endpoint." },
   { id: 'mcp', file: 'mcp.md', title: 'MCP servers', group: 'Guides', description: "Give an agent tools from remote MCP servers." },
+  { id: 'connecting', file: 'connecting.md', title: 'Connecting to a running agent', group: 'Guides', description: "How your app, your backend and other services talk to an agent, on KugelAudio and on your own servers." },
   { id: 'app-messages', file: 'app-messages.md', title: 'App messages', group: 'Guides', description: "Exchange messages with the caller's page and the host, without the model." },
   { id: 'goals-and-experiments', file: 'goals-and-experiments.md', title: 'Goals and experiments', group: 'Guides', description: "Say what a successful call is, and compare variants of an agent." },
   { id: 'after-call-code', file: 'after-call-code.md', title: 'After-call code', group: 'Guides', description: "Run your own code after each call, with the transcript, the call data and the goal results." },

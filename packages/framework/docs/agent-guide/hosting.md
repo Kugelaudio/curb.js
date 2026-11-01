@@ -4,7 +4,8 @@ A Curb agent needs no hosted platform. Everything below runs on your own machine
 your own LiveKit deployment (LiveKit Cloud or self-hosted `livekit-server`) and your own
 provider keys. This page says what you get and what you take on, covers the four ways to
 run an agent, and specifies **host protocol v1**, the HTTP contract between a Curb runner and
-whatever orchestrator starts it.
+whatever orchestrator starts it. For how your app and your backend talk to the agent once it runs,
+see [Connecting to a running agent](./connecting.md).
 
 ## What self-hosting includes
 
@@ -379,5 +380,6 @@ settings and end the call. See [Hosting a Curb agent yourself](./hosting.md#mana
 
 ## Next steps
 
+- [Connecting to a running agent](./connecting.md): how your app and your backend reach it.
 - [Host protocol](./host-protocol.md): how a host talks to a runner.
 - [Architecture](./architecture.md): what Curb does and what a host does.
