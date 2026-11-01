@@ -22,9 +22,13 @@ on:
 permissions:
   contents: read
 
+# A group keeps one pending run and cancels the rest, so one group across pull requests would
+# cancel another pull request's check. Each gets its own, where a new push replaces the old run.
+# Deploys share one and always finish: a deploy waiting behind it is only replaced by a newer one,
+# which carries the same changes.
 concurrency:
-  group: pages-${{ github.event_name }}
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.event.pull_request.number) || 'pages-deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
