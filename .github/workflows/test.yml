@@ -6,6 +6,12 @@ name: test
 # The test job runs on curb-js-runner, this repository's self-hosted runner. It takes one job at a
 # time, so the legs of a matrix run one after another. affected suites and gate take seconds and
 # run on curb-js-light, a runner of their own, so they never wait behind a test job.
+#
+# Self-hosted runners persist between jobs, so a fork's pull request runs the same jobs on a
+# GitHub-hosted runner instead. It must run them, not skip them: gate passes a skipped job. Each
+# runs-on names who may use a self-hosted runner, so anything else lands on the hosted one, and
+# scripts/workflow-safety.test.mjs holds every job to that. pull_request reads this file from the
+# pull request, so a fork could edit runs-on: approving its run is what stops that.
 
 on:
   push:
@@ -28,7 +34,7 @@ concurrency:
 jobs:
   affected:
     name: affected suites
-    runs-on: curb-js-light
+    runs-on: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'curb-js-light' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       suites: ${{ steps.affected.outputs.suites }}
@@ -36,6 +42,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+          persist-credentials: false
       - id: affected
         run: node scripts/affected.mjs
       - run: npm run check:independence
@@ -44,7 +51,7 @@ jobs:
     name: test (Node ${{ matrix.node }})
     needs: affected
     if: needs.affected.outputs.suites != '' && needs.affected.outputs.suites != 'website'
-    runs-on: curb-js-runner
+    runs-on: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'curb-js-runner' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -57,6 +64,8 @@ jobs:
       ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
@@ -96,7 +105,7 @@ jobs:
   website:
     needs: affected
     if: contains(needs.affected.outputs.suites, 'website')
-    runs-on: curb-js-runner
+    runs-on: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'curb-js-runner' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -117,7 +126,7 @@ jobs:
   gate:
     needs: [affected, test, website]
     if: always()
-    runs-on: curb-js-light
+    runs-on: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'curb-js-light' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - env:

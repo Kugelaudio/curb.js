@@ -74,9 +74,10 @@ The notes come from the commit subjects since the last stable tag (`cliff.toml`)
 
 ## Security
 
-Please do not report security problems in public issues. Use
-**Security > Report a vulnerability** on this repository, or email
-hello@kugelaudio.com.
+Please do not report security problems in public issues. Email
+hello@kugelaudio.com, or use **Security > Report a vulnerability** on this
+repository, where GitHub offers it. [SECURITY.md](SECURITY.md) says which versions
+are supported, what is in scope and what to expect back.
 
 ## License
 
