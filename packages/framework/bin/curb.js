@@ -40,8 +40,9 @@ if (!process.env.TSX_TSCONFIG_PATH) {
     process.env.TSX_TSCONFIG_PATH = generatedPath;
   } else {
     // Not a project directory — still cover the CLI's own source so it can
-    // print its agent-readable "no project here" error.
-    process.env.TSX_TSCONFIG_PATH = join(packageRoot, "tsconfig.json");
+    // print its agent-readable "no project here" error. This file ships in bin/:
+    // the package's tsconfig.json is not published.
+    process.env.TSX_TSCONFIG_PATH = join(packageRoot, "bin", "tsx.tsconfig.json");
   }
 }
 
