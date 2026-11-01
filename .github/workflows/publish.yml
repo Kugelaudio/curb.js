@@ -8,22 +8,36 @@ name: publish
 #   preview   a merge to main that changes a published package, or a dispatch on main with
 #             channel preview. Publishes <next minor>-preview.<n> to the `preview` dist-tag, with
 #             a matching git tag.
-#   stable    a dispatch on main with channel stable and a semver. Publishes the bumped version
-#             to `latest`, then adds a `v<version>` tag and a GitHub Release. Being able to
+#   stable    a dispatch on main with channel stable and a semver. Adds a `v<version>` tag,
+#             publishes the bumped version to `latest`, then adds a GitHub Release. Being able to
 #             dispatch is the gate.
 #
 # dry_run does everything except publish, tag and release, on either channel.
 #
 # Tags hold the version (scripts/release-version.mjs). It is stamped into the tarballs at build
 # time, because no workflow can push a commit to main. The tarballs verify tests are the ones
-# publish sends. The order is verify, publish, tag, release, so a tag only ever names a version
-# npm holds: a tag written first would count as a release that never happened. A tag pushed with
-# GITHUB_TOKEN starts no workflow, so nothing here listens for tags. A failed run is finished
-# with "Re-run failed jobs": every step after verify skips what is already done.
+# publish sends. A tag pushed with GITHUB_TOKEN starts no workflow, so nothing here listens for
+# tags.
 #
-# After a publish, installed creates a project from the public registry. It runs beside tag and
-# holds back neither tag nor release: npm cannot take a version back, and a version it holds must
-# have its tag. So a failure there leaves the run red with the tag in place, and the fix is a new
+# The order is verify, tag, publish, release, because npm cannot take a version back and a tag can
+# become impossible to write. GITHUB_TOKEN has no workflows permission and no job can grant it, so
+# GitHub can refuse it a new ref on a commit whose workflow files differ from main's, which a merge
+# that changes a workflow during a run can cause. The REST call answers 403 "Resource not accessible
+# by integration", git push and a Release that would create the tag are refused the same way, and
+# no rerun helps while main stays ahead. Tagging first means a refusal ends the run with nothing on
+# npm. A Release on a tag that already exists creates no ref and was not refused where tagging was.
+#
+#   tag fails       nothing was published. A rerun cannot help after a 403: start a new run from
+#                   main, which plans the same version on the newer commit.
+#   publish fails   "Re-run failed jobs" finishes it within the artifact's 7 days: the tag and every
+#                   package npm holds are skipped. A publish that can never succeed leaves a tag
+#                   naming a version npm lacks. It stays, because tags are immutable, so that number
+#                   is skipped and the next release notes start after it.
+#   release fails   "Re-run failed jobs" finishes it.
+#
+# After a publish, installed creates a project from the public registry. It runs beside release
+# and does not hold it back: npm cannot take a version back, and a version it holds must have its
+# release. So a failure there leaves the run red with the tag in place, and the fix is a new
 # release.
 
 on:
@@ -141,8 +155,28 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  tag:
     needs: [plan, verify]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the commit to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIT_TAG: ${{ needs.plan.outputs.git_tag }}
+        run: |
+          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GIT_TAG" --jq .object.sha 2>/dev/null); then
+            [[ "$existing" == "$GITHUB_SHA" ]] || { echo "$GIT_TAG is already on $existing" >&2; exit 1; }
+          elif ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$GIT_TAG" -f "sha=$GITHUB_SHA"; then
+            echo "::error::Could not tag $GITHUB_SHA as $GIT_TAG, so nothing was published. After a 403, main's workflow files have moved past this commit and a rerun cannot help: start a new run from main."
+            exit 1
+          fi
+
+  publish:
+    needs: [plan, verify, tag]
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-24.04
     environment:
@@ -199,24 +233,6 @@ jobs:
             echo "$spec is on npm"
           done
 
-  tag:
-    needs: [plan, publish]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - name: Tag the released commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GIT_TAG: ${{ needs.plan.outputs.git_tag }}
-        run: |
-          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GIT_TAG" --jq .object.sha 2>/dev/null); then
-            [[ "$existing" == "$GITHUB_SHA" ]] || { echo "$GIT_TAG is already on $existing" >&2; exit 1; }
-          else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$GIT_TAG" -f "sha=$GITHUB_SHA"
-          fi
-
   installed:
     name: installed (Node ${{ matrix.node }})
     needs: [plan, publish]
@@ -240,7 +256,7 @@ jobs:
         run: node scripts/published-install-test.mjs "$VERSION"
 
   release:
-    needs: [plan, tag]
+    needs: [plan, publish]
     if: needs.plan.outputs.dist_tag == 'latest'
     runs-on: ubuntu-24.04
     timeout-minutes: 5

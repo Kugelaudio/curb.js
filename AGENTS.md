@@ -89,10 +89,11 @@ Releases are built from source by `.github/workflows/publish.yml`, the one file 
 publishers name. A merge to `main` that changes a published package publishes a preview,
 `<next minor>-preview.<n>`, to the npm dist-tag `preview` with a matching git tag; dispatching that
 workflow on `main` with `channel=preview` does the same on demand. A person cuts a stable release by
-dispatching it with `channel=stable`, `semver` and `dry_run`: it publishes to
-`latest`, tags `v<version>` and creates a GitHub Release. Both run the same verification, publish
-`curb.js`, `create-curb.js` and `create-curb`, and tag only after the publish, so a tag always names a
-version npm holds. `create-curb` is `packages/create-curb.js` packed a second time under the shorter
+dispatching it with `channel=stable`, `semver` and `dry_run`: it tags `v<version>`, publishes to
+`latest` and creates a GitHub Release. Both run the same verification, then tag and only then publish
+`curb.js`, `create-curb.js` and `create-curb`, so npm never holds a version without its tag:
+GitHub can refuse `GITHUB_TOKEN` a ref on a commit whose workflow files differ from `main`'s, and a
+rerun does not clear that (recovery per job is in `publish.yml` and `CONTRIBUTING.md`). `create-curb` is `packages/create-curb.js` packed a second time under the shorter
 name, so `npm create curb` runs the same files; docs and the site still lead with `npm create
 curb.js`. Each publish then runs `scripts/published-install-test.mjs` from the public
 registry on Node 22.12 and 24; it fails the run without holding back the tag or the release.
