@@ -79,7 +79,7 @@ export async function startRegistry(tarballs) {
 }
 
 /** Runs a command, printing its output; resolves that output, and rejects on a non-zero exit. */
-function run(command, args, options) {
+export function run(command, args, options) {
   console.log(`\n$ ${command} ${args.join(" ")}`);
   return new Promise((done, failed) => {
     const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "inherit"] });
@@ -96,7 +96,7 @@ function run(command, args, options) {
   });
 }
 
-function expect(condition, message) {
+export function expect(condition, message) {
   if (!condition) throw new Error(`release install test: ${message}`);
 }
 

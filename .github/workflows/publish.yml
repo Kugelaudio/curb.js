@@ -20,6 +20,11 @@ name: publish
 # npm holds: a tag written first would count as a release that never happened. A tag pushed with
 # GITHUB_TOKEN starts no workflow, so nothing here listens for tags. A failed run is finished
 # with "Re-run failed jobs": every step after verify skips what is already done.
+#
+# After a publish, installed creates a project from the public registry. It runs beside tag and
+# holds back neither tag nor release: npm cannot take a version back, and a version it holds must
+# have its tag. So a failure there leaves the run red with the tag in place, and the fix is a new
+# release.
 
 on:
   push:
@@ -211,6 +216,28 @@ jobs:
           else
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$GIT_TAG" -f "sha=$GITHUB_SHA"
           fi
+
+  installed:
+    name: installed (Node ${{ matrix.node }})
+    needs: [plan, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.12', '24']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: node scripts/published-install-test.mjs "$VERSION"
 
   release:
     needs: [plan, tag]
