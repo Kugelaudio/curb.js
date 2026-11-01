@@ -27,6 +27,11 @@ updates:
     open-pull-requests-limit: 2
     commit-message:
       prefix: chore(deps)
+    # astro check embeds the TypeScript language service, and TypeScript 7 ships no API for it.
+    # Drop this once @astrojs/check allows typescript 7 in its peer range.
+    ignore:
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
     groups:
       minor-and-patch:
         patterns: ['*']
