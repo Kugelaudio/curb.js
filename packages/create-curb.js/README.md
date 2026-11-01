@@ -18,7 +18,8 @@ npm run dev            # open http://127.0.0.1:4000
 ```
 
 `npx curb login` signs you in once in your browser. `npm run dev` gives you a link to talk to your
-agent. Run `npm create curb.js .` to create the project in an empty folder instead.
+agent. Run `npm create curb.js .` to create the project in an empty folder instead. `npm create
+curb` is the same installer under a shorter name.
 
 The framework's package is `curb.js`, not `curb`, which is unrelated. The project depends on it
 through an alias, `"curb": "npm:curb.js@<version>"`, so your code imports from `"curb"`.

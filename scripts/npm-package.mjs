@@ -6,7 +6,9 @@
 // Each package is packed as it stands, then stamped: the repository holds no release version,
 // so the version comes from scripts/release-version.mjs. The framework is `curb` here and
 // `curb.js` on npm, because `curb` belongs to someone else there; projects keep
-// `import ... from "curb"` through the alias `"curb": "npm:curb.js@<version>"`. Only
+// `import ... from "curb"` through the alias `"curb": "npm:curb.js@<version>"`. `create-curb` is
+// packages/create-curb.js packed a second time under the shorter name, so `npm create curb`
+// runs the same files as `npm create curb.js` and there is nothing to keep in step. Only
 // package.json and the release notes may differ from the packed source: every other file is
 // compared by hash after packing, and any other difference fails the script. Build output
 // under `.curb/` fails it too: `files` ignores .gitignore, so a test run leaves it packable. So
@@ -24,19 +26,27 @@ import { parseArgs } from "node:util";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // The order matters: create-curb.js pins curb.js, so curb.js reaches npm first.
 export const PACKAGES = ["packages/framework", "packages/create-curb.js"];
-const NPM_NAMES = { curb: "curb.js", "create-curb.js": "create-curb.js" };
+const NPM_NAMES = { curb: ["curb.js"], "create-curb.js": ["create-curb.js", "create-curb"] };
 const MANIFEST = "package.json";
 const NOTES = "RELEASE_NOTES.md";
 const README = "README.md";
 const PAGE_FIELDS = ["description", "author", "license", "homepage", "bugs"];
 const KEYWORDS = { min: 10, max: 15 };
 
+/** The names npm publishes a package under, its main name first. */
+export function npmNames(manifest) {
+  const names = NPM_NAMES[manifest.name];
+  if (!names) throw new Error(`expected a package Curb publishes, found ${manifest.name}`);
+  return names;
+}
+
 /** A package's manifest as npm publishes it. */
-export function npmManifest(manifest, version) {
-  const name = NPM_NAMES[manifest.name];
-  if (!name) throw new Error(`expected a package Curb publishes, found ${manifest.name}`);
+export function npmManifest(manifest, version, name = npmNames(manifest)[0]) {
+  if (!npmNames(manifest).includes(name)) throw new Error(`${manifest.name} is not published as ${name}`);
   const { private: _private, ...published } = manifest;
-  return { ...published, name, version };
+  // Under a second name the command follows, so `npm i create-curb` installs `create-curb`.
+  const bin = name === npmNames(manifest)[0] ? {} : { bin: { [name]: published.bin[manifest.name] } };
+  return { ...published, ...bin, name, version };
 }
 
 /** Every link and image in a README, code blocks aside. */
@@ -61,12 +71,13 @@ export function npmPageProblems(manifest, readme) {
   return [...problems, ...broken.map((link) => `a ${README} link npm cannot show: ${link}`)];
 }
 
-/** Every file under `root` with its sha256, keyed by its path below `root`. */
-export function fileHashes(root) {
+/** Every file under `root` that `keep` accepts with its sha256, keyed by its path below `root`. */
+export function fileHashes(root, keep = () => true) {
   const hashes = new Map();
   for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const path = join(entry.parentPath, entry.name);
+    if (!keep(relative(root, path))) continue;
     hashes.set(relative(root, path), createHash("sha256").update(readFileSync(path)).digest("hex"));
   }
   return hashes;
@@ -101,12 +112,12 @@ export function npmPack(cwd) {
 }
 
 /** Stamps a packed tarball and writes the result to `outDir`; its path. */
-export function stampTarball(tarball, outDir, { version, notes }) {
+export function stampTarball(tarball, outDir, { version, notes, name }) {
   const source = unpack(resolve(tarball));
   const before = fileHashes(source);
 
   const manifestPath = join(source, MANIFEST);
-  const manifest = npmManifest(JSON.parse(readFileSync(manifestPath, "utf8")), version);
+  const manifest = npmManifest(JSON.parse(readFileSync(manifestPath, "utf8")), version, name);
   if (notes) {
     copyFileSync(notes, join(source, NOTES));
     manifest.files = [...manifest.files, NOTES];
@@ -135,7 +146,11 @@ function main() {
   const [version, outDir] = positionals;
   if (!version || !outDir) throw new Error("usage: npm-package.mjs <version> <out-dir> [--notes <file>]");
   for (const directory of PACKAGES) {
-    console.log(stampTarball(npmPack(join(ROOT, directory)), outDir, { version, notes: values.notes }));
+    const tarball = npmPack(join(ROOT, directory));
+    const manifest = JSON.parse(readFileSync(join(ROOT, directory, MANIFEST), "utf8"));
+    for (const name of npmNames(manifest)) {
+      console.log(stampTarball(tarball, outDir, { version, notes: values.notes, name }));
+    }
   }
 }
 

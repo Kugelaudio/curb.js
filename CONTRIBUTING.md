@@ -65,7 +65,7 @@ To cut a stable release:
 2. Pick the `stable` channel and a `semver`: `patch`, `minor` or `major`.
 3. With `dry_run` on, the run does everything except publish, tag and release. Its summary shows
    the release notes.
-4. Run it again with `dry_run` off. It publishes `curb.js` and `create-curb.js` to `latest`, tags
+4. Run it again with `dry_run` off. It publishes `curb.js`, `create-curb.js` and `create-curb` to `latest`, tags
    `v<version>`, and creates the GitHub Release.
 
 If a run fails after verification, use **Re-run failed jobs**: each step skips what is already

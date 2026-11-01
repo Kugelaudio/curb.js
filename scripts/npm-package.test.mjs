@@ -7,7 +7,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildOutput,
+  fileHashes,
   npmManifest,
+  npmNames,
   npmPack,
   npmPageProblems,
   PACKAGES,
@@ -48,6 +50,30 @@ test("stamps nothing into the npm page: each package.json is the one source", ()
   assert.deepEqual(npmManifest({ name: "curb", version: "1.0.0" }, "1.15.0"), { name: "curb.js", version: "1.15.0" });
   const published = npmManifest({ name: "curb", version: "1.0.0", ...PAGE }, "1.15.0");
   assert.deepEqual(published, { name: "curb.js", version: "1.15.0", ...PAGE });
+});
+
+test("create-curb is create-curb.js under a second name, with a command of that name", () => {
+  const manifest = {
+    name: "create-curb.js",
+    version: "1.0.1",
+    description: "Scaffolds",
+    bin: { "create-curb.js": "./bin/create-curb.js" },
+    files: ["bin"],
+  };
+  assert.deepEqual(npmNames(manifest), ["create-curb.js", "create-curb"]);
+  const published = npmManifest(manifest, "1.15.0", "create-curb");
+  const main = npmManifest(manifest, "1.15.0");
+  assert.equal(published.name, "create-curb");
+  assert.equal(published.version, "1.15.0");
+  assert.deepEqual(published.bin, { "create-curb": "./bin/create-curb.js" });
+  assert.deepEqual(main.bin, manifest.bin);
+  assert.deepEqual({ ...published, name: main.name, bin: main.bin }, main);
+});
+
+test("the framework has one name", () => {
+  const manifest = { name: "curb", version: "1.0.0", bin: { curb: "./bin/curb.js" } };
+  assert.deepEqual(npmNames(manifest), ["curb.js"]);
+  assert.throws(() => npmManifest(manifest, "1.0.0", "create-curb"), /curb is not published as create-curb/);
 });
 
 test("curb.js is packed before create-curb.js, which pins it", () => {
@@ -102,6 +128,36 @@ test("refuses a tarball that carries build output, and leaves nothing behind", (
 
   assert.throws(() => stampTarball(join(work, "release.tgz"), out, { version: "9.9.9" }), /build output: \.curb/);
   assert.deepEqual(readdirSync(out), []);
+});
+
+test("one packed tarball stamps into both create names, the same but for package.json", () => {
+  const work = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
+  const release = join(work, "package");
+  mkdirSync(join(release, "bin"), { recursive: true });
+  writeFileSync(join(release, "bin/create-curb.js"), "#!/usr/bin/env node\n");
+  writeFileSync(join(release, "README.md"), "# create-curb.js\n");
+  const manifest = {
+    name: "create-curb.js",
+    version: "1.0.1",
+    bin: { "create-curb.js": "./bin/create-curb.js" },
+    files: ["bin"],
+    ...PAGE,
+  };
+  writeFileSync(join(release, "package.json"), JSON.stringify(manifest));
+  execFileSync("tar", ["-czf", join(work, "release.tgz"), "-C", work, "package"]);
+  const out = join(work, "out");
+  mkdirSync(out);
+
+  for (const name of npmNames(manifest)) stampTarball(join(work, "release.tgz"), out, { version: "1.15.0", name });
+  assert.deepEqual(readdirSync(out).sort(), ["create-curb-1.15.0.tgz", "create-curb.js-1.15.0.tgz"]);
+  const unpacked = (file) => {
+    const directory = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
+    execFileSync("tar", ["-xzf", join(out, file), "-C", directory]);
+    return join(directory, "package");
+  };
+  const [short, main] = [unpacked("create-curb-1.15.0.tgz"), unpacked("create-curb.js-1.15.0.tgz")];
+  assert.deepEqual(unexpectedDifferences(fileHashes(main), fileHashes(short)), []);
+  assert.equal(JSON.parse(readFileSync(join(short, "package.json"), "utf8")).name, "create-curb");
 });
 
 test("each package names the repository trusted publishing checks, and its own directory", () => {
@@ -185,22 +241,26 @@ const SHIPPED = {
 };
 
 for (const directory of PACKAGES) {
-  test(`${directory} packs with its whole npm page, and nothing extra at its top level`, () => {
-    const work = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
-    const tarball = stampTarball(npmPack(join(ROOT, directory)), work, { version: "1.15.0" });
-    const unpacked = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
-    execFileSync("tar", ["-xzf", tarball, "-C", unpacked]);
-    const packed = join(unpacked, "package");
+  const source = JSON.parse(readFileSync(join(ROOT, directory, "package.json"), "utf8"));
+  for (const name of npmNames(source)) {
+    test(`${directory} packs as ${name} with its whole npm page, and nothing extra at its top level`, () => {
+      const work = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
+      const tarball = stampTarball(npmPack(join(ROOT, directory)), work, { version: "1.15.0", name });
+      const unpacked = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
+      execFileSync("tar", ["-xzf", tarball, "-C", unpacked]);
+      const packed = join(unpacked, "package");
 
-    assert.deepEqual(readdirSync(packed).sort(), SHIPPED[directory]);
-    const manifest = JSON.parse(readFileSync(join(packed, "package.json"), "utf8"));
-    assert.deepEqual(npmPageProblems(manifest, readFileSync(join(packed, "README.md"), "utf8")), []);
-    assert.equal(new Set(manifest.keywords).size, manifest.keywords.length);
-    assert.equal(manifest.homepage, "https://curbjs.com");
-    assert.equal(manifest.repository.directory, directory);
-    assert.equal(manifest.license, "Apache-2.0");
-    assert.equal("private" in manifest, false);
-  });
+      assert.deepEqual(readdirSync(packed).sort(), SHIPPED[directory]);
+      const manifest = JSON.parse(readFileSync(join(packed, "package.json"), "utf8"));
+      assert.equal(manifest.name, name);
+      assert.deepEqual(npmPageProblems(manifest, readFileSync(join(packed, "README.md"), "utf8")), []);
+      assert.equal(new Set(manifest.keywords).size, manifest.keywords.length);
+      assert.equal(manifest.homepage, "https://curbjs.com");
+      assert.equal(manifest.repository.directory, directory);
+      assert.equal(manifest.license, "Apache-2.0");
+      assert.equal("private" in manifest, false);
+    });
+  }
 }
 
 test("stamps the version into the tarball and ships the release notes", () => {

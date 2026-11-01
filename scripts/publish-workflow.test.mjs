@@ -112,7 +112,7 @@ test("the package suite runs publish.yml's tarball commands", () => {
   for (const command of [
     'node scripts/npm-package.mjs "$VERSION" out',
     "node scripts/release-install-test.mjs out",
-    'for name in curb.js create-curb.js; do',
+    'for name in curb.js create-curb.js create-curb; do',
     '"./out/$name-$VERSION.tgz"',
   ]) {
     assert.ok(publishYml.includes(command), `publish.yml no longer runs ${command}`);
@@ -137,5 +137,5 @@ test("npm gets ten minutes per package to serve a publication, inside the job's 
   const seconds = Number(/sleep (\d+)/.exec(job)?.[1]);
   const timeout = Number(/timeout-minutes: (\d+)/.exec(job)?.[1]);
   assert.ok(attempts * seconds >= 600, `the read-back waits ${attempts * seconds} s`);
-  assert.ok(timeout * 60 > 2 * attempts * seconds, `${timeout} minutes does not fit both packages`);
+  assert.ok(timeout * 60 > 3 * attempts * seconds, `${timeout} minutes does not fit all three packages`);
 });
