@@ -28,7 +28,7 @@ test("curb.js is packed before create-curb.js, which pins it", () => {
 });
 
 test("refuses a package Curb does not publish", () => {
-  assert.throws(() => npmManifest({ name: "create-curb-app" }, "1.0.0"), /create-curb-app/);
+  assert.throws(() => npmManifest({ name: "another-package" }, "1.0.0"), /another-package/);
 });
 
 test("only package.json may differ after packing", () => {

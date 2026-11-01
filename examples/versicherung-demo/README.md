@@ -34,7 +34,7 @@ das Modell muss ihn direkt von der Agentenebene aus erreichen können.
 ## Starten
 
 ```bash
-npm install            # einmalig im Workspace-Root (packages/public/curb)
+npm install            # einmalig im Repository-Root
 cd examples/versicherung-demo
 npx curb login         # oder KUGELAUDIO_API_KEY in .env
 npm run check          # Typen und Diagnosen

@@ -69,7 +69,7 @@ To cut a stable release:
    `v<version>`, and creates the GitHub Release.
 
 If a run fails after verification, use **Re-run failed jobs**: each step skips what is already
-done. The version comes from the tags, npm and the CDN, so nothing in the repository is bumped.
+done. The version comes from the tags and npm, so nothing in the repository is bumped.
 The notes come from the commit subjects since the last stable tag (`cliff.toml`).
 
 ## Security

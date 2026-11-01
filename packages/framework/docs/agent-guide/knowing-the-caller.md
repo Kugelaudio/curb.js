@@ -60,7 +60,7 @@ look it up.
    [Tell the agent where a call comes from](./web-calls.md#tell-the-agent-where-a-call-comes-from)):
 
    ```html
-   <script src="https://cdn.kugelaudio.com/widget/v1/widget.js"
+   <script src="YOUR_WIDGET_SCRIPT"
      data-agent="YOUR_WIDGET_ID"
      data-position="inline"
      data-size="lg"

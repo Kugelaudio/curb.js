@@ -94,16 +94,18 @@ dispatching it with `channel=stable`, `semver` and `dry_run`: it publishes to
 both `curb.js` and `create-curb.js`, and tag only after the publish, so a tag always names a
 version npm holds.
 
-Tags hold the version: `scripts/release-version.mjs` computes it from the stable `v*` tags, npm and
-the CDN's `latest.json`, and `scripts/npm-package.mjs` stamps it into the tarballs. No workflow can
+Tags hold the version: `scripts/release-version.mjs` computes it from the stable `v*` tags and npm,
+and `scripts/npm-package.mjs` stamps it into the tarballs. No workflow can
 push to `main`, so nothing bumps `package.json` in the repository. Commit subjects become the
 release notes through git-cliff (`cliff.toml`), so write them for someone using Curb. `CHANGELOG.md`
 stops at 1.14.1; GitHub Releases hold what came after.
 
 The framework is `curb` here and `curb.js` on npm, so a project depends on
-`"curb": "npm:curb.js@<version>"` and keeps `import ... from "curb"`. `curb upgrade` follows the
-source a project uses: an npm alias reads npm's dist-tags (`--preview` for the preview channel), a
-CDN tarball reads the CDN's `curb/latest.json`, and a repo-linked `file:` project updates via git.
+`"curb": "npm:curb.js@<version>"` and keeps `import ... from "curb"`. npm is the only release
+channel: `curb upgrade` and the update notice in `curb dev` read its dist-tags (`latest`, or
+`preview` with `--preview`), and `npm create curb.js@latest` or `@preview` scaffolds from it. A
+repo-linked `file:` project updates via git, and `curb upgrade` stops any other dependency with the
+command that moves it to npm.
 
 ## Tests by area
 
@@ -216,8 +218,9 @@ edit a frozen project to make it pass.
   See `docs/build-verification.md`, and `docs/agent-guide/hosting.md` for self-hosting and
   `docs/agent-guide/host-protocol.md` for the protocol. `npm run smoke:self-host` builds the insurance example and drives a
   managed runner with no LiveKit credentials against `protocol.schema.json`;
-  `npm run check:independence` fails if Curb cites a private KugelAudio platform
-  document.
+  `npm run check:independence` fails if anything in the repository cites a private KugelAudio
+  document, or names company release infrastructure or the retired install flow; only
+  `CHANGELOG.md`, lockfiles, `compat/` and the check itself are exempt.
 
 ## Voice pointers
 

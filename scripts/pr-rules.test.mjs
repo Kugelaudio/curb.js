@@ -39,7 +39,7 @@ test("every type is accepted, with or without a scope and a !", () => {
     assert.deepEqual(titleErrors(`${type}: add a thing`), []);
     assert.deepEqual(titleErrors(`${type}(framework): add a thing`), []);
     assert.deepEqual(titleErrors(`${type}!: add a thing`), []);
-    assert.deepEqual(titleErrors(`${type}(create-curb-app)!: add a thing`), []);
+    assert.deepEqual(titleErrors(`${type}(create-curb.js)!: add a thing`), []);
   }
 });
 

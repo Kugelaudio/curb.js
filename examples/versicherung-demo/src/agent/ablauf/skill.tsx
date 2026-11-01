@@ -44,7 +44,7 @@ export default function FirstSteps() {
         onComplete={completeFirstSteps}
         completed={
           // Says WHAT is next, and that the agent does it: one simulated call in six handed the
-          // caller to a person here instead (staging, 2026-10-30).
+          // caller to a person here instead (2026-10-30).
           <Text>Alle drei Schritte sind erledigt. Nimm die Meldung jetzt selbst auf; verbinde dafür nicht weiter.</Text>
         }
       >

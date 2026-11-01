@@ -11,7 +11,11 @@ Hosting on KugelAudio is in closed alpha and switched on per organization. Phone
 deploys and how a hosted agent runs are in the
 [KugelAudio docs](https://docs.kugelaudio.com/hosted-agents/quickstart).
 
-Four commands take a local project to a live agent on KugelAudio:
+**Hosted deploys do not accept a project that installs Curb from npm yet, and `npm create curb.js`
+creates such a project.** Today a project on npm runs locally with `curb dev` and goes live on
+[your own servers](./hosting.md), not on KugelAudio. See [Upgrading](./upgrading.md#hosted-deploys).
+
+Once hosted deploys accept the project, four commands take it to a live agent on KugelAudio:
 
 ```bash
 npm create curb.js my-agent

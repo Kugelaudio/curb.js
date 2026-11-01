@@ -1,11 +1,9 @@
 # Curb website
 
 The site for **curbjs.com**: a landing page and the docs, built with Astro. The docs come from the
-Curb agent guide at `packages/public/curb/packages/framework/docs/agent-guide/`, so editing a guide
+Curb agent guide at `packages/framework/docs/agent-guide/`, so editing a guide
 page updates them, and the landing page reads its example requests from the same guide. No cookies
 and no analytics. A small script adds tabs and copy buttons; without it every panel stays visible.
-
-**It is not deployed.** The domain has no DNS record for it, and there is no deploy workflow.
 
 | Path | What it holds |
 |---|---|
@@ -17,7 +15,7 @@ and no analytics. A small script adds tabs and copy buttons; without it every pa
 | `src/guide-links.ts` | Rewrites `./tools.md#keys` to `/docs/tools/#keys` |
 | `src/requests.ts` | Reads the example requests from the guide, and fails the build when they are gone |
 | `src/code-theme.ts` | Code colours as classes, because the CSP refuses inline styles |
-| `src/pages/docs/[...page].astro` | Every guide page as HTML, plus the changelog from `CHANGELOG.md` beside `website/`, when the repository has one |
+| `src/pages/docs/[...page].astro` | Every guide page as HTML, plus the changelog from `CHANGELOG.md` beside `website/` |
 | `src/pages/docs/[page].md.ts` | Every guide page as Markdown, at `/docs/<page>.md` |
 | `src/pages/llms.txt.ts`, `llms-full.txt.ts` | The index and the whole guide for agents |
 | `public/preview.webp` | A real `curb dev` preview of a small insurance agent, matching the demo on the page, in the site's dark colours (the app's colour tokens overridden for the shot; the app itself is light). A scripted test model and an invented company stand in for a real call; replace it before launch |
@@ -34,13 +32,8 @@ npm test && npm run check && npm run build
 
 It stays outside the npm workspaces, so it has its own lockfile.
 
-## Go live
+## Deploy
 
-Nothing below has been done. `.github/workflows/pages.yml` builds this directory with Node 24
-(`npm ci`, `npm run build`) and publishes `dist/`.
-
-1. In the repository settings, set **Pages > Source** to **GitHub Actions**.
-2. Set **Pages > Custom domain** to `curbjs.com` and add its DNS record. The build has no base path,
-   so the `*.github.io` URL shows unstyled pages until the domain works.
-3. Links from the guide to `docs.kugelaudio.com/hosted-agents/*` need that release open, or they
-   answer 404 for anonymous readers.
+`.github/workflows/pages.yml` builds this directory with Node 24 (`npm ci`, `npm run build`) and
+publishes `dist/` to `curbjs.com` through GitHub Pages. The custom domain is a repository setting,
+and the build has no base path, so the `*.github.io` URL shows unstyled pages.

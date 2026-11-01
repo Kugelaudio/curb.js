@@ -64,7 +64,7 @@ export function InsuranceApp() {
     // this insurer says; add product names, tariffs and your brand here.
     //
     // Mistral, not the default Qwen: this agent depends on a tool call in the caller's first
-    // turn, and on Qwen that call went missing in 9 of 30 tries (Mistral 0 of 30, staging,
+    // turn, and on Qwen that call went missing in 9 of 30 tries (Mistral 0 of 30,
     // 2026-10-30). Qwen then says "ich stelle Sie durch" and nothing happens.
     <Agent
       llm={kugelaudio.llm({ model: "mistral-medium-3.5-128b" })}

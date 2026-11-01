@@ -315,9 +315,18 @@ test("--framework takes a bare version as a curb.js version, never npm's unrelat
   assert.equal(manifest.dependencies.curb, "npm:curb.js@1.14.1");
 });
 
-test("--framework passes any other spec through", (t) => {
-  const manifest = scaffoldFromPublishedCopy(t, "1.15.0", ["--framework", "https://example.test/curb.tgz"]);
-  assert.equal(manifest.dependencies.curb, "https://example.test/curb.tgz");
+test("--framework passes a file: spec through", (t) => {
+  const manifest = scaffoldFromPublishedCopy(t, "1.15.0", ["--framework", "file:/some/curb"]);
+  assert.equal(manifest.dependencies.curb, "file:/some/curb");
+});
+
+test("--framework refuses a tarball URL, since Curb is published to npm only", () => {
+  const url = "https://example.test/curb.tgz";
+  const result = spawnSync(process.execPath, [bin, "app", "--skip-install", "--skip-git", "--framework", url], {
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--framework takes a version or a file: path/);
 });
 
 test("a repo checkout links the sibling framework", (t) => {

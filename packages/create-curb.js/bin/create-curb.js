@@ -40,10 +40,9 @@ Options:
   --stt-model <id>     STT model id (provider default otherwise)
   --tts-model <id>     TTS model id (provider default otherwise)
   --llm-base-url <url> Endpoint for --llm openai-compatible
-  --framework <spec>   Dependency spec for the "curb" package (a version,
-                       file:/path, or tarball URL). Defaults to the local
-                       framework checkout, else the curb.js release that
-                       matches this package.
+  --framework <spec>   Dependency spec for the "curb" package (a version or
+                       file:/path). Defaults to the local framework checkout,
+                       else the curb.js release that matches this package.
   --skip-install       Do not run npm install.
   --skip-git           Do not initialize a git repository.
   --yes, -y            Accepted and ignored (nothing is asked).
@@ -133,6 +132,8 @@ if (!frameworkSpec) {
   frameworkSpec = repoCheckout ? `file:${localFramework}` : `${CURB_ON_NPM}@${version}`;
 } else if (/^\d/.test(frameworkSpec)) {
   frameworkSpec = `${CURB_ON_NPM}@${frameworkSpec}`;
+} else if (/^https?:/i.test(frameworkSpec)) {
+  fail(`--framework takes a version or a file: path, not ${frameworkSpec}: Curb is published to npm only.`);
 }
 
 // ------------------------------------------------------------ provider table

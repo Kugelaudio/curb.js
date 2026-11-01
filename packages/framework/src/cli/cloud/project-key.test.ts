@@ -51,7 +51,7 @@ const STORED = { ...PROJECT_KEY, webUrl: "https://www.kugelaudio.com", email: "d
 
 describe("findCurbProject", () => {
   it("finds the nearest directory up whose package.json depends on curb", () => {
-    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "monorepo", devDependencies: { typescript: "5" } }));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "workspace", devDependencies: { typescript: "5" } }));
     expect(findCurbProject(join(root, "src", "agent"))).toBe(root);
     expect(findCurbProject(root)).toBe(root);
   });

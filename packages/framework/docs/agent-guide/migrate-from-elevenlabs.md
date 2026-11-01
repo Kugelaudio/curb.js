@@ -64,7 +64,7 @@ ElevenLabs account.
 
 ## 2. Rebuild it in Curb
 
-Create the project as in the [quickstart](https://docs.kugelaudio.com/hosted-agents/quickstart):
+Create the project as in [Installation](./installation.md):
 
 ```bash
 npm create curb.js my-agent

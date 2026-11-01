@@ -60,7 +60,7 @@ const ALL_PAGES = [
 export type GuidePage = (typeof ALL_PAGES)[number]
 export type GuidePageId = GuidePage['id']
 
-/** The pages to build. CHANGELOG.md lives beside website/ on curb.js, and joins with the first approved release notes. */
+/** The pages to build. CHANGELOG.md lives beside website/. */
 export function pagesToBuild(hasChangelog: boolean): readonly GuidePage[] {
   return ALL_PAGES.filter((page) => page.id !== 'changelog' || hasChangelog)
 }
