@@ -13,6 +13,10 @@ If you only use ElevenLabs for text to speech, you do not need this page: see
 
 ## Before you start
 
+Hosted deploys do not accept a project that installs Curb from npm yet, and step 2 creates such a
+project. Your numbers can only move to KugelAudio once they do, so keep your ElevenLabs agent
+answering until then.
+
 Read [what has no equivalent yet](#what-has-no-equivalent-yet) first. If your agent depends
 on your own SIP trunk or on one of the other features listed there, plan for that before you
 rebuild anything.

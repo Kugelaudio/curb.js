@@ -132,6 +132,7 @@ Revokes this machine's session and deletes the stored credentials and project ke
 
 Uploads the project and makes it the agent's live production deployment. The first run picks or creates
 the agent and saves it in `.curb/link.json` ([Deploying](./deploying.md)).
+Hosted deploys do not accept a project that installs Curb from npm yet.
 
 | Option | What it does |
 |---|---|

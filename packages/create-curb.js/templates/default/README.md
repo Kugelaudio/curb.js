@@ -41,6 +41,10 @@ Type or talk in the preview:
 
 ## Deploy to KugelAudio
 
+Hosted deploys do not accept a project that installs Curb from npm yet, and this project does.
+Today it runs locally with `npm run dev` and goes live on your own servers: see
+`node_modules/curb/docs/agent-guide/hosting.md`. Once hosted deploys accept it:
+
 ```bash
 npx curb login
 npx curb secrets push
@@ -49,8 +53,7 @@ npx curb deploy
 
 `deploy` prints the playground URL where you can call the live agent. Your `.env` is
 never uploaded; `secrets push` sends its values and prints only their names. Details:
-`node_modules/curb/docs/agent-guide/deploying.md`. To run the voice worker on your own LiveKit instead,
-see `node_modules/curb/docs/agent-guide/hosting.md`.
+`node_modules/curb/docs/agent-guide/deploying.md`.
 
 ## Learn more
 

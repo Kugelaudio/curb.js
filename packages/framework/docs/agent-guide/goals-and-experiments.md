@@ -193,6 +193,6 @@ variant is the session info `experiment.<name>`, so a `firstTurn: { say }` funct
 
 ## Next steps
 
-- [Deploying](./deploying.md): ship the goals and experiments with `curb deploy`.
+- [Deploying](./deploying.md): how goals and experiments reach a live agent, and what hosted deploys accept today.
 - [After-call code](./after-call-code.md): act on the goal results of each call.
 - [Testing](./testing.md): keep one scenario per variant.
