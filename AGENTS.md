@@ -101,6 +101,12 @@ push to `main`, so nothing bumps `package.json` in the repository. Commit subjec
 release notes through git-cliff (`cliff.toml`), so write them for someone using Curb. `CHANGELOG.md`
 stops at 1.14.1; GitHub Releases hold what came after.
 
+Each package's npm page comes from its own `package.json` and `README.md`; `npm-package.mjs` stamps
+only the name and version, and refuses a tarball that lost a field, its keywords, its README or a
+link a stranger can open. `packages/framework/README.md` is the root README cut down for npm:
+`website/src/seo.test.ts` fails when what they share differs, so change both in one pull request.
+A change to `packages/*/*.md` alone publishes nothing, so a README reaches npm with the next release.
+
 The framework is `curb` here and `curb.js` on npm, so a project depends on
 `"curb": "npm:curb.js@<version>"` and keeps `import ... from "curb"`. npm is the only release
 channel: `curb upgrade` and the update notice in `curb dev` read its dist-tags (`latest`, or

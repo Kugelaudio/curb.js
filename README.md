@@ -6,6 +6,7 @@
     </picture>
   </h1>
   <p><strong>The framework for production voice agents.</strong></p>
+  <p>Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships.</p>
 
 <a href="https://kugelaudio.com"><img alt="Made by KugelAudio" src="https://img.shields.io/badge/MADE%20BY%20KugelAudio-000000.svg?style=for-the-badge&labelColor=000000"></a>
 <img alt="Status: pre-release" src="https://img.shields.io/badge/STATUS-PRE--RELEASE-E8590C.svg?style=for-the-badge&labelColor=000000">
@@ -106,11 +107,15 @@ npx curb login         # sign in once in the browser
 npm run dev            # open http://127.0.0.1:4000
 ```
 
-The installer asks which provider to use for speech-to-text, the LLM and
-text-to-speech, then sets up the project. The defaults run everything on
-KugelAudio, so `curb login` is all the setup you need. Anthropic, OpenAI,
-Deepgram, ElevenLabs, Cartesia and any OpenAI-compatible endpoint are one pick
-away.
+> **The package is `curb.js`, not `curb`.** `curb` on npm is an unrelated templating
+> package, so `npm i curb` installs the wrong thing. Start with `npm create curb.js`
+> rather than `npm i curb.js`: the project depends on the framework through an alias,
+> `"curb": "npm:curb.js@<version>"`, and your code imports from `"curb"`.
+
+The defaults run speech-to-text, the LLM and text-to-speech on KugelAudio, so
+`curb login` is all the setup you need. Flags to `npm create curb.js` pick
+Anthropic, OpenAI, Azure, Deepgram, ElevenLabs, Cartesia or any OpenAI-compatible
+endpoint instead.
 
 `npm run dev` opens the **preview**, where you talk to your agent: type, or
 press **Start call** and speak. The starter agent is **Juno**, a personal
@@ -238,6 +243,18 @@ model can do, you can do by hand.
 - **Catch mistakes** with `curb check`, which explains how to fix each one.
 - **Copy for a coding agent** to improve your agent from a real conversation.
 
+## Documentation
+
+The docs live on [curbjs.com](https://curbjs.com/docs/):
+
+- [Installation](https://curbjs.com/docs/installation/): create a project and talk to it.
+- [How Curb works](https://curbjs.com/docs/how-it-works/): from a React render to a spoken reply.
+- [Agents and skills](https://curbjs.com/docs/agents-and-skills/): structure what an agent knows.
+- [Tools](https://curbjs.com/docs/tools/): give it things to do.
+- [Providers](https://curbjs.com/docs/providers/): swap the LLM, speech-to-text or text-to-speech.
+- [Testing](https://curbjs.com/docs/testing/): simulate conversations before they reach a caller.
+- [Self-hosting](https://curbjs.com/docs/hosting/): run an agent on your own servers.
+
 ## Repository layout
 
 ```text
@@ -256,8 +273,8 @@ npm test        # framework test suite
 
 ## Status
 
-curb.js is in active development ahead of its first public release. APIs may
-still change and the packages are not on npm yet. Feedback is very welcome.
+curb.js is in active development and its APIs may still change. Feedback is very
+welcome.
 
 Built by [KugelAudio](https://kugelaudio.com).
 

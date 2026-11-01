@@ -4,7 +4,30 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildOutput, npmManifest, PACKAGES, stampTarball, unexpectedDifferences } from "./npm-package.mjs";
+import { fileURLToPath } from "node:url";
+import {
+  buildOutput,
+  npmManifest,
+  npmPack,
+  npmPageProblems,
+  PACKAGES,
+  readmeLinks,
+  stampTarball,
+  unexpectedDifferences,
+} from "./npm-package.mjs";
+
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const REPOSITORY_URL = "git+https://github.com/Kugelaudio/curb.js.git";
+// What npm needs to show a package page, for a manifest that is not under test.
+const PAGE = {
+  description: "A framework.",
+  keywords: Array.from({ length: 10 }, (_, index) => `keyword-${index}`),
+  author: "An author",
+  license: "Apache-2.0",
+  homepage: "https://curbjs.com",
+  bugs: { url: "https://curbjs.com/docs/reporting-a-bug/" },
+  repository: { type: "git", url: REPOSITORY_URL, directory: "packages/framework" },
+};
 
 test("publishes the framework as curb.js at the stamped version, and leaves the rest alone", () => {
   const manifest = { name: "curb", version: "1.0.0", private: true, bin: { curb: "./bin/curb.js" } };
@@ -13,14 +36,18 @@ test("publishes the framework as curb.js at the stamped version, and leaves the 
   assert.equal(published.version, "1.15.0-preview.3");
   assert.deepEqual(published.bin, { curb: "./bin/curb.js" });
   assert.equal("private" in published, false);
-  assert.match(published.repository.url, /Kugelaudio\/curb\.js/);
 });
 
-test("create-curb.js keeps its name, and gets the repository provenance checks against", () => {
+test("create-curb.js keeps its name", () => {
   const published = npmManifest({ name: "create-curb.js", version: "1.0.1" }, "1.15.0");
   assert.equal(published.name, "create-curb.js");
   assert.equal(published.version, "1.15.0");
-  assert.match(published.repository.url, /Kugelaudio\/curb\.js/);
+});
+
+test("stamps nothing into the npm page: each package.json is the one source", () => {
+  assert.deepEqual(npmManifest({ name: "curb", version: "1.0.0" }, "1.15.0"), { name: "curb.js", version: "1.15.0" });
+  const published = npmManifest({ name: "curb", version: "1.0.0", ...PAGE }, "1.15.0");
+  assert.deepEqual(published, { name: "curb.js", version: "1.15.0", ...PAGE });
 });
 
 test("curb.js is packed before create-curb.js, which pins it", () => {
@@ -77,18 +104,112 @@ test("refuses a tarball that carries build output, and leaves nothing behind", (
   assert.deepEqual(readdirSync(out), []);
 });
 
-test("create-curb.js names the repository trusted publishing checks in its source too", () => {
-  const manifest = JSON.parse(readFileSync(new URL("../packages/create-curb.js/package.json", import.meta.url), "utf8"));
-  assert.equal(manifest.repository.url, "git+https://github.com/Kugelaudio/curb.js.git");
-  assert.equal(npmManifest(manifest, "1.15.0").repository.url, manifest.repository.url);
+test("each package names the repository trusted publishing checks, and its own directory", () => {
+  for (const directory of PACKAGES) {
+    const manifest = JSON.parse(readFileSync(join(ROOT, directory, "package.json"), "utf8"));
+    assert.equal(manifest.repository.url, REPOSITORY_URL);
+    assert.equal(manifest.repository.directory, directory);
+  }
 });
+
+test("finds links and images in markdown and HTML, and none in code", () => {
+  const readme = [
+    '<a href="https://a.example"><img src="https://b.example/c.png"></a>',
+    '<source srcset="logo.svg">',
+    "[docs](https://d.example) ![shot](assets/e.png)",
+    "```tsx",
+    '<Tool href="in-code" />',
+    "```",
+  ].join("\n");
+  assert.deepEqual(readmeLinks(readme), ["https://a.example", "https://b.example/c.png", "logo.svg", "https://d.example", "assets/e.png"]);
+});
+
+test("a complete package has nothing missing from its npm page", () => {
+  assert.deepEqual(npmPageProblems(PAGE, "# Curb\n\n[Docs](https://curbjs.com/docs/) and [more](#more)\n"), []);
+});
+
+test("names every field a package page would lose", () => {
+  for (const field of ["description", "author", "license", "homepage", "bugs"]) {
+    const { [field]: _dropped, ...manifest } = PAGE;
+    assert.deepEqual(npmPageProblems(manifest, "# Curb\n"), [`no ${field}`]);
+  }
+  const { repository, ...withoutRepository } = PAGE;
+  assert.deepEqual(npmPageProblems(withoutRepository, "# Curb\n"), ["no repository with a directory"]);
+  const noDirectory = { ...PAGE, repository: { type: "git", url: repository.url } };
+  assert.deepEqual(npmPageProblems(noDirectory, "# Curb\n"), ["no repository with a directory"]);
+});
+
+test("wants a real set of keywords", () => {
+  const { keywords: _keywords, ...none } = PAGE;
+  assert.deepEqual(npmPageProblems(none, "# Curb\n"), ["0 keywords, expected 10 to 15"]);
+  const tooMany = Array.from({ length: 16 }, (_, index) => `keyword-${index}`);
+  assert.deepEqual(npmPageProblems({ ...PAGE, keywords: tooMany }, "# Curb\n"), ["16 keywords, expected 10 to 15"]);
+});
+
+test("wants a README, with links that open on npm", () => {
+  assert.deepEqual(npmPageProblems(PAGE, undefined), ["no README.md"]);
+  assert.deepEqual(npmPageProblems(PAGE, "  \n"), ["no README.md"]);
+  const links = [
+    "LICENSE",
+    "http://curbjs.com/",
+    "https://raw.githubusercontent.com/Kugelaudio/curb.js/main/a.png",
+    "https://github.com/Kugelaudio/curb.js/blob/main/LICENSE",
+  ];
+  assert.deepEqual(
+    npmPageProblems(PAGE, links.map((link) => `[link](${link})`).join("\n")),
+    links.map((link) => `a README.md link npm cannot show: ${link}`),
+  );
+});
+
+test("refuses a tarball that would lose its npm page, and leaves nothing behind", () => {
+  const work = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
+  const release = join(work, "package");
+  mkdirSync(release);
+  writeFileSync(join(release, "kept.txt"), "kept\n");
+  const manifest = { name: "curb", version: "1.0.0", private: true, files: ["kept.txt"], ...PAGE, keywords: [] };
+  writeFileSync(join(release, "package.json"), JSON.stringify(manifest));
+  execFileSync("tar", ["-czf", join(work, "release.tgz"), "-C", work, "package"]);
+  const out = join(work, "out");
+  mkdirSync(out);
+
+  assert.throws(
+    () => stampTarball(join(work, "release.tgz"), out, { version: "9.9.9" }),
+    /curb\.js would lose its npm page: 0 keywords, expected 10 to 15, no README\.md/,
+  );
+  assert.deepEqual(readdirSync(out), []);
+});
+
+const SHIPPED = {
+  "packages/framework": ["LICENSE", "NOTICE", "README.md", "THIRD_PARTY_NOTICES.md", "bin", "docs", "index.html", "package.json", "src"],
+  "packages/create-curb.js": ["LICENSE", "NOTICE", "README.md", "bin", "package.json", "templates"],
+};
+
+for (const directory of PACKAGES) {
+  test(`${directory} packs with its whole npm page, and nothing extra at its top level`, () => {
+    const work = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
+    const tarball = stampTarball(npmPack(join(ROOT, directory)), work, { version: "1.15.0" });
+    const unpacked = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
+    execFileSync("tar", ["-xzf", tarball, "-C", unpacked]);
+    const packed = join(unpacked, "package");
+
+    assert.deepEqual(readdirSync(packed).sort(), SHIPPED[directory]);
+    const manifest = JSON.parse(readFileSync(join(packed, "package.json"), "utf8"));
+    assert.deepEqual(npmPageProblems(manifest, readFileSync(join(packed, "README.md"), "utf8")), []);
+    assert.equal(new Set(manifest.keywords).size, manifest.keywords.length);
+    assert.equal(manifest.homepage, "https://curbjs.com");
+    assert.equal(manifest.repository.directory, directory);
+    assert.equal(manifest.license, "Apache-2.0");
+    assert.equal("private" in manifest, false);
+  });
+}
 
 test("stamps the version into the tarball and ships the release notes", () => {
   const work = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
   const release = join(work, "package");
   mkdirSync(release);
   writeFileSync(join(release, "kept.txt"), "kept\n");
-  const manifest = { name: "curb", version: "1.0.0", private: true, files: ["kept.txt"] };
+  writeFileSync(join(release, "README.md"), "# Curb\n");
+  const manifest = { name: "curb", version: "1.0.0", private: true, files: ["kept.txt"], ...PAGE };
   writeFileSync(join(release, "package.json"), JSON.stringify(manifest));
   execFileSync("tar", ["-czf", join(work, "release.tgz"), "-C", work, "package"]);
   writeFileSync(join(work, "notes.md"), "## Added\n");

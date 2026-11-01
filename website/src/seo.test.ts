@@ -47,12 +47,31 @@ describe('tagline', () => {
     expect(repoFile('README.md')).toContain(`<p><strong>${SITE_HEADLINE}</strong></p>`)
   })
 
+  it.each(['README.md', 'packages/framework/README.md', 'packages/create-curb.js/README.md'])(
+    'opens %s with the headline and the description',
+    (path) => {
+      const head = repoFile(path).split('</div>')[0]
+      expect(head).toContain(`<p><strong>${SITE_HEADLINE}</strong></p>\n  <p>${SITE_DESCRIPTION}</p>`)
+    },
+  )
+
+  it.each(['packages/framework/README.md', 'packages/create-curb.js/README.md'])(
+    'shows the share image the site serves at the top of %s',
+    (path) => {
+      expect(repoFile(path).split('\n')[1]).toContain(`src="${new URL(OG_IMAGE_PATH, site).href}"`)
+    },
+  )
+
   it('is the description of the framework package', () => {
     expect(packageDescription('packages/framework/package.json')).toBe(`${SITE_HEADLINE} ${SITE_DESCRIPTION}`)
   })
 
   it('names Curb in the description of the create package', () => {
     expect(packageDescription('packages/create-curb.js/package.json')).toContain('a Curb voice agent')
+  })
+
+  it('ends the description of the create package with the headline', () => {
+    expect(packageDescription('packages/create-curb.js/package.json').endsWith(SITE_HEADLINE)).toBe(true)
   })
 
   it('is the title and the alt text of the share image', () => {
@@ -67,6 +86,29 @@ describe('tagline', () => {
 
   it('points the share image at a file the site serves', () => {
     expect(existsSync(new URL(`../public${new URL(OG_IMAGE_PATH, 'https://curbjs.com').pathname}`, import.meta.url))).toBe(true)
+  })
+})
+
+// npm shows a shorter page in another order, so packages/framework/README.md is its own file, and
+// what it shares with README.md must stay word for word.
+describe('the README on npm', () => {
+  const repoFile = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
+  /** A file as blank-line-separated blocks, each with its line breaks flattened; code stays whole. */
+  const blocks = (markdown: string) =>
+    (markdown.match(/^```[\s\S]*?^```$|(?:^(?!```).+\n?)+/gm) ?? []).map((block) => block.trim().replace(/\s+/g, ' '))
+  const npmOnly = /^<div align="center">|^Curb is licensed under/
+  const quickstart = /^```bash npm create curb\.js my-agent/
+
+  it('says the same as the root README, apart from its header and license', () => {
+    const root = new Set(blocks(repoFile('README.md')))
+    const missing = blocks(repoFile('packages/framework/README.md')).filter((block) => !npmOnly.test(block) && !root.has(block))
+    expect(missing).toEqual([])
+  })
+
+  it('gives the same quick start on create-curb.js', () => {
+    const steps = (path: string) => blocks(repoFile(path)).find((block) => quickstart.test(block))
+    expect(steps('README.md')).toBeDefined()
+    expect(steps('packages/create-curb.js/README.md')).toBe(steps('README.md'))
   })
 })
 
