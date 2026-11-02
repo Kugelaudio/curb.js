@@ -466,6 +466,49 @@ export async function talkToAgent(room: Room, showForm: (form: unknown) => void)
 }
 ```
 
+## Media relay
+
+A host can keep WebRTC out of the agent's process. A relay it runs holds the realtime room and
+carries the call to the agent over one WebSocket, and the agent never receives a room token.
+
+A build that can do this says `"mediaRelayProtocol": 1` in `curb.bundle.json`. To use it, start the
+call with a `realtimeUrl` of `curb-relay+ws://` or `curb-relay+wss://`, and `realtimeToken` set to a
+token for that one call. The agent sends the token as `Authorization: Bearer <token>`, never in the
+URL.
+
+Binary frames are one stream byte followed by little-endian 16-bit mono PCM:
+
+| Stream | Direction | Audio |
+|---|---|---|
+| `0` | Relay to agent | The caller the agent listens to, at 16 kHz |
+| `0` | Agent to relay | The agent's voice, at 24 kHz |
+| `1` | Agent to relay | A transfer's announcement and ringback, at 48 kHz |
+
+Text frames are JSON. `src/relay-wire.ts` is the source for every message. The first frame the agent
+expects is `joined`, with the room's name and who is there, and it gives up after 15 seconds.
+
+```json
+{ "type": "joined", "room": "room-1", "participants": [{ "identity": "caller", "kind": 0 }] }
+```
+
+The relay owes the agent:
+
+- participant events, and `room_lost` when it loses the room;
+- `playout_done` or `playout_cleared` with `playedMs` after each `audio_flush` or `audio_clear`,
+  which is what cuts an interrupted reply's transcript to the words that played;
+- the caller's typed text, as `typed_text`;
+- `rpc_request` for each method the agent registered, and `send_text_result` for each `send_text`;
+- `transfer_ready` or `transfer_failed` after `transfer_open`, and `transfer_played` after
+  `transfer_wait`;
+- answers to WebSocket pings. Three missed heartbeats, five seconds apart, or a closed socket end
+  the call.
+
+The relay also publishes what the agent says to the room, so the caller's app sees what it sees on
+any other call: `agent_text` and `caller_text` as transcripts and `agent_state` as the agent's state.
+
+The relay forwards only the participant named by the latest `listen` message. A call through a
+relay has no WebRTC in the agent, so stats and tracks from the room are not available to agent code.
+
 ## Live session settings
 
 An agent can let its client app and its host change some of its settings during a call:

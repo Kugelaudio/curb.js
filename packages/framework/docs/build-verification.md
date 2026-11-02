@@ -216,6 +216,7 @@ no way to tell whether a revision has already been built, and no stable key for
   "schemaVersion": 1,
   "frameworkVersion": "0.3.0",
   "runtimeProtocolVersion": "1.0",
+  "mediaRelayProtocol": 1,
   "runtime": { "node": "26" },
   "entrypoint": "packages/framework/entry/worker.mjs",
   "entryDigest": "sha256:66bae0…",
@@ -503,6 +504,7 @@ become a deployable artifact.
 | Field | What it says | Where the value comes from |
 |---|---|---|
 | `runtimeProtocolVersion` | The runner-to-bundle interface generation, `MAJOR.MINOR`. | Constant `1.0`, the only MAJOR so far. |
+| `mediaRelayProtocol` | The [media relay](agent-guide/host-protocol.md#media-relay) protocol this build speaks. Additive: a host that does not know it ignores it. | Constant `MEDIA_RELAY_PROTOCOL`. |
 | `runtime.node` | The Node major the artifact needs. | The major running the build, because that is the ABI the vendored native prebuilds were selected for. Not the esbuild syntax target. |
 | `externals[]` | `{ specifier, version, native }` per unbundlable package. | The version is read from the package the **artifact** resolves, never from a range. `native` is true when a compiled addon exists anywhere in the closure that package resolves. Portable wrappers such as `@livekit/rtc-node` are bundled; their platform-specific binding, `@livekit/rtc-ffi-bindings`, remains external. |
 | `requiredSecrets[]` | What the bundle needs injected. | `package.json` → `curb.requiredRuntimeSecrets`; each name becomes `{ required: true, phase: "runtime" }`. Values are never read or copied. An omitted key truthfully declares no required runtime secrets. |

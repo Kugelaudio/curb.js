@@ -21,6 +21,7 @@ import {
   hostNodeMajor,
   RUNTIME_PROTOCOL_VERSION,
 } from "./declarations.js";
+import { MEDIA_RELAY_PROTOCOL } from "../relay-wire.js";
 import { mergeFramesPlugin } from "./merge-frames-plugin.js";
 import { rawLoaderPlugin } from "./raw-plugin.js";
 import { generateContextRegistryCode, projectContextFiles } from "./context-registry.js";
@@ -781,6 +782,9 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     // native prebuilds are bound to. Both are compared before customer code is imported.
     // See declarations.ts, which states what each one does and does not claim.
     runtimeProtocolVersion: RUNTIME_PROTOCOL_VERSION,
+    // A host may start this build's calls through a media relay of this protocol. Additive: a
+    // host that has never heard of it ignores it and keeps joining a room directly.
+    mediaRelayProtocol: MEDIA_RELAY_PROTOCOL,
     runtime: { node: hostNodeMajor() },
     entrypoint,
     entryDigest: `sha256:${createHash("sha256").update(await readFile(workerOutFile)).digest("hex")}`,

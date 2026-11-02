@@ -302,6 +302,7 @@ describe("one managed runner serving several calls", () => {
       });
       return {
         room: {} as Room,
+        connection: { disconnect: async () => undefined },
         roomName: `room-${call.sessionId}`,
         ended,
         messages: new AppMessages(),
