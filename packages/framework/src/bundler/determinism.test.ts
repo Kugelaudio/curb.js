@@ -100,7 +100,7 @@ describe("curb build is content-addressed", () => {
     // test fail the day the repo was restructured, against a build that was correct. The
     // manifest already names the runnable entry; ask it instead of restating the layout.
     const entryDir = dirname(join(first.outDir, manifestOf(first.outDir).entrypoint));
-    for (const name of ["worker.mjs", "hosted.mjs"]) {
+    for (const name of ["worker.mjs"]) {
       const emitted = readFileSync(join(entryDir, name), "utf8");
       expect(emitted).not.toContain(fixtureProject);
       expect(emitted).not.toContain(resolve(fixtureProject, "..", "..", ".."));

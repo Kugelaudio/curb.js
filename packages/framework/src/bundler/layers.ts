@@ -12,7 +12,7 @@ import type { BundleExternal } from "./externals.js";
  * The layer split of a hosted build (layer contract L1, L2, L3).
  *
  * A hosted artifact is two layers. The APP layer is what the agent's own code reaches:
- * `curb.bundle.json`, `assets/**` and the two emitted entries. Everything else -- the
+ * `curb.bundle.json`, `assets/**` and the emitted entry. Everything else -- the
  * externals copied whole, the traced runtime files, the mirrored versions -- is the
  * DEPENDENCY layer, and it is a function of the install alone, not of the agent: the trace
  * is seeded from an isolated copy of the bundle that cannot resolve node_modules, plus the
@@ -91,7 +91,6 @@ export function isAppLayerPath(path: string, layout: AppLayerLayout): boolean {
     path === MANIFEST_FILENAME ||
     path.startsWith("assets/") ||
     path === mcpServersPath(layout.projectHome) ||
-    path === `${entryDir}/hosted.mjs` ||
     path === `${entryDir}/worker.mjs`
   );
 }
@@ -394,20 +393,20 @@ export async function assertDependencyStagesSparedAppLayer(options: {
     throw new Error(
       `curb build --emit-layers: the dependency stages wrote into the app layer: ` +
         `${intruders.join(", ")}.\n` +
-        `  The app layer is curb.bundle.json, assets/**, mcp.servers.json and the two emitted entries. A ` +
+        `  The app layer is curb.bundle.json, assets/**, mcp.servers.json and the emitted entry. A ` +
         `dependency file at one of those paths would break the disjoint split, so no layer ` +
         `records were written.`,
     );
   }
 }
 
-/** Refuse a layered build whose esbuild run emitted anything but the two entries. */
+/** Refuse a layered build whose esbuild run emitted anything but the entry. */
 export function assertBundleOutputsAreEntries(outputs: readonly string[], entries: readonly string[]): void {
   const extra = outputs.filter((output) => !entries.includes(output));
   if (extra.length > 0) {
     throw new Error(
-      `curb build: esbuild emitted ${extra.join(", ")} besides the two entries.\n` +
-        `  A layered build ships exactly hosted.mjs and worker.mjs as its bundle; any other ` +
+      `curb build: esbuild emitted ${extra.join(", ")} besides the entry.\n` +
+        `  A layered build ships exactly worker.mjs as its bundle; any other ` +
         `emitted file would belong to neither layer.`,
     );
   }
@@ -427,7 +426,7 @@ export function mergeDependencyLayerFiles(
     throw new Error(
       `curb build --dependency-layer: ${stray.path} was written outside the app layer.\n` +
         `  A dependency-layer build writes only curb.bundle.json, assets/**, mcp.servers.json ` +
-        `and the two entries; the dependency files come from the descriptor.`,
+        `and the entry; the dependency files come from the descriptor.`,
     );
   }
   const seen = new Set(appFiles.map((file) => file.path));

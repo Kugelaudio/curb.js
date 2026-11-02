@@ -180,45 +180,39 @@ export type PackageCopyOptions = {
 };
 
 /**
- * Copy a package whole while excluding native payloads for other targets.
+ * Whether a package-relative or artifact-relative path is an ONNX Runtime binary for another
+ * target.
  *
  * onnxruntime-node is unusual among the native dependencies: one npm package carries
  * CPU bindings for every supported OS and architecture. Shipping all of them contradicts
  * the target recorded in curb.bundle.json and can more than double a hosted artifact.
+ * Its binding names them with a template the tracer expands to every match, so the traced
+ * files need this filter as much as the whole copies do.
  */
+export function isForeignOnnxBinary(path: string, target: BuildTarget): boolean {
+  const segments = path.split(/[\\/]/);
+  for (let index = 0; index + 3 < segments.length; index += 1) {
+    if (
+      segments[index] === "onnxruntime-node" &&
+      segments[index + 1] === "bin" &&
+      /^napi-v\d+$/.test(segments[index + 2] ?? "")
+    ) {
+      if (segments[index + 3] !== target.os) return true;
+      const architecture = segments[index + 4];
+      return architecture !== undefined && architecture !== target.architecture;
+    }
+  }
+  return false;
+}
+
+/** Copy a package whole while excluding native payloads for other targets. */
 export async function copyPackageForTarget(options: PackageCopyOptions): Promise<void> {
   const source = resolve(options.source);
   await cp(source, options.destination, {
     recursive: true,
     dereference: true,
     force: true,
-    filter: (candidate) => {
-      const segments = relative(source, candidate).split(sep);
-      let binIndex = -1;
-      if (
-        options.name === "onnxruntime-node" &&
-        segments[0] === "bin" &&
-        /^napi-v\d+$/.test(segments[1] ?? "")
-      ) {
-        binIndex = 0;
-      } else {
-        for (let index = 0; index + 3 < segments.length; index += 1) {
-          if (
-            segments[index] === "node_modules" &&
-            segments[index + 1] === "onnxruntime-node" &&
-            segments[index + 2] === "bin" &&
-            /^napi-v\d+$/.test(segments[index + 3] ?? "")
-          ) {
-            binIndex = index + 2;
-            break;
-          }
-        }
-      }
-      if (binIndex < 0 || segments.length <= binIndex + 2) return true;
-      if (segments[binIndex + 2] !== options.target.os) return false;
-      if (segments.length <= binIndex + 3) return true;
-      return segments[binIndex + 3] === options.target.architecture;
-    },
+    filter: (candidate) => !isForeignOnnxBinary(join(options.name, relative(source, candidate)), options.target),
   });
 }
 

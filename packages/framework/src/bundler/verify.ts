@@ -29,8 +29,8 @@ import {
  *   - the entrypoint is read from curb.bundle.json rather than hardcoded. The
  *     entrypoint being wrong IS one of the two bugs, so a constant here would verify a
  *     file the runner never executes;
- *   - success is a marker the worker logs, not the exit status. The library entry exits
- *     cleanly and starts nothing; the marker is only reachable once every import
+ *   - success is a marker the worker logs, not the exit status. An entry can exit
+ *     cleanly having started nothing; the marker is only reachable once every import
  *     resolved AND a worker actually began.
  *
  * A started worker is necessary and not sufficient. The third packaging bug to reach a

@@ -104,7 +104,6 @@ export const isApp = (path: string): boolean => {
     path === MANIFEST_FILENAME ||
     path.startsWith("assets/") ||
     path === mcpServers ||
-    path === `${entryHome}/entry/hosted.mjs` ||
     path === `${entryHome}/entry/worker.mjs`
   );
 };
