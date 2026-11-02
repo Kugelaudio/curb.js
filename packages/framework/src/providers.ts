@@ -139,6 +139,18 @@ export type LlmDescriptor =
   | { provider: "openai"; kind: "llm"; options: { model: string } }
   | { provider: "openai-compatible"; kind: "llm"; options: OpenaiCompatibleOptions };
 
+/** OpenAI's speech-to-speech models. Key: `OPENAI_API_KEY`. */
+export type OpenaiS2sOptions = {
+  /** Defaults to "gpt-live-1" for `openai.live()` and LiveKit's default for `openai.realtime()`. */
+  model?: string;
+  voice?: string;
+  /** Another endpoint on the same protocol. */
+  baseURL?: string;
+};
+
+/** Which wire a model speaks decides how it hands work to Curb; the agent never sees the difference. */
+export type S2sDescriptor = { provider: "openai"; kind: "s2s"; protocol: "live" | "realtime"; options: OpenaiS2sOptions };
+
 export type TtsProviderId = TtsDescriptor["provider"];
 export type SttProviderId = SttDescriptor["provider"];
 export type LlmProviderId = LlmDescriptor["provider"];
@@ -149,6 +161,11 @@ export type ProviderProps = {
   stt?: SttDescriptor;
   tts?: TtsDescriptor;
 };
+
+/** What `<Agent>` accepts beyond the provider props of a `<Skill>`. With `s2s`, that model hears
+ * the caller, decides when to speak and speaks; `stt` and `tts` are not used, and `llm` runs
+ * skills and tools behind it. */
+export type AgentProviderProps = ProviderProps & { s2s?: S2sDescriptor };
 
 /** A scaffold placeholder create-curb.js was supposed to replace, e.g. `{{AGENT_MODEL}}`. */
 const PLACEHOLDER = /\{\{\s*[A-Z0-9_]+\s*\}\}/;
@@ -284,6 +301,20 @@ export const openai = Object.assign(
       provider: "openai",
       kind: "stt",
       options: defined(options),
+    }),
+    /** OpenAI Live as the agent's voice (`<Agent s2s>`). */
+    live: (options?: OpenaiS2sOptions): S2sDescriptor => ({
+      provider: "openai",
+      kind: "s2s",
+      protocol: "live",
+      options: { model: "gpt-live-1", ...defined(options) },
+    }),
+    /** OpenAI Realtime as the agent's voice (`<Agent s2s>`). */
+    realtime: (options?: OpenaiS2sOptions): S2sDescriptor => ({
+      provider: "openai",
+      kind: "s2s",
+      protocol: "realtime",
+      options: defined(options ?? {}),
     }),
   },
 );

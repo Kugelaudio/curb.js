@@ -65,6 +65,7 @@ import { voiceAgentClass, voiceSessionOptions } from "./pipeline.js";
 import { createProviderSwitch } from "./provider-swap.js";
 import { attachTransferAudio } from "../../../transfer.js";
 import { livekitCallRoom } from "./livekit-call-room.js";
+import { startS2sCall } from "../s2s/call.js";
 import { createTransferAudio, synthesizedFrames } from "./transfer-audio.js";
 import { reportVoiceLatencies } from "./latency.js";
 import {
@@ -224,6 +225,8 @@ export type VoiceAgentStartOptions = Omit<LivekitVoiceStartOptions, "room"> & { 
 /** Run the voice session on a call (see `../call-room.ts`) until it empties. Returns a
  * handle for explicit teardown. */
 export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<VoiceSessionHandle> {
+  // `<Agent s2s>`: the model is the whole voice, so that call shares nothing below (see `../s2s/`).
+  if (options.bundle.runtime.settings.s2s()) return startS2sCall(options);
   const env = options.env ?? process.env;
   // Mutable: the connection swaps in a rebuilt bundle on rewind; every
   // handler reads it at call time.

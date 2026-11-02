@@ -10,6 +10,7 @@ export const AUTHORING_DIAGNOSTIC_CODES = {
   invalidProp: "AGENT_INVALID_AUTHORING_PROP",
   scaffoldPlaceholder: "AGENT_SCAFFOLD_PLACEHOLDER",
   voiceLanguageMismatch: "AGENT_VOICE_LANGUAGE_MISMATCH",
+  s2sSpeechProviderIgnored: "AGENT_S2S_SPEECH_PROVIDER_IGNORED",
   typeError: "AGENT_TYPE_ERROR",
   typeCheckUnavailable: "AGENT_TYPECHECK_UNAVAILABLE",
   nodeTypesMissing: "AGENT_NODE_TYPES_MISSING",

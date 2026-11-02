@@ -36,6 +36,8 @@ import {
   type PreviewAgent,
   type ServerMessage,
 } from "./protocol.js";
+import { s2sCredentialDiagnostic } from "../s2s-diagnostics.js";
+import type { AgentSiteRuntime } from "../runtime.js";
 import { describeMissingVoiceEnv } from "./voice/providers.js";
 import type { ProviderSettings } from "../session-settings.js";
 import { synthesizeWav } from "./voice/synthesize.js";
@@ -193,6 +195,15 @@ type BrowserCall = {
 const NO_CLIENT_APP: ClientMessageBridge = { bind: () => undefined, detach: () => undefined };
 
 /** The agent's side of a LiveKit room `ticket` names, joined. */
+/** Why no call can start on these settings: an `<Agent s2s>` needs its model, any other agent
+ * its speech providers. */
+function callEnvIssue(settings: Pick<AgentSiteRuntime["settings"], "current" | "s2s">): string | null {
+  const s2s = settings.s2s();
+  if (!s2s) return describeMissingVoiceEnv(settings.current());
+  const issue = s2sCredentialDiagnostic(s2s, process.env);
+  return issue && `${issue.message} ${issue.fix}`;
+}
+
 async function joinLivekitRoom(ticket: LivekitRoomTicket): Promise<BrowserCall> {
   const room = new Room();
   await room.connect(ticket.agent.url, ticket.agent.token, { autoSubscribe: true, dynacast: false });
@@ -249,7 +260,7 @@ const createVoiceHostAdapter = (options: {
     // `curb dev` shows an agent whose LLM has no key; a call on it could only apologise.
     const llmIssue = llmCredentialDiagnostic(bundle.runtime.settings.current().llm);
     if (llmIssue) throw new Error(`${llmIssue.message} ${llmIssue.fix}`);
-    const voiceEnvIssue = describeMissingVoiceEnv(bundle.runtime.settings.current());
+    const voiceEnvIssue = callEnvIssue(bundle.runtime.settings);
     if (voiceEnvIssue) throw new Error(voiceEnvIssue);
     // Counted before the room exists: a reload must not cut a call that is still opening.
     const callKey = randomUUID();
@@ -428,8 +439,12 @@ export async function createAgentServer(options: { dev?: DevServerLink } = {}): 
   // The default agent's providers as a fresh session renders them, for the boot banner's
   // voice check and the preview's Play buttons. An agent that does not render keeps the
   // server up (the preview shows the diagnostics); both places then report the error.
+  let defaultCallIssue: string | null = null;
   const defaultSettings: ProviderSettings | Error = await createAgentRuntime().then(
-    ({ runtime }) => runtime.settings.current(),
+    ({ runtime }) => {
+      defaultCallIssue = callEnvIssue(runtime.settings);
+      return runtime.settings.current();
+    },
     (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
   );
 
@@ -524,7 +539,7 @@ export async function createAgentServer(options: { dev?: DevServerLink } = {}): 
     voiceIssue:
       defaultSettings instanceof Error
         ? `the agent does not render: ${defaultSettings.message}`
-        : describeMissingVoiceEnv(defaultSettings),
+        : defaultCallIssue,
     management: management?.address ?? null,
     hasMcp: (defaultAgent.definition.mcpServers?.length ?? 0) > 0,
   });

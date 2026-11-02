@@ -91,7 +91,7 @@ function fakeBundle(name = "bundle"): VoiceAgentBundle {
     name,
     agentId: "insurance",
     definition: { firstTurn: "agent", pipeline: {} },
-    runtime: { messages: new AppMessages(), settings: { current: () => SETTINGS }, bindCall: () => {} },
+    runtime: { messages: new AppMessages(), settings: { current: () => SETTINGS, s2s: () => undefined }, bindCall: () => {} },
     session: { updateInfo: () => {} },
   } as unknown as VoiceAgentBundle;
 }

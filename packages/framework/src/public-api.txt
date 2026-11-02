@@ -211,6 +211,7 @@
 ./orchestration serveCall
 ./orchestration silero
 ./orchestration voice
+./providers AgentProviderProps
 ./providers AzureSttOptions
 ./providers CartesiaTtsOptions
 ./providers DEFAULT_KUGELAUDIO_LLM_MODEL
@@ -226,9 +227,11 @@
 ./providers LlmDescriptor
 ./providers LlmProviderId
 ./providers OpenaiCompatibleOptions
+./providers OpenaiS2sOptions
 ./providers OpenaiSttOptions
 ./providers OpenaiTtsOptions
 ./providers ProviderProps
+./providers S2sDescriptor
 ./providers SttDescriptor
 ./providers SttProviderId
 ./providers TtsDescriptor

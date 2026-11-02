@@ -18,7 +18,7 @@
  */
 
 import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES } from "./authoring.js";
-import { azure, kugelaudio, type ProviderProps } from "./providers.js";
+import { azure, kugelaudio, type AgentProviderProps, type ProviderProps, type S2sDescriptor } from "./providers.js";
 import {
   ADJUSTABLE_PATHS,
   applySettingsOverrides,
@@ -56,7 +56,7 @@ export interface SessionSettingsOptions {
 }
 
 export class SessionSettings {
-  private props: ProviderProps = {};
+  private props: AgentProviderProps = {};
   private adjustable: Adjustable = {};
   /** The outside-change layer: one value per adjustable path. */
   private overrides: SettingsOverrides = {};
@@ -84,13 +84,18 @@ export class SessionSettings {
     return this.effective;
   }
 
+  /** The speech-to-speech model of `<Agent s2s>`, or undefined. No skill or outside change moves it. */
+  s2s(): S2sDescriptor | undefined {
+    return this.props.s2s;
+  }
+
   /** The effective settings as the wire reports them (no credentials, no extra options). */
   view(): EffectiveSettings {
     return effectiveSettings(this.effective);
   }
 
   /** The props read from the rendered tree. Returns the slots whose effective value changed. */
-  setProps(props: ProviderProps): readonly ProviderSlot[] {
+  setProps(props: AgentProviderProps): readonly ProviderSlot[] {
     this.props = props;
     return this.recompute();
   }
@@ -195,7 +200,7 @@ export function sameDescriptor(left: unknown, right: unknown): boolean {
  * first rendered `<Skill>` link to `activePath` that sets that slot. Put the prop on the
  * link in the always-rendered `<Skills>` index, so it holds however the skill was reached.
  */
-export function providerPropsFromTree(root: SemanticNode | null, activePath: string): ProviderProps {
+export function providerPropsFromTree(root: SemanticNode | null, activePath: string): AgentProviderProps {
   let site: SemanticNode | undefined;
   const links: SemanticNode[] = [];
   const visit = (node: SemanticNode) => {
@@ -205,7 +210,11 @@ export function providerPropsFromTree(root: SemanticNode | null, activePath: str
   };
   if (root) visit(root);
 
-  const props: ProviderProps = {};
+  const props: AgentProviderProps = {};
+  if (site?.props.s2s !== undefined) {
+    assertDescriptor("s2s", site.props.s2s, "Agent");
+    props.s2s = site.props.s2s as S2sDescriptor;
+  }
   for (const slot of SLOTS) {
     const fromSkill = links.find((link) => link.props[slot] !== undefined);
     const value = fromSkill ? fromSkill.props[slot] : site?.props[slot];
@@ -216,7 +225,7 @@ export function providerPropsFromTree(root: SemanticNode | null, activePath: str
   return props;
 }
 
-function assertDescriptor(slot: ProviderSlot, value: unknown, component: string): void {
+function assertDescriptor(slot: ProviderSlot | "s2s", value: unknown, component: string): void {
   const kind = (value as { kind?: unknown } | null)?.kind;
   if (kind === slot) return;
   throw new AgentAuthoringError({
@@ -226,7 +235,13 @@ function assertDescriptor(slot: ProviderSlot, value: unknown, component: string)
     location: { component },
     fix:
       `Build the value with a factory from "curb/providers", e.g. ` +
-      (slot === "tts" ? 'kugelaudio.tts({ language: "en" })' : slot === "stt" ? "azure.stt()" : "kugelaudio.llm()") +
+      (slot === "tts"
+        ? 'kugelaudio.tts({ language: "en" })'
+        : slot === "stt"
+          ? "azure.stt()"
+          : slot === "s2s"
+            ? "openai.live()"
+            : "kugelaudio.llm()") +
       ".",
   });
 }

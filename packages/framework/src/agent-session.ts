@@ -97,6 +97,8 @@ export type AgentTurnOptions = {
    * A spoken input arriving mid-turn is a barge-in: it cancels the turn in
    * flight, then runs. */
   spoken?: boolean;
+  /** The caller's words may be the newest transcript entry already ({@link AgentSession.recordHeard}). */
+  heard?: boolean;
   /** Marks framework-generated user input (e.g. the silence follow-up) so
    * UIs can hide it; the LLM still sees it as a plain user message. */
   kind?: "synthetic";
@@ -273,6 +275,13 @@ export class AgentSession {
    * mid-turn state changes are already visible in the next step's snapshot,
    * and appending here would race the turn loop's local message list.
    */
+  /** A line of a call no turn ran for: the speech-to-speech model heard or said it on its own. */
+  recordHeard(role: "user" | "assistant", text: string): void {
+    const content = text.trim();
+    if (!content || this.running) return;
+    this.setMessages([...this.conversation, { role, content, at: Date.now() }]);
+  }
+
   recordContextEvent(lines: string[]): void {
     const content = lines.join("\n").trim();
     if (!content || this.running) return;
@@ -463,10 +472,14 @@ export class AgentSession {
       const message = error instanceof Error ? error.message : String(error);
       yield { type: "error", error: { kind: "failed", message } };
     }
-    let messages: AgentChatMessage[] = [
-      ...this.conversation,
-      { role: "user", content: text, at: Date.now(), ...(options.kind ? { kind: options.kind } : {}) },
-    ];
+    const newest = this.conversation.at(-1);
+    let messages: AgentChatMessage[] =
+      options.heard && newest?.role === "user" && newest.content === text
+        ? this.conversation
+        : [
+            ...this.conversation,
+            { role: "user", content: text, at: Date.now(), ...(options.kind ? { kind: options.kind } : {}) },
+          ];
     this.setMessages(messages);
 
     const speech = new TurnSpeech();

@@ -242,6 +242,9 @@ export async function runSayTurn(params: {
   if (saved?.ended) throw new Error(CALL_ENDED);
   const bundle = await params.host.createBundle();
   const notes = [...(bundle.notes ?? [])];
+  if (bundle.runtime.settings.s2s()) {
+    notes.push("This turn ran the agent's back office on its llm. On a call the s2s model decides when to hand a turn over, and says the reply in its own words.");
+  }
   const { runtime, session } = bundle;
   // A call: the model may hang up, as it may on a voice call and in curb test.
   let endedCall = false;

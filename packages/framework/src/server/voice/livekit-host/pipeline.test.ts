@@ -110,7 +110,7 @@ describe("a project's voice pipeline", () => {
     const start = startVoiceAgent({
       room: {},
       roomName: "room-1",
-      bundle: {},
+      bundle: { runtime: { settings: { s2s: () => undefined } } },
       client: { bind() {} },
       providers: { stt: {}, tts: {} },
       vad: {},
