@@ -28,4 +28,4 @@ land there).
 
 ## Next steps
 
-- [Components](./components.md#mcp): every prop of `<Mcp>`.
+- [Components](./components/mcp.md): every prop of `<Mcp>`.

@@ -133,8 +133,8 @@ settings change as a whole (see "Live session settings").
 ```
 
 - `envelope` is runner-wide, gapless and positive: the resume cursor. `from` is
-  **exclusive**, so reconnect with the last envelope you processed; `from=0` replays
-  everything still held.
+  **exclusive**, so reconnect with the last envelope you processed; `from=0`, the
+  default, replays everything until the runner has dropped the first envelope, then answers 410.
 - `producer` + `seq` identify a record within its producer, for deduplication and for
   spotting a record lost before it reached the stream.
 - `at` is milliseconds since the Unix epoch.
@@ -174,7 +174,7 @@ comfortable multiple of 15 seconds.
 
 **Resume and 410.** The runner retains a bounded window of records (4096 by default). A
 cursor older than the window answers `410 {"error":"cursor_too_old","requested":N,"oldestRetained":M}`
-rather than silently skipping the gap. Reconnect without a cursor to follow from now on,
+rather than silently skipping the gap. Reconnect with `from=<oldestRetained - 1>` to read everything still held,
 and record the envelopes between `requested` and `oldestRetained` as lost.
 
 **Truncation rule.** A call's conversation is complete when its producer's last record is

@@ -16,7 +16,7 @@ example projects):
 
 ```text
 curb.js/
-├── packages/framework/        # The framework package (published as "curb")
+├── packages/framework/        # The framework package (published as "curb.js")
 │   ├── bin/curb.js       # CLI shim: generates the spanning tsx tsconfig, registers tsx
 │   ├── src/cli/main.ts        # CLI commands: dev / check / start / server / upgrade
 │   ├── src/vite/              # Preview Vite config (the page never imports agent code)
@@ -155,8 +155,10 @@ edit a frozen project to make it pass.
 - **The browser/authoring public API is `src/index.ts`.** Agent code imports
   from `"curb"`. Server-only scripts use the sanctioned `"curb/orchestration"`
   export from `src/orchestration.ts`; don't document or encourage any other
-  deep imports. Document a new component in `docs/agent-guide/components.md`, a new hook in
-  `docs/agent-guide/hooks.md`, a new environment variable in `docs/agent-guide/configuration.md`
+  deep imports. Document a new component, hook, function, provider or command on a page of its own under
+  `docs/agent-guide/components/`, `hooks/`, `functions/`, `providers/` or `cli/`, with its signature,
+  an example and a `Version history` row, and list it on that section's index page and in
+  `website/src/guide.ts`. Document a new environment variable in `docs/agent-guide/configuration.md`
   and a voice session addition in `docs/agent-guide/voice-sessions.md`, with a guide page when
   it is a new task.
 - **New diagnostics** get a code in `AUTHORING_DIAGNOSTIC_CODES`, a row in

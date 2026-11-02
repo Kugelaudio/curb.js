@@ -85,8 +85,8 @@ Three things are there, in order:
    It is written fresh for every request and never stored in the transcript, so what comes
    before it stays the same and a provider's prompt cache keeps working.
 
-In `<current_context>`, `tool:` lines end in `[runtime]` for Curb's own tools and `[page]` for
-tools your tree renders, and `*` marks a required input.
+In `<current_context>`, `tool:` lines end in `[runtime]` for Curb's own tools, `[page]` for tools a
+skill renders and `[global]` for tools rendered at the agent level, and `*` marks a required input.
 
 No skill is loaded yet, so `/report-claim`'s instruction and tool are not in the request at all.
 The model knows only each skill's name and description, and `read_skill`.

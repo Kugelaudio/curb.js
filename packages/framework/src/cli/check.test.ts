@@ -105,7 +105,7 @@ describe("curb check", () => {
       expect(output).not.toContain("AGENT_NODE_TYPES_MISSING");
       expect(result.stdout).toContain("Type-checked 2 file(s) under src/");
       expect(result.stdout).toMatch(/^ {4}SOME_KEY +missing {2}src\/agent\/orders\/skill\.tsx:14$/m);
-      expect(result.stdout).toContain("No authoring diagnostics — the agent is clean.");
+      expect(result.stdout).toContain("No authoring diagnostics: the agent is clean.");
     } finally {
       rmSync(clean, { recursive: true, force: true });
     }

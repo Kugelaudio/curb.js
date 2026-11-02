@@ -80,8 +80,8 @@ export function App() {
 ```
 
 Paths: `"tts.voice"`, `"tts.model"`, `"stt.language"`, `"llm"`. An accepted change
-overrides the prop until the next change of the same path; a refused one changes
-nothing. Read the effective providers (props plus outside changes) in any component:
+overrides the prop until the next change of the same path, and TTS changes drop when the
+rendered TTS provider changes; a refused one changes nothing. Read the effective providers (props plus outside changes) in any component:
 
 ```tsx
 import { Text, useSession } from "curb";
@@ -95,7 +95,7 @@ export function CurrentVoice() {
 
 The body, the refusal codes and the wire format are in [Host protocol](./host-protocol.md#live-session-settings).
 
-On a hosted call, `useSession().call` is that call: its `sessionId` and its own
+During a call, `useSession().call` is that call: its `sessionId` and its own
 `scratchDir`, a writable directory removed when the call ends. A runner may serve
 several calls in one process, so read the call's identity here, never from
 `process.env`, and write files only under `scratchDir`. `scratchDir` is absent in `curb dev`
@@ -106,7 +106,7 @@ import { Text, useSession } from "curb";
 
 export function CallInfo() {
   const { call } = useSession();
-  return <Text>{call ? `Call ${call.sessionId}.` : "Not a hosted call."}</Text>;
+  return <Text>{call ? `Call ${call.sessionId}.` : "Not on a call."}</Text>;
 }
 ```
 

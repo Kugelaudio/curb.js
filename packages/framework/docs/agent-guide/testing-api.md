@@ -38,7 +38,7 @@ export default scenario({
 | Helper | Passes when |
 |---|---|
 | `called(tool, input?)` | The agent ran the tool without a refusal. With `input`, only a call with those values counts |
-| `notCalled(tool)` | The agent never called the tool, not even in a refused call |
+| `notCalled(tool)` | The tool never ran. A refused or held call still passes |
 | `said(text)` | A reply contains the text, ignoring case, or matches the pattern |
 | `endedCall()` | The agent ended the call itself |
 | `check(name, pass, detail?)` | `pass` is true |
@@ -71,6 +71,13 @@ const event = buildCallEvent("call.evaluated", {
 Builds a valid event from a type and the fields you care about. The rest is a plain completed call.
 It throws on what no real call produces, such as `goals` on a `call.ended` event or a `transcript` on
 a call whose `content` is `not_stored`.
+
+## Version history
+
+| Version | Changes |
+|---|---|
+| v1.15.0 | `runHook` and `buildCallEvent` added |
+| v1.4.33 | `curb/testing` introduced with `scenario` |
 
 ## Next steps
 

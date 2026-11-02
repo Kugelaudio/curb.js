@@ -49,7 +49,7 @@ the first `curb deploy` deploys there. Every Curb command in the project then ru
 login: there is no key to copy. `npx curb logout` deletes the stored keys too.
 
 Prefer an API key (CI, a server)? Set `KUGELAUDIO_API_KEY` in `.env` or the environment; it
-wins over the login, and `curb login` then creates no key.
+wins over the login. With the key in `.env`, `curb login` creates no key.
 
 ## `curb secrets push`
 
@@ -101,8 +101,8 @@ With `--json`, stdout reads:
 **Which agent.** The first `deploy` or `secrets push` in a project asks which of your agents
 to use, or creates a new one, and saves the choice in `.curb/link.json`; later runs reuse it.
 Without a terminal (CI, a coding agent), a first run with exactly one project and no agent
-creates the agent, named after the directory; any other first run needs `--agent <id>` and
-lists the ids. Delete `.curb/link.json` to choose again.
+creates the agent, named after the directory; any other first run needs `--agent <id>`
+and lists the ids, or with no agents and several projects says to run once in a terminal. Delete `.curb/link.json` to choose again.
 
 **What is uploaded.** The project directory, minus `node_modules/`, `.git/`, `.curb/`,
 `.data/`, `.mcp-auth/`, a top-level `dist/`, and every `.env` / `.env.*` file. The lockfile

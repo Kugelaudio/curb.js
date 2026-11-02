@@ -34,7 +34,8 @@ what each part does and how they talk to each other, including what Curb does no
 
 Curb builds on LiveKit's agents library. LiveKit's `AgentSession` owns audio, voice activity
 detection, endpointing and interruption; Curb replaces its LLM step with its own loop. A
-project holds no voice session code, and there is no loop to swap ([Voice sessions](./voice-sessions.md)).
+project holds no voice session code ([Voice sessions](./voice-sessions.md)), and can still edit the
+pipeline around Curb's loop ([Override the LiveKit pipeline](./livekit-pipeline.md)).
 
 ## One call, end to end
 
@@ -90,6 +91,8 @@ you take over when you run it yourself is in [Hosting a Curb agent yourself](./h
   between two deployed agents is a phone transfer ([Complex handoffs](./complex-handoffs.md)).
 - **One transcript per conversation.** No skill has private history
   ([Skill lifecycle](./skill-lifecycle.md#context-per-skill)).
-- **Node only.** Agent code runs under Node, not in a browser or an edge runtime.
-- **The voice session is not replaceable.** You change it through settings, not by writing
-  your own loop.
+- **Node on a server.** A runner runs agent code under Node, not on an edge runtime. A browser
+  project runs it in a worker in the page.
+- **The voice session is Curb's.** You change it through settings or
+  `defineAgent({ pipeline })`. A session of your own needs your own worker
+  ([Override the LiveKit pipeline](./livekit-pipeline.md)).

@@ -1,7 +1,7 @@
 # Configuration
 
 Curb reads everything below from the environment or the project's `.env`. How an agent behaves is set
-in code, on [`<Agent>`](./components.md#agent) and in [`defineAgent`](./functions.md#defineagent).
+in code, on [`<Agent>`](./components/agent.md) and in [`defineAgent`](./functions/define-agent.md).
 
 ## Provider keys
 

@@ -42,8 +42,7 @@ export function EventContext() {
 
 With `firstTurn: "agent"` the agent greets once the caller is there. With
 `firstTurn: { say }` it opens with exactly that line instead, with no model call, written
-from the info above when `say` is a function ([Agents and skills](./agents-and-skills.md), "Who speaks
-first"). Neither opening can be interrupted: the caller hears the whole opening line, speech
+from the info above when `say` is a function ([Who speaks first](./who-speaks-first.md)). Neither opening can be interrupted: the caller hears the whole opening line, speech
 during it is not taken as a turn, and a message typed during it is answered once it has
 played. A call attached to a conversation that already has turns (typing in the preview
 before starting the call) does not open it with the line again.

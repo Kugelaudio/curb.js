@@ -22,7 +22,7 @@ import type {
 } from "./types.js";
 import { HOME_SKILL_PATH } from "./home-skill-migration.js";
 import { useSkillMeta } from "./route-context.js";
-import { WithOpenedSkills } from "./routing.js";
+import { titleFromSkillPath, WithOpenedSkills } from "./routing.js";
 import { validateSchemaInput, zodSchemaToFields, type ZodObjectSchema } from "./form-schema.js";
 import { validateToolInput } from "./form-validation.js";
 import { resolvePublicMarkdown } from "./public-context.js";
@@ -126,6 +126,7 @@ export function Skill({ path, description, children, llm, stt, tts }: SkillProps
   return (
     <agent-skill
       to={path}
+      title={targetMeta?.title ?? titleFromSkillPath(path)}
       description={description ?? targetMeta?.description}
       llm={llm}
       stt={stt}

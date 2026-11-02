@@ -147,7 +147,7 @@ export function cloudError(
   } else if (status === 402 && code === "upgrade_required") {
     message =
       `Your plan does not include ${fields.feature ? `"${fields.feature}"` : "this"}. ` +
-      `Upgrade in ${dashboard} (Settings > Billing), then run the command again.`;
+      "Contact hello@kugelaudio.com to upgrade, then run the command again.";
   } else if (status === 403 && code !== undefined && HOSTED_AGENTS_NOT_ENABLED.has(code)) {
     message = hostedAgentsNotEnabledMessage(tags);
   } else if (status === 403 && code === "source_import_disabled") {

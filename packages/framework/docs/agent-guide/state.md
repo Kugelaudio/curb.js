@@ -64,7 +64,9 @@ return procedureComplete ? (
 This is the framework's core invariant pattern: the model **cannot route
 around** a rule enforced by conditional rendering, because the locked tool is
 absent from its context. Always pair a lock with text that tells the model
-how to unlock it (otherwise diagnostics flag the branch as possibly locked).
+how to unlock it. Diagnostics do not read that text: `AGENT_POSSIBLY_LOCKED_BRANCH` flags a
+branch that can never render, and a conditional `<Skill>` link that is the only way out of a
+skill with no tool.
 Every action your prompt or a tool result offers the caller needs its tool
 rendered in that state: a result that offers a callback while no callback tool
 is rendered makes a promise the model cannot keep.

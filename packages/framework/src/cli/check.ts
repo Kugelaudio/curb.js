@@ -108,7 +108,7 @@ export function printCheckReport(report: CheckReport): number {
   const warnings = diagnostics.length + typeCheck.unlisted - errors;
   console.log(
     errors + warnings === 0
-      ? "No authoring diagnostics — the agent is clean."
+      ? "No authoring diagnostics: the agent is clean."
       : `${errors} error(s), ${warnings} warning(s).`,
   );
   return errors > 0 ? 1 : 0;

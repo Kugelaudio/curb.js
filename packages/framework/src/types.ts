@@ -163,6 +163,8 @@ export type SkillProps = SiteElementProps &
 export type SkillElementProps = SiteElementProps &
   ProviderProps & {
     to: string;
+    /** The name of a link whose children render no text. */
+    title?: string;
     description?: string;
   };
 

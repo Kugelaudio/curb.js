@@ -42,7 +42,7 @@ export function surviveLivekitTeardown(): void {
     if (!isLivekitTeardownFault(error) || survived >= MAX_SURVIVED_TEARDOWN_FAULTS) {
       console.error(
         survived >= MAX_SURVIVED_TEARDOWN_FAULTS
-          ? `curb dev: ${survived} LiveKit teardown faults absorbed — this is not a race any more.`
+          ? `curb dev: ${survived} LiveKit teardown faults absorbed: this is not a race any more.`
           : error,
       );
       process.exit(1);

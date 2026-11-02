@@ -9,8 +9,8 @@ mkdir insurance-agent && cd insurance-agent
 npm create curb.js .
 ```
 
-The installer asks which provider runs each part of the pipeline. Keep the defaults, and the whole
-agent runs on KugelAudio with one sign-in.
+The installer asks nothing. By default the whole agent runs on KugelAudio with one sign-in, and
+flags after `--` pick other providers.
 
 Create the project in the folder itself rather than in a subfolder: a coding agent started there
 then loads the project's `.mcp.json`, `CLAUDE.md` and `AGENTS.md`.
