@@ -44,8 +44,15 @@ test("framework code runs what is built on it", () => {
     "examples",
     "compat",
     "smoke",
+    "browser",
     "package",
   ]);
+});
+
+test("the starter project is what the static browser build runs on", () => {
+  assert.ok(affectedSuites(["packages/framework/src/browser/browser-build.ts"]).includes("browser"));
+  assert.ok(affectedSuites(["packages/create-curb.js/templates/default/package.json"]).includes("browser"));
+  assert.deepEqual(affectedSuites(["scripts/browser-build-check.mjs"]), ["scripts", "browser"]);
 });
 
 test("the files the scripts suite tests run that suite", () => {
@@ -66,6 +73,7 @@ test("a scaffolder runs the scaffolder tests and packs what it ships", () => {
   assert.deepEqual(affectedSuites(["packages/create-curb.js/bin/create-curb.js"]), ["scaffolders", "package"]);
   assert.deepEqual(affectedSuites(["packages/create-curb.js/templates/default/README.md"]), [
     "scaffolders",
+    "browser",
     "package",
   ]);
 });

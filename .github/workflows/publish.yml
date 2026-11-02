@@ -141,6 +141,7 @@ jobs:
       - run: npm run check:compat
       - run: npm run check:independence
       - run: npm run smoke:self-host
+      - run: npm run check:browser
       - name: Write the release notes
         run: |
           mkdir out

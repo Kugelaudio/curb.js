@@ -7,7 +7,7 @@ import { appendFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const SUITES = ["framework", "scaffolders", "scripts", "examples", "compat", "smoke", "package", "website"];
+export const SUITES = ["framework", "scaffolders", "scripts", "examples", "compat", "smoke", "browser", "package", "website"];
 
 const IGNORED = [
   /^packages\/framework\/docs\/(?!agent-guide\/)/,
@@ -24,9 +24,10 @@ const RULES = [
   // scripts/pages-workflow.test.mjs and scripts/workflow-safety.test.mjs read it, so an edit can fail them.
   [/^\.github\/workflows\/pages\.yml$/, ["scripts", "website"]],
   [/^packages\/(framework|create-curb\.js)\/README\.md$/, ["package", "website"]],
-  [/^packages\/framework\/package\.json$/, ["framework", "examples", "compat", "smoke", "package", "website"]],
+  [/^packages\/framework\/package\.json$/, ["framework", "examples", "compat", "smoke", "browser", "package", "website"]],
   [/^packages\/create-curb\.js\/package\.json$/, ["scaffolders", "package", "website"]],
-  [/^packages\/framework\//, ["framework", "examples", "compat", "smoke", "package"]],
+  [/^packages\/framework\//, ["framework", "examples", "compat", "smoke", "browser", "package"]],
+  [/^packages\/create-curb\.js\/templates\//, ["scaffolders", "browser", "package"]],
   [/^packages\/create-curb\.js\//, ["scaffolders", "package"]],
   [/^examples\/insurance-agent\//, ["examples", "smoke"]],
   [/^examples\//, ["examples"]],
@@ -35,6 +36,7 @@ const RULES = [
   [/^\.github\/(workflows\/(publish|pr-rules)\.yml|pull_request_template\.md)$/, ["scripts"]],
   [/^scripts\/check-projects\./, ["scripts", "examples", "compat"]],
   [/^scripts\/self-host-smoke\./, ["smoke"]],
+  [/^scripts\/browser-build-check\./, ["scripts", "browser"]],
   [/^scripts\/(npm-package|release-install-test|release-version)\./, ["scripts", "package"]],
   [/^scripts\//, ["scripts"]],
 ];
