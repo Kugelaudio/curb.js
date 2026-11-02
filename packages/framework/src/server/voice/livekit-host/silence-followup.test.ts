@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSilenceFollowup } from "./silence-followup.js";
 
-function followup(reply: () => void, handedOff = false, onError: (error: unknown) => void = () => {}) {
-  return createSilenceFollowup({ delayMs: 6000, handedOff: () => handedOff, reply, onError });
+function followup(
+  reply: () => void,
+  handedOff = false,
+  onError: (error: unknown) => void = () => {},
+  callerAway = false,
+) {
+  return createSilenceFollowup({ delayMs: 6000, handedOff: () => handedOff, callerAway: () => callerAway, reply, onError });
 }
 
 describe("createSilenceFollowup", () => {
@@ -28,6 +33,14 @@ describe("createSilenceFollowup", () => {
     vi.advanceTimersByTime(4000);
     silence.arm();
     vi.advanceTimersByTime(4000);
+    expect(reply).not.toHaveBeenCalled();
+  });
+
+  it("stays quiet while nobody is on the line", () => {
+    vi.useFakeTimers();
+    const reply = vi.fn();
+    followup(reply, false, () => {}, true).arm();
+    vi.advanceTimersByTime(6000);
     expect(reply).not.toHaveBeenCalled();
   });
 

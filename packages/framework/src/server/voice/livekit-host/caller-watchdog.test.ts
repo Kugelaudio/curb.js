@@ -175,4 +175,34 @@ describe("a hosted caller's reconnect window", () => {
 
     expect(giveUp).not.toHaveBeenCalled();
   });
+
+  it("tells the host the last caller left, once per departure, and the call can still come back", () => {
+    let remote = 1;
+    const gone = vi.fn();
+    const time = clock();
+    const ended: string[] = [];
+    const dog = createCallerWatchdog({
+      remoteCount: () => remote,
+      giveUp: () => ended.push("ended"),
+      onCallerGone: gone,
+      log: () => {},
+      emptyRoomMs: EMPTY_ROOM_GRACE_MS,
+      noCallerMs: 60_000,
+      setTimer: time.setTimer,
+      clearTimer: time.clearTimer,
+    });
+
+    dog.onParticipantLeft();
+    expect(gone).not.toHaveBeenCalled();
+
+    remote = 0;
+    dog.onParticipantLeft();
+    expect(gone).toHaveBeenCalledOnce();
+    expect(ended).toEqual([]);
+
+    remote = 1;
+    dog.onParticipantJoined();
+    time.advance(EMPTY_ROOM_GRACE_MS);
+    expect(ended).toEqual([]);
+  });
 });

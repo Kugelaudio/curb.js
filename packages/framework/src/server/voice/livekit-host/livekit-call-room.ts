@@ -4,7 +4,9 @@
 
 import { RoomEvent, type Room } from "@livekit/rtc-node";
 import type { VoiceCallRoom } from "../call-room.js";
+import { isCaller } from "./call-opening.js";
 import { publishTransferTrack } from "./transfer-audio.js";
+import { isTransferTarget } from "./transfer-handoff.js";
 
 /** WebRTC/Opus uses a 48 kHz clock. Kugel's native 24 kHz PCM remains the TTS contract;
  * agents-js performs the explicit, duration-preserving 2x resample before frames enter
@@ -28,12 +30,20 @@ export function livekitCallRoom(room: Room, name: string): VoiceCallRoom {
     onParticipantConnected: (listener) => void room.on(RoomEvent.ParticipantConnected, listener),
     onParticipantDisconnected: (listener) => void room.on(RoomEvent.ParticipantDisconnected, listener),
     onDisconnected: (listener) => void room.on(RoomEvent.Disconnected, (reason) => listener(String(reason))),
-    startSession: ({ session, agent, onTypedText }) =>
-      session.start({
+    startSession: async ({ session, agent, onTypedText }) => {
+      await session.start({
         agent,
         room,
         inputOptions: {
           audioSampleRate: LIVEKIT_INPUT_SAMPLE_RATE,
+          /**
+           * THE HOST DECIDES WHEN THE CALL IS OVER, not the caller's client leaving.
+           *
+           * By default LiveKit closes the session on a client-initiated disconnect, and the agent
+           * stays in the room without one: a caller the platform lets back in during its grace
+           * gets an agent that never answers. `caller-watchdog.ts` ends a call nobody came back to.
+           */
+          closeOnDisconnect: false,
           /**
            * A TYPED MESSAGE IS A CALLER TURN, and it was not being recorded as one.
            *
@@ -46,7 +56,16 @@ export function livekitCallRoom(room: Room, name: string): VoiceCallRoom {
           textInputCallback: (activeSession, event) => onTypedText(activeSession, event.text),
         },
         outputOptions: { audioSampleRate: LIVEKIT_PLAYOUT_SAMPLE_RATE },
-      }),
+      });
+      // LiveKit relinks a caller who returns under the same identity, and ignores any other, so
+      // a caller back under a new one is heard only from here. Added after the start so this
+      // runs after LiveKit's own listener, which links a call's first caller.
+      room.on(RoomEvent.ParticipantConnected, (participant) => {
+        const io = session._roomIO;
+        if (!io || io.isParticipantAvailable) return;
+        if (isCaller(participant) && !isTransferTarget(participant)) io.setParticipant(participant.identity);
+      });
+    },
     publishTransferTrack: () => publishTransferTrack(room),
     disconnect: () => room.disconnect(),
   };

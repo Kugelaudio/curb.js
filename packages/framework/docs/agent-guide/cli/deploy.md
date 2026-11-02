@@ -27,6 +27,6 @@ npx curb deploy --agent <id> --json
 
 | Version | Changes |
 |---|---|
-| v1.17.0 | `-m`, `--message` added |
+| v1.16.2 | `-m`, `--message` added |
 | v1.12.10 | `--json` added, and takes a host-issued token through `CURB_PLATFORM_TOKEN_FILE` |
 | v1.3.4 | `curb deploy` introduced |
