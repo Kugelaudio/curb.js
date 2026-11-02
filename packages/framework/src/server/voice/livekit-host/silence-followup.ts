@@ -7,6 +7,8 @@ export interface SilenceFollowupOptions {
   delayMs: number;
   /** The caller is talking to someone else, not quiet. */
   handedOff: () => boolean;
+  /** Nobody is on the line to check on. */
+  callerAway: () => boolean;
   reply: () => void;
   onError: (error: unknown) => void;
 }
@@ -28,7 +30,7 @@ export function createSilenceFollowup(options: SilenceFollowupOptions): SilenceF
   };
   return {
     arm: () => {
-      if (stopped || options.handedOff() || options.delayMs <= 0) return;
+      if (stopped || options.handedOff() || options.callerAway() || options.delayMs <= 0) return;
       cancel();
       timer = setTimeout(() => {
         timer = null;

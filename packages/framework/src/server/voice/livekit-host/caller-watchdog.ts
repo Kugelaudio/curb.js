@@ -38,6 +38,8 @@ export interface CallerWatchdogOptions {
   remoteCount: () => number;
   /** End the call. Called at most once. */
   giveUp: () => void;
+  /** The last caller left. The call may still come back, so the agent stops talking, not the session. */
+  onCallerGone?: () => void;
   log: (message: string) => void;
   /** Grace after a known participant disconnects. */
   emptyRoomMs: number;
@@ -96,6 +98,7 @@ export function createCallerWatchdog(options: CallerWatchdogOptions): CallerWatc
     },
     onParticipantLeft() {
       if (finished || options.remoteCount() > 0) return;
+      options.onCallerGone?.();
       start(options.emptyRoomMs, `no caller for ${options.emptyRoomMs}ms, ending the call`);
     },
     cancel() {

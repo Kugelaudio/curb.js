@@ -326,6 +326,7 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
   const silence = createSilenceFollowup({
     delayMs: Number(env.VOICE_SILENCE_FOLLOWUP_MS ?? 6000),
     handedOff: () => handoff.handedOff(),
+    callerAway: () => callerSide(room.participants()).length === 0,
     reply: () => session?.generateReply({ userInput: SILENCE_FOLLOWUP_PROMPT }),
     onError: (error) => {
       const detail = error instanceof Error ? error.message : String(error);
@@ -425,7 +426,6 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
 
   // Any user speech cancels a pending follow-up (they came back on their own);
   // a FINAL closes the current user debug clip (one clip per user message).
-  // The SDK closes the session itself when the caller leaves, before `close` below runs.
   session.on(voice.AgentSessionEventTypes.Close, silence.stop);
   session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (event) => {
     silence.cancel();
@@ -674,6 +674,17 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
     // A transfer target alone does not keep the call: the caller leaving ends it.
     remoteCount: () => [...room.participants()].filter((p) => !isTransferTarget(p)).length,
     giveUp: closeFromRoom,
+    // The session stays up through the grace, so a caller who returns gets a turn. Until then
+    // nobody hears the agent: the reply stops at what played, and no check-in fires.
+    onCallerGone: () => {
+      silence.cancel();
+      try {
+        session?.interrupt({ force: true });
+      } catch (error) {
+        // KEEP-JUSTIFIED: runs in rtc-node's room events, and the watchdog still ends the call.
+        logError("voice", `${options.roomName}: could not stop the reply: ${String(error)}`);
+      }
+    },
     log: (message) => logInfo("voice", `${options.roomName}: ${message}`),
     emptyRoomMs: EMPTY_ROOM_GRACE_MS,
     noCallerMs: NO_CALLER_GRACE_MS,
