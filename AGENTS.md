@@ -75,6 +75,7 @@ npm run dev        # curb dev on examples/insurance-agent (everything on http://
 npm test           # framework package suite (vitest, hermetic via the fixture project)
 npm run check:examples  # curb check + curb build on every example
 npm run check:compat    # the same on projects frozen from older releases (compat/README.md)
+npm run check:browser   # the static browser build on the starter project
 node scripts/npm-package.mjs <version> <out-dir>  # the tarballs npm receives
 node scripts/release-install-test.mjs <out-dir>   # scaffold, check and build from those tarballs
 npm run build      # tsc type-check build of the package

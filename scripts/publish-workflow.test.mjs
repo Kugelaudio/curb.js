@@ -271,6 +271,11 @@ test("npm hears of a version only after its tag exists", () => {
   assert.doesNotMatch(job("verify"), /git\/refs/);
 });
 
+test("a release and a pull request both run the static browser build", () => {
+  assert.match(job("verify"), /run: npm run check:browser\n/);
+  assert.match(testYml, /run: npm run check:browser\n/);
+});
+
 test("a dry run neither tags nor publishes", () => {
   for (const name of ["tag", "publish"]) assert.match(job(name), /if: \$\{\{ !inputs\.dry_run \}\}/);
 });

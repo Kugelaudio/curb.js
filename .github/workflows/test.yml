@@ -92,6 +92,8 @@ jobs:
         if: contains(needs.affected.outputs.suites, 'compat')
       - run: npm run smoke:self-host
         if: contains(needs.affected.outputs.suites, 'smoke')
+      - run: npm run check:browser
+        if: contains(needs.affected.outputs.suites, 'browser') && strategy.job-index == 0
       # The tarball half of publish.yml's verify job, on one Node. This workflow has no token, no
       # id-token and no npm environment, so it cannot publish: the version only ever lands in a
       # dry run. It is a preview so that the channel's own paths run.

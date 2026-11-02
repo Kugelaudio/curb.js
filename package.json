@@ -14,6 +14,7 @@
     "build": "npm run build --workspace packages/framework",
     "smoke:self-host": "node scripts/self-host-smoke.mjs",
     "check:independence": "node scripts/check-independence.mjs",
+    "check:browser": "node scripts/browser-build-check.mjs",
     "check:examples": "node scripts/check-projects.mjs examples",
     "check:compat": "node scripts/check-projects.mjs compat/projects",
     "server": "cd examples/insurance-agent && curb server",
