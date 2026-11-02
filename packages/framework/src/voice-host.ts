@@ -1,4 +1,4 @@
-import type { AuthoringDiagnostic } from "./authoring.js";
+import { AgentAuthoringError, type AuthoringDiagnostic } from "./authoring.js";
 import {
   assertLlmCredential,
   llmCredentialDiagnostic,
@@ -12,6 +12,7 @@ import {
   getHostedAgent,
   type HostedSession,
 } from "./server/bootstrap.js";
+import { s2sCredentialDiagnostic } from "./s2s-diagnostics.js";
 import { detachConversationRecorder } from "./server/conversation-store.js";
 import { VOICE_STYLE } from "./voice-style.js";
 
@@ -46,6 +47,9 @@ export function createWarmAgentBundle(agentId?: string): Promise<VoiceAgentBundl
 export async function readyForCall(bundle: VoiceAgentBundle): Promise<VoiceAgentBundle> {
   try {
     assertLlmCredential(bundle.runtime.settings.current().llm);
+    const s2s = bundle.runtime.settings.s2s();
+    const missingKey = s2s ? s2sCredentialDiagnostic(s2s, process.env) : null;
+    if (missingKey) throw new AgentAuthoringError(missingKey);
   } catch (error) {
     // The session never starts: end the recording it was given before saying why.
     await detachConversationRecorder(bundle.session);
@@ -64,7 +68,12 @@ export async function createPreviewAgentBundle(
   agentId?: string,
 ): Promise<VoiceAgentBundle & { missingLlmKey: AuthoringDiagnostic | null }> {
   const bundle = await buildBundle(agentId);
-  return { ...bundle, missingLlmKey: llmCredentialDiagnostic(bundle.runtime.settings.current().llm) };
+  const s2s = bundle.runtime.settings.s2s();
+  return {
+    ...bundle,
+    missingLlmKey:
+      llmCredentialDiagnostic(bundle.runtime.settings.current().llm) ?? (s2s ? s2sCredentialDiagnostic(s2s, process.env) : null),
+  };
 }
 
 async function buildBundle(agentId: string | undefined): Promise<VoiceAgentBundle> {

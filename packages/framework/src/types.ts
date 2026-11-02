@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 import type { AuthoringDiagnostic } from "./authoring.js";
-import type { ProviderProps } from "./providers.js";
+import type { AgentProviderProps, ProviderProps } from "./providers.js";
 import type { Adjustable } from "./settings-update.js";
 
 export type JsonSchema = {
@@ -97,7 +97,7 @@ export type SiteElementProps = {
  * A changed prop swaps that provider mid-call. Defaults: `kugelaudio.tts()`, `azure.stt()`,
  * `anthropic("claude-haiku-4-5")`. */
 export type AgentProps = SiteElementProps &
-  ProviderProps & {
+  AgentProviderProps & {
     /**
      * Which settings the caller's app (`client`, `curb/client`'s `agent.update`) and the
      * host (`host`, `PATCH /v1/sessions/{id}`) may change during a call. Absent: nothing.

@@ -27,7 +27,7 @@ const variable = (name: string, required = true): ProviderVariable => ({
   read: (env) => env[name]?.trim() || undefined,
 });
 
-const OPENAI_API_KEY = variable("OPENAI_API_KEY");
+export const OPENAI_API_KEY = variable("OPENAI_API_KEY");
 const KUGELAUDIO_API_KEY = variable("KUGELAUDIO_API_KEY");
 
 /** What the hosting platform provisions for every hosted agent of an organisation: setting

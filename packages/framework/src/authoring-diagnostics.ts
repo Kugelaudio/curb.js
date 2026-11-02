@@ -21,6 +21,7 @@ import { AgentSiteRuntime } from "./runtime.js";
 import { agentAppElement, type AgentRoute } from "./routing.js";
 import type { SemanticNode } from "./types.js";
 import { parseSkillBlueprint } from "./preview/skill-blueprint.js";
+import { diagnoseS2s } from "./s2s-diagnostics.js";
 import { diagnoseVoiceLanguage } from "./voice-language-diagnostics.js";
 
 export type DiagnosableAgent = {
@@ -111,6 +112,7 @@ export function diagnoseAgentAuthoring(agent: DiagnosableAgent): AuthoringDiagno
         skillPaths: [...knownPaths],
         agentSource: agentSourceLabel(agent.id),
       }),
+      ...diagnoseS2s({ agentId: agent.id, tree, skillPaths: [...knownPaths] }),
       ...diagnoseLiteralDates({
         agentId: agent.id,
         tree,

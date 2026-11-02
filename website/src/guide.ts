@@ -22,6 +22,7 @@ const ALL_PAGES = [
   { id: 'livekit-pipeline', file: 'livekit-pipeline.md', title: 'Override the LiveKit pipeline', group: 'Guides', description: 'Edit the LiveKit session and agent on every route, or write your own worker.' },
   { id: 'knowing-the-caller', file: 'knowing-the-caller.md', title: 'Knowing the caller', group: 'Guides', description: "Use what a call already knows, and what the caller's page said, without trusting it." },
   { id: 'pronunciation', file: 'pronunciation.md', title: 'Pronunciation', group: 'Guides', description: "Make the agent hear and say your product's names correctly." },
+  { id: 'speech-to-speech', file: 'speech-to-speech.md', title: 'Speech-to-speech models', group: 'Guides', description: "Run a call on a speech-to-speech model such as OpenAI Live or Realtime." },
   { id: 'custom-llm', file: 'custom-llm.md', title: 'Your own LLM', group: 'Guides', description: "Run an agent on Anthropic, OpenAI or any OpenAI-compatible endpoint." },
   { id: 'mcp', file: 'mcp.md', title: 'MCP servers', group: 'Guides', description: "Give an agent tools from remote MCP servers." },
   { id: 'connecting', file: 'connecting.md', title: 'Connecting to a running agent', group: 'Guides', description: "How your app, your backend and other services talk to an agent, on KugelAudio and on your own servers." },

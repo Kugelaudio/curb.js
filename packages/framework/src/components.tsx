@@ -54,9 +54,9 @@ declare module "react" {
 /** The agent's root: its children are the agent level, and after them it renders every skill
  * the conversation has opened. `llm`, `stt` and `tts` pick its providers (see `curb/providers`);
  * `adjustable` names the settings the client app and the host may change mid-call. */
-export function Agent({ children, llm, stt, tts, adjustable }: AgentProps) {
+export function Agent({ children, llm, stt, tts, s2s, adjustable }: AgentProps) {
   return (
-    <agent-site llm={llm} stt={stt} tts={tts} adjustable={adjustable}>
+    <agent-site llm={llm} stt={stt} tts={tts} s2s={s2s} adjustable={adjustable}>
       <WithOpenedSkills>{children}</WithOpenedSkills>
     </agent-site>
   );

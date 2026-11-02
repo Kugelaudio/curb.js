@@ -40,7 +40,7 @@ nothing beyond the conversation and the tools is sent. It is served at `KUGELAUD
 (default `https://api.eu.kugelaudio.com`) plus `/v1`. An organization gets it with hosted
 agents, in closed alpha; until then its turns answer 403 `LLM_NOT_ENABLED`.
 
-To run your own model, see [Your own LLM](./custom-llm.md).
+To run your own model, see [Your own LLM](./custom-llm.md). For one model that both hears and speaks, see [Speech-to-speech models](./speech-to-speech.md).
 
 ## Speech to text
 
