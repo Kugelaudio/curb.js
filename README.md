@@ -41,9 +41,8 @@ knows and what it can do, as React components.
 </p>
 
 > **Rather not host it yourself?** KugelAudio hosting, in closed alpha, includes
-> phone numbers, scaling and call logs. Hosted deploys do not accept a project that
-> installs Curb from npm yet, so a new project goes live on your own servers today.
-> [How hosting works](#hosting)
+> phone numbers, scaling and call logs, and hosted deploys accept a project that
+> installs Curb from npm. [How hosting works](#hosting)
 
 Here is a complete skill, a coffee counter:
 
@@ -135,12 +134,8 @@ agent.
 ### Deploy to KugelAudio
 
 KugelAudio builds, verifies and hosts agents, with phone numbers, call logs and
-scaling handled for you. Hosting is in closed alpha, and hosted deploys do not
-accept a project that installs Curb from npm yet, which is what
-`npm create curb.js` creates. Today a new project runs locally with `npm run dev`
-and goes live on your own servers, as above.
-
-Once hosted deploys accept the project:
+scaling handled for you. Hosting is in closed alpha, and hosted deploys accept a
+project that installs Curb from npm, which is what `npm create curb.js` creates:
 
 ```bash
 npx curb login          # sign in once

@@ -28,7 +28,7 @@ around a call.
 | Phone numbers, web widget, Playground, dashboard | Not included. LiveKit SIP and your own page take their place | Included |
 | Egress and isolation | Whatever your network and your runtime give you | Sandboxed runner, restricted egress |
 | Secrets | Your environment or secret store | Stored per environment |
-| Builds and deployments | `curb build`, then your own deployment | `curb deploy`, deploy on GitHub push. Hosted deploys do not accept a project that installs Curb from npm yet |
+| Builds and deployments | `curb build`, then your own deployment | `curb deploy`, deploy on GitHub push. Hosted deploys accept a project that installs Curb from npm |
 
 Goals are judged by KugelAudio's platform, so a self-hosted agent gets no goal results, even
 with a KugelAudio key. To judge calls yourself, read them from your conversation store and

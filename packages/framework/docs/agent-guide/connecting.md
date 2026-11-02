@@ -30,8 +30,8 @@ it goes through the host, or waits for the agent to call it.
 | Your backend, during a call | No published route: the agent calls your API | Your host, over the [host protocol](./host-protocol.md) |
 | Your backend, after a call | [After-call code](./after-call-code.md) that sends to it | [Hook runner](./hosting.md#hook-runner), or the event stream |
 
-Hosting on KugelAudio is in closed alpha, and hosted deploys do not accept a project that installs
-Curb from npm yet ([Deploying](./deploying.md)).
+Hosting on KugelAudio is in closed alpha, and hosted deploys accept a project that installs Curb
+from npm ([Deploying](./deploying.md)).
 
 ## The caller's app
 

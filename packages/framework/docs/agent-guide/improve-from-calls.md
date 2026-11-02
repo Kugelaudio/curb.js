@@ -76,8 +76,8 @@ export default scenario({
 ## 4. Listen, then ship
 
 Text checks cannot hear timing, interruptions or pronunciation. Run `npm run dev` and call the
-agent once. Then put it live on [your own servers](./hosting.md), since hosted deploys do not accept a
-project that installs Curb from npm yet, or from a browser project with `agent_publish`.
+agent once. Then put it live with `npx curb deploy` ([Deploying](./deploying.md)), on
+[your own servers](./hosting.md), or from a browser project with `agent_publish`.
 
 ## Next steps
 
