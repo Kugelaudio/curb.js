@@ -28,11 +28,16 @@ import { s2sVoice, type S2sVoice } from "./voices.js";
 const BACK_OFFICE_RULES = [
   "A back office works behind you: it can open the skills and run the tools listed here, and you cannot.",
   "Hand over anything that needs one of them, and never say something was done until the back office reports it.",
+  "It can do more than this list shows, so hand over whatever you cannot do yourself, and never tell the caller something cannot be done.",
   "When the back office gives you a question or a line to confirm, ask it. Keep every name, number, date and time exactly as written.",
+  "You cannot hang up. When the caller is finished or says goodbye, do not say goodbye yourself: hand that over, and the back office ends the call and gives you the goodbye to say.",
 ].join(" ");
 
 /** How long a goodbye may take to start and play before the call ends anyway. */
 const GOODBYE_MS = 15_000;
+const GOODBYE_STOPPED_MS = 1_500;
+/** Quiet after the model's line this long, and `llm` is asked whether the call is over. */
+const QUIET_MS = 6_000;
 const NO_CALLER_GRACE_MS = 60_000;
 
 /** The model starts with the agent's prompt and learns the rest from commentary; it only needs
@@ -87,16 +92,27 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
   const session = new voice.AgentSession(voiceSessionOptions({ llm: voiceModel }, options.pipeline));
   options.pipeline?.onSession?.({ session, roomName, events: voice.AgentSessionEventTypes });
 
+  let quietTimer: ReturnType<typeof setTimeout> | undefined;
+  session.on(voice.AgentSessionEventTypes.UserStateChanged, ({ newState }) => {
+    clearTimeout(quietTimer);
+    if (newState === "speaking") backOffice.callerStarted();
+  });
+  session.on(voice.AgentSessionEventTypes.AgentStateChanged, ({ newState }) => {
+    if (newState === "speaking") clearTimeout(quietTimer);
+  });
   session.on(voice.AgentSessionEventTypes.ConversationItemAdded, ({ item }) => {
     if (item.type !== "message" || (item.role !== "user" && item.role !== "assistant")) return;
     const text = item.textContent?.trim();
     if (!text) return;
     backOffice.heard(item.role, text);
+    clearTimeout(quietTimer);
+    if (item.role === "assistant") quietTimer = setTimeout(() => backOffice.quiet(), QUIET_MS);
     options.reporter?.turn({ speaker: item.role === "user" ? "caller" : "agent", text, final: true });
   });
 
   let closing: Promise<void> | null = null;
   const closeNow = async () => {
+    clearTimeout(quietTimer);
     bundle.runtime.setEndCallRequest(null);
     options.client.detach();
     const results = await Promise.allSettled([session.close(), room.disconnect()]);
@@ -110,19 +126,23 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
   const closeFromRoom = () => void close();
   session.on(voice.AgentSessionEventTypes.Close, closeFromRoom);
 
-  /** The goodbye went to the model: wait for it to start speaking and to stop. */
+  /** The goodbye went to the model: wait for it to start speaking and to stop. It may be speaking
+   * already, and may stop between a filler and the goodbye, so a stop only counts if it lasts. */
   const goodbyePlayed = async () => {
     await backOffice.settled();
     await new Promise<void>((resolve) => {
-      let spoke = false;
+      let spoke = session.agentState === "speaking";
+      let stopped: ReturnType<typeof setTimeout> | undefined;
       const done = () => {
         clearTimeout(timer);
+        clearTimeout(stopped);
         session.off(voice.AgentSessionEventTypes.AgentStateChanged, follow);
         resolve();
       };
       const follow = (change: { newState: string }) => {
+        clearTimeout(stopped);
         if (change.newState === "speaking") spoke = true;
-        else if (spoke) done();
+        else if (spoke) stopped = setTimeout(done, GOODBYE_STOPPED_MS);
       };
       const timer = setTimeout(done, GOODBYE_MS);
       session.on(voice.AgentSessionEventTypes.AgentStateChanged, follow);

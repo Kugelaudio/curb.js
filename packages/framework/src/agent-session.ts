@@ -99,6 +99,9 @@ export type AgentTurnOptions = {
   spoken?: boolean;
   /** The caller's words may be the newest transcript entry already ({@link AgentSession.recordHeard}). */
   heard?: boolean;
+  /** A speech-to-speech model says the reply in its own words, and its line is what the transcript
+   * keeps ({@link AgentSession.recordHeard}), so this turn records its tools but not its words. */
+  unsaid?: boolean;
   /** Marks framework-generated user input (e.g. the silence follow-up) so
    * UIs can hide it; the LLM still sees it as a plain user message. */
   kind?: "synthetic";
@@ -118,6 +121,8 @@ export type AgentTurnOptions = {
 const DEFAULT_MAX_STEPS = 8;
 const DEFAULT_MAX_TRANSCRIPT_MESSAGES = 60;
 const DEFAULT_MAX_QUEUED_TURNS = 8;
+/** Lines of a call closer than this, with no reply between them, are one thing the caller said. */
+const HEARD_LINE_GAP_MS = 2000;
 
 /** `reply`: everything the turn said aloud. */
 type TurnOutcome = { reply: string; error?: AgentTurnError };
@@ -161,6 +166,8 @@ export class AgentSession {
    * transcript does not hold. A voice host reporting THAT speech, or its cut-off, must not
    * attach its audio to or rewrite an earlier reply the model did say. */
   private endedOnFallbackLine = false;
+  /** The running turn records no words ({@link AgentTurnOptions.unsaid}). */
+  private unsaid = false;
   /** The action waiting for the caller's yes (`<Tool confirm>`); null when none. */
   private pending: PendingConfirmation | null = null;
   /** How many inputs have arrived. A held action is answered only by a later one. */
@@ -279,7 +286,22 @@ export class AgentSession {
   recordHeard(role: "user" | "assistant", text: string): void {
     const content = text.trim();
     if (!content || this.running) return;
-    this.setMessages([...this.conversation, { role, content, at: Date.now() }]);
+    const at = Date.now();
+    const joined = role === "user" ? this.joinedHeardLine(content, at) : null;
+    if (joined) {
+      this.setMessages(joined);
+      return;
+    }
+    this.setMessages([...this.conversation, { role, content, at }]);
+  }
+
+  /** The transcript with `content` added to the caller's newest line, when a pause only cut one
+   * sentence in two, or null. A model can send a part twice. An answer to a held action stays whole. */
+  private joinedHeardLine(content: string, at: number): AgentChatMessage[] | null {
+    const newest = this.conversation.at(-1);
+    if (newest?.role !== "user" || newest.kind || this.pending || at - (newest.at ?? 0) >= HEARD_LINE_GAP_MS) return null;
+    const joined = newest.content.endsWith(content) ? newest.content : `${newest.content}${/^[.,;:!?]/.test(content) ? "" : " "}${content}`;
+    return [...this.conversation.slice(0, -1), { ...newest, content: joined, at }];
   }
 
   recordContextEvent(lines: string[]): void {
@@ -472,14 +494,15 @@ export class AgentSession {
       const message = error instanceof Error ? error.message : String(error);
       yield { type: "error", error: { kind: "failed", message } };
     }
+    this.unsaid = options.unsaid === true;
     const newest = this.conversation.at(-1);
-    let messages: AgentChatMessage[] =
-      options.heard && newest?.role === "user" && newest.content === text
-        ? this.conversation
-        : [
-            ...this.conversation,
-            { role: "user", content: text, at: Date.now(), ...(options.kind ? { kind: options.kind } : {}) },
-          ];
+    const heardAlready = options.heard && newest?.role === "user" && newest.content.endsWith(text);
+    let messages: AgentChatMessage[] = heardAlready
+      ? this.conversation
+      : ((options.heard ? this.joinedHeardLine(text, Date.now()) : null) ?? [
+          ...this.conversation,
+          { role: "user", content: text, at: Date.now(), ...(options.kind ? { kind: options.kind } : {}) },
+        ]);
     this.setMessages(messages);
 
     const speech = new TurnSpeech();
@@ -678,7 +701,7 @@ export class AgentSession {
 
   /** Record the words a step said (before it was cut off, or a read-back). */
   private keepSpokenText(messages: AgentChatMessage[], said: string): AgentChatMessage[] {
-    if (!said) return messages;
+    if (!said || this.unsaid) return messages;
     return this.append(messages, { role: "assistant", content: said, at: Date.now() });
   }
 
@@ -776,12 +799,12 @@ export class AgentSession {
 
     let next = messages;
     const assistantAt = next.length;
-    if (said || toolCalls.length > 0) {
+    if ((said && !this.unsaid) || toolCalls.length > 0) {
       next = [
         ...next,
         {
           role: "assistant",
-          content: said,
+          content: this.unsaid ? "" : said,
           at: Date.now(),
           ...(toolCalls.length > 0 ? { toolCalls } : {}),
         },

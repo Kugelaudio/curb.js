@@ -60,6 +60,11 @@ and that key too.
 - Text of a skill reaches `llm`, not the model. Put what the model must always know in the agent's
   prompt.
 - A call cannot be transferred.
+- The transcript holds what the caller and the model said. A back-office reply is not in it, and on
+  Realtime the model's request to the back office is marked as not the caller's.
+- When the caller is done, the model hands that over and the agent runs `end_call`. A model may answer
+  a goodbye by itself, so after 6 seconds of quiet following its line, `llm` reads the transcript once
+  and ends the call if it is over. That is one more `llm` call per long pause.
 - When the model keeps dropping the connection, Curb ends the call rather than leave the caller in
   silence.
 

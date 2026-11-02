@@ -168,7 +168,7 @@ async function callOn(s2s: S2sDescriptor, options: { firstLine?: string; steps?:
   await until(started, "the session started");
   // A live microphone: LiveKit ends a caller's line after 800 ms of it with no new words.
   const mic = setInterval(() => page.input?.push(Buffer.alloc(3200)), 100);
-  const said = (role: "user" | "assistant") => session.messages.filter((m) => m.role === role && m.content).map((m) => m.content);
+  const said = (role: "user" | "assistant") => session.messages.filter((m) => m.role === role && m.content && !("kind" in m && m.kind)).map((m) => m.content);
   open.push(async () => {
     clearInterval(mic);
     await handle.close();
@@ -206,8 +206,8 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     model.callerSays("Hello there.");
     await sleep(50);
     await model.say("Hi, how can I help?");
-    model.callerSays("Just checking.");
     await until(() => said("user").length >= 1 && said("assistant").length >= 1, "the lines were recorded");
+    model.callerSays("Just checking.");
     expect(said("user")[0]).toBe("Hello there.");
     expect(said("assistant")[0]).toContain("Hi, how can I help?");
     expect(llm).not.toHaveBeenCalled();
@@ -258,6 +258,51 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     model.callerSays("Mhm.", { delegate: true });
     await until(() => model.commentary().length === 1, "the delegation was answered");
     expect(model.commentary()[0]?.content).toContain("Nothing to add");
+  });
+
+  it("records the model's words, not the back office's, when it answers a delegation", async () => {
+    const { model, said } = await call({ steps: [{ text: "Back office wording." }] });
+    model.callerSays("A question.", { delegate: true });
+    await until(() => model.commentary().length === 1, "the result went back");
+    await until(() => said("assistant").includes("Back office wording."), "the model said it");
+    expect(said("assistant")).toEqual(["Back office wording."]);
+  });
+
+  it("joins a line a pause cut in two", async () => {
+    const { model, said } = await call();
+    model.callerSays("My number is P");
+    await sleep(1000);
+    model.callerSays("1234.");
+    await until(() => said("user").join(" ").includes("1234."), "the second part was recorded", 3000);
+    expect(said("user")).toEqual(["My number is P 1234."]);
+  });
+
+  it("asks llm after a quiet spell, so a goodbye the model answered alone still ends the call", async () => {
+    const { model, closed, llm, said } = await call({ steps: [{ calls: [{ name: "end_call", input: { goodbye: "Thanks, bye." } }] }] });
+    model.callerSays("That's all, bye.");
+    await sleep(50);
+    await model.say("Goodbye!");
+    await until(() => said("assistant").includes("Goodbye!"), "the model answered alone");
+    expect(llm).not.toHaveBeenCalled();
+    await until(() => closed.mock.calls.length === 1, "the call ended", 10_000);
+    expect(llm).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays on the call and says nothing when llm finds it is not over", async () => {
+    const { model, closed, llm, said } = await call({ steps: [{ calls: [{ name: "skip_turn" }] }] });
+    model.callerSays("Let me think.");
+    await sleep(50);
+    await model.say("Take your time.");
+    await until(() => said("assistant").includes("Take your time."), "the model answered alone");
+    await until(() => llm.mock.calls.length === 1, "llm was asked", 8000);
+    await sleep(300);
+    expect(closed).not.toHaveBeenCalled();
+    expect(model.commentary()).toEqual([]);
+  });
+
+  it("tells the model to hand over the end of the call, since only the back office can hang up", async () => {
+    const { model } = await call();
+    expect(model.start().instructions).toContain("You cannot hang up.");
   });
 
   it("hangs up after the model said the goodbye", async () => {
@@ -366,7 +411,7 @@ describe("a call on openai.realtime()", { timeout: 12_000 }, () => {
     await model.callerSays("Yes.", { reply: askBackOffice("The caller confirmed") });
     await until(() => ran.length === 2 && toolOutputs(model).length === 2, "the action ran and the call got its result");
     expect(ran).toEqual(["verify_policy P-1", "book_meeting Tuesday"]);
-    expect(toolOutputs(model).at(-1)).toContain("Say nothing until it reports");
+    expect(toolOutputs(model).at(-1)).toContain("reported this already");
     expect(llm).toHaveBeenCalledTimes(5);
     await until(() => model.responses().some((event: unknown) => JSON.stringify(event).includes("You are booked.")), "the model was told");
   });
@@ -385,13 +430,71 @@ describe("a call on openai.realtime()", { timeout: 12_000 }, () => {
     await until(() => said("assistant").some((line) => line.includes("is that right?")), "the model asked");
     await sleep(1500);
 
-    await model.toolCall(askBackOffice("The caller confirmed"));
-    await until(() => toolOutputs(model).length === 2, "the tool call was answered");
-    expect(toolOutputs(model).at(-1)).toContain("Say nothing until it reports");
+    void model.toolCall(askBackOffice("The caller confirmed"));
+    await sleep(300);
+    expect(toolOutputs(model)).toHaveLength(1);
     expect(ran).toEqual(["verify_policy P-1"]);
 
     await model.callerSays("Yes.");
     await until(() => ran.length === 2, "the caller's words released it");
+    await until(() => toolOutputs(model).length === 2, "the waiting tool call got the outcome");
+    expect(toolOutputs(model).at(-1)).toContain("You are booked.");
+    expect(said("user").filter((line) => line === "Yes.")).toHaveLength(1);
+  });
+
+  it("does not take a late transcript of what the caller said before the question as the answer", async () => {
+    const { model, session, llm, said } = await realtimeCall([
+      { calls: [{ name: "read_skill", input: { skill: "/report-claim" } }] },
+      { calls: [{ name: "verify_policy", input: { policy: "P-1" } }] },
+      { calls: [{ name: "book_meeting", input: { slot: "Tuesday" } }] },
+      { text: "no" },
+      { text: "Nothing was booked." },
+    ]);
+    const request = model.callerStarts();
+    model.state.script.push({ text: "Book Tuesday, is that right?" });
+    await model.toolCall(askBackOffice("Book Tuesday"));
+    await until(() => session.pendingConfirmation !== null && toolOutputs(model).length === 1, "the action was held");
+    const asked = llm.mock.calls.length;
+
+    const answer = model.callerStarts();
+    request("Please book Tuesday for me.");
+    await until(() => said("user").includes("Please book Tuesday for me."), "the late line was recorded");
+    await sleep(300);
+    expect(llm).toHaveBeenCalledTimes(asked);
+    expect(session.pendingConfirmation).not.toBeNull();
+
+    answer("No, don't.");
+    await until(() => session.pendingConfirmation === null, "the caller's real answer was taken");
+    expect(ran).toEqual(["verify_policy P-1"]);
+  });
+
+  it("tells the model no answer came when the caller stays silent, and runs nothing", async () => {
+    const { model, session, said } = await realtimeCall([
+      { calls: [{ name: "read_skill", input: { skill: "/report-claim" } }] },
+      { calls: [{ name: "verify_policy", input: { policy: "P-1" } }] },
+      { calls: [{ name: "book_meeting", input: { slot: "Tuesday" } }] },
+    ]);
+    model.state.script.push({ text: "Book Tuesday, is that right?" });
+    await model.callerSays("Book Tuesday.", { reply: askBackOffice("Book Tuesday") });
+    await until(() => session.pendingConfirmation !== null && toolOutputs(model).length === 1, "the action was held");
+    await until(() => said("assistant").some((line) => line.includes("is that right?")), "the model asked");
+    await sleep(1500);
+    await model.toolCall(askBackOffice("The caller confirmed"));
+    await until(() => toolOutputs(model).length === 2, "the tool call was answered", 6000);
+    expect(toolOutputs(model).at(-1)).toContain("has not answered yet");
+    expect(ran).toEqual(["verify_policy P-1"]);
+  });
+
+  it("keeps the model's request and the back office's words out of what the call said", async () => {
+    const { model, said, session } = await realtimeCall([{ text: "Back office wording." }]);
+    model.state.script.push({ text: "Spoken wording." });
+    await model.callerSays("Caller wording.", { reply: askBackOffice("Model wording") });
+    await until(() => said("assistant").includes("Spoken wording."), "the model spoke");
+    await until(() => said("user").includes("Caller wording."), "the caller's line was recorded");
+    expect(said("user")).toEqual(["Caller wording."]);
+    expect(said("assistant")).toEqual(["Spoken wording."]);
+    const request = session.messages.find((m) => m.content === "Model wording");
+    expect(request).toMatchObject({ role: "user", kind: "synthetic" });
   });
 });
 

@@ -50,8 +50,8 @@ export function s2sVoice(descriptor: S2sDescriptor, env: Env, hooks: S2sHooks): 
   if (descriptor.protocol === "realtime") {
     const tools = new llm.ToolContext({
       ask_back_office: llm.tool({
-        description: "Hand over anything that needs the back office. It answers with what to tell the caller.",
-        parameters: z.object({ request: z.string().describe("What the caller wants, in their own words.") }),
+        description: "Hand over anything that needs the back office, and the end of the call when the caller is finished. It answers with what to tell the caller.",
+        parameters: z.object({ request: z.string().describe("What the caller wants.") }),
         execute: ({ request }) => hooks.asked(request),
       }),
     });

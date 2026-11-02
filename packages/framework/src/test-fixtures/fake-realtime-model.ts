@@ -52,6 +52,19 @@ export function startFakeRealtimeModel(): Promise<any> {
           state.send({ type: "conversation.item.input_audio_transcription.completed", item_id: itemId, content_index: 0, transcript: text });
           if (reply) await respond(state.send, {}, reply, state, id);
         },
+        /** The caller begins a line now; the returned function delivers its transcript, late. */
+        callerStarts: () => {
+          const itemId = id("user");
+          state.send({ type: "input_audio_buffer.speech_started", item_id: itemId, audio_start_ms: 0 });
+          state.send({ type: "input_audio_buffer.speech_stopped", item_id: itemId, audio_end_ms: 500 });
+          return (text) => {
+            const item = { id: itemId, object: "realtime.item", type: "message", role: "user", status: "completed", content: [{ type: "input_audio", transcript: null }] };
+            state.send({ type: "input_audio_buffer.committed", item_id: itemId, previous_item_id: null });
+            state.send({ type: "conversation.item.added", previous_item_id: null, item });
+            state.send({ type: "conversation.item.done", item });
+            state.send({ type: "conversation.item.input_audio_transcription.completed", item_id: itemId, content_index: 0, transcript: text });
+          };
+        },
         /** The model acts with no new words from the caller. */
         toolCall: (reply) => respond(state.send, {}, reply, state, id),
         responses: () => state.wire.filter((event) => event.type === "response.create"),

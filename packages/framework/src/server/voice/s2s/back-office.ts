@@ -37,12 +37,18 @@ export function commentaryPieces(text: string): string[] {
 }
 
 /** A held action answers to the caller's own words, which `heard` brings; the model's retelling
- * of them could release it on a yes nobody said. */
-const HELD = "The back office is taking the caller's answer. Say nothing until it reports.";
-
-/** The model's tool call and its transcript of a held answer arrive in either order, so a call
- * this soon after the answer was taken is about that same answer. */
+ * of them could release it on a yes nobody said. Its tool call and its transcript of the answer
+ * arrive in either order, so a call this close to the answer is about that same answer. */
 const ANSWER_WINDOW_MS = 4000;
+
+/** A transcript lags its speech by seconds, so a start this old belongs to no line still coming. */
+const SPEECH_START_STALE_MS = 30_000;
+
+/** A model may answer a goodbye by itself, in any language, so only `llm` can tell the call is over. */
+const QUIET_NOTE = "(The caller has been quiet since the last line. If they said goodbye or are clearly finished, end the call. If not, call skip_turn.)";
+
+const NO_ANSWER = "The caller has not answered yet. Ask the question again and wait for their answer.";
+const ALREADY_REPORTED = "The back office has reported this already. Say nothing more about it.";
 
 const sameWords = (text: string) => text.trim().toLowerCase();
 
@@ -57,7 +63,18 @@ export function createBackOffice(options: { session: () => AgentSession; voice: 
   let running = 0;
   let settled = Promise.resolve();
   let lastCallerLine = "";
-  let answeredAt = Number.NEGATIVE_INFINITY;
+  /** The latest answer to a held action. A tool call that comes for it takes its outcome. */
+  let answer: { outcome: Promise<string>; at: number; done: boolean; claimed: boolean } | null = null;
+  let answerArrived: (() => void) | null = null;
+  /** When the caller began each line whose transcript has not arrived, oldest first. */
+  const speechStarts: number[] = [];
+  /** When the back office learned an action is held; words begun earlier cannot answer it. */
+  let heldSince: number | null = null;
+
+  const noteHeld = () => {
+    if (!options.session().pendingConfirmation) heldSince = null;
+    else heldSince ??= Date.now();
+  };
 
   const flush = () => {
     const session = options.session();
@@ -67,36 +84,64 @@ export function createBackOffice(options: { session: () => AgentSession; voice: 
     }
   };
 
-  const turnFor = (words: string): Promise<string> => {
+  /** `request` is the model's own wording, which no caller said; anything else is the caller's. */
+  const turnFor = (words: string, request = false): Promise<string> => {
     const key = sameWords(words);
     const known = turns.get(key);
     if (known) return known;
-    taken.add(key);
+    if (!request) taken.add(key);
     const turn = options
       .session()
-      .runTurn(words, { heard: true })
+      .runTurn(words, { unsaid: true, ...(request ? { kind: "synthetic" as const } : { heard: true }) })
       .finally(() => {
         turns.delete(key);
+        noteHeld();
         flush();
       });
     turns.set(key, turn);
     return turn;
   };
 
-  const ask = (words: string, delegationId: string | null): Promise<void> => {
+  const counted = <T>(work: Promise<T>): Promise<T> => {
     running += 1;
-    const work = turnFor(words)
-      .then((reply) => {
-        for (const piece of commentaryPieces(reply || NOTHING_TO_ADD)) {
-          options.voice()?.appendCommentary(piece, { delegationId });
-        }
-      })
-      .finally(() => {
-        running -= 1;
-      });
-    settled = Promise.allSettled([settled, work]).then(() => undefined);
-    return work;
+    const counting = work.finally(() => {
+      running -= 1;
+    });
+    settled = Promise.allSettled([settled, counting]).then(() => undefined);
+    return counting;
   };
+
+  const tell = (reply: string, delegationId: string | null) => {
+    for (const piece of commentaryPieces(reply || NOTHING_TO_ADD)) {
+      options.voice()?.appendCommentary(piece, { delegationId });
+    }
+  };
+
+  const ask = (words: string, delegationId: string | null): Promise<void> =>
+    counted(turnFor(words).then((reply) => tell(reply, delegationId)));
+
+  /** The caller answered a held action: a tool call waiting for it gets the outcome, else the model is told. */
+  const answerHeld = (words: string) => {
+    const held = { outcome: turnFor(words).then((reply) => reply || NOTHING_TO_ADD), at: Date.now(), done: false, claimed: false };
+    answer = held;
+    answerArrived?.();
+    void counted(
+      held.outcome.then((reply) => {
+        held.done = true;
+        if (!held.claimed) tell(reply, latest);
+      }),
+    );
+  };
+
+  const answerSoon = () =>
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ANSWER_WINDOW_MS);
+      answerArrived = () => {
+        clearTimeout(timer);
+        answerArrived = null;
+        resolve();
+      };
+    });
 
   return {
     /** The model handed a turn over. Its transcript may lag: the newest line stands in for it. */
@@ -105,32 +150,44 @@ export function createBackOffice(options: { session: () => AgentSession; voice: 
       return ask(pendingTranscript.trim() || lastCallerLine, delegationId);
     },
     /** The model called its tool: the same turn, with the outcome as the tool's result. */
-    asked(request: string): Promise<string> {
-      if (options.session().pendingConfirmation || Date.now() - answeredAt < ANSWER_WINDOW_MS) return Promise.resolve(HELD);
-      running += 1;
-      const work = turnFor(request)
-        .then((reply) => reply || NOTHING_TO_ADD)
-        .finally(() => {
-          running -= 1;
-        });
-      settled = Promise.allSettled([settled, work]).then(() => undefined);
-      return work;
+    async asked(request: string): Promise<string> {
+      const recent = () => answer && (!answer.done || Date.now() - answer.at < ANSWER_WINDOW_MS);
+      if (!recent() && !options.session().pendingConfirmation) return counted(turnFor(request, true).then((reply) => reply || NOTHING_TO_ADD));
+      if (!recent()) await answerSoon();
+      if (!recent()) return NO_ANSWER;
+      if (answer!.done) return ALREADY_REPORTED;
+      answer!.claimed = true;
+      return answer!.outcome;
     },
     /** Words typed into a call, which the model cannot hear. */
     typed: (text: string) => ask(text, null),
+    /** The caller began to speak. A transcript can arrive long after, even after the next line
+     * began, so this is the only way to know a line came after the question. */
+    callerStarted(): void {
+      speechStarts.push(Date.now());
+    },
     /** A finished line of the call. The caller's answer to a held action always reaches Curb:
-     * the model does not know one waits, and nothing else can release it. */
+     * the model does not know one waits, and nothing else can release it. A line begun before the
+     * action was held is not its answer, however late its transcript. */
     heard(role: "user" | "assistant", text: string): void {
+      let startedAt: number | undefined;
       if (role === "user") {
+        while (speechStarts.length > 0 && Date.now() - speechStarts[0]! > SPEECH_START_STALE_MS) speechStarts.shift();
+        startedAt = speechStarts.shift();
         lastCallerLine = text;
         if (taken.delete(sameWords(text))) return;
       }
       waiting.push({ role, text });
       flush();
-      if (role === "user" && options.session().pendingConfirmation) {
-        answeredAt = Date.now();
-        void ask(text, latest);
+      noteHeld();
+      if (role === "user" && heldSince !== null && startedAt !== undefined && startedAt >= heldSince) {
+        answerHeld(text);
       }
+    },
+    /** Nobody spoke for a while after the model's line: the call may be over. */
+    quiet(): void {
+      if (running > 0 || !lastCallerLine || options.session().pendingConfirmation) return;
+      void counted(turnFor(QUIET_NOTE, true).then((reply) => (reply ? tell(reply, null) : undefined)));
     },
     /** Resolves once everything asked so far went back to the model. */
     settled: () => (running === 0 ? Promise.resolve() : settled),
