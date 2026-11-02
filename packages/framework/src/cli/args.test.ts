@@ -29,14 +29,14 @@ describe("an option a command does not take", () => {
       '[CURB_UNKNOWN_ARGUMENT] curb deploy has no option "--dry-run".\n' +
         "Fix: For a dry run, `npx curb deploy --no-activate` builds the new version on the platform and checks " +
         "that it starts while the live version keeps serving, and `npx curb build` builds and starts it on " +
-        "this machine without uploading anything. curb deploy takes --agent <id>, --no-activate, --json.",
+        "this machine without uploading anything. curb deploy takes --agent <id>, --message <text>, -m <text>, --no-activate, --json.",
     );
   });
 
   it("names the nearest option to a misspelt one", () => {
     expect((refusal(["--noactivate"], "deploy") as Error).message).toBe(
       '[CURB_UNKNOWN_ARGUMENT] curb deploy has no option "--noactivate".\n' +
-        "Fix: Did you mean --no-activate? curb deploy takes --agent <id>, --no-activate, --json.",
+        "Fix: Did you mean --no-activate? curb deploy takes --agent <id>, --message <text>, -m <text>, --no-activate, --json.",
     );
     expect((refusal(["--fiel=.env.prod"], "secrets push") as Error).message).toContain("Did you mean --file?");
     expect((refusal(["--no-browser"], "login") as Error).message).toBe(
@@ -50,6 +50,9 @@ describe("an option a command does not take", () => {
   it("takes every option in both value forms", () => {
     expect(refusal(["--agent", "agent-1", "--no-activate"], "deploy")).toBeNull();
     expect(refusal(["--agent=agent-1"], "deploy")).toBeNull();
+    expect(refusal(["-m", "Set greeting=hello", "--no-activate"], "deploy")).toBeNull();
+    expect(refusal(["--message", "Greet callers"], "deploy")).toBeNull();
+    expect(refusal(["--message=Greet callers"], "deploy")).toBeNull();
     expect(refusal(["--file", ".env.prod", "--agent", "a"], "secrets push")).toBeNull();
     expect(refusal(["--no-open", "--url=https://app.example"], "login")).toBeNull();
   });

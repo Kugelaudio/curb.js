@@ -56,7 +56,8 @@ KugelAudio hosting (see docs/agent-guide/deploying.md):
   logout     Revoke this machine's session and delete the stored credentials and project keys.
   deploy     Upload this project and make it the agent's live production deployment.
              The first run picks or creates the agent and saves it in .curb/link.json.
-             --agent <id> to choose the agent, --no-activate to build without going live,
+             --agent <id> to choose the agent, -m, --message <text> to name this version in the
+             dashboard (first line, at most 160 characters), --no-activate to build without going live,
              --json to print the result as one JSON line on stdout (progress on stderr).
   secrets push
              Set every variable in .env on the agent's production environment

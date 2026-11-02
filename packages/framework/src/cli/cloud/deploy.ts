@@ -1,5 +1,6 @@
 import { packProject, formatBytes, type ArchiveLimits, ARCHIVE_LIMITS } from "./archive.js";
 import { type CloudClient, seg } from "./client.js";
+import { CLI_REFUSAL_CODES, CliRefusal } from "../refusal.js";
 import { CloudError } from "./http.js";
 import type { Link } from "./link.js";
 
@@ -8,7 +9,7 @@ import type { Link } from "./link.js";
  *
  *   POST /v1/agents/projects/{p}/uploads        -> presigned PUT
  *   PUT  <presigned url>                          the tar.gz
- *   POST /v1/agents/projects/{p}/revisions       {adapter:"archive", ...} -> revisionId
+ *   POST /v1/agents/projects/{p}/revisions       {adapter:"archive", description?, ...} -> revisionId
  *   POST /v1/agents/environments/{e}/activations {revisionId, activate}   -> outcome
  *   GET  /v1/agents/builds/{b}, /v1/agents/environments/{e}/deployments   until settled
  */
@@ -26,6 +27,8 @@ export interface DeployOptions {
   root: string;
   /** `--no-activate`: build and prove readiness, leave the serving deployment as it is. */
   activate: boolean;
+  /** `--message`, from {@link deployDescription}: what the dashboard shows for this version. */
+  description?: string;
   log: (line: string) => void;
   pollIntervalMs?: number;
   timeoutMs?: number;
@@ -77,6 +80,30 @@ interface Deployment {
 
 const BUILD_TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 
+/** The longest description the platform takes, in characters. */
+const DESCRIPTION_LIMIT = 160;
+
+/**
+ * What `--message` sends: its first line, trimmed. Refused rather than cut, so the version
+ * never carries a summary nobody wrote, and before the upload, so a long one costs nothing.
+ */
+export function deployDescription(message: string): string {
+  const description = message.split(/\r?\n/, 1)[0].trim();
+  const fix = 'Pass a short summary, such as npx curb deploy -m "Greet callers in German".';
+  if (description === "") {
+    throw new CliRefusal(CLI_REFUSAL_CODES.deployMessageInvalid, "The deploy message has nothing on its first line.", fix);
+  }
+  const characters = [...description].length;
+  if (characters > DESCRIPTION_LIMIT) {
+    throw new CliRefusal(
+      CLI_REFUSAL_CODES.deployMessageInvalid,
+      `The deploy message is ${characters} characters, and the limit is ${DESCRIPTION_LIMIT}.`,
+      fix,
+    );
+  }
+  return description;
+}
+
 export function playgroundUrl(link: DeployTarget): string | undefined {
   return link.dashboardUrl ? `${link.dashboardUrl}/playground` : undefined;
 }
@@ -113,8 +140,11 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     uploadObjectKey: ticket.uploadObjectKey,
     archiveFormat: "tar.gz",
     uploadDigest: archive.digest,
+    ...(options.description ? { description: options.description } : {}),
   });
-  log(`Revision ${revision.revisionId}${revision.deduplicated ? " (unchanged source, reused)" : ""}.`);
+  const reused = revision.deduplicated ? " (unchanged source, reused)" : "";
+  const described = revision.deduplicated && options.description ? ` Its description is now "${options.description}".` : "";
+  log(`Revision ${revision.revisionId}${reused}.${described}`);
 
   const deploymentsPath = `/v1/agents/environments/${seg(link.environmentId)}/deployments`;
   const before = new Set(

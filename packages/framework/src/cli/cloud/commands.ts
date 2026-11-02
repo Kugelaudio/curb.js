@@ -7,7 +7,7 @@ import { openBrowser } from "../open-browser.js";
 import { login, loginWebUrl, logout } from "./auth.js";
 import { CloudClient } from "./client.js";
 import { ensureCredentials } from "./credentials.js";
-import { type DeployResult, deploy } from "./deploy.js";
+import { type DeployResult, deploy, deployDescription } from "./deploy.js";
 import { platformTokenTarget, readPlatformToken, refuseUnderPlatformToken } from "./platform-token.js";
 import { type Prompter, reportHostedAgentsAccess, resolveTarget } from "./link.js";
 import { envHasProjectKey, findCurbProject, finishLogin } from "./project-key.js";
@@ -32,7 +32,7 @@ export const CLOUD_COMMAND_OPTIONS = {
   logout: { flags: [], values: {} },
   deploy: {
     flags: ["--no-activate", "--json"],
-    values: { "--agent": "<id>" },
+    values: { "--agent": "<id>", "--message": "<text>", "-m": "<text>" },
     instead: {
       "--dry-run":
         "For a dry run, `npx curb deploy --no-activate` builds the new version on the platform and checks " +
@@ -89,6 +89,8 @@ export async function deployCommand(args: string[]): Promise<void> {
   const json = args.includes("--json");
   const progress = json ? (line: string) => console.error(line) : log;
   const activate = !args.includes("--no-activate");
+  const message = flagValue(args, "--message") ?? flagValue(args, "-m");
+  const description = message === undefined ? undefined : deployDescription(message);
   const root = resolveProjectRoot();
   const hosted = readPlatformToken(process.env);
   let result: DeployResult;
@@ -97,13 +99,13 @@ export async function deployCommand(args: string[]): Promise<void> {
       throw new Error("--agent is not available here: the platform token deploys only the agent it was issued for.");
     }
     const { access, target } = platformTokenTarget(hosted);
-    result = await deploy({ client: new CloudClient(access), link: target, root, activate, log: progress });
+    result = await deploy({ client: new CloudClient(access), link: target, root, activate, description, log: progress });
   } else {
     const client = new CloudClient(await ensureCredentials());
     const link = await resolveTarget({
       client, root, agentId: flagValue(args, "--agent"), prompter: terminalPrompter(), log: progress,
     });
-    result = await deploy({ client, link, root, activate, log: progress });
+    result = await deploy({ client, link, root, activate, description, log: progress });
   }
   if (json) process.stdout.write(`${JSON.stringify(result)}\n`);
 }
