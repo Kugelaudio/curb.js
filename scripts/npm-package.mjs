@@ -6,9 +6,10 @@
 // Each package is packed as it stands, then stamped: the repository holds no release version,
 // so the version comes from scripts/release-version.mjs. The framework is `curb` here and
 // `curb.js` on npm, because `curb` belongs to someone else there; projects keep
-// `import ... from "curb"` through the alias `"curb": "npm:curb.js@<version>"`. `create-curb` is
-// packages/create-curb.js packed a second time under the shorter name, so `npm create curb`
-// runs the same files as `npm create curb.js` and there is nothing to keep in step. Only
+// `import ... from "curb"` through the alias `"curb": "npm:curb.js@<version>"`. `create-curb` and
+// `create-kugelaudio` are packages/create-curb.js packed again under other names, so
+// `npm create curb` and `npm create kugelaudio` run the same files as `npm create curb.js` and
+// there is nothing to keep in step. Only
 // package.json and the release notes may differ from the packed source: every other file is
 // compared by hash after packing, and any other difference fails the script. Build output
 // under `.curb/` fails it too: `files` ignores .gitignore, so a test run leaves it packable. So
@@ -26,7 +27,7 @@ import { parseArgs } from "node:util";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // The order matters: create-curb.js pins curb.js, so curb.js reaches npm first.
 export const PACKAGES = ["packages/framework", "packages/create-curb.js"];
-const NPM_NAMES = { curb: ["curb.js"], "create-curb.js": ["create-curb.js", "create-curb"] };
+const NPM_NAMES = { curb: ["curb.js"], "create-curb.js": ["create-curb.js", "create-curb", "create-kugelaudio"] };
 const MANIFEST = "package.json";
 const NOTES = "RELEASE_NOTES.md";
 const README = "README.md";

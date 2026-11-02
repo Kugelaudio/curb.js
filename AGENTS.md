@@ -95,7 +95,9 @@ dispatching it with `channel=stable`, `semver` and `dry_run`: it tags `v<version
 GitHub can refuse `GITHUB_TOKEN` a ref on a commit whose workflow files differ from `main`'s, and a
 rerun does not clear that (recovery per job is in `publish.yml` and `CONTRIBUTING.md`). `create-curb` is `packages/create-curb.js` packed a second time under the shorter
 name, so `npm create curb` runs the same files; docs and the site still lead with `npm create
-curb.js`. Each publish then runs `scripts/published-install-test.mjs` from the public
+curb.js`. `create-kugelaudio` is a third pack of the same files, published last and only as the
+repository variable `CREATE_KUGELAUDIO` says (`preview` keeps its `latest` still, `release` follows
+the run). Each publish then runs `scripts/published-install-test.mjs` from the public
 registry on Node 22.12 and 24; it fails the run without holding back the tag or the release.
 
 Tags hold the version: `scripts/release-version.mjs` computes it from the stable `v*` tags and npm,

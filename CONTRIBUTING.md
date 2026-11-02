@@ -68,6 +68,10 @@ To cut a stable release:
 4. Run it again with `dry_run` off. It tags `v<version>`, publishes `curb.js`, `create-curb.js` and
    `create-curb` to `latest`, and creates the GitHub Release.
 
+`create-kugelaudio` is the same package under a third name. The repository variable
+`CREATE_KUGELAUDIO` decides what a run does with it: unset, it is not published; `preview`, it goes
+to the `preview` dist-tag on either channel and its `latest` stays; `release`, it follows the run.
+
 The tag comes first because it is the one step that can become impossible: GitHub can refuse
 `GITHUB_TOKEN` a ref on a commit whose workflow files differ from `main`'s, so a merge that changes
 a workflow during a run can end in a 403 that no rerun clears. What to do depends on the job that

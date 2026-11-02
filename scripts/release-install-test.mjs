@@ -5,7 +5,7 @@
 //
 // A local registry serves the tarballs and sends every other package on to npm, so the real
 // `npm create curb.js` runs in an empty folder before anything is published, and `npm create curb`
-// beside it must write the same files. The project it creates must depend on
+// and `npm create kugelaudio` beside it must write the same files. The project it creates must depend on
 // `"curb": "npm:curb.js@<version>"`, and `curb check`, `curb build` (verification on) and `curb upgrade --check` must all work through that alias. The command
 // must also start outside a project, where it has no generated tsconfig to read.
 
@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { fileHashes } from "./npm-package.mjs";
 
 const UPSTREAM = "https://registry.npmjs.org";
-const RELEASE_TARBALL = /^(curb\.js|create-curb\.js|create-curb)-(.+)\.tgz$/;
+const RELEASE_TARBALL = /^(curb\.js|create-curb\.js|create-curb|create-kugelaudio)-(.+)\.tgz$/;
 // Only installing writes these, and the second project skips it.
 const INSTALLED = /^(node_modules|package-lock\.json)(\/|$)/;
 
@@ -56,8 +56,8 @@ export function readTarballs(directory) {
   });
   const version = found[0]?.manifest.version;
   const names = found.map(({ manifest }) => manifest.name).sort();
-  if (names.join() !== "create-curb,create-curb.js,curb.js" || found.some(({ manifest }) => manifest.version !== version)) {
-    throw new Error(`${directory} must hold curb.js, create-curb.js and create-curb at one version, found ${found.map(({ file }) => file)}`);
+  if (names.join() !== "create-curb,create-curb.js,create-kugelaudio,curb.js" || found.some(({ manifest }) => manifest.version !== version)) {
+    throw new Error(`${directory} must hold curb.js, create-curb.js, create-curb and create-kugelaudio at one version, found ${found.map(({ file }) => file)}`);
   }
   return { tarballs: found, version };
 }
@@ -115,6 +115,7 @@ export function projectDifferences(first, second) {
 /** Creates a project in a folder named like `project` and fails unless it matches `project`. */
 export async function expectSameProject(project, spec, base, { env }) {
   const twin = join(base, "twin", basename(project));
+  rmSync(twin, { recursive: true, force: true });
   mkdirSync(twin, { recursive: true });
   await run("npm", ["create", "--yes", spec, ".", "--", "--skip-git", "--skip-install"], { cwd: twin, env });
   const different = projectDifferences(project, twin);
@@ -142,7 +143,9 @@ async function main([directory]) {
   try {
     const spec = channel === "preview" ? "curb.js@preview" : "curb.js";
     await run("npm", ["create", "--yes", spec, ".", "--", "--skip-git"], { cwd: project, env });
-    await expectSameProject(project, channel === "preview" ? "curb@preview" : "curb", work, { env });
+    for (const name of ["curb", "kugelaudio"]) {
+      await expectSameProject(project, channel === "preview" ? `${name}@preview` : name, work, { env });
+    }
 
     const manifest = JSON.parse(readFileSync(join(project, "package.json"), "utf8"));
     const expected = `npm:curb.js@${version}`;

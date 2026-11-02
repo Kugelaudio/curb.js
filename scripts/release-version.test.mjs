@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { npmDistTags, previewVersion, stableVersion } from "./release-version.mjs";
+import { npmDistTags, previewVersion, stableVersion, kugelaudioTag } from "./release-version.mjs";
 
 const none = { tags: [], npmLatest: undefined };
 
@@ -74,4 +74,21 @@ test("npm's dist-tags are read, and a package npm lacks has none", async () => {
 
 test("a source that cannot be read fails instead of giving a lower version", async () => {
   await assert.rejects(npmDistTags("curb.js", { fetchImpl: answering(503, {}) }), /HTTP 503/);
+});
+
+test("create-kugelaudio gets no tag until the variable names one", () => {
+  for (const setting of [undefined, "", "latest", "yes"]) {
+    assert.equal(kugelaudioTag(setting, "preview"), "");
+    assert.equal(kugelaudioTag(setting, "latest"), "");
+  }
+});
+
+test("create-kugelaudio held at preview leaves latest alone on a stable release", () => {
+  assert.equal(kugelaudioTag("preview", "preview"), "preview");
+  assert.equal(kugelaudioTag("preview", "latest"), "preview");
+});
+
+test("create-kugelaudio released follows the run, so a preview never reaches latest", () => {
+  assert.equal(kugelaudioTag("release", "preview"), "preview");
+  assert.equal(kugelaudioTag("release", "latest"), "latest");
 });
