@@ -19,7 +19,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { channelOf, expect, expectSameProject, run } from "./release-install-test.mjs";
 
-export const PACKAGES = ["curb.js", "create-curb.js", "create-curb"];
+export const PACKAGES = ["curb.js", "create-curb.js", "create-curb", "create-kugelaudio"];
+
+/** What this run published: create-kugelaudio only when plan gave it a dist-tag. */
+export function publishedNames(kugelaudioTag) {
+  return kugelaudioTag ? PACKAGES : PACKAGES.filter((name) => name !== "create-kugelaudio");
+}
 
 /** Resolves once `read()` answers `version`; throws after `attempts` tries. */
 export async function waitForVersion(spec, version, read, { attempts = 60, wait = () => delay(10_000) } = {}) {
@@ -61,7 +66,8 @@ async function main([version]) {
   // A cache of its own, always revalidated: the registry's answer is what is under test.
   const env = { ...environment, npm_config_cache: join(work, "npm-cache"), npm_config_prefer_online: "true" };
   try {
-    for (const name of PACKAGES) {
+    const names = publishedNames(process.env.KUGELAUDIO_TAG);
+    for (const name of names) {
       const spec = `${name}@${version}`;
       await waitForVersion(spec, version, () => npmView(spec, env));
       console.log(`${spec} is on npm`);
@@ -73,6 +79,7 @@ async function main([version]) {
       await run("npm", ["create", "--yes", `curb.js@${version}`, ".", "--", "--skip-git"], { cwd: project, env });
     });
     await expectSameProject(project, `curb@${version}`, work, { env });
+    if (names.includes("create-kugelaudio")) await expectSameProject(project, `kugelaudio@${version}`, work, { env });
 
     const manifest = JSON.parse(readFileSync(join(project, "package.json"), "utf8"));
     const expected = `npm:curb.js@${version}`;

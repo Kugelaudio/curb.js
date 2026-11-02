@@ -143,9 +143,9 @@ hosted deploys accept the project.
 `.mcp.json` registers two MCP servers for Claude Code started in this folder (it asks once
 to use them): `kugelaudio`, your KugelAudio account (sign in from `/mcp`), and
 `kugelaudio-docs`, the docs (no sign-in). Another client adds
-`https://www.kugelaudio.com/mcp` as a remote MCP server. Look KugelAudio facts up with
-`search_docs` and `read_docs_page`; for hosted agents use the `kugelaudio` server's,
-since `kugelaudio-docs` serves public pages only. Deploy and read build and call logs
+`https://www.kugelaudio.com/mcp` as a remote MCP server. Look KugelAudio and Curb facts up
+with `search_docs` and `read_docs_page` (site `"curb"` for Curb); for hosted agents use the
+`kugelaudio` server's, since `kugelaudio-docs` serves public pages only. Deploy and read build and call logs
 with the `kugelaudio` tools: `agent_create` (once), `agent_create_upload`, `agent_deploy`,
 `agent_get_logs`; keys reach it only through `npx curb secrets push`. Without them:
 

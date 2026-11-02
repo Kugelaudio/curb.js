@@ -139,8 +139,9 @@ ElevenLabs voice clones
 so pick a [KugelAudio voice](https://docs.kugelaudio.com/features/voices) or
 [clone the voice again](https://docs.kugelaudio.com/features/voice-cloning), with the speaker's consent.
 
-To compare, run the same agent on your machine with each voice. Set `ELEVEN_API_KEY` in
-`.env` and start `npm run dev`:
+To compare, run the same agent on your machine with each voice. Run
+`npm install @livekit/agents-plugin-elevenlabs`, set `ELEVEN_API_KEY` in `.env` and start
+`npm run dev`:
 
 ```tsx
 import { elevenlabs, kugelaudio } from "curb/providers";
@@ -233,7 +234,7 @@ your own Twilio and Telnyx numbers cannot place calls yet. See
 |---|---|
 | Your own SIP trunk | Not available; forward the number as in [step 5](#5-move-your-phone-numbers) |
 | Vector search over a knowledge base | Use a search API behind a `<Tool>` or `<Mcp>`, as in [step 2](#move-the-knowledge-base) |
-| Post-call webhooks | Send what your systems need from a `<Tool>` during the call, or download calls from the **Calls** page |
+| Post-call webhooks | `afterCall` on `defineAgent` ([After-call code](./after-call-code.md)), or download calls from the **Calls** page |
 | `language_detection` | Set `language: "de,en"` on `kugelaudio.stt()`, and give each language a skill with its own `tts` on the `<Skill>` link |
 | `play_keypad_touch_tone` | None: the agent cannot send keypad tones |
 | `voicemail_detection` with a message | None: an outbound call that reaches a mailbox reports `VOICEMAIL`, and the agent cannot leave a message on purpose |

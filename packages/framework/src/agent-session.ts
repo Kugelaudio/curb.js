@@ -456,7 +456,13 @@ export class AgentSession {
     controller: AbortController,
     arrival: number,
   ): AsyncGenerator<AgentTurnStreamEvent, TurnOutcome> {
-    this.open();
+    try {
+      this.open();
+    } catch (error) {
+      // A `say` function with no line: the caller still gets an answer, as on a voice call.
+      const message = error instanceof Error ? error.message : String(error);
+      yield { type: "error", error: { kind: "failed", message } };
+    }
     let messages: AgentChatMessage[] = [
       ...this.conversation,
       { role: "user", content: text, at: Date.now(), ...(options.kind ? { kind: options.kind } : {}) },

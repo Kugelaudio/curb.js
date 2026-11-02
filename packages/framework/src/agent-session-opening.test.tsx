@@ -110,6 +110,36 @@ describe("AgentSession.open", () => {
     ]);
   });
 
+  it("answers a first typed message when the opening fails, and reports why", async () => {
+    const { session, llm } = makeSession(() => {
+      throw new Error("no event on this page");
+    });
+
+    const events = [];
+    for await (const event of session.runTurnStream("Hallo?")) events.push(event);
+
+    expect(events.filter((event) => event.type === "error")).toEqual([
+      { type: "error", error: { kind: "failed", message: "no event on this page" } },
+    ]);
+    expect(events.at(-1)).toEqual({ type: "done", reply: "Gern, worum geht es?" });
+    expect(llm).toHaveBeenCalledTimes(1);
+    expect(said(session.messages)).toEqual([
+      ["user", "synthetic", NOTE],
+      ["user", null, "Hallo?"],
+      ["assistant", null, "Gern, worum geht es?"],
+    ]);
+  });
+
+  it("keeps the first message of a turn that does not stream when the opening fails", async () => {
+    const { session } = makeSession(() => {
+      throw new Error("no event on this page");
+    });
+
+    await session.runTurn("Hallo?");
+
+    expect(session.messages.map((message) => message.content)).toContain("Hallo?");
+  });
+
   it("opens a new conversation again", () => {
     const { session } = makeSession(LINE);
     session.open();

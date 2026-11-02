@@ -1,5 +1,10 @@
 # Host protocol
 
+This page is for whoever builds a host: the program that runs a Curb runner on your own servers.
+Its routes are the runner's own, and only that program reaches them. Building an app or a backend
+that talks to an agent? Start with [Connecting to a running agent](./connecting.md). On KugelAudio,
+the platform is the host and you use its API instead.
+
 A host starts a built agent, gives it calls and follows them over this HTTP protocol.
 [Self-hosting](./hosting.md) covers when you need it.
 
@@ -128,8 +133,8 @@ settings change as a whole (see "Live session settings").
 ```
 
 - `envelope` is runner-wide, gapless and positive: the resume cursor. `from` is
-  **exclusive**, so reconnect with the last envelope you processed; `from=0` replays
-  everything still held.
+  **exclusive**, so reconnect with the last envelope you processed; `from=0`, the
+  default, replays everything until the runner has dropped the first envelope, then answers 410.
 - `producer` + `seq` identify a record within its producer, for deduplication and for
   spotting a record lost before it reached the stream.
 - `at` is milliseconds since the Unix epoch.
@@ -169,7 +174,7 @@ comfortable multiple of 15 seconds.
 
 **Resume and 410.** The runner retains a bounded window of records (4096 by default). A
 cursor older than the window answers `410 {"error":"cursor_too_old","requested":N,"oldestRetained":M}`
-rather than silently skipping the gap. Reconnect without a cursor to follow from now on,
+rather than silently skipping the gap. Reconnect with `from=<oldestRetained - 1>` to read everything still held,
 and record the envelopes between `requested` and `oldestRetained` as lost.
 
 **Truncation rule.** A call's conversation is complete when its producer's last record is
@@ -545,6 +550,8 @@ From the client: `agent.update(...)` in `curb/client` above, or the `curb.update
 `livekit-client`. A change to a call that is still `starting` is applied once it connects.
 
 ## Next steps
+
+- [Connecting to a running agent](./connecting.md): what your app and your backend use.
 
 - [Self-hosting](./hosting.md): the ways to run an agent.
 - [App messages](./app-messages.md): the agent's side.

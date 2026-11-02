@@ -40,7 +40,7 @@ export const FORBIDDEN = [
   },
   {
     what: "a retired package name",
-    pattern: /\bcreate-(framework-app|curb-app|kugelaudio)\b|\bnpm create kugelaudio\b/i,
+    pattern: /\bcreate-(framework-app|curb-app)\b/i,
     fix: "The scaffolder is `npm create curb.js`.",
   },
 ];

@@ -39,7 +39,7 @@ A transfer needs a host that dials: KugelAudio does on a hosted phone call, with
 own host can ([Host protocol](./host-protocol.md#transfer-on-your-own-host)). In `curb dev` and on a browser
 call it is refused.
 
-Under `curb say` and `curb test` no host answers, so a real transfer ends as `failed` and your
+Under `curb say` and `curb test` no host answers, so a real transfer ends as `refused` and your
 fallback runs: leave the tool unfaked to test that. To test the path where someone picks up, fake
 it. A fake replaces the tool's handler, so anything the handler would have set stays unset.
 

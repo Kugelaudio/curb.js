@@ -10,8 +10,8 @@
 // from the published `preview` tag and the preview git tags, and starting over at 1 when a
 // stable release moves the base past that line.
 //
-// Prints the result and adds version, git_tag and dist_tag to GITHUB_OUTPUT. A source that
-// cannot be read fails the script: a version guessed from fewer sources could collide.
+// Prints the result and adds version, git_tag, dist_tag and kugelaudio_tag to GITHUB_OUTPUT. A
+// source that cannot be read fails the script: a version guessed from fewer sources could collide.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
@@ -59,8 +59,8 @@ export function stableVersion({ tags, npmLatest, semver }) {
 export function previewVersion({ tags, npmLatest, npmPreview }) {
   const [major, minor] = baseParts({ tags, npmLatest });
   const next = [major, minor + 1, 0];
-  // Tags are pushed after a publish, so they name published versions. They count too because
-  // the dist-tag can lag a publish that just finished, and that number must not be reused.
+  // Tags count too because the dist-tag can lag a publish that just finished, and a tag is written
+  // just before its publish. Either way that number must not be reused.
   const previews = [npmPreview, ...tagVersions(tags)].map(previewParts).filter(Boolean);
   const newest = previews.reduce((high, parts) => (!high || compareParts(parts, high) > 0 ? parts : high), null);
   // A line already above the next minor goes on, so `preview` never moves backwards.
@@ -68,6 +68,14 @@ export function previewVersion({ tags, npmLatest, npmPreview }) {
     return `${newest.slice(0, 3).join(".")}-preview.${newest[3] + 1}`;
   }
   return `${next.join(".")}-preview.1`;
+}
+
+/** The dist-tag create-kugelaudio gets in a run, from the repository variable CREATE_KUGELAUDIO:
+ *  `release` follows the run, `preview` stays on `preview` even in a stable release, and anything
+ *  else, or nothing, leaves it unpublished. So moving its `latest` takes a deliberate setting. */
+export function kugelaudioTag(setting, distTag) {
+  if (setting === "release") return distTag;
+  return setting === "preview" ? "preview" : "";
 }
 
 /** The dist-tags of an npm package; none for a package npm does not have. */
@@ -91,7 +99,13 @@ async function main() {
     values.channel === "stable"
       ? stableVersion({ ...sources, semver: values.semver })
       : previewVersion({ ...sources, npmPreview: distTags.preview });
-  const result = { version, git_tag: `v${version}`, dist_tag: values.channel === "stable" ? "latest" : "preview" };
+  const distTag = values.channel === "stable" ? "latest" : "preview";
+  const result = {
+    version,
+    git_tag: `v${version}`,
+    dist_tag: distTag,
+    kugelaudio_tag: kugelaudioTag(process.env.CREATE_KUGELAUDIO, distTag),
+  };
   console.log(JSON.stringify(result));
   if (process.env.GITHUB_OUTPUT) {
     const lines = Object.entries(result).map(([key, value]) => `${key}=${value}\n`);

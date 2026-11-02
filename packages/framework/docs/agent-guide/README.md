@@ -11,13 +11,14 @@ microphone.
 
 ## How to use the docs
 
-The docs have four parts:
+The docs have four parts, plus a [Glossary](./glossary.md) and a changelog:
 
 - **Getting Started**: read in order. It takes you from an empty folder to a finished insurance
   agent, one feature at a time.
 - **Guides**: one task per page, such as handing a call to a person. Read the one you need.
-- **Concepts**: how Curb works underneath, for when you want the full picture.
-- **API Reference**: every component, hook, function, provider, command and setting.
+- **API Reference**: one page per component, hook, function, provider and command, with its
+  signature, an example and its version history.
+- **Architecture**: how Curb works underneath, for when you want the full picture.
 
 Press `/` to search, or read any page as Markdown from the link beside it. For a coding agent,
 [llms.txt](/llms.txt) lists every page, and the same guide ships inside the `curb` package at
@@ -54,3 +55,4 @@ says. [What the model receives](./what-the-model-receives.md) shows the real req
 
 - [Installation](./installation.md): create your first agent.
 - [How Curb works](./how-it-works.md): the renderer and the turn loop.
+- [Connecting to a running agent](./connecting.md): how your app and your backend talk to an agent.

@@ -6,8 +6,8 @@
 // run, because a path written any other way passes. So this runs real `npm publish --dry-run`
 // with each path exactly as the workflows spell it.
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +26,87 @@ export function npmTarballArgs(text) {
 
 const publishYml = readFileSync(join(workflows, "publish.yml"), "utf8");
 const testYml = readFileSync(join(workflows, "test.yml"), "utf8");
+
+/** The text of one job, up to the next job or the end of the file. */
+function job(name) {
+  const start = publishYml.indexOf(`\n  ${name}:\n`);
+  assert.notEqual(start, -1, `publish.yml has no ${name} job`);
+  const next = publishYml.slice(start + 1).search(/\n {2}[a-z]+:\n/);
+  return next === -1 ? publishYml.slice(start) : publishYml.slice(start, start + 1 + next);
+}
+
+/** What a job's `needs:` lists. */
+function needs(name) {
+  const list = /^ {4}needs: \[(.*)\]$/m.exec(job(name))?.[1];
+  assert.ok(list, `the ${name} job has no needs list`);
+  return list.split(", ");
+}
+
+/** Runs the tag job's script with a stand-in for gh: GET_REF is what the lookup prints, and it fails
+ * when empty, the way gh does on a 404. POST_FAILS makes the create fail. */
+function runTagStep(t, { getRef = "", postFails = false }) {
+  const script = /run: \|\n((?: {10}.*\n)+)/.exec(job("tag"))?.[1].replace(/^ {10}/gm, "");
+  assert.ok(script, "the tag job has no script");
+  const bin = mkdtempSync(join(tmpdir(), "curb-tag-step-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const calls = join(bin, "calls");
+  writeFileSync(
+    join(bin, "gh"),
+    `#!/usr/bin/env bash
+echo "$*" >> "${calls}"
+if [[ "$*" == *"--method POST"* ]]; then
+  [[ -z "$POST_FAILS" ]] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
+  exit 0
+fi
+[[ -n "$GET_REF" ]] || exit 1
+echo "$GET_REF"
+`,
+    { mode: 0o755 },
+  );
+  const result = spawnSync("bash", ["-e", "-c", script], {
+    encoding: "utf8",
+    env: {
+      PATH: `${bin}:${process.env.PATH}`,
+      GITHUB_REPOSITORY: "o/r",
+      GITHUB_SHA: "abc",
+      GIT_TAG: "v9.9.9",
+      GET_REF: getRef,
+      POST_FAILS: postFails ? "1" : "",
+    },
+  });
+  const posted = existsSync(calls) && readFileSync(calls, "utf8").includes("--method POST");
+  return { ...result, posted };
+}
+
+/** Runs one step of the publish job with a stand-in for npm that knows no version, and returns
+ * the npm commands it ran, and the step's result. */
+function runPublishStep(t, step, { distTag, kugelaudioTag }) {
+  const start = job("publish").indexOf(`- name: ${step}\n`);
+  assert.notEqual(start, -1, `the publish job has no step named ${step}`);
+  const script = /run: \|\n((?: {10}.*\n)+)/.exec(job("publish").slice(start))?.[1].replace(/^ {10}/gm, "");
+  const bin = mkdtempSync(join(tmpdir(), "curb-publish-step-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const calls = join(bin, "calls");
+  writeFileSync(
+    join(bin, "npm"),
+    `#!/usr/bin/env bash
+echo "$*" >> "${calls}"
+[[ "$1" != view ]]
+`,
+    { mode: 0o755 },
+  );
+  const result = spawnSync("bash", ["-e", "-c", script], {
+    encoding: "utf8",
+    env: {
+      PATH: `${bin}:${process.env.PATH}`,
+      VERSION: "9.9.9",
+      DIST_TAG: distTag,
+      KUGELAUDIO_TAG: kugelaudioTag,
+    },
+  });
+  const ran = existsSync(calls) ? readFileSync(calls, "utf8").split("\n").filter(Boolean) : [];
+  return { ...result, published: ran.filter((line) => line.startsWith("publish ")) };
+}
 
 /** The lines of a workflow_dispatch input, up to the next input. */
 function dispatchInput(name) {
@@ -112,11 +193,50 @@ test("the package suite runs publish.yml's tarball commands", () => {
   for (const command of [
     'node scripts/npm-package.mjs "$VERSION" out',
     "node scripts/release-install-test.mjs out",
-    'for name in curb.js create-curb.js create-curb; do',
+    'for name in curb.js create-curb.js create-curb create-kugelaudio; do',
     '"./out/$name-$VERSION.tgz"',
   ]) {
     assert.ok(publishYml.includes(command), `publish.yml no longer runs ${command}`);
     assert.ok(testYml.includes(command), `test.yml no longer runs ${command}`);
+  }
+});
+
+test("a release without the variable publishes three names and is not held up", (t) => {
+  const { status, stderr, published } = runPublishStep(t, "Publish what npm lacks", { distTag: "latest", kugelaudioTag: "" });
+  assert.equal(status, 0, stderr);
+  assert.deepEqual(published, [
+    'publish --access public --tag latest ./out/curb.js-9.9.9.tgz',
+    'publish --access public --tag latest ./out/create-curb.js-9.9.9.tgz',
+    'publish --access public --tag latest ./out/create-curb-9.9.9.tgz',
+  ]);
+});
+
+test("a stable release with create-kugelaudio held leaves its latest alone", (t) => {
+  const { status, stderr, published } = runPublishStep(t, "Publish what npm lacks", {
+    distTag: "latest",
+    kugelaudioTag: "preview",
+  });
+  assert.equal(status, 0, stderr);
+  assert.equal(published.at(-1), "publish --access public --tag preview ./out/create-kugelaudio-9.9.9.tgz");
+  assert.equal(published.length, 4);
+  assert.equal(published.filter((line) => line.includes("--tag latest")).length, 3);
+});
+
+test("create-kugelaudio goes to latest only when plan says so, and always last", (t) => {
+  const { published } = runPublishStep(t, "Publish what npm lacks", { distTag: "latest", kugelaudioTag: "latest" });
+  assert.equal(published.at(-1), "publish --access public --tag latest ./out/create-kugelaudio-9.9.9.tgz");
+});
+
+test("the read-back does not wait for a name that was not published", (t) => {
+  const { stdout } = runPublishStep(t, "Read the publication back", { distTag: "latest", kugelaudioTag: "" });
+  assert.doesNotMatch(stdout, /create-kugelaudio/);
+});
+
+test("the tag create-kugelaudio gets comes from plan, for every job that needs it", () => {
+  assert.match(job("plan"), /CREATE_KUGELAUDIO: \$\{\{ vars\.CREATE_KUGELAUDIO \}\}/);
+  assert.match(job("plan"), /kugelaudio_tag: \$\{\{ steps\.version\.outputs\.kugelaudio_tag \}\}/);
+  for (const name of ["publish", "installed"]) {
+    assert.ok(job(name).includes("KUGELAUDIO_TAG: ${{ needs.plan.outputs.kugelaudio_tag }}"), name);
   }
 });
 
@@ -132,10 +252,59 @@ test("the test workflow cannot publish", () => {
 });
 
 test("npm gets ten minutes per package to serve a publication, inside the job's timeout", () => {
-  const job = publishYml.slice(publishYml.indexOf("\n  publish:\n"), publishYml.indexOf("\n  tag:\n"));
-  const attempts = Number(/for attempt in \$\(seq 1 (\d+)\)/.exec(job)?.[1]);
-  const seconds = Number(/sleep (\d+)/.exec(job)?.[1]);
-  const timeout = Number(/timeout-minutes: (\d+)/.exec(job)?.[1]);
+  const text = job("publish");
+  const attempts = Number(/for attempt in \$\(seq 1 (\d+)\)/.exec(text)?.[1]);
+  const seconds = Number(/sleep (\d+)/.exec(text)?.[1]);
+  const timeout = Number(/timeout-minutes: (\d+)/.exec(text)?.[1]);
   assert.ok(attempts * seconds >= 600, `the read-back waits ${attempts * seconds} s`);
-  assert.ok(timeout * 60 > 3 * attempts * seconds, `${timeout} minutes does not fit all three packages`);
+  assert.ok(timeout * 60 > 4 * attempts * seconds, `${timeout} minutes does not fit all four packages`);
+});
+
+// GitHub can refuse GITHUB_TOKEN a ref on a commit whose workflow files differ from main's, and a
+// rerun does not clear that. A publish before the tag once left a version on npm that no rerun could
+// finish, so the tag has to exist before npm can hear of the version.
+test("npm hears of a version only after its tag exists", () => {
+  assert.deepEqual(needs("tag"), ["plan", "verify"]);
+  assert.ok(needs("publish").includes("tag"));
+  assert.ok(needs("release").includes("publish"));
+  assert.doesNotMatch(job("tag"), /npm publish/);
+  assert.doesNotMatch(job("verify"), /git\/refs/);
+});
+
+test("a dry run neither tags nor publishes", () => {
+  for (const name of ["tag", "publish"]) assert.match(job(name), /if: \$\{\{ !inputs\.dry_run \}\}/);
+});
+
+test("only tag and release can write to the repository, and neither can reach npm", () => {
+  const writers = ["plan", "verify", "tag", "publish", "installed", "release"].filter((name) =>
+    /contents: write/.test(job(name)),
+  );
+  assert.deepEqual(writers, ["tag", "release"]);
+  for (const name of writers) assert.doesNotMatch(job(name), /id-token/);
+});
+
+test("the tag step creates a missing tag", (t) => {
+  const result = runTagStep(t, {});
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.posted);
+});
+
+test("a rerun finds its own tag and goes on", (t) => {
+  const result = runTagStep(t, { getRef: "abc" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.posted, false);
+});
+
+test("a tag on another commit stops the run", (t) => {
+  const result = runTagStep(t, { getRef: "def" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /v9\.9\.9 is already on def/);
+  assert.equal(result.posted, false);
+});
+
+test("a refused tag stops the run and says what to do instead of a rerun", (t) => {
+  const result = runTagStep(t, { postFails: true });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /nothing was published/);
+  assert.match(result.stdout, /a rerun cannot help: start a new run from main/);
 });

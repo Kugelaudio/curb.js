@@ -55,7 +55,7 @@ the one message that lasts. The `pr-rules` check enforces the title and body.
 
 Previews need nothing: every merge that changes `packages/framework` or
 `packages/create-curb.js`, beyond their docs, publishes `<next minor>-preview.<n>` to the npm
-dist-tag `preview`, then pushes a matching git tag. It never moves `latest`. To start one without a
+dist-tag `preview`, with a matching git tag. It never moves `latest`. To start one without a
 merge, run `gh workflow run publish.yml --ref main -f channel=preview`.
 
 To cut a stable release:
@@ -65,18 +65,36 @@ To cut a stable release:
 2. Pick the `stable` channel and a `semver`: `patch`, `minor` or `major`.
 3. With `dry_run` on, the run does everything except publish, tag and release. Its summary shows
    the release notes.
-4. Run it again with `dry_run` off. It publishes `curb.js`, `create-curb.js` and `create-curb` to `latest`, tags
-   `v<version>`, and creates the GitHub Release.
+4. Run it again with `dry_run` off. It tags `v<version>`, publishes `curb.js`, `create-curb.js` and
+   `create-curb` to `latest`, and creates the GitHub Release.
 
-If a run fails after verification, use **Re-run failed jobs**: each step skips what is already
-done. The version comes from the tags and npm, so nothing in the repository is bumped.
+`create-kugelaudio` is the same package under a third name. The repository variable
+`CREATE_KUGELAUDIO` decides what a run does with it: unset, it is not published; `preview`, it goes
+to the `preview` dist-tag on either channel and its `latest` stays; `release`, it follows the run.
+
+The tag comes first because it is the one step that can become impossible: GitHub can refuse
+`GITHUB_TOKEN` a ref on a commit whose workflow files differ from `main`'s, so a merge that changes
+a workflow during a run can end in a 403 that no rerun clears. What to do depends on the job that
+failed:
+
+- **`tag`:** nothing was published. After a 403 a rerun cannot help, so start a new run from `main`,
+  which plans the same version on the newer commit. A preview also starts over with the next merge.
+- **`publish`:** use **Re-run failed jobs** within 7 days, while the tarballs are kept. It skips the
+  tag and every package npm already holds. If the publish can never succeed, the tag stays, because
+  `v*` tags cannot be deleted: that version is skipped, and the notes of the next stable release
+  start after it.
+- **`release`:** use **Re-run failed jobs**.
+- **`installed`:** the version is out and cannot be taken back, so the fix is a new release.
+
+The version comes from the tags and npm, so nothing in the repository is bumped.
 The notes come from the commit subjects since the last stable tag (`cliff.toml`).
 
 ## Security
 
-Please do not report security problems in public issues. Use
-**Security > Report a vulnerability** on this repository, or email
-hello@kugelaudio.com.
+Please do not report security problems in public issues. Email
+hello@kugelaudio.com, or use **Security > Report a vulnerability** on this
+repository, where GitHub offers it. [SECURITY.md](SECURITY.md) says which versions
+are supported, what is in scope and what to expect back.
 
 ## License
 

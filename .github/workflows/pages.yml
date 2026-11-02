@@ -6,6 +6,7 @@ name: pages
 # setting: with this kind of deployment GitHub ignores a CNAME file. Only main deploys it. On a
 # pull request the website suite in test.yml builds and tests the site, inside the required gate,
 # so here a pull request runs only for a change to this file, the one thing that suite cannot try.
+# A fork's pull request builds on a GitHub-hosted runner, for the reason test.yml gives.
 
 on:
   push:
@@ -32,7 +33,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: curb-js-runner
+    runs-on: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'curb-js-runner' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,9 +42,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-          cache: npm
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: website/package-lock.json
-      - run: npm ci --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund || { npm cache clean --force && npm ci --no-audit --no-fund; }
         working-directory: website
       - run: npm test
         working-directory: website
@@ -57,7 +58,7 @@ jobs:
   deploy:
     if: github.event_name != 'pull_request'
     needs: build
-    runs-on: curb-js-runner
+    runs-on: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'curb-js-runner' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     environment:
       name: github-pages

@@ -981,6 +981,138 @@ a:hover > h3 span {
   color: var(--ink);
 }
 
+.deploy {
+  --tile: clamp(3rem, 9vw, 5rem);
+  position: relative;
+  margin-top: 3.5rem;
+}
+
+/* Above the line and the dot, so the dot passes behind each tile. */
+.deploy ol {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The line runs from the middle of the first tile to the middle of the last. */
+.deploy::before {
+  position: absolute;
+  top: calc(var(--tile) / 2);
+  right: calc(100% / 6);
+  left: calc(100% / 6);
+  height: 1px;
+  background: var(--line-strong);
+  content: '';
+}
+
+.deploy li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  color: var(--ink);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.deploy-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--tile);
+  height: var(--tile);
+  border: 1px solid var(--line);
+  border-radius: 15%;
+  background: var(--surface);
+}
+
+.deploy-tile svg {
+  width: 44%;
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.deploy-tile .deploy-mark {
+  fill: var(--ink-soft);
+  stroke: none;
+}
+
+/* Half a border past the padding box, so the outline runs down the middle of the tile's border. */
+.deploy-tile .deploy-trace {
+  position: absolute;
+  top: -0.5px;
+  left: -0.5px;
+  width: calc(100% + 1px);
+  max-width: none;
+  height: calc(100% + 1px);
+  overflow: visible;
+  stroke: var(--accent);
+  stroke-linecap: butt;
+  stroke-width: 2;
+}
+
+/* Each line is a third of its half of the outline, so the two never close into a full border. */
+.deploy-trace path {
+  opacity: 0;
+  stroke-dasharray: 0.33 2;
+  stroke-dashoffset: 0.33;
+}
+
+.deploy-live .deploy-tile {
+  border-color: var(--line-strong);
+  background: var(--surface-raised);
+}
+
+.deploy-tile .deploy-ring {
+  stroke: var(--line-strong);
+}
+
+.deploy-tile .deploy-core {
+  fill: var(--accent);
+  stroke: none;
+}
+
+.deploy-dot {
+  position: absolute;
+  top: calc(var(--tile) / 2 - 3px);
+  left: calc(100% / 6);
+  width: 7px;
+  height: 7px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.hosting {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 3rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 3rem;
+}
+
+.hosting .note {
+  flex: 1 1 24rem;
+  max-width: 32rem;
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.hosting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+  margin: 0;
+}
+
 .start {
   display: grid;
   grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
@@ -1453,6 +1585,22 @@ a:hover > h3 span {
     animation-delay: 2.2s;
   }
 
+  .is-live .deploy-dot {
+    animation: deploy-flow 6s linear infinite;
+  }
+
+  .is-live .deploy-trace path {
+    animation: deploy-trace 6s ease-in-out infinite;
+  }
+
+  .is-live li:nth-child(2) .deploy-trace path {
+    animation-delay: 1.62s;
+  }
+
+  .is-live li:nth-child(3) .deploy-trace path {
+    animation-delay: 3.24s;
+  }
+
   .is-playing .line {
     animation: print 260ms var(--ease) backwards;
     animation-delay: calc(var(--line) * 240ms + 200ms);
@@ -1591,6 +1739,51 @@ a:hover > h3 span {
   }
 }
 
+/* A tile takes 18% of the loop: the two lines leave its left edge, run round it and close on its right edge. */
+@keyframes deploy-trace {
+  0% {
+    opacity: 1;
+    stroke-dashoffset: 0.33;
+  }
+  17.9% {
+    opacity: 1;
+    stroke-dashoffset: -1;
+  }
+  18%,
+  100% {
+    opacity: 0;
+    stroke-dashoffset: -1;
+  }
+}
+
+/* The gaps take 9% each and are the same on every screen, so the dot leaves as a tile's lines close and arrives as the next tile's leave. */
+@keyframes deploy-flow {
+  0%,
+  17.9% {
+    left: calc(100% / 6 + var(--tile) / 2);
+    opacity: 0;
+  }
+  18% {
+    left: calc(100% / 6 + var(--tile) / 2);
+    opacity: 1;
+  }
+  27% {
+    left: calc(50% - var(--tile) / 2);
+  }
+  45% {
+    left: calc(50% + var(--tile) / 2);
+  }
+  54% {
+    left: calc(500% / 6 - var(--tile) / 2);
+    opacity: 1;
+  }
+  54.1%,
+  100% {
+    left: calc(500% / 6 - var(--tile) / 2);
+    opacity: 0;
+  }
+}
+
 /* Docs sidebar sections */
 .docs-section + .docs-section {
   margin-top: 1rem;
@@ -1620,8 +1813,26 @@ a:hover > h3 span {
   transition: transform 160ms var(--ease);
 }
 
-.docs-section[open] summary svg {
+.docs-section[open] > summary svg,
+.docs-sub[open] > summary svg {
   transform: rotate(90deg);
+}
+
+.docs-section:not([open]) > summary svg,
+.docs-sub:not([open]) > summary svg {
+  transform: none;
+}
+
+.docs-sub summary {
+  margin: 0;
+}
+
+/* A reference page is titled by its name: `<Tool>`, with no box around the heading. */
+.prose h1 code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.9em;
 }
 
 .docs-section ul {

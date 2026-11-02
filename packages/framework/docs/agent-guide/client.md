@@ -33,6 +33,12 @@ await agent.send("page.changed", { path: location.pathname });
 
 `agentIdentity` picks the agent in a room with several participants.
 
+## Version history
+
+| Version | Changes |
+|---|---|
+| v1.2.6 | `curb/client` introduced |
+
 ## Next steps
 
 - [App messages](./app-messages.md): the agent's side of these messages.

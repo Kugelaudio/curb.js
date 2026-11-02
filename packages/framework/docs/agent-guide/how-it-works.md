@@ -18,7 +18,7 @@ So when you write:
 
 ```tsx
 <Instruction>Ask for the policy number.</Instruction>
-<Tool name="verify_policy" schema={…} onSubmit={…} />
+<Tool name="verify_policy" description="…" schema={…} onSubmit={…} />
 ```
 
 there is no DOM and no HTML. The reconciler builds a tree of those semantic

@@ -16,7 +16,7 @@ example projects):
 
 ```text
 curb.js/
-├── packages/framework/        # The framework package (published as "curb")
+├── packages/framework/        # The framework package (published as "curb.js")
 │   ├── bin/curb.js       # CLI shim: generates the spanning tsx tsconfig, registers tsx
 │   ├── src/cli/main.ts        # CLI commands: dev / check / start / server / upgrade
 │   ├── src/vite/              # Preview Vite config (the page never imports agent code)
@@ -89,12 +89,15 @@ Releases are built from source by `.github/workflows/publish.yml`, the one file 
 publishers name. A merge to `main` that changes a published package publishes a preview,
 `<next minor>-preview.<n>`, to the npm dist-tag `preview` with a matching git tag; dispatching that
 workflow on `main` with `channel=preview` does the same on demand. A person cuts a stable release by
-dispatching it with `channel=stable`, `semver` and `dry_run`: it publishes to
-`latest`, tags `v<version>` and creates a GitHub Release. Both run the same verification, publish
-`curb.js`, `create-curb.js` and `create-curb`, and tag only after the publish, so a tag always names a
-version npm holds. `create-curb` is `packages/create-curb.js` packed a second time under the shorter
+dispatching it with `channel=stable`, `semver` and `dry_run`: it tags `v<version>`, publishes to
+`latest` and creates a GitHub Release. Both run the same verification, then tag and only then publish
+`curb.js`, `create-curb.js` and `create-curb`, so npm never holds a version without its tag:
+GitHub can refuse `GITHUB_TOKEN` a ref on a commit whose workflow files differ from `main`'s, and a
+rerun does not clear that (recovery per job is in `publish.yml` and `CONTRIBUTING.md`). `create-curb` is `packages/create-curb.js` packed a second time under the shorter
 name, so `npm create curb` runs the same files; docs and the site still lead with `npm create
-curb.js`. Each publish then runs `scripts/published-install-test.mjs` from the public
+curb.js`. `create-kugelaudio` is a third pack of the same files, published last and only as the
+repository variable `CREATE_KUGELAUDIO` says (`preview` keeps its `latest` still, `release` follows
+the run). Each publish then runs `scripts/published-install-test.mjs` from the public
 registry on Node 22.12 and 24; it fails the run without holding back the tag or the release.
 
 Tags hold the version: `scripts/release-version.mjs` computes it from the stable `v*` tags and npm,
@@ -152,8 +155,10 @@ edit a frozen project to make it pass.
 - **The browser/authoring public API is `src/index.ts`.** Agent code imports
   from `"curb"`. Server-only scripts use the sanctioned `"curb/orchestration"`
   export from `src/orchestration.ts`; don't document or encourage any other
-  deep imports. Document a new component in `docs/agent-guide/components.md`, a new hook in
-  `docs/agent-guide/hooks.md`, a new environment variable in `docs/agent-guide/configuration.md`
+  deep imports. Document a new component, hook, function, provider or command on a page of its own under
+  `docs/agent-guide/components/`, `hooks/`, `functions/`, `providers/` or `cli/`, with its signature,
+  an example and a `Version history` row, and list it on that section's index page and in
+  `website/src/guide.ts`. Document a new environment variable in `docs/agent-guide/configuration.md`
   and a voice session addition in `docs/agent-guide/voice-sessions.md`, with a guide page when
   it is a new task.
 - **New diagnostics** get a code in `AUTHORING_DIAGNOSTIC_CODES`, a row in

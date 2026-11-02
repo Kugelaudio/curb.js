@@ -18,7 +18,6 @@ test("each kind of reference is caught, in any case", () => {
   assert.deepEqual(rule("https://cdn.kugelaudio.com/widget/v1/widget.js"), ["the CDN"]);
   assert.deepEqual(rule("reads latest.json"), ["the CDN"]);
   assert.deepEqual(rule("set CURB_CDN"), ["the CDN"]);
-  assert.deepEqual(rule("npm create kugelaudio my-agent"), ["a retired package name"]);
   assert.deepEqual(rule("npx create-curb-app"), ["a retired package name"]);
   assert.deepEqual(rule("create-framework-app"), ["a retired package name"]);
   assert.deepEqual(rule("see packages/private/ci"), ["a private document"]);
@@ -28,6 +27,8 @@ test("each kind of reference is caught, in any case", () => {
 
 test("words that only contain a term, and what Curb keeps, pass", () => {
   for (const line of [
+    "npm create kugelaudio my-agent",
+    "create-kugelaudio is packed from packages/create-curb.js",
     "no jargon, cargo or embargo here",
     "curb login reads https://api.eu.kugelaudio.com",
     "kugelaudio.tts({ voice: 1 })",

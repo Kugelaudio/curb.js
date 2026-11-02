@@ -1,6 +1,6 @@
 # Step-by-step procedures
 
-Some conversations must happen in order. `<Procedure>` gives the model one step at a time, and what
+Some conversations must happen in order. `<Procedure>` shows the model the steps up to the current one, and what
 you pass as `completed` exists only once every step is done.
 
 An ordered flow, whose last tool exists only once every step is done:
@@ -52,4 +52,4 @@ remember, give each step its own tool that writes to a store, as in
 ## Next steps
 
 - [Confirmations](./confirmations.md): ask for a yes before the last tool runs.
-- [Components](./components.md#procedure): every prop of `<Procedure>`.
+- [Components](./components/procedure.md): every prop of `<Procedure>`.

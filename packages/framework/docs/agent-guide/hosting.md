@@ -4,7 +4,8 @@ A Curb agent needs no hosted platform. Everything below runs on your own machine
 your own LiveKit deployment (LiveKit Cloud or self-hosted `livekit-server`) and your own
 provider keys. This page says what you get and what you take on, covers the four ways to
 run an agent, and specifies **host protocol v1**, the HTTP contract between a Curb runner and
-whatever orchestrator starts it.
+whatever orchestrator starts it. For how your app and your backend talk to the agent once it runs,
+see [Connecting to a running agent](./connecting.md).
 
 ## What self-hosting includes
 
@@ -17,7 +18,7 @@ around a call.
 | Agent code, skills, tools, MCP servers | Included | Included |
 | Voice session: turn-taking, interruptions, greeting | Included | Included |
 | STT, LLM and TTS | Every provider in `curb/providers`, your keys | `KUGELAUDIO_API_KEY` provided. ElevenLabs STT and TTS do not run in a hosted agent |
-| Recording conversations | `.data/conversations.jsonl`, or your own store with `KUGEL_CONVERSATION_SINK` | Call log with retention |
+| Recording conversations | `.data/conversations.jsonl`, or your own store with `KUGEL_CONVERSATION_SINK`. A managed runner (`CURB_MANAGEMENT_ADDR`) writes no file, only to a sink | Call log with retention |
 | `curb test`, with a simulated caller and its judge | Included, on the agent's own LLM | Included |
 | Goals (`defineAgent({ goals })`) | **Not judged.** Your goals are written to `curb.bundle.json`, and nothing evaluates them | Judged after each call by a hosted LLM, shown on the Goals tab |
 | After-call code (`afterCall`, `afterEvaluation`) | **Your host runs it.** The manifest names the hooks, and your host starts a [hook runner](#hook-runner) and posts each event to it | Run after each call in a sandbox of its own, with retries, on plans that include it |
@@ -219,8 +220,8 @@ that does not exist, or the role with no `CURB_MANAGEMENT_ADDR`, stops it at sta
 with exit code 78. Without the variable a runner is what it always was, and answers both
 hook routes with `501 runner_takes_no_hooks`.
 
-Your host decides when a hook runs: the bundle manifest's `hooks` names the ones the
-agent declares ([build-verification.md](../build-verification.md)). Post each event to
+Your host decides when a hook runs: `hooks` in `curb.bundle.json` names the ones the
+agent declares. Post each event to
 `POST /v1/hooks/{name}`, then read `GET /v1/hooks/runs/{runId}` ([Host protocol](./host-protocol.md#routes)):
 
 - **Once per `runId`.** Repeating a `runId` the runner holds answers `202` and runs nothing,
@@ -379,5 +380,6 @@ settings and end the call. See [Hosting a Curb agent yourself](./hosting.md#mana
 
 ## Next steps
 
+- [Connecting to a running agent](./connecting.md): how your app and your backend reach it.
 - [Host protocol](./host-protocol.md): how a host talks to a runner.
 - [Architecture](./architecture.md): what Curb does and what a host does.

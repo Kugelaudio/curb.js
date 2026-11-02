@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { PACKAGES, waitForVersion, withRetries } from "./published-install-test.mjs";
+import { PACKAGES, publishedNames, waitForVersion, withRetries } from "./published-install-test.mjs";
 
 const wait = async () => {};
 const publishYml = readFileSync(fileURLToPath(new URL("../.github/workflows/publish.yml", import.meta.url)), "utf8");
@@ -75,4 +75,10 @@ test("the install check runs for every channel with no publishing rights, on a G
 test("the install check's timeout fits the wait for both packages", () => {
   const minutes = Number(/timeout-minutes: (\d+)/.exec(job("installed"))?.[1]);
   assert.ok(minutes * 60 > 2 * 60 * 10, `${minutes} minutes is shorter than the wait alone`);
+});
+
+test("the install test waits for create-kugelaudio only when this run published it", () => {
+  assert.deepEqual(publishedNames(""), ["curb.js", "create-curb.js", "create-curb"]);
+  assert.deepEqual(publishedNames(undefined), ["curb.js", "create-curb.js", "create-curb"]);
+  assert.deepEqual(publishedNames("preview"), PACKAGES);
 });

@@ -202,7 +202,7 @@ describe("where a project's upgrade reads from", () => {
   it("the update notice reads npm's latest for a project on the npm alias", async () => {
     const { dir, asked, logged } = project("npm:curb.js@1.0.0", { [distTags]: { latest: newest } });
     notifyIfUpdateAvailable(dir);
-    await vi.waitFor(() => expect(logged.join("\n")).toContain(`v${newest} — run \`curb upgrade\``));
+    await vi.waitFor(() => expect(logged.join("\n")).toContain(`v${newest}: run \`curb upgrade\``));
     expect(asked).toEqual([distTags]);
   });
 

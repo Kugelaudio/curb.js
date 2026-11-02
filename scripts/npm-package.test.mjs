@@ -60,7 +60,7 @@ test("create-curb is create-curb.js under a second name, with a command of that 
     bin: { "create-curb.js": "./bin/create-curb.js" },
     files: ["bin"],
   };
-  assert.deepEqual(npmNames(manifest), ["create-curb.js", "create-curb"]);
+  assert.deepEqual(npmNames(manifest), ["create-curb.js", "create-curb", "create-kugelaudio"]);
   const published = npmManifest(manifest, "1.15.0", "create-curb");
   const main = npmManifest(manifest, "1.15.0");
   assert.equal(published.name, "create-curb");
@@ -149,15 +149,24 @@ test("one packed tarball stamps into both create names, the same but for package
   mkdirSync(out);
 
   for (const name of npmNames(manifest)) stampTarball(join(work, "release.tgz"), out, { version: "1.15.0", name });
-  assert.deepEqual(readdirSync(out).sort(), ["create-curb-1.15.0.tgz", "create-curb.js-1.15.0.tgz"]);
+  assert.deepEqual(readdirSync(out).sort(), [
+    "create-curb-1.15.0.tgz",
+    "create-curb.js-1.15.0.tgz",
+    "create-kugelaudio-1.15.0.tgz",
+  ]);
   const unpacked = (file) => {
     const directory = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
     execFileSync("tar", ["-xzf", join(out, file), "-C", directory]);
     return join(directory, "package");
   };
-  const [short, main] = [unpacked("create-curb-1.15.0.tgz"), unpacked("create-curb.js-1.15.0.tgz")];
-  assert.deepEqual(unexpectedDifferences(fileHashes(main), fileHashes(short)), []);
-  assert.equal(JSON.parse(readFileSync(join(short, "package.json"), "utf8")).name, "create-curb");
+  const main = unpacked("create-curb.js-1.15.0.tgz");
+  for (const name of ["create-curb", "create-kugelaudio"]) {
+    const other = unpacked(`${name}-1.15.0.tgz`);
+    assert.deepEqual(unexpectedDifferences(fileHashes(main), fileHashes(other)), []);
+    const manifest = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    assert.equal(manifest.name, name);
+    assert.deepEqual(Object.keys(manifest.bin), [name]);
+  }
 });
 
 test("each package names the repository trusted publishing checks, and its own directory", () => {

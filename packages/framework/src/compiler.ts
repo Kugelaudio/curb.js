@@ -385,7 +385,7 @@ function addLink(
 
   const link: ContextLink = {
     to,
-    label: textContent(node),
+    label: textContent(node) || (optionalStringProp(node, "title") ?? ""),
     description: optionalStringProp(node, "description"),
     scope,
   };

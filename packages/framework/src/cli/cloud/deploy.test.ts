@@ -252,7 +252,7 @@ describe("resolveTarget", () => {
       body: { error: "Plan limit", error_code: "PAYMENT_REQUIRED", retryable: false, details: { platform_code: "upgrade_required", feature: "agents" } },
     });
     await expect(resolveTarget({ client, root, prompter: prompter("2", "1", ""), log })).rejects.toThrow(
-      `Your plan does not include "agents". Upgrade in ${cloud.url} (Settings > Billing), then run the command again.`,
+      'Your plan does not include "agents". Contact hello@kugelaudio.com to upgrade, then run the command again.',
     );
   });
 });
