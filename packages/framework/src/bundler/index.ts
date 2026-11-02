@@ -11,6 +11,7 @@ import { curbVersion } from "../version.js";
 import { describeExternals, externalPackages, NATIVE_PACKAGES, RUNTIME_REQUIRED_PACKAGES } from "./externals.js";
 import {
   copyPackageForTarget,
+  isForeignOnnxBinary,
   mirrorInstalledDependencies,
   resolveDependencyDir,
 } from "./dependency-mirror.js";
@@ -26,7 +27,7 @@ import { mergeFramesPlugin } from "./merge-frames-plugin.js";
 import { rawLoaderPlugin } from "./raw-plugin.js";
 import { generateContextRegistryCode, projectContextFiles } from "./context-registry.js";
 import { hostBuildTarget } from "./build-target.js";
-import { libraryEntrySource, workerEntrySource } from "./generated-entries.js";
+import { workerEntrySource } from "./generated-entries.js";
 import { readProjectPackageName } from "../server/voice/worker-name.js";
 import {
   verificationIsolationRoot,
@@ -260,8 +261,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
   const registryCode = generateAgentModulesCode(projectRoot);
   await writeFile(registryPath, registryCode, "utf8");
 
-  // 2. The hosted entries, a library surface and a runnable worker. See
-  //    generated-entries.ts.
+  // 2. The hosted entry, a runnable worker. See generated-entries.ts.
   // Locate the framework by asking this module where it is, rather than resolving
   // "curb/orchestration" from the project. A workspace-linked project has no local
   // node_modules/curb (npm hoists it), and a CDN-installed one does — resolution would
@@ -285,10 +285,6 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     "utf8",
   );
 
-  const entrySource = libraryEntrySource({ contextRegistryPath, registryPath, orchestration });
-  const entryPath = join(generatedDir, "hosted-entry.mjs");
-  await writeFile(entryPath, `${entrySource}\n`, "utf8");
-
   // Resolve from the framework, not from the generated file in the project. Workspace
   // installs can legitimately hold a different hoisted version beside the project and
   // the version selected for `curb` in its own node_modules; the hosted bundle must use
@@ -307,13 +303,13 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
   });
   const workerEntryPath = join(generatedDir, "hosted-worker.mjs");
   await writeFile(workerEntryPath, `${workerSource}\n`, "utf8");
-  timer.mark("generate", "the static registry, the context registry and both entries");
+  timer.mark("generate", "the static registry, the context registry and the entry");
 
   // 3. Bundle.
   // The entry sits at its PROJECT-RELATIVE position inside the standalone root, the
   // way Next places server.js. That is what makes Node's ordinary upward resolution
   // reproduce the source tree's resolution: from
-  // <out>/examples/insurance-agent/entry/hosted.mjs it walks the same node_modules
+  // <out>/examples/insurance-agent/entry/worker.mjs it walks the same node_modules
   // chain it would have walked in the real checkout.
   //
   // It is placed relative to the FRAMEWORK, not the project. The bundle is mostly
@@ -323,7 +319,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
   // resolution scope, which never passes through the framework's node_modules, and
   // silero would be unresolvable however faithfully the tree was mirrored.
   //
-  // From <out>/packages/framework/entry/hosted.mjs, Node walks
+  // From <out>/packages/framework/entry/worker.mjs, Node walks
   // packages/framework/node_modules -> packages/node_modules -> node_modules: the
   // framework's own deps AND everything hoisted to the root.
   const traceBase = outermostDependencyRoot(projectRoot);
@@ -334,11 +330,10 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     entryHome: entryHome.split(sep).join("/"),
     projectHome: relative(traceBase, projectRoot).split(sep).join("/"),
   };
-  const outFile = join(outDir, entryHome, "entry", "hosted.mjs");
+  const outFile = join(outDir, entryHome, "entry", "worker.mjs");
   if (!descriptor) await mkdir(dirname(outFile), { recursive: true });
 
-  const workerOutFile = join(dirname(outFile), "worker.mjs");
-  const entryFiles = [outFile, workerOutFile];
+  const entryFiles = [outFile];
 
   const bundle = await esbuild.build({
     // Every path esbuild PRINTS -- the `// <module path>` comment it writes above each
@@ -349,7 +344,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     // repository layout instead, which is part of the revision. Everything this build
     // hands esbuild is an absolute path, so nothing else moves with it.
     absWorkingDir: traceBase,
-    entryPoints: { hosted: entryPath, worker: workerEntryPath },
+    entryPoints: { worker: workerEntryPath },
     entryNames: "[name]",
     // .mjs so Node treats the output as ESM regardless of the nearest package.json
     // "type" field, which in a mirrored tree is whatever happened to be copied.
@@ -423,7 +418,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
       await mkdir(dirname(output.path), { recursive: true });
       await writeFile(output.path, output.contents);
     }
-    timer.mark("clean", "replace the output path with the two entries esbuild just compiled");
+    timer.mark("clean", "replace the output path with the entry esbuild just compiled");
   }
   const bundleBytes = (await readFile(outFile)).byteLength;
   // Taken before the dependency stages, to prove afterwards that none of them wrote an entry.
@@ -523,7 +518,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     // the framework's location, deliberately, so nothing is lost by denying the seed an
     // ancestry it must not have had.
     const traceHome = await mkdtemp(join(tmpdir(), "curb-trace-"));
-    const traceSeed = join(traceHome, "hosted.mjs");
+    const traceSeed = join(traceHome, "worker.mjs");
     await cp(outFile, traceSeed);
     // Resolved, because the OS temp directory is a symlink on macOS and the tracer
     // reports real paths: comparing against the unresolved name would fail to recognise
@@ -611,7 +606,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     }
 
     // Traced files land at the artifact ROOT, preserving their node_modules/... path,
-    // so Node's ordinary upward resolution from entry/hosted.mjs finds them at
+    // so Node's ordinary upward resolution from entry/worker.mjs finds them at
     // <outDir>/node_modules. Nesting them under runtime/ would leave the bundle
     // resolving against whatever node_modules happens to sit above the artifact --
     // which on a dev machine is the real install, making any smoke test a false green.
@@ -633,6 +628,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
       // those hits would nest a second copy of the artifact inside itself -- 94 MB of
       // duplicate packages that no resolution path ever reaches.
       if (absolute === outDir || absolute.startsWith(outDir + sep)) continue;
+      if (isForeignOnnxBinary(file, buildTarget)) continue;
 
       // Mirror the source tree exactly. Re-rooting everything at a single top-level
       // node_modules looks tidier and is wrong: two packages can legitimately resolve
@@ -703,23 +699,18 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
 
   // 5. The manifest.
   //
-  // `entrypoint` names the RUNNABLE entry. It named the library entry until an artifact
-  // was actually run by the hosted executor: that file exits 0 having started nothing, so
-  // the platform recorded a clean run for a call that never happened. An entrypoint a
-  // runner cannot start is not an entrypoint.
-  //
   // `entryDigest` is kept alongside `treeDigest` because they answer different
   // questions: "is the file the runner is about to execute the one that was built" and
   // "is this tree the artifact the deployment references". The first is checkable without
   // reading 600 MB.
-  const entrypoint = relative(outDir, workerOutFile).split(sep).join("/");
+  const entrypoint = relative(outDir, outFile).split(sep).join("/");
 
   // Reproducibility is asserted before it is claimed. The flag was false because the
-  // ?raw loader stamped this machine's absolute paths into both entries; a constant
+  // ?raw loader stamped this machine's absolute paths into the entry; a constant
   // `true` here would be a claim no code checks. See reproducibility.ts.
   await assertNoBuildPathsLeaked({
     outDir,
-    generated: [entrypoint, relative(outDir, outFile).split(sep).join("/")],
+    generated: [entrypoint],
     roots: [projectRoot, traceBase, frameworkSrc, frameworkRoot],
   });
   timer.mark("reproducible", "prove the emitted entries carry no build-machine path");
@@ -787,7 +778,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     mediaRelayProtocol: MEDIA_RELAY_PROTOCOL,
     runtime: { node: hostNodeMajor() },
     entrypoint,
-    entryDigest: `sha256:${createHash("sha256").update(await readFile(workerOutFile)).digest("hex")}`,
+    entryDigest: `sha256:${createHash("sha256").update(await readFile(outFile)).digest("hex")}`,
     /** Artifact identity: SHA-256 over the canonical stream defined in bundle-digest.ts. */
     treeDigest: digest,
     externals,

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   copyPackageForTarget,
+  isForeignOnnxBinary,
   findParityViolations,
   listPackageDirs,
   mirrorInstalledDependencies,
@@ -94,6 +95,24 @@ describe("listPackageDirs", () => {
     expect(names).toContain(join("node_modules", "consumer"));
     expect(names).toContain(join("node_modules", "consumer", "node_modules", "shared"));
     expect(names).toContain(join("node_modules", "shared"));
+  });
+});
+
+describe("isForeignOnnxBinary", () => {
+  const target = { os: "linux", architecture: "x64", libc: "gnu" } as const;
+
+  it("names what a trace of onnxruntime-node brings for other targets", () => {
+    const base = "node_modules/onnxruntime-node/bin/napi-v6";
+    expect(isForeignOnnxBinary(`${base}/linux/arm64/libonnxruntime.so.1`, target)).toBe(true);
+    expect(isForeignOnnxBinary(`${base}/darwin/arm64/libonnxruntime.1.dylib`, target)).toBe(true);
+    expect(isForeignOnnxBinary(`${base}/win32/x64/onnxruntime_binding.node`, target)).toBe(true);
+  });
+
+  it("keeps the target's own binary and everything else", () => {
+    const base = "packages/framework/node_modules/onnxruntime-node";
+    expect(isForeignOnnxBinary(`${base}/bin/napi-v6/linux/x64/libonnxruntime.so.1`, target)).toBe(false);
+    expect(isForeignOnnxBinary(`${base}/dist/binding.js`, target)).toBe(false);
+    expect(isForeignOnnxBinary("node_modules/other/bin/napi-v6/darwin/arm64/x.node", target)).toBe(false);
   });
 });
 

@@ -20,13 +20,12 @@ const home = "node_modules/curb";
 const layout = { entryHome: home, projectHome: "" };
 
 describe("the app path set (L2)", () => {
-  it("is the manifest, assets/**, mcp.servers.json and the two emitted entries", () => {
+  it("is the manifest, assets/**, mcp.servers.json and the emitted entry", () => {
     for (const path of [
       "curb.bundle.json",
       "assets/context/policy.md",
       "assets/agent-source/agent.tsx",
       "mcp.servers.json",
-      `${home}/entry/hosted.mjs`,
       `${home}/entry/worker.mjs`,
     ]) {
       expect(isAppLayerPath(path, layout), path).toBe(true);
@@ -59,7 +58,7 @@ describe("traceFilesOnlyFromBundleCopy", () => {
     ignored: false,
     parents: new Set(parents),
   });
-  const seed = "../tmp/curb-trace-x/hosted.mjs";
+  const seed = "../tmp/curb-trace-x/worker.mjs";
 
   it("names files reachable only from the bundle copy, and not shared or external-seeded ones", () => {
     const reasons = new Map([
@@ -132,7 +131,7 @@ describe("mergeDependencyLayerFiles", () => {
 
   it("refuses a descriptor that claims an app path", () => {
     expect(() =>
-      mergeDependencyLayerFiles([file("assets/a.md")], [file(`${home}/entry/hosted.mjs`)], layout),
+      mergeDependencyLayerFiles([file("assets/a.md")], [file(`${home}/entry/worker.mjs`)], layout),
     ).toThrow(/app layer/);
     expect(() => mergeDependencyLayerFiles([], [file("mcp.servers.json")], layout)).toThrow(/app layer/);
   });

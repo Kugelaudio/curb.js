@@ -74,11 +74,4 @@ describe("curb build packaging of context markdown", () => {
     expect(manifest.experiments).toEqual([]);
     expect(manifest.hooks).toEqual([]);
   });
-
-  it("carries them in the library entry too, so both entries agree", () => {
-    const hosted = entry("hosted.mjs");
-    for (const src of projectContextFiles(fixtureProject)) {
-      expect(hosted).toContain(distinctiveLine(src));
-    }
-  });
 });

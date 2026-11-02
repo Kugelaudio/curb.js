@@ -37,7 +37,7 @@ Three details are load-bearing and easy to undo by accident:
   packaging bug pass as a false green; an already isolated hosted artifact needs no copy;
 - the entrypoint comes from the manifest, never a constant. The manifest naming
   the wrong file is one of the two bugs;
-- success is the marker, not the exit code. The library entry exits 0 having
+- success is the marker, not the exit code. An entry that exits 0 may have
   started nothing.
 
 `--no-verify` skips it, for anyone who wants the artifact without the check; the
@@ -346,8 +346,8 @@ drift from the set the bundle actually loads.
 ## Layered builds: a cached dependency layer
 
 A hosted artifact is two layers. The **app layer** is `curb.bundle.json`, `assets/**`,
-`mcp.servers.json` when the project has one, and the two emitted entries,
-`<entryHome>/entry/hosted.mjs` and `worker.mjs` (`entryHome` is `node_modules/curb` in a
+`mcp.servers.json` when the project has one, and the emitted entry,
+`<entryHome>/entry/worker.mjs` (`entryHome` is `node_modules/curb` in a
 hosted build). Everything else is the
 **dependency layer**: the externals copied whole, the traced runtime files, the mirrored
 versions, and Silero's ONNX model. The model is copied beside the generated entries because
