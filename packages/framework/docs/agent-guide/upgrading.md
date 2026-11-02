@@ -50,7 +50,7 @@ Use `@preview` for the newest preview.
 
 ## Hosted deploys
 
-Hosted deploys do not accept a project that installs Curb from npm yet.
+Hosted deploys accept a project that installs Curb from npm.
 
 ## After an upgrade
 

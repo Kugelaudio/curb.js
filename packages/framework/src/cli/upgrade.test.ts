@@ -199,6 +199,11 @@ describe("where a project's upgrade reads from", () => {
     expect(asked).toEqual([]);
   });
 
+  it("moving a project to npm keeps it deployable, and the stop says so", async () => {
+    const { dir } = project("*", {});
+    await expect(runUpgrade([], dir)).rejects.toThrow("Hosted deploys accept a project that installs Curb from npm.");
+  });
+
   it("the update notice reads npm's latest for a project on the npm alias", async () => {
     const { dir, asked, logged } = project("npm:curb.js@1.0.0", { [distTags]: { latest: newest } });
     notifyIfUpdateAvailable(dir);

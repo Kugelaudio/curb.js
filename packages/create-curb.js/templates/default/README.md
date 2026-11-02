@@ -41,9 +41,8 @@ Type or talk in the preview:
 
 ## Deploy to KugelAudio
 
-Hosted deploys do not accept a project that installs Curb from npm yet, and this project does.
-Today it runs locally with `npm run dev` and goes live on your own servers: see
-`node_modules/curb/docs/agent-guide/hosting.md`. Once hosted deploys accept it:
+Hosted deploys accept this project, which installs Curb from npm. To run it on your own servers
+instead, see `node_modules/curb/docs/agent-guide/hosting.md`.
 
 ```bash
 npx curb login

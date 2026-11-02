@@ -144,7 +144,7 @@ function notOnNpmMessage(spec: string, tag: string): string {
   return (
     `This project's "curb" dependency is ${spec}, and \`curb upgrade\` reads npm only. Change it to ` +
     `"${NPM_ALIAS}@<version>" by running \`npm install curb@${NPM_ALIAS}@${tag}\`. ` +
-    "Hosted deploys do not accept a project that installs Curb from npm yet."
+    "Hosted deploys accept a project that installs Curb from npm."
   );
 }
 

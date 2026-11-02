@@ -134,11 +134,8 @@ context/*.md                knowledge a skill reads with <Text src="file.md" />
 
 ## Deploy to KugelAudio
 
-**Hosted deploys do not accept a project that installs Curb from npm yet, and this project
-does.** Tell the user so before you try to deploy, and do not change the `curb` dependency to
-get around it. Today the project runs locally with `npm run dev` and goes live on the user's own
-servers (`node_modules/curb/docs/agent-guide/hosting.md`). The rest of this section applies once
-hosted deploys accept the project.
+Hosted deploys accept this project, which installs Curb from npm. To put it on the user's own
+servers instead, see `node_modules/curb/docs/agent-guide/hosting.md`.
 
 `.mcp.json` registers two MCP servers for Claude Code started in this folder (it asks once
 to use them): `kugelaudio`, your KugelAudio account (sign in from `/mcp`), and
