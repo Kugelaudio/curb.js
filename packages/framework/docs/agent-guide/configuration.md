@@ -21,6 +21,9 @@ naming it.
 
 `KUGELAUDIO_API_BASE` points the KugelAudio providers at another endpoint.
 
+`KUGELAUDIO_AGENT_TOKEN` names a hosted agent on its calls to KugelAudio. The hosting platform sets it,
+so there is nothing to set or push, and without it nothing changes. Curb sends it only to KugelAudio.
+
 ## Voice
 
 | Variable | Default | What it does |

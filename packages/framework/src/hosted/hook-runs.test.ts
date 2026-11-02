@@ -80,6 +80,12 @@ describe("invokeHook", () => {
 describe("hookErrorMessage", () => {
   const SECRET = "not-a-real-value-for-redaction";
 
+  it("takes the agent token out of what a hook threw", () => {
+    const message = hookErrorMessage(new Error(`refused ${SECRET}`), { KUGELAUDIO_AGENT_TOKEN: SECRET });
+    expect(message).toBe("refused [redacted]");
+  });
+
+
   it("is the message of an Error, or a thrown string", () => {
     expect(hookErrorMessage(new Error("crm down"), {})).toBe("crm down");
     expect(hookErrorMessage("crm down", {})).toBe("crm down");

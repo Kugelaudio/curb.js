@@ -1,7 +1,7 @@
 import { initializeLogger, stt } from "@livekit/agents";
 import { AudioFrame } from "@livekit/rtc-node";
 import { createServer } from "node:http";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
 import {
   KugelSTT,
@@ -23,6 +23,7 @@ class FakeAsrServer {
   connections = 0;
   received: Record<string, unknown>[] = [];
   authorization: string | undefined;
+  agentHeader: string | undefined;
   refuseWith: number | null = null;
 
   /** `autoPong: false` plays a half-open connection that never answers a ping. */
@@ -40,6 +41,7 @@ class FakeAsrServer {
       this.socket = socket;
       this.connections += 1;
       this.authorization = request.headers.authorization;
+      this.agentHeader = request.headers["x-kugel-agent"] as string | undefined;
       socket.on("message", (raw) => {
         const frame = JSON.parse(raw.toString()) as Record<string, unknown>;
         this.received.push(frame);
@@ -159,6 +161,22 @@ describe("kugel stt plugin", () => {
     expect(() => new KugelSTT({ apiBase: "x", apiKey: "k", turnDetection: "vad", turnDetectionLevel: "responsive" })).toThrow(
       KugelSttError,
     );
+  });
+
+  it("names the agent on the connection when the platform gave it a token", async () => {
+    vi.stubEnv("KUGELAUDIO_AGENT_TOKEN", "agent-token");
+    const call = open();
+    await server.until(() => server.received.length >= 1);
+    expect(server.agentHeader).toBe("agent-token");
+    await call.close();
+    vi.unstubAllEnvs();
+  });
+
+  it("sends no agent header without a token", async () => {
+    const call = open();
+    await server.until(() => server.received.length >= 1);
+    expect(server.agentHeader).toBeUndefined();
+    await call.close();
   });
 
   it("authenticates, sends the config, then base64 PCM16 audio chunks", async () => {

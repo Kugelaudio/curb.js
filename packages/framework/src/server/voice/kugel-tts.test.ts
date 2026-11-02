@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
 import { KugelTtsSession, type KugelTtsConfig } from "./kugel-tts.js";
 
@@ -12,6 +12,8 @@ class MockTtsServer {
   private socket: ServerSocket | null = null;
   port = 0;
   connections = 0;
+  /** The agent header of each connection, in order. */
+  agentHeaders: (string | undefined)[] = [];
   /** Optional scripted reply to each inbound frame; `connection` counts from 1. */
   onFrame: ((socket: ServerSocket, frame: Frame, connection: number) => void) | null = null;
 
@@ -19,8 +21,9 @@ class MockTtsServer {
     this.wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => this.wss.once("listening", resolve));
     this.port = (this.wss.address() as { port: number }).port;
-    this.wss.on("connection", (socket) => {
+    this.wss.on("connection", (socket, request) => {
       this.socket = socket;
+      this.agentHeaders.push(request.headers["x-kugel-agent"] as string | undefined);
       const connection = ++this.connections;
       socket.on("message", (data) => {
         const frame = JSON.parse(data.toString()) as Frame;
@@ -77,8 +80,22 @@ describe("KugelTtsSession wire protocol", () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await session.close();
     await server.stop();
+  });
+
+  it("names the agent on the connection when the platform gave it a token", async () => {
+    vi.stubEnv("KUGELAUDIO_AGENT_TOKEN", "agent-token");
+    await session.streamInput(1, "Hello.");
+    await server.waitForFrames(1);
+    expect(server.agentHeaders).toEqual(["agent-token"]);
+  });
+
+  it("sends no agent header without a token", async () => {
+    await session.streamInput(1, "Hello.");
+    await server.waitForFrames(1);
+    expect(server.agentHeaders).toEqual([undefined]);
   });
 
   it("opens a context with full voice config on the first delta, then bare deltas", async () => {

@@ -120,8 +120,10 @@ describe("mapToolCalls", () => {
 async function fakeChatEndpoint() {
   const bodies: Record<string, unknown>[] = [];
   const requests: { path: string | undefined; authorization: string | undefined }[] = [];
+  const agentHeaders: (string | undefined)[] = [];
   const server: Server = createServer((req, res) => {
     requests.push({ path: req.url, authorization: req.headers.authorization });
+    agentHeaders.push(req.headers["x-kugel-agent"] as string | undefined);
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
     req.on("end", () => {
@@ -155,6 +157,7 @@ async function fakeChatEndpoint() {
     baseURL: `http://127.0.0.1:${port}/v1`,
     bodies,
     requests,
+    agentHeaders,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
@@ -233,6 +236,45 @@ describe("openaiCompatible request body", () => {
       for (const field of ["reasoning_effort", "temperature", "top_p", "top_k", "chat_template_kwargs"]) {
         expect(body).not.toHaveProperty(field);
       }
+    } finally {
+      await endpoint.close();
+    }
+  });
+});
+
+describe("the agent header on LLM requests", () => {
+  it("names the agent to KugelAudio, on streamed and generated turns", async () => {
+    const endpoint = await fakeChatEndpoint();
+    vi.stubEnv("KUGELAUDIO_API_BASE", endpoint.origin);
+    vi.stubEnv("KUGELAUDIO_API_KEY", "test-kugel-key");
+    vi.stubEnv("KUGELAUDIO_AGENT_TOKEN", "agent-token");
+    try {
+      await drain(streamAiSdkAgent(turn, { llm: kugelaudio.llm() }));
+      await runAiSdkAgent(turn, { llm: kugelaudio.llm() });
+      expect(endpoint.agentHeaders).toEqual(["agent-token", "agent-token"]);
+    } finally {
+      await endpoint.close();
+    }
+  });
+
+  it("sends none to KugelAudio without a token", async () => {
+    const endpoint = await fakeChatEndpoint();
+    vi.stubEnv("KUGELAUDIO_API_BASE", endpoint.origin);
+    vi.stubEnv("KUGELAUDIO_API_KEY", "test-kugel-key");
+    try {
+      await runAiSdkAgent(turn, { llm: kugelaudio.llm() });
+      expect(endpoint.agentHeaders).toEqual([undefined]);
+    } finally {
+      await endpoint.close();
+    }
+  });
+
+  it("never sends it to another provider's endpoint", async () => {
+    const endpoint = await fakeChatEndpoint();
+    vi.stubEnv("KUGELAUDIO_AGENT_TOKEN", "agent-token");
+    try {
+      await runAiSdkAgent(turn, { llm: openaiCompatible({ baseURL: endpoint.baseURL, model: "qwen3.8-27b" }) });
+      expect(endpoint.agentHeaders).toEqual([undefined]);
     } finally {
       await endpoint.close();
     }

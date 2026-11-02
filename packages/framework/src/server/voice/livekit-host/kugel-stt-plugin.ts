@@ -42,6 +42,7 @@ import {
 import type { AudioFrame } from "@livekit/rtc-node";
 import { logError, logInfo } from "../../log.js";
 import type { CallReporter } from "../../../hosted/call-reporter.js";
+import { kugelAgentHeaders } from "../../../provider-keys.js";
 
 export const KUGEL_STT_SAMPLE_RATE = 16000;
 export const KUGEL_STT_MODEL = "kugel-ear-1";
@@ -274,7 +275,7 @@ export class KugelSpeechStream extends stt.SpeechStream {
   private connect(): Promise<WebSocket> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(kugelSttUrl(this.config.apiBase), {
-        headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        headers: { Authorization: `Bearer ${this.config.apiKey}`, ...kugelAgentHeaders(process.env) },
         // A server that accepts the TCP connection but never answers the upgrade fails the
         // attempt (ws emits an error) instead of leaving the call deaf.
         handshakeTimeout: this.connectTimeoutMs,

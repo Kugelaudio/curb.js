@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import WebSocket from "ws";
 import { logInfo } from "../log.js";
+import { kugelAgentHeaders } from "../../provider-keys.js";
 
 /**
  * KugelAudio `/ws/tts/multi` client (wire protocol and context lifecycle):
@@ -286,10 +287,10 @@ export class KugelTtsSession {
     const url = `${base}/ws/tts/multi?api_key=${encodeURIComponent(this.config.apiKey)}`;
 
     this.connecting = new Promise<WebSocket>((resolve, reject) => {
-      const ws = new WebSocket(
-        url,
-        this.config.proxyUrl ? { agent: new HttpsProxyAgent(this.config.proxyUrl) } : undefined,
-      );
+      const ws = new WebSocket(url, {
+        headers: kugelAgentHeaders(process.env),
+        ...(this.config.proxyUrl ? { agent: new HttpsProxyAgent(this.config.proxyUrl) } : {}),
+      });
       ws.on("open", () => {
         this.ws = ws;
         this.connecting = null;

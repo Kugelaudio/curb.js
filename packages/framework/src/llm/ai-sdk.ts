@@ -17,7 +17,7 @@ import {
 import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES, type AuthoringDiagnostic } from "../authoring.js";
 import type { AgentRunRequest, AgentRunResponse, AgentStreamPart } from "./types.js";
 import { normalizeLlmPunctuation } from "./punctuation.js";
-import { hostKeyPendingFix, LLM_KEYS, PLATFORM_PROVIDED } from "../provider-keys.js";
+import { hostKeyPendingFix, kugelAgentHeaders, LLM_KEYS, PLATFORM_PROVIDED } from "../provider-keys.js";
 import type { LlmDescriptor } from "../providers.js";
 import { resolveLlmProvider, type LlmProviderConfig } from "./provider.js";
 import { quietSdkWarnings } from "./sdk-warnings.js";
@@ -43,7 +43,12 @@ function buildModel(options: AiSdkAgentOptions): ModelCall {
       // OpenAI Chat Completions at KugelAudio's ingress; thinking is off on its side, so no
       // request option is sent.
       return {
-        model: createOpenAICompatible({ name: "kugelaudio", baseURL: config.baseUrl, apiKey: config.apiKey })(modelName),
+        model: createOpenAICompatible({
+          name: "kugelaudio",
+          baseURL: config.baseUrl,
+          apiKey: config.apiKey,
+          headers: kugelAgentHeaders(process.env),
+        })(modelName),
         providerOptions: undefined,
       };
     case "anthropic":

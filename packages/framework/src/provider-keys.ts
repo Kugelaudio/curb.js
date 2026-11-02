@@ -32,7 +32,18 @@ const KUGELAUDIO_API_KEY = variable("KUGELAUDIO_API_KEY");
 
 /** What the hosting platform provisions for every hosted agent of an organisation: setting
  * them is refused (or pointless), and a hosted agent needs none of them pushed. */
-export const PLATFORM_PROVIDED: ReadonlySet<string> = new Set(["KUGELAUDIO_API_KEY", "KUGELAUDIO_API_BASE"]);
+export const PLATFORM_PROVIDED: ReadonlySet<string> = new Set([
+  "KUGELAUDIO_API_KEY",
+  "KUGELAUDIO_API_BASE",
+  "KUGELAUDIO_AGENT_TOKEN",
+]);
+
+/** What names a hosted agent on a call to KugelAudio's API, and nothing outside one: the headers
+ * of a KugelAudio connection, read when it opens. A credential, so it is never logged. */
+export function kugelAgentHeaders(env: Env): Record<string, string> {
+  const token = env.KUGELAUDIO_AGENT_TOKEN?.trim();
+  return token ? { "X-Kugel-Agent": token } : {};
+}
 
 /** What to do about a missing KUGELAUDIO_API_KEY in a hosted workspace, which supplies it beside
  * its platform token (`CURB_PLATFORM_TOKEN_FILE`, cli/cloud/host-model-key.ts); null elsewhere. */
