@@ -236,6 +236,21 @@ describe("joinRoomAndServe on a warm runner", () => {
     );
   });
 
+  it("takes a relay URL through the relay and never touches a room", async () => {
+    const createRoom = vi.fn();
+    const openRelay = vi.fn(async () => {
+      throw new Error("token refused");
+    });
+    await expect(
+      joinRoomAndServe(
+        { url: "curb-relay+ws://relay/calls/s", token: "per-call", sessionId: "s" },
+        { createRoom, openRelayCall: openRelay as never, scratchRoot: SCRATCH_ROOT },
+      ),
+    ).rejects.toThrow(/could not start the call through the media relay .*token refused/);
+    expect(openRelay).toHaveBeenCalledWith("curb-relay+ws://relay/calls/s", "per-call");
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
   it("closes the providers it opened when the room refuses the token", async () => {
     const tts = { close: vi.fn(async () => {}) };
     const stt = { close: vi.fn(async () => {}) };

@@ -113,6 +113,7 @@ function fakeSession(
   });
   return {
     room: {} as DirectJoinSession["room"],
+    connection: { disconnect: async () => undefined },
     roomName: "room-1",
     ended,
     messages,

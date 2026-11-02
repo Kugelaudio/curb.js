@@ -28,8 +28,11 @@ import { detachConversationRecorder } from "../server/conversation-store.js";
 import {
   loadSileroVad,
   startLivekitVoiceAgent,
+  startVoiceAgent,
   type LivekitVoiceStartOptions,
 } from "../server/voice/livekit-host/host.js";
+import { isRelayUrl } from "../relay-wire.js";
+import { openRelayCall, type RelayCall } from "../server/voice/relay-host/relay-call-room.js";
 import {
   buildVoiceProviders,
   preloadVoicePlugins,
@@ -220,6 +223,7 @@ export type JoinSeams = {
   createRoom?: () => Room;
   buildProviders?: (options: Parameters<typeof buildVoiceProviders>[0]) => Promise<VoiceProviders>;
   startVoiceAgent?: (options: LivekitVoiceStartOptions) => Promise<VoiceSessionHandle>;
+  openRelayCall?: typeof openRelayCall;
   /** The cold path's bundle factory. A warm runner hands over the bundle it built instead. */
   createBundle?: () => Promise<VoiceAgentBundle>;
   /** Replaces {@link RECORDING_FINISH_TIMEOUT_MS}. */
@@ -274,7 +278,10 @@ export function scrubPlatformCredentials(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export type DirectJoinSession = {
-  room: Room;
+  /** The room this process joined; null on a relayed call, whose room the relay holds. */
+  room: Room | null;
+  /** Leaves the call on either route. */
+  connection: { disconnect(): Promise<unknown> };
   roomName: string;
   handle: VoiceSessionHandle;
   /**
@@ -341,7 +348,10 @@ export async function joinRoomAndServe(
   seams: JoinSeams = {},
 ): Promise<DirectJoinSession> {
   const warm = config.warm;
-  const room = seams.createRoom?.() ?? new Room();
+  // A relay URL means the host holds the room outside this process (`../relay-wire.ts`).
+  const relayed = isRelayUrl(config.url);
+  const room = relayed ? null : (seams.createRoom?.() ?? new Room());
+  let relay!: RelayCall;
 
   // WARM: the providers start connecting NOW, alongside the room. They need only the
   // environment's secrets, and a TTS socket that finishes its handshake while the room does
@@ -361,10 +371,12 @@ export async function joinRoomAndServe(
   // audio (autoSubscribe) and there is exactly one subscriber, so dynacast's
   // per-subscriber layer negotiation only adds latency.
   try {
-    await room.connect(config.url, config.token, { autoSubscribe: true, dynacast: false });
+    if (room) await room.connect(config.url, config.token, { autoSubscribe: true, dynacast: false });
+    else relay = await (seams.openRelayCall ?? openRelayCall)(config.url, config.token);
   } catch (error) {
     releaseProviders(providers);
     const detail = error instanceof Error ? error.message : String(error);
+    if (relayed) throw new Error(`could not start the call through the media relay at ${config.url}: ${detail}`);
     throw new Error(
       `could not join the realtime room at ${config.url}: ${detail}\n` +
         `  ${REALTIME_TOKEN_VAR} must be a join token minted for THAT server and still ` +
@@ -376,10 +388,11 @@ export async function joinRoomAndServe(
 
   // The server's name for the room it just admitted us to. Falling back to a made-up
   // name would mislabel the call's audio clips and the platform's own correlation.
-  const roomName = room.name ?? config.sessionId;
+  const connection: { disconnect(): Promise<unknown> } = room ?? relay;
+  const roomName = (room ? room.name : relay.name) ?? config.sessionId;
   if (!roomName) {
     releaseProviders(providers);
-    await disconnectQuietly(room, "the room reported no name");
+    await disconnectQuietly(connection, "the room reported no name");
     throw new Error(
       `joined ${config.url} but the server reported no room name, and ${SESSION_ID_VAR} ` +
         `is not set, so this call cannot be identified.\n` +
@@ -396,7 +409,7 @@ export async function joinRoomAndServe(
 
   // The caller's app can see the agent from now on: answer its RPCs from now on too. They
   // wait for the session to bind its runtime.
-  const client = attachClientMessages(room, { roomName });
+  const client = attachClientMessages(room ?? relay.messaging, { roomName });
 
   let bundle: VoiceAgentBundle;
   try {
@@ -410,7 +423,7 @@ export async function joinRoomAndServe(
     releaseProviders(providers);
     client.detach();
     await scratch?.remove();
-    await disconnectQuietly(room, "the agent bundle could not be built");
+    await disconnectQuietly(connection, "the agent bundle could not be built");
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
       `joined ${roomName} but could not build the agent from this artifact: ${detail}\n` +
@@ -460,8 +473,7 @@ export async function joinRoomAndServe(
     });
     const warmed =
       warm && providers ? { providers: await providers, vad: warm.vad } : {};
-    handle = await (seams.startVoiceAgent ?? startLivekitVoiceAgent)({
-      room,
+    const startOptions = {
       roomName,
       bundle,
       firstTurn: bundle.definition.firstTurn,
@@ -483,7 +495,10 @@ export async function joinRoomAndServe(
       },
       ...warmed,
       ...(config.onFirstAudio ? { onFirstAudio: config.onFirstAudio } : {}),
-    });
+    };
+    handle = room
+      ? await (seams.startVoiceAgent ?? startLivekitVoiceAgent)({ ...startOptions, room })
+      : await startVoiceAgent({ ...startOptions, room: relay.room });
   } catch (error) {
     // Providers handed in are this call's to release; a cold start built its own inside.
     releaseProviders(providers);
@@ -492,7 +507,7 @@ export async function joinRoomAndServe(
     messages.connectRecorder(null);
     await finishRecording();
     await scratch?.remove();
-    await disconnectQuietly(room, "the voice session failed to start");
+    await disconnectQuietly(connection, "the voice session failed to start");
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
       `joined ${roomName} but the voice session failed to start: ${detail}\n` +
@@ -502,7 +517,7 @@ export async function joinRoomAndServe(
   }
 
   emit("joined", { room: roomName });
-  return { room, roomName, handle, messages, settings: bundle.runtime.settings, ended };
+  return { room, connection, roomName, handle, messages, settings: bundle.runtime.settings, ended };
 }
 
 /**
@@ -536,7 +551,7 @@ function releaseProviders(pending: Promise<VoiceProviders> | null): void {
  * here. The caller is about to throw a specific, actionable error; a disconnect problem
  * on top of it is reported but must not replace it.
  */
-async function disconnectQuietly(room: Room, why: string): Promise<void> {
+async function disconnectQuietly(room: { disconnect(): Promise<unknown> }, why: string): Promise<void> {
   try {
     await room.disconnect();
   } catch (error) {
@@ -611,7 +626,7 @@ export async function runHostedDirectJoin(config: DirectJoinConfig): Promise<voi
         // close() disconnects the room itself; when it failed part-way the room may
         // still be joined, and a runner that leaves a participant behind holds the
         // platform's room open.
-        await disconnectQuietly(session.room, "an unclean shutdown");
+        await disconnectQuietly(session.connection, "an unclean shutdown");
       });
   };
   const signals: NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
