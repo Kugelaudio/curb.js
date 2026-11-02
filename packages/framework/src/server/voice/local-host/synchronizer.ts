@@ -43,20 +43,31 @@ type SynchronizerModule = {
 
 let loaded: Promise<SynchronizerModule> | null = null;
 
+function checked(module: Partial<SynchronizerModule>, from: string): SynchronizerModule {
+  if (typeof module.TranscriptionSynchronizer !== "function" || module.defaultTextSyncOptions === undefined) {
+    throw new Error(
+      `curb: @livekit/agents no longer has TranscriptionSynchronizer at ${from}; local voice calls need it. ` +
+        "Pin @livekit/agents to the version curb declares, or update src/server/voice/local-host/synchronizer.ts.",
+    );
+  }
+  return module as SynchronizerModule;
+}
+
+/**
+ * Hands over the module a built artifact bundled. @livekit/agents is inlined there, so no package
+ * is left for the lookup below to find; the generated entry imports the file by path instead.
+ */
+export function setBundledSynchronizerModule(module: Partial<SynchronizerModule>): void {
+  loaded = Promise.resolve(checked(module, "the bundled artifact"));
+}
+
 function loadModule(): Promise<SynchronizerModule> {
   loaded ??= (async () => {
     const require = createRequire(import.meta.url);
     // The CommonJS entry sits beside the ESM one in dist/: only its directory is used.
     const distDir = dirname(require.resolve("@livekit/agents"));
     const file = join(distDir, "voice", "transcription", "synchronizer.js");
-    const module = (await import(pathToFileURL(file).href)) as Partial<SynchronizerModule>;
-    if (typeof module.TranscriptionSynchronizer !== "function" || module.defaultTextSyncOptions === undefined) {
-      throw new Error(
-        `curb: @livekit/agents no longer has TranscriptionSynchronizer at ${file}; local voice calls need it. ` +
-          "Pin @livekit/agents to the version curb declares, or update src/server/voice/local-host/synchronizer.ts.",
-      );
-    }
-    return module as SynchronizerModule;
+    return checked((await import(pathToFileURL(file).href)) as Partial<SynchronizerModule>, file);
   })();
   return loaded;
 }

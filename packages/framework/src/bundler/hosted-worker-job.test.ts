@@ -75,6 +75,14 @@ describe("the hosted worker job", () => {
     expect(source.endsWith(HOSTED_WORKER_JOB_SOURCE)).toBe(true);
   });
 
+  it("gives an artifact the transcription synchronizer by path, since no package is left to look it up in", () => {
+    const source = entry("concierge");
+    expect(source).toContain(
+      `import * as transcriptionSynchronizer from ${JSON.stringify("/framework/node_modules/@livekit/agents/dist/voice/transcription/synchronizer.js")};`,
+    );
+    expect(source).toContain("setBundledSynchronizerModule(transcriptionSynchronizer);");
+  });
+
   it("registers under the package name baked in at build time, as curb start does", () => {
     expect(entry("concierge")).toContain('const agentName = voiceWorkerAgentName(process.env, "concierge");');
     // A project without a name falls back to the rule's own default.
