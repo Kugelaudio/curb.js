@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { RENDER_CHECK_ARG } from "./render-check.js";
 
 /**
@@ -73,6 +73,9 @@ export function workerEntrySource(paths: {
     `import { readDirectJoinConfig, runHostedDirectJoin } from ${JSON.stringify(join(frameworkSrc, "bundler", "direct-join.ts"))};`,
     `import { readManagedConfig, runManaged } from ${JSON.stringify(join(frameworkSrc, "bundler", "managed-runner.ts"))};`,
     `import { cli, ServerOptions } from ${JSON.stringify(livekitAgentsEntry)};`,
+    `import { setBundledSynchronizerModule } from ${JSON.stringify(join(frameworkSrc, "server", "voice", "local-host", "synchronizer.ts"))};`,
+    // By path, because the package's exports map hides this file and the bundle inlines the package.
+    `import * as transcriptionSynchronizer from ${JSON.stringify(join(dirname(livekitAgentsEntry), "voice", "transcription", "synchronizer.js"))};`,
     `import { fileURLToPath as __curbFileURLToPath2 } from "node:url";`,
     "",
     "",
@@ -81,6 +84,7 @@ export function workerEntrySource(paths: {
     "// must also run in LiveKit's FORKED job process, which imports this module fresh,",
     "// so it lives at module scope rather than inside the worker start path.",
     "setBundledAgentRegistry(registry);",
+    "setBundledSynchronizerModule(transcriptionSynchronizer);",
     "",
     "// Self-check mode, run by `curb build` against the finished artifact. It lives in",
     "// THIS file rather than a second entry point so that what renders is the module",
