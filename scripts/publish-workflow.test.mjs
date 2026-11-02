@@ -78,6 +78,36 @@ echo "$GET_REF"
   return { ...result, posted };
 }
 
+/** Runs one step of the publish job with a stand-in for npm that knows no version, and returns
+ * the npm commands it ran, and the step's result. */
+function runPublishStep(t, step, { distTag, kugelaudioTag }) {
+  const start = job("publish").indexOf(`- name: ${step}\n`);
+  assert.notEqual(start, -1, `the publish job has no step named ${step}`);
+  const script = /run: \|\n((?: {10}.*\n)+)/.exec(job("publish").slice(start))?.[1].replace(/^ {10}/gm, "");
+  const bin = mkdtempSync(join(tmpdir(), "curb-publish-step-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const calls = join(bin, "calls");
+  writeFileSync(
+    join(bin, "npm"),
+    `#!/usr/bin/env bash
+echo "$*" >> "${calls}"
+[[ "$1" != view ]]
+`,
+    { mode: 0o755 },
+  );
+  const result = spawnSync("bash", ["-e", "-c", script], {
+    encoding: "utf8",
+    env: {
+      PATH: `${bin}:${process.env.PATH}`,
+      VERSION: "9.9.9",
+      DIST_TAG: distTag,
+      KUGELAUDIO_TAG: kugelaudioTag,
+    },
+  });
+  const ran = existsSync(calls) ? readFileSync(calls, "utf8").split("\n").filter(Boolean) : [];
+  return { ...result, published: ran.filter((line) => line.startsWith("publish ")) };
+}
+
 /** The lines of a workflow_dispatch input, up to the next input. */
 function dispatchInput(name) {
   const match = new RegExp(`^      ${name}:\\n((?:        .*\\n)+)`, "m").exec(publishYml);
@@ -163,11 +193,50 @@ test("the package suite runs publish.yml's tarball commands", () => {
   for (const command of [
     'node scripts/npm-package.mjs "$VERSION" out',
     "node scripts/release-install-test.mjs out",
-    'for name in curb.js create-curb.js create-curb; do',
+    'for name in curb.js create-curb.js create-curb create-kugelaudio; do',
     '"./out/$name-$VERSION.tgz"',
   ]) {
     assert.ok(publishYml.includes(command), `publish.yml no longer runs ${command}`);
     assert.ok(testYml.includes(command), `test.yml no longer runs ${command}`);
+  }
+});
+
+test("a release without the variable publishes three names and is not held up", (t) => {
+  const { status, stderr, published } = runPublishStep(t, "Publish what npm lacks", { distTag: "latest", kugelaudioTag: "" });
+  assert.equal(status, 0, stderr);
+  assert.deepEqual(published, [
+    'publish --access public --tag latest ./out/curb.js-9.9.9.tgz',
+    'publish --access public --tag latest ./out/create-curb.js-9.9.9.tgz',
+    'publish --access public --tag latest ./out/create-curb-9.9.9.tgz',
+  ]);
+});
+
+test("a stable release with create-kugelaudio held leaves its latest alone", (t) => {
+  const { status, stderr, published } = runPublishStep(t, "Publish what npm lacks", {
+    distTag: "latest",
+    kugelaudioTag: "preview",
+  });
+  assert.equal(status, 0, stderr);
+  assert.equal(published.at(-1), "publish --access public --tag preview ./out/create-kugelaudio-9.9.9.tgz");
+  assert.equal(published.length, 4);
+  assert.equal(published.filter((line) => line.includes("--tag latest")).length, 3);
+});
+
+test("create-kugelaudio goes to latest only when plan says so, and always last", (t) => {
+  const { published } = runPublishStep(t, "Publish what npm lacks", { distTag: "latest", kugelaudioTag: "latest" });
+  assert.equal(published.at(-1), "publish --access public --tag latest ./out/create-kugelaudio-9.9.9.tgz");
+});
+
+test("the read-back does not wait for a name that was not published", (t) => {
+  const { stdout } = runPublishStep(t, "Read the publication back", { distTag: "latest", kugelaudioTag: "" });
+  assert.doesNotMatch(stdout, /create-kugelaudio/);
+});
+
+test("the tag create-kugelaudio gets comes from plan, for every job that needs it", () => {
+  assert.match(job("plan"), /CREATE_KUGELAUDIO: \$\{\{ vars\.CREATE_KUGELAUDIO \}\}/);
+  assert.match(job("plan"), /kugelaudio_tag: \$\{\{ steps\.version\.outputs\.kugelaudio_tag \}\}/);
+  for (const name of ["publish", "installed"]) {
+    assert.ok(job(name).includes("KUGELAUDIO_TAG: ${{ needs.plan.outputs.kugelaudio_tag }}"), name);
   }
 });
 
@@ -188,7 +257,7 @@ test("npm gets ten minutes per package to serve a publication, inside the job's 
   const seconds = Number(/sleep (\d+)/.exec(text)?.[1]);
   const timeout = Number(/timeout-minutes: (\d+)/.exec(text)?.[1]);
   assert.ok(attempts * seconds >= 600, `the read-back waits ${attempts * seconds} s`);
-  assert.ok(timeout * 60 > 3 * attempts * seconds, `${timeout} minutes does not fit all three packages`);
+  assert.ok(timeout * 60 > 4 * attempts * seconds, `${timeout} minutes does not fit all four packages`);
 });
 
 // GitHub can refuse GITHUB_TOKEN a ref on a commit whose workflow files differ from main's, and a

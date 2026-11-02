@@ -35,6 +35,12 @@ name: publish
 #                   is skipped and the next release notes start after it.
 #   release fails   "Re-run failed jobs" finishes it.
 #
+# create-kugelaudio is built and verified in every run, but the repository variable
+# CREATE_KUGELAUDIO decides whether it is published: unset, it is not; `preview`, it goes to the
+# `preview` dist-tag on either channel, so its `latest` stays where it is; `release`, it follows
+# the run. It publishes last, so a publisher npm refuses cannot hold back the other three. plan
+# reads the variable, so a change reaches a new run and not a rerun.
+#
 # After a publish, installed creates a project from the public registry. It runs beside release
 # and does not hold it back: npm cannot take a version back, and a version it holds must have its
 # release. So a failure there leaves the run red with the tag in place, and the fix is a new
@@ -86,6 +92,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       git_tag: ${{ steps.version.outputs.git_tag }}
       dist_tag: ${{ steps.version.outputs.dist_tag }}
+      kugelaudio_tag: ${{ steps.version.outputs.kugelaudio_tag }}
     steps:
       - name: Release from main only
         if: github.ref != 'refs/heads/main'
@@ -103,6 +110,7 @@ jobs:
         env:
           CHANNEL: ${{ inputs.channel || 'preview' }}
           SEMVER: ${{ inputs.semver }}
+          CREATE_KUGELAUDIO: ${{ vars.CREATE_KUGELAUDIO }}
         run: node scripts/release-version.mjs --channel "$CHANNEL" --semver "$SEMVER"
 
   verify:
@@ -145,7 +153,7 @@ jobs:
       - name: Dry-run the publication
         run: |
           # The ./ matters: npm reads out/x.tgz as the GitHub repository out/x.tgz.
-          for name in curb.js create-curb.js create-curb; do
+          for name in curb.js create-curb.js create-curb create-kugelaudio; do
             npm publish --dry-run --access public --tag "$DIST_TAG" "./out/$name-$VERSION.tgz"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -182,13 +190,14 @@ jobs:
     environment:
       name: npm
       deployment: false
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       DIST_TAG: ${{ needs.plan.outputs.dist_tag }}
+      KUGELAUDIO_TAG: ${{ needs.plan.outputs.kugelaudio_tag }}
       NPM_CONFIG_PROVENANCE: ${{ !github.event.repository.private }}
     steps:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -205,22 +214,27 @@ jobs:
       # publish would fail after curb.js went out, leaving half a release.
       - name: Refuse half a release
         run: |
-          for name in curb.js create-curb.js create-curb; do
+          for name in curb.js create-curb.js create-curb create-kugelaudio; do
             npm view "$name" name >/dev/null || { echo "$name is not on npm; publish nothing until it is" >&2; exit 1; }
           done
       - name: Publish what npm lacks
         run: |
-          # curb.js first: create-curb.js and create-curb pin it.
-          for name in curb.js create-curb.js create-curb; do
-            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+          # curb.js first: the others pin it.
+          for name in curb.js create-curb.js create-curb create-kugelaudio; do
+            tag="$DIST_TAG"
+            [[ "$name" != create-kugelaudio ]] || tag="$KUGELAUDIO_TAG"
+            if [[ -z "$tag" ]]; then
+              echo "$name is not published: CREATE_KUGELAUDIO is not set"
+            elif npm view "$name@$VERSION" version >/dev/null 2>&1; then
               echo "$name@$VERSION is already on npm"
             else
-              npm publish --access public --tag "$DIST_TAG" "./out/$name-$VERSION.tgz"
+              npm publish --access public --tag "$tag" "./out/$name-$VERSION.tgz"
             fi
           done
       - name: Read the publication back
         run: |
-          for name in curb.js create-curb.js create-curb; do
+          for name in curb.js create-curb.js create-curb create-kugelaudio; do
+            [[ "$name" != create-kugelaudio || -n "$KUGELAUDIO_TAG" ]] || continue
             spec="$name@$VERSION"
             tarball="out/$name-$VERSION.tgz"
             expected="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
@@ -253,6 +267,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - env:
           VERSION: ${{ needs.plan.outputs.version }}
+          KUGELAUDIO_TAG: ${{ needs.plan.outputs.kugelaudio_tag }}
         run: node scripts/published-install-test.mjs "$VERSION"
 
   release:
