@@ -1,7 +1,6 @@
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CURB_MARK } from "../../brand.js";
 import { login, logout, pkceChallenge } from "./auth.js";
@@ -339,121 +338,6 @@ describe("curb login", () => {
       expect(browser.body).toContain(`name="viewport"`);
       expect(browser.body).not.toMatch(/https?:|<script|<img|@import|url\(/);
       expect(browser.body).toContain(`<link rel="icon" href="data:,">`);
-    });
-  });
-
-  describe("a code pasted into the terminal", () => {
-    const tty = () => Object.assign(new PassThrough(), { isTTY: true });
-
-    function start(input: PassThrough & { isTTY?: boolean }, browser?: (signIn: URL) => void) {
-      const seen: { url?: URL } = {};
-      const lines: string[] = [];
-      tokenRoute(() => seen.url?.searchParams.get("code_challenge") ?? "");
-      let opened!: () => void;
-      const ready = new Promise<void>((resolve) => {
-        opened = resolve;
-      });
-      const running = login({
-        webUrl: cloud.url,
-        path,
-        log: (line) => lines.push(line),
-        timeoutMs: 500,
-        terminal: { input },
-        open: (url) => {
-          seen.url = new URL(url);
-          browser?.(seen.url);
-          opened();
-        },
-      });
-      return { seen, lines, running, ready, state: () => seen.url?.searchParams.get("state") ?? "" };
-    }
-
-    const exchanges = () => cloud.requests.filter((request) => request.path === "/api/cli/token").length;
-
-    it("prints a URL for another machine, with no port and the same challenge", async () => {
-      const input = tty();
-      const { seen, lines, running, ready, state } = start(input);
-      await ready;
-      input.write(`code-1#${state()}\n`);
-      await running;
-
-      const printed = lines.find((line) => line.includes("manual=1"))!;
-      const manual = new URL(printed.slice(printed.indexOf("http")));
-      expect(printed).toMatch(/^On another machine, open this URL and paste the code it shows here: /);
-      expect(manual.pathname).toBe("/cli/login");
-      expect(manual.searchParams.has("port")).toBe(false);
-      expect(manual.searchParams.get("state")).toBe(seen.url?.searchParams.get("state"));
-      expect(manual.searchParams.get("code_challenge")).toBe(seen.url?.searchParams.get("code_challenge"));
-    });
-
-    it("signs in from the paste, stops listening and stops reading", async () => {
-      const input = tty();
-      const { seen, running, ready, state } = start(input);
-      await ready;
-
-      input.write(`  code-1#${state()}  \n`);
-      const { credentials } = await running;
-
-      expect(credentials.user.email).toBe("dev@example.com");
-      expect(input.isPaused()).toBe(true);
-      await expect(fetch(`http://127.0.0.1:${seen.url?.searchParams.get("port")}/callback`)).rejects.toThrow();
-    });
-
-    it("signs in from the callback, stops reading and ignores a later paste", async () => {
-      const input = tty();
-      let answer: Promise<Response> | undefined;
-      const { running, ready } = start(input, (signIn) => {
-        answer = fetch(
-          `http://127.0.0.1:${signIn.searchParams.get("port")}/callback?code=code-1&state=${signIn.searchParams.get("state")}`,
-          { redirect: "manual" },
-        );
-      });
-      await ready;
-
-      await running;
-      const response = await (answer as Promise<Response>);
-      expect(response.headers.get("location")).toBe(`${cloud.url}/cli/login/result?outcome=success`);
-      expect(input.isPaused()).toBe(true);
-      expect(input.listenerCount("keypress")).toBe(0);
-      expect(exchanges()).toBe(1);
-    });
-
-    it.each([
-      ["another login's state", (state: string) => `someone-elses-code#${state}x`],
-      ["no state", () => "someone-elses-code"],
-      ["no code", (state: string) => `#${state}`],
-    ])("refuses a paste with %s, never prints it, and goes on waiting", async (_label, paste) => {
-      const input = tty();
-      const { lines, running, ready, state } = start(input);
-      await ready;
-
-      input.write(`${paste(state())}\n`);
-      await expect.poll(() => lines.some((line) => line.includes("does not belong to this sign-in"))).toBe(true);
-      expect(exchanges()).toBe(0);
-      expect(lines.join("\n")).not.toContain("someone-elses-code");
-
-      input.write(`code-1#${state()}\n`);
-      expect((await running).credentials.user.email).toBe("dev@example.com");
-    });
-
-    it("gives up after the timeout and stops reading", async () => {
-      const input = tty();
-      const { running } = start(input);
-
-      await expect(running).rejects.toThrow(/Timed out/);
-      expect(input.isPaused()).toBe(true);
-    });
-
-    it("without a terminal prints no second URL and reads nothing", async () => {
-      const input = new PassThrough();
-      const { lines, running, ready, state } = start(input);
-      await ready;
-
-      input.write(`code-1#${state()}\n`);
-
-      await expect(running).rejects.toThrow(/Timed out/);
-      expect(lines.some((line) => line.includes("manual=1"))).toBe(false);
-      expect(exchanges()).toBe(0);
     });
   });
 

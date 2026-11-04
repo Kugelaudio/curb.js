@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createInterface } from "node:readline";
 import {
   credentialsPath,
   type Credentials,
@@ -27,9 +26,6 @@ import { requestJson } from "./http.js";
  * `<web>/cli/login/result?outcome=...`, so the browser ends on the web app rather than on
  * this loopback address, and on a page that tells the truth about the exchange. Only a
  * callback that cannot be trusted or used gets a small page from this server.
- *
- * With stdin on a terminal, a browser on another machine works too: `<web>/cli/login?manual=1`
- * shows a `code#state` to paste here. It races the callback, and the first to arrive wins.
  *
  * With `project_key=1` the sign-in page also lets the person choose the KugelAudio project
  * a new API key is created in, and the exchange answers with that key (`api_key` and where
@@ -67,13 +63,6 @@ export interface LoginOptions {
   deviceName?: string;
   /** How long the token exchange may run; the browser is waiting on it. */
   exchangeTimeoutMs?: number;
-  /** Where a code can be pasted, read only when `input` is a TTY. This process's terminal by default. */
-  terminal?: LoginTerminal;
-}
-
-export interface LoginTerminal {
-  input: NodeJS.ReadableStream & { isTTY?: boolean };
-  output?: NodeJS.WritableStream & { isTTY?: boolean };
 }
 
 /** The project API key a login created, and the KugelAudio project it belongs to, by public id. */
@@ -145,8 +134,6 @@ export async function login(options: LoginOptions): Promise<LoginResult> {
   const pkce = createPkce();
 
   const callback = await listenForCallback(state, webUrl, options.timeoutMs ?? LOGIN_TIMEOUT_MS);
-  const terminal = options.terminal ?? { input: process.stdin, output: process.stdout };
-  let paste: PastedCode | null = null;
   let outcome: LoginOutcome = "failed";
   try {
     const signIn = new URL("/cli/login", webUrl);
@@ -157,17 +144,9 @@ export async function login(options: LoginOptions): Promise<LoginResult> {
     if (options.requestProjectKey) signIn.searchParams.set("project_key", "1");
     log(`Opening ${signIn.href}`);
     log("If no browser opens, paste that URL into one. Waiting up to 5 minutes...");
-    if (terminal.input.isTTY) {
-      const manual = new URL(signIn);
-      manual.searchParams.delete("port");
-      manual.searchParams.set("manual", "1");
-      log(`On another machine, open this URL and paste the code it shows here: ${manual.href}`);
-      paste = readPastedCode(terminal, state, log);
-    }
     options.open(signIn.href);
 
-    const code = await (paste ? Promise.race([callback.code, paste.code]) : callback.code);
-    paste?.close();
+    const code = await callback.code;
     const { body } = await requestJson<TokenResponse>({
       method: "POST",
       url: new URL("/api/cli/token", webUrl).href,
@@ -197,50 +176,8 @@ export async function login(options: LoginOptions): Promise<LoginResult> {
     outcome = "success";
     return { credentials, projectKey };
   } finally {
-    paste?.close();
     await callback.close(outcome);
   }
-}
-
-interface PastedCode {
-  /** Settles only with a code carrying this login's state. */
-  code: Promise<string>;
-  close: () => void;
-}
-
-/**
- * Reads pasted `code#state` lines from the terminal. A line with another state is refused and
- * reading goes on, as the listener does for a callback that is not ours: it may be someone
- * else's code that a person was talked into pasting. Pasted text is never printed back.
- */
-function readPastedCode(terminal: LoginTerminal, state: string, log: (line: string) => void): PastedCode {
-  let deliver!: (code: string) => void;
-  const code = new Promise<string>((resolve) => {
-    deliver = resolve;
-  });
-  // Raw mode on a terminal, because the line discipline would cut a long code at its line limit.
-  const lines = createInterface({
-    input: terminal.input,
-    output: terminal.output,
-    terminal: Boolean(terminal.output?.isTTY),
-    historySize: 0,
-  });
-  lines.on("line", (line) => {
-    const pasted = line.trim();
-    if (pasted === "") return;
-    const separator = pasted.lastIndexOf("#");
-    if (separator <= 0 || pasted.slice(separator + 1) !== state) {
-      log("That code does not belong to this sign-in, so it was not used. Paste the code from the URL above.");
-      return;
-    }
-    deliver(pasted.slice(0, separator));
-  });
-  // In raw mode Ctrl+C reaches readline, which would only stop reading while the login waits on.
-  lines.on("SIGINT", () => {
-    lines.close();
-    process.kill(process.pid, "SIGINT");
-  });
-  return { code, close: () => lines.close() };
 }
 
 type LoginOutcome = "success" | "cancelled" | "failed";
