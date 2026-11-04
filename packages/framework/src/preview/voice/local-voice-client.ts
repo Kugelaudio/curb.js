@@ -30,6 +30,10 @@ import type { VoiceClientState } from "./types.js";
 /** Close codes that end a call normally: hung up by either side, or the socket said nothing. */
 const NORMAL_CLOSE = new Set([1000, 1005]);
 
+/** What the page says when the agent's voice plays without echo cancellation. */
+export const NO_ECHO_CANCELLATION =
+  "This browser blocked the audio path echo cancellation needs, so the agent may hear itself. Use headphones, or check for a VPN or a privacy extension that limits WebRTC.";
+
 /** What a local call reaches outside itself; a test passes its own. */
 export type LocalCallIO = {
   openMedia: OpenCallMedia;
@@ -202,7 +206,7 @@ export class LocalVoiceClient {
       this.patch({ connecting: false, error: joinFailureMessage(error) });
       return;
     }
-    this.patch({ connected: true, connecting: false, listening: true, error: null });
+    this.patch({ connected: true, connecting: false, listening: true, error: media.echoCancelled ? null : NO_ECHO_CANCELLATION });
   }
 
   /** The call's socket, open; rejects when it closes or fails first. */

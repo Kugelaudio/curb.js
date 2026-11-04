@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceTicket } from "./call-state.js";
 import type { CallMedia, CallMediaEvents } from "./local-voice-media.js";
-import { LocalVoiceClient, localVoiceSocketUrl, type LocalCallIO } from "./local-voice-client.js";
+import { LocalVoiceClient, localVoiceSocketUrl, NO_ECHO_CANCELLATION, type LocalCallIO } from "./local-voice-client.js";
 import { VoiceClient } from "./voice-client.js";
 import { LivekitVoiceClient } from "./livekit-voice-client.js";
 import { CallRecordings } from "./call-recordings.js";
@@ -52,7 +52,7 @@ function fakeTrack(): MediaStreamTrack {
 }
 
 /** A call's IO with the browser taken out: what it opened, and the events it was given. */
-function fakeIO() {
+function fakeIO(options: { echoCancelled?: boolean } = {}) {
   const sockets: FakeSocket[] = [];
   let events: CallMediaEvents | null = null;
   let media: FakeMedia | null = null;
@@ -62,6 +62,7 @@ function fakeIO() {
       media = {
         microphone: fakeTrack(),
         agentVoice: fakeTrack(),
+        echoCancelled: options.echoCancelled ?? true,
         played: [],
         flushes: 0,
         clears: 0,
@@ -118,6 +119,19 @@ describe("localVoiceSocketUrl", () => {
 });
 
 describe("LocalVoiceClient", () => {
+  it("says so when the voice plays without echo cancellation, and the call still connects", async () => {
+    const client = new LocalVoiceClient(noRecordings(), fakeIO({ echoCancelled: false }).io);
+    await client.start(TICKET);
+    expect(client.getState().connected).toBe(true);
+    expect(client.getState().error).toBe(NO_ECHO_CANCELLATION);
+  });
+
+  it("shows no warning on a call with echo cancellation", async () => {
+    const client = new LocalVoiceClient(noRecordings(), fakeIO().io);
+    await client.start(TICKET);
+    expect(client.getState().error).toBeNull();
+  });
+
   async function connected() {
     const fake = fakeIO();
     const client = new LocalVoiceClient(noRecordings(), fake.io);
