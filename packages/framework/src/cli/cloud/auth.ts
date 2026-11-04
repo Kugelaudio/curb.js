@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createServer, type Server } from "node:http";
+import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createInterface } from "node:readline";
 import {
   credentialsPath,
   type Credentials,
@@ -12,7 +13,6 @@ import {
   revokeSession,
   writeCredentials,
 } from "./credentials.js";
-import { CURB_MARK } from "../../brand.js";
 import { requestJson } from "./http.js";
 
 /**
@@ -23,6 +23,14 @@ import { requestJson } from "./http.js";
  * `/callback?code&state`. The code alone is useless: the token exchange also needs the
  * verifier, which never left this process.
  *
+ * The listener holds the browser's answer while the exchange runs, then redirects it to
+ * `<web>/cli/login/result?outcome=...`, so the browser ends on the web app rather than on
+ * this loopback address, and on a page that tells the truth about the exchange. Only a
+ * callback that cannot be trusted or used gets a small page from this server.
+ *
+ * With stdin on a terminal, a browser on another machine works too: `<web>/cli/login?manual=1`
+ * shows a `code#state` to paste here. It races the callback, and the first to arrive wins.
+ *
  * With `project_key=1` the sign-in page also lets the person choose the KugelAudio project
  * a new API key is created in, and the exchange answers with that key (`api_key` and where
  * it lives). The CLI asks for one only in a Curb project, and keeps it in its own store
@@ -30,6 +38,7 @@ import { requestJson } from "./http.js";
  */
 
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
+const EXCHANGE_TIMEOUT_MS = 60 * 1000;
 
 export interface Pkce {
   verifier: string;
@@ -56,6 +65,15 @@ export interface LoginOptions {
   requestProjectKey?: boolean;
   /** This computer's name, which the web gives the API key ("Curb CLI on <device>"). */
   deviceName?: string;
+  /** How long the token exchange may run; the browser is waiting on it. */
+  exchangeTimeoutMs?: number;
+  /** Where a code can be pasted, read only when `input` is a TTY. This process's terminal by default. */
+  terminal?: LoginTerminal;
+}
+
+export interface LoginTerminal {
+  input: NodeJS.ReadableStream & { isTTY?: boolean };
+  output?: NodeJS.WritableStream & { isTTY?: boolean };
 }
 
 /** The project API key a login created, and the KugelAudio project it belongs to, by public id. */
@@ -126,7 +144,10 @@ export async function login(options: LoginOptions): Promise<LoginResult> {
   const state = randomBytes(16).toString("base64url");
   const pkce = createPkce();
 
-  const callback = await listenForCallback(state, options.timeoutMs ?? LOGIN_TIMEOUT_MS);
+  const callback = await listenForCallback(state, webUrl, options.timeoutMs ?? LOGIN_TIMEOUT_MS);
+  const terminal = options.terminal ?? { input: process.stdin, output: process.stdout };
+  let paste: PastedCode | null = null;
+  let outcome: LoginOutcome = "failed";
   try {
     const signIn = new URL("/cli/login", webUrl);
     signIn.searchParams.set("port", String(callback.port));
@@ -136,14 +157,23 @@ export async function login(options: LoginOptions): Promise<LoginResult> {
     if (options.requestProjectKey) signIn.searchParams.set("project_key", "1");
     log(`Opening ${signIn.href}`);
     log("If no browser opens, paste that URL into one. Waiting up to 5 minutes...");
+    if (terminal.input.isTTY) {
+      const manual = new URL(signIn);
+      manual.searchParams.delete("port");
+      manual.searchParams.set("manual", "1");
+      log(`On another machine, open this URL and paste the code it shows here: ${manual.href}`);
+      paste = readPastedCode(terminal, state, log);
+    }
     options.open(signIn.href);
 
-    const code = await callback.code;
+    const code = await (paste ? Promise.race([callback.code, paste.code]) : callback.code);
+    paste?.close();
     const { body } = await requestJson<TokenResponse>({
       method: "POST",
       url: new URL("/api/cli/token", webUrl).href,
       body: { code, code_verifier: pkce.verifier },
       webUrl,
+      signal: AbortSignal.timeout(options.exchangeTimeoutMs ?? EXCHANGE_TIMEOUT_MS),
     });
     const missing = (["accessToken", "refreshToken", "expiresAt", "supabaseUrl", "supabaseAnonKey", "platformApiUrl"] as const)
       .filter((field) => body[field] === undefined || body[field] === "");
@@ -164,25 +194,125 @@ export async function login(options: LoginOptions): Promise<LoginResult> {
     };
     const path = options.path ?? credentialsPath();
     writeCredentials(credentials, path);
+    outcome = "success";
     return { credentials, projectKey };
   } finally {
-    callback.close();
+    paste?.close();
+    await callback.close(outcome);
   }
 }
 
-interface Callback {
-  port: number;
+interface PastedCode {
+  /** Settles only with a code carrying this login's state. */
   code: Promise<string>;
   close: () => void;
 }
 
+/**
+ * Reads pasted `code#state` lines from the terminal. A line with another state is refused and
+ * reading goes on, as the listener does for a callback that is not ours: it may be someone
+ * else's code that a person was talked into pasting. Pasted text is never printed back.
+ */
+function readPastedCode(terminal: LoginTerminal, state: string, log: (line: string) => void): PastedCode {
+  let deliver!: (code: string) => void;
+  const code = new Promise<string>((resolve) => {
+    deliver = resolve;
+  });
+  // Raw mode on a terminal, because the line discipline would cut a long code at its line limit.
+  const lines = createInterface({
+    input: terminal.input,
+    output: terminal.output,
+    terminal: Boolean(terminal.output?.isTTY),
+    historySize: 0,
+  });
+  lines.on("line", (line) => {
+    const pasted = line.trim();
+    if (pasted === "") return;
+    const separator = pasted.lastIndexOf("#");
+    if (separator <= 0 || pasted.slice(separator + 1) !== state) {
+      log("That code does not belong to this sign-in, so it was not used. Paste the code from the URL above.");
+      return;
+    }
+    deliver(pasted.slice(0, separator));
+  });
+  // In raw mode Ctrl+C reaches readline, which would only stop reading while the login waits on.
+  lines.on("SIGINT", () => {
+    lines.close();
+    process.kill(process.pid, "SIGINT");
+  });
+  return { code, close: () => lines.close() };
+}
+
+type LoginOutcome = "success" | "cancelled" | "failed";
+
+interface Callback {
+  port: number;
+  code: Promise<string>;
+  /** Answers every browser still waiting with `outcome`, then stops listening. */
+  close: (outcome: LoginOutcome) => Promise<void>;
+}
+
+const PAGE_STYLE = `
+:root {
+  color-scheme: light dark;
+  --background: #f8f8f7;
+  --text: #1c1c1e;
+  --muted: #66666c;
+  --notice: #8a6100;
+  --notice-soft: #f6eedb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #141416;
+    --text: #f2f2f3;
+    --muted: #a3a3aa;
+    --notice: #e0b45f;
+    --notice-soft: #33290f;
+  }
+}
+body {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 1.5rem;
+  background: var(--background);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  text-align: center;
+}
+main { max-width: 26rem; }
+h1 { margin: 1.75rem 0 0.5rem; font-size: 1.5rem; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
+p { margin: 0; color: var(--muted); line-height: 1.5; }
+.icon { width: 4.5rem; height: 4.5rem; border-radius: 50%; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; background: var(--notice-soft); color: var(--notice); }
+`;
+
+/**
+ * The page for a callback that cannot be used: inline and self-contained, and on this server
+ * because a request that fails these checks is not one to send on to the web app.
+ */
 const PAGE = (title: string, text: string) =>
-  `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
-  `<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;line-height:1.5">` +
-  `${CURB_MARK}<h1 style="font-size:1.25rem">${title}</h1><p>${text}</p></body>`;
+  `<!doctype html><html lang="en"><meta charset="utf-8">` +
+  `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+  // An empty icon, so the browser does not ask this server for /favicon.ico.
+  `<link rel="icon" href="data:,"><title>${title}</title><style>${PAGE_STYLE}</style>` +
+  `<body><main><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v6.5M12 17v.01"/></svg>` +
+  `<h1>${title}</h1><p>${text}</p></main></body></html>`;
+
+/** Ends `response`; settles once it is written or the browser has gone, so closing cannot cut it off. */
+function finishResponse(response: ServerResponse, status: number, headers: Record<string, string>, body?: string): Promise<void> {
+  if (response.destroyed) return Promise.resolve();
+  return new Promise((resolve) => {
+    response.once("close", () => resolve());
+    response.writeHead(status, { ...headers, Connection: "close" });
+    response.end(body);
+  });
+}
 
 /** Starts the loopback listener; `code` settles on the first valid callback, a cancel, or the timeout. */
-async function listenForCallback(state: string, timeoutMs: number): Promise<Callback> {
+async function listenForCallback(state: string, webUrl: string, timeoutMs: number): Promise<Callback> {
   let settle!: { resolve: (code: string) => void; reject: (error: Error) => void };
   const code = new Promise<string>((resolve, reject) => {
     settle = { resolve, reject };
@@ -191,6 +321,15 @@ async function listenForCallback(state: string, timeoutMs: number): Promise<Call
   // from being reported as unhandled in between.
   code.catch(() => {});
 
+  // Browsers waiting on the exchange, and the answers still being written.
+  const held: ServerResponse[] = [];
+  const answers: Promise<void>[] = [];
+  const redirectToResult = (response: ServerResponse, outcome: LoginOutcome) => {
+    const result = new URL("/cli/login/result", webUrl);
+    result.searchParams.set("outcome", outcome);
+    answers.push(finishResponse(response, 302, { Location: result.href }));
+  };
+
   const server: Server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (url.pathname !== "/callback") {
@@ -198,8 +337,7 @@ async function listenForCallback(state: string, timeoutMs: number): Promise<Call
       return;
     }
     const send = (status: number, title: string, text: string) => {
-      response.writeHead(status, { "Content-Type": "text/html; charset=utf-8", Connection: "close" });
-      response.end(PAGE(title, text));
+      answers.push(finishResponse(response, status, { "Content-Type": "text/html; charset=utf-8" }, PAGE(title, text)));
     };
     // A callback with the wrong state is not ours (another tab, a forged link): refuse it
     // and keep waiting for the real one rather than failing the login.
@@ -209,7 +347,7 @@ async function listenForCallback(state: string, timeoutMs: number): Promise<Call
     }
     const error = url.searchParams.get("error");
     if (error) {
-      send(200, "Sign-in cancelled", "You can close this tab.");
+      redirectToResult(response, error === "access_denied" ? "cancelled" : "failed");
       settle.reject(new Error(error === "access_denied" ? "Sign-in was cancelled in the browser." : `Sign-in failed: ${error}.`));
       return;
     }
@@ -219,7 +357,8 @@ async function listenForCallback(state: string, timeoutMs: number): Promise<Call
       settle.reject(new Error("The browser came back without a sign-in code. Run `npx curb login` again."));
       return;
     }
-    send(200, "Signed in to KugelAudio", "You can close this tab and return to the terminal.");
+    // Answered by `close`, once the exchange has said how this ended.
+    held.push(response);
     settle.resolve(value);
   });
 
@@ -234,8 +373,10 @@ async function listenForCallback(state: string, timeoutMs: number): Promise<Call
   return {
     port: (server.address() as AddressInfo).port,
     code,
-    close: () => {
+    close: async (outcome) => {
       clearTimeout(timer);
+      for (const response of held.splice(0)) redirectToResult(response, outcome);
+      await Promise.all(answers);
       server.closeAllConnections();
       server.close();
     },
