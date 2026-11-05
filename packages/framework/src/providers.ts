@@ -139,13 +139,19 @@ export type LlmDescriptor =
   | { provider: "openai"; kind: "llm"; options: { model: string } }
   | { provider: "openai-compatible"; kind: "llm"; options: OpenaiCompatibleOptions };
 
-/** OpenAI's speech-to-speech models. Key: `OPENAI_API_KEY`. */
+/** OpenAI's speech-to-speech models. Key: `OPENAI_API_KEY`, or the variable `apiKeyEnv` names. */
 export type OpenaiS2sOptions = {
   /** Defaults to "gpt-live-1" for `openai.live()` and LiveKit's default for `openai.realtime()`. */
   model?: string;
   voice?: string;
   /** Another endpoint on the same protocol. */
   baseURL?: string;
+  /**
+   * The environment variable that holds the endpoint's key, read when a call starts; default
+   * `OPENAI_API_KEY`. Set it when `baseURL` is another provider's endpoint whose key the project
+   * already has, e.g. `apiKeyEnv: "KUGELAUDIO_API_KEY"`.
+   */
+  apiKeyEnv?: string;
 };
 
 /** Which wire a model speaks decides how it hands work to Curb; the agent never sees the difference. */
@@ -209,6 +215,23 @@ function defined<T extends object>(options: T | undefined): T {
   return Object.fromEntries(
     Object.entries(options ?? {}).filter(([, value]) => value !== undefined),
   ) as T;
+}
+
+/** An environment variable name as a shell and a dashboard accept it. */
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** `openai.live()` / `openai.realtime()` options; refused when `apiKeyEnv` names no variable. */
+function s2sOptions(factory: string, options: OpenaiS2sOptions | undefined): OpenaiS2sOptions {
+  const given = defined(options);
+  const { apiKeyEnv } = given;
+  if (apiKeyEnv !== undefined && (typeof apiKeyEnv !== "string" || !ENV_NAME.test(apiKeyEnv))) {
+    refuseOption(
+      `${factory}() apiKeyEnv must name an environment variable, got ${JSON.stringify(apiKeyEnv)}.`,
+      `Pass the variable's name, not its value, for example ${factory}({ apiKeyEnv: "KUGELAUDIO_API_KEY" }).`,
+      factory,
+    );
+  }
+  return given;
 }
 
 export const kugelaudio = {
@@ -307,14 +330,14 @@ export const openai = Object.assign(
       provider: "openai",
       kind: "s2s",
       protocol: "live",
-      options: { model: "gpt-live-1", ...defined(options) },
+      options: { model: "gpt-live-1", ...s2sOptions("openai.live", options) },
     }),
     /** OpenAI Realtime as the agent's voice (`<Agent s2s>`). */
     realtime: (options?: OpenaiS2sOptions): S2sDescriptor => ({
       provider: "openai",
       kind: "s2s",
       protocol: "realtime",
-      options: defined(options ?? {}),
+      options: s2sOptions("openai.realtime", options),
     }),
   },
 );
@@ -443,12 +466,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function refuseOption(message: string, fix: string): never {
+function refuseOption(message: string, fix: string, component = "openaiCompatible"): never {
   throw new AgentAuthoringError({
     code: AUTHORING_DIAGNOSTIC_CODES.invalidProp,
     severity: "error",
     message,
-    location: { source: "src/agent/agent.tsx", component: "openaiCompatible" },
+    location: { source: "src/agent/agent.tsx", component },
     fix,
   });
 }

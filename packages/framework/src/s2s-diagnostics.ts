@@ -6,20 +6,21 @@
  */
 
 import { AUTHORING_DIAGNOSTIC_CODES, AgentAuthoringError, type AuthoringDiagnostic } from "./authoring.js";
-import { OPENAI_API_KEY, type Env } from "./provider-keys.js";
+import { s2sKey, type Env } from "./provider-keys.js";
 import type { S2sDescriptor } from "./providers.js";
 import { providerPropsFromTree } from "./session-settings.js";
 import type { SemanticNode } from "./types.js";
 
 /** Why no call can start on this model, or null when it can. */
 export function s2sCredentialDiagnostic(descriptor: S2sDescriptor, env: Env): AuthoringDiagnostic | null {
-  if (OPENAI_API_KEY.read(env)) return null;
+  const key = s2sKey(descriptor);
+  if (key.read(env)) return null;
   return {
     code: AUTHORING_DIAGNOSTIC_CODES.invalidProp,
     severity: "error",
-    message: `The agent's s2s is ${descriptor.provider}, which needs ${OPENAI_API_KEY.name}, and this process does not have it. No session can start without it.`,
+    message: `The agent's s2s is ${descriptor.provider}, which needs ${key.name}, and this process does not have it. No session can start without it.`,
     location: { source: "src/agent/agent.tsx", component: "Agent" },
-    fix: `Set ${OPENAI_API_KEY.name} in the project's .env (see .env.example). An empty value counts as unset.`,
+    fix: `Set ${key.name} in the project's .env (see .env.example). An empty value counts as unset.`,
   };
 }
 

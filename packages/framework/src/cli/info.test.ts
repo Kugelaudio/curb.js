@@ -43,7 +43,7 @@ describe("the providers curb info reads from the source", () => {
     const root = project({ "src/agent/agent.tsx": agentWith("tts={voices.main}") });
     const report = await infoReport(root, {});
     expect(report).toContain("LLM  kugelaudio (default)");
-    expect(report).toContain("STT  azure (default)");
+    expect(report).toContain("STT  kugelaudio (default)");
     expect(report).toContain("TTS  set in code");
   });
 
@@ -122,7 +122,6 @@ describe("curb info", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("LLM  openai-compatible");
     expect(result.stdout).toMatch(/KUGELAUDIO_API_KEY +set/);
-    expect(result.stdout).toMatch(/AZURE_SPEECH_KEY +set/);
     for (const secret of secrets) expect(result.stdout + result.stderr).not.toContain(secret);
   }, 60_000);
 

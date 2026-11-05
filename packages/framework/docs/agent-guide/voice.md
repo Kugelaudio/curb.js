@@ -27,7 +27,7 @@ tree.
 | `cartesia.tts(...)` | `voice`, `model`, `language` | `CARTESIA_API_KEY` |
 
 Without a prop the defaults apply: `kugelaudio.llm()`,
-`azure.stt()` and `kugelaudio.tts()` (English). A `kugelaudio.tts()` without `voice`
+`kugelaudio.stt()` and `kugelaudio.tts()` (English). A `kugelaudio.tts()` without `voice`
 speaks the default voice of its `language`: 1072 for English, 1887 for German, and the
 English 1072 for any other language, so give such an agent a `voice`
 (`defaultKugelVoice(language)` from `"curb/providers"` returns the default). A chosen provider

@@ -116,7 +116,7 @@ async function call(options: { firstLine?: string; steps?: Step[]; greeting?: st
   return { model, ...parts };
 }
 
-async function callOn(s2s: S2sDescriptor, options: { firstLine?: string; steps?: Step[]; firstTurn?: "agent" }, started: () => boolean) {
+async function callOn(s2s: S2sDescriptor, options: { firstLine?: string; steps?: Step[]; firstTurn?: "agent"; env?: Record<string, string> }, started: () => boolean) {
   const Site = () => <App s2s={s2s} />;
   const runtime = new AgentSiteRuntime(({ path, loadedPaths }) => agentAppElement(Site, { path, loadedPaths, routes }), {
     maxLoadedSkills: 2,
@@ -161,7 +161,7 @@ async function callOn(s2s: S2sDescriptor, options: { firstLine?: string; steps?:
     roomName: "call",
     bundle: { runtime, session } as never,
     client: { bind: () => {}, detach: () => {} } as never,
-    env: { OPENAI_API_KEY: "test-key" } as never,
+    env: (options.env ?? { OPENAI_API_KEY: "test-key" }) as never,
     onClosed: closed,
     ...(options.firstTurn ? { firstTurn: options.firstTurn } : {}),
   });
@@ -353,6 +353,14 @@ describe("a call on openai.live()", { timeout: 12_000 }, () => {
     model.callerSays("Do it.", { delegate: true });
     await until(() => model.commentary().some((event) => event.content === "Done for you."), "the delegation was answered");
     await until(() => said("user").includes("Do it."), "the line was recorded");
+  });
+
+  it("connects with the key apiKeyEnv names, read from the call's environment", async () => {
+    const model = await startFakeLiveModel();
+    open.push(async () => void (await model.close()));
+    const s2s = openai.live({ baseURL: model.baseURL, voice: "marin", apiKeyEnv: "ENDPOINT_KEY" });
+    await callOn(s2s, { env: { ENDPOINT_KEY: "endpoint-key" } }, () => model.start() !== undefined);
+    expect(model.authorization).toEqual(["Bearer endpoint-key"]);
   });
 });
 

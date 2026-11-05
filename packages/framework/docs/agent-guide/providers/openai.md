@@ -27,6 +27,7 @@ in its own words. Three things follow:
 | `model` | `string` | Defaults to `"gpt-live-1"` for `openai.live()` |
 | `voice` | `string` | The model's voice |
 | `baseURL` | `string` | Another endpoint on the same protocol |
+| `apiKeyEnv` | `string` | The environment variable holding the endpoint's key, read when a call starts; default `OPENAI_API_KEY` |
 
 ## Example
 

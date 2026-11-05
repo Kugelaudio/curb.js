@@ -94,8 +94,8 @@ export type SiteElementProps = {
 };
 
 /** `<Agent>`: the tree root, plus the providers the agent talks through (`curb/providers`).
- * A changed prop swaps that provider mid-call. Defaults: `kugelaudio.tts()`, `azure.stt()`,
- * `anthropic("claude-haiku-4-5")`. */
+ * A changed prop swaps that provider mid-call. Defaults: `kugelaudio.tts()`, `kugelaudio.stt()`,
+ * `kugelaudio.llm()`. */
 export type AgentProps = SiteElementProps &
   AgentProviderProps & {
     /**

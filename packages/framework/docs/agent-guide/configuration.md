@@ -14,7 +14,7 @@ naming it.
 | `anthropic()` | `ANTHROPIC_API_KEY` |
 | `openai()`, `openai.stt()`, `openai.tts()` | `OPENAI_API_KEY` |
 | `openaiCompatible()` | `AGENT_LLM_API_KEY`, else `OPENAI_API_KEY`; optional |
-| `openai.live()`, `openai.realtime()` | `OPENAI_API_KEY` |
+| `openai.live()`, `openai.realtime()` | `OPENAI_API_KEY`, or the variable `apiKeyEnv` names |
 | `azure.stt()` | `AZURE_SPEECH_KEY`; `AZURE_SPEECH_REGION` (default `eastus`) |
 | `deepgram.stt()` | `DEEPGRAM_API_KEY` |
 | `elevenlabs.stt()`, `elevenlabs.tts()` | `ELEVEN_API_KEY`, or `ELEVENLABS_API_KEY` |

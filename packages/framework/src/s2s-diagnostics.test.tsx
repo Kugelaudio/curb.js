@@ -32,6 +32,18 @@ describe("<Agent s2s> diagnostics", () => {
     expect(s2sCredentialDiagnostic(openai.live(), { OPENAI_API_KEY: "k" })).toBeNull();
   });
 
+  it("reads the key apiKeyEnv names, and only that one", () => {
+    const live = openai.live({ baseURL: "https://example.test/v1", apiKeyEnv: "OTHER_API_KEY" });
+    expect(s2sCredentialDiagnostic(live, { OPENAI_API_KEY: "k" })?.message).toContain("OTHER_API_KEY");
+    expect(s2sCredentialDiagnostic(live, { OTHER_API_KEY: "k" })).toBeNull();
+    expect(s2sCredentialDiagnostic(live, { OTHER_API_KEY: "  " })?.fix).toContain("OTHER_API_KEY");
+  });
+
+  it("refuses an apiKeyEnv that names no variable, such as a pasted key", () => {
+    expect(() => openai.live({ apiKeyEnv: "sk-live abc" })).toThrow(/apiKeyEnv must name an environment variable/);
+    expect(() => openai.realtime({ apiKeyEnv: "" })).toThrow(/apiKeyEnv must name an environment variable/);
+  });
+
   it("refuses a value that is no speech-to-speech model", () => {
     expect(() => providerPropsFromTree(tree({ s2s: kugelaudio.llm() }, {}), "")).toThrow(/not a s2s provider/);
   });

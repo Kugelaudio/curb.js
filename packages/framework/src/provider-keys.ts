@@ -5,7 +5,7 @@
  * without loading LiveKit or the AI SDK. An empty value counts as unset everywhere.
  */
 
-import type { LlmProviderId, SttProviderId, TtsProviderId } from "./providers.js";
+import type { LlmProviderId, S2sDescriptor, SttProviderId, TtsProviderId } from "./providers.js";
 
 export type Env = Record<string, string | undefined>;
 
@@ -29,6 +29,13 @@ const variable = (name: string, required = true): ProviderVariable => ({
 
 export const OPENAI_API_KEY = variable("OPENAI_API_KEY");
 const KUGELAUDIO_API_KEY = variable("KUGELAUDIO_API_KEY");
+
+/** The key an `<Agent s2s>` model connects with: the variable its `apiKeyEnv` names, else
+ * OPENAI_API_KEY. Read when a call starts, never when the agent module loads. */
+export function s2sKey(descriptor: S2sDescriptor): ProviderVariable {
+  const name = descriptor.options.apiKeyEnv;
+  return name ? variable(name) : OPENAI_API_KEY;
+}
 
 /** What the hosting platform provisions for every hosted agent of an organisation: setting
  * them is refused (or pointless), and a hosted agent needs none of them pushed. */

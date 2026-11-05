@@ -9,7 +9,7 @@ import { attachConversationSink, type ConversationSink } from "../server/convers
 import type { VoiceSessionHandle } from "../server/voice/orchestration.js";
 import { createInsuranceDemoRuntime } from "../test-fixtures/insurance-runtime.js";
 import type { VoiceAgentBundle } from "../voice-host.js";
-import { anthropic, azure, kugelaudio } from "../providers.js";
+import { anthropic, azure, kugelaudio, openai } from "../providers.js";
 import { AppMessages, HostUnavailableError } from "../messages.js";
 import { createCallReporter, type HostedCallReporter } from "../hosted/call-reporter.js";
 import { EventJournal, type JournalRecord } from "../hosted/event-journal.js";
@@ -86,12 +86,12 @@ const SETTINGS = {
 };
 const VOICE_SETTINGS = { stt: SETTINGS.stt, tts: SETTINGS.tts };
 
-function fakeBundle(name = "bundle"): VoiceAgentBundle {
+function fakeBundle(name = "bundle", s2s?: ReturnType<typeof openai.live>): VoiceAgentBundle {
   return {
     name,
     agentId: "insurance",
     definition: { firstTurn: "agent", pipeline: {} },
-    runtime: { messages: new AppMessages(), settings: { current: () => SETTINGS, s2s: () => undefined }, bindCall: () => {} },
+    runtime: { messages: new AppMessages(), settings: { current: () => SETTINGS, s2s: () => s2s }, bindCall: () => {} },
     session: { updateInfo: () => {} },
   } as unknown as VoiceAgentBundle;
 }
@@ -155,6 +155,21 @@ describe("warmVoiceRunner", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "key-from-the-call");
     expect((await warm.takeBundle()) as unknown as { name: string }).toMatchObject({ name: "warm" });
     vi.unstubAllEnvs();
+  });
+
+  // The model hears and speaks, so the default stt (and its key) never has to exist on the runner.
+  it("imports no speech plugin and keeps no speech settings for an <Agent s2s>", async () => {
+    const preloadPlugins = vi.fn(async () => {});
+    const warm = await warmVoiceRunner({
+      env: {},
+      createBundle: async () => fakeBundle("s2s", openai.live()),
+      loadVad: async () => FAKE_VAD,
+      preloadPlugins,
+      readyForCall: async (bundle) => bundle,
+    });
+    expect(preloadPlugins).not.toHaveBeenCalled();
+    expect(warm.settings).toBeNull();
+    expect(warm.vad).toBe(FAKE_VAD);
   });
 
   it("rejects when any warmup step fails, so the runner never says ready", async () => {
@@ -234,6 +249,23 @@ describe("joinRoomAndServe on a warm runner", () => {
     expect(startVoiceAgent).toHaveBeenCalledWith(
       expect.objectContaining({ bundle, vad: FAKE_VAD, providers, pipeline: bundle.definition.pipeline }),
     );
+  });
+
+  it("builds no speech provider for an <Agent s2s> and still hands over the warm VAD", async () => {
+    const room = fakeRoom(async () => {});
+    const buildProviders = vi.fn();
+    const startVoiceAgent = vi.fn(async () => fakeHandle);
+    const bundle = fakeBundle("s2s", openai.live());
+    const warm: WarmVoiceRunner = { definition: bundle.definition, settings: null, vad: FAKE_VAD, takeBundle: async () => bundle };
+
+    await joinRoomAndServe(
+      { url: "ws://127.0.0.1:1", token: "jwt", sessionId: "sess-s2s", warm },
+      { createRoom: () => room as unknown as Room, buildProviders, startVoiceAgent, scratchRoot: SCRATCH_ROOT },
+    );
+
+    expect(buildProviders).not.toHaveBeenCalled();
+    expect(startVoiceAgent).toHaveBeenCalledWith(expect.objectContaining({ bundle, vad: FAKE_VAD }));
+    expect(startVoiceAgent.mock.calls[0]?.[0]).not.toHaveProperty("providers");
   });
 
   it("takes a relay URL through the relay and never touches a room", async () => {

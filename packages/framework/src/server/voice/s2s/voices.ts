@@ -10,7 +10,7 @@ import { llm } from "@livekit/agents";
 import { GPTLiveModel, type GPTLiveSession } from "@livekit/agents/llm/openai_realtime/gpt_live_model";
 import { RealtimeModel } from "@livekit/agents/llm/openai_realtime/realtime_model";
 import { z } from "zod";
-import { OPENAI_API_KEY, type Env } from "../../../provider-keys.js";
+import { s2sKey, type Env } from "../../../provider-keys.js";
 import type { S2sDescriptor } from "../../../providers.js";
 import type { VoiceBackChannel } from "./back-office.js";
 
@@ -35,9 +35,12 @@ export type S2sVoice = {
 const MAX_RECONNECTS = 3;
 const RECONNECT_WINDOW_MS = 60_000;
 
+/** The model's connection. The key goes to the model's constructor as read from the call's
+ * environment, under the name `apiKeyEnv` gives it. */
 function endpoint(descriptor: S2sDescriptor, env: Env): { apiKey: string; baseURL?: string } {
-  const apiKey = OPENAI_API_KEY.read(env);
-  if (!apiKey) throw new Error(`curb: <Agent s2s> on ${descriptor.provider} has no key: run curb check.`);
+  const key = s2sKey(descriptor);
+  const apiKey = key.read(env);
+  if (!apiKey) throw new Error(`curb: <Agent s2s> on ${descriptor.provider} has no ${key.name}: run curb check.`);
   const { baseURL } = descriptor.options;
   return { apiKey, ...(baseURL ? { baseURL } : {}) };
 }
