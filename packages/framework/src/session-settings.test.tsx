@@ -37,7 +37,7 @@ describe("session settings from the rendered tree", () => {
     const runtime = agentWith({});
     expect(runtime.settings.current()).toStrictEqual({
       llm: kugelaudio.llm(),
-      stt: kugelaudio.stt(),
+      stt: azure.stt(),
       tts: kugelaudio.tts(),
     });
   });
@@ -70,7 +70,7 @@ describe("session settings from the rendered tree", () => {
     // A skill with no props of its own: the agent's apply again.
     await runtime.callTool("read_skill", { skill: "/billing" });
     expect(runtime.settings.current().tts).toStrictEqual(kugelaudio.tts({ voice: 42 }));
-    expect(runtime.settings.current().stt).toStrictEqual(kugelaudio.stt());
+    expect(runtime.settings.current().stt).toStrictEqual(azure.stt());
   });
 
   it("does not notify on a re-render whose props are structurally unchanged", () => {

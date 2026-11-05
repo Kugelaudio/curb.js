@@ -122,7 +122,7 @@ describe("PATCH /v1/sessions/{id}", () => {
       sessionId: "s1",
       settings: {
         tts: { provider: "kugelaudio", voice: 17 },
-        stt: { provider: "kugelaudio" },
+        stt: { provider: "azure" },
         llm: { provider: "kugelaudio", model: "qwen3.8-27b" },
       },
     });

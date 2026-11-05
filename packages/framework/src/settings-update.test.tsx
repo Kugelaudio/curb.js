@@ -118,7 +118,7 @@ describe("live settings updates", () => {
     settings.setProps({ tts: kugelaudio.tts({ voice: 42, dictionaryIds: [1], projectId: 9 }) });
     expect(settings.update("host", { tts: { model: "kugel-4" } })).toEqual({
       tts: { provider: "kugelaudio", voice: 42, model: "kugel-4" },
-      stt: { provider: "kugelaudio" },
+      stt: { provider: "azure" },
       llm: { provider: "kugelaudio", model: "qwen3.8-27b" },
     });
   });

@@ -63,7 +63,7 @@ export function MyApp() {
   return (
     <Agent
       llm={kugelaudio.llm()}                               // optional; this is the default
-      stt={azure.stt({ language: "en" })}                 // optional; default kugelaudio.stt()
+      stt={azure.stt({ language: "en" })}                 // optional; default azure.stt()
       tts={kugelaudio.tts({ language: "en" })}             // optional; default "en"; the voice follows it (1072 en, 1887 de)
     >
       <SystemPrompt>

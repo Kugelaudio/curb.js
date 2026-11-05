@@ -254,7 +254,7 @@ describe("joinRoomAndServe on a warm runner", () => {
   it("builds no speech provider for an <Agent s2s> and still hands over the warm VAD", async () => {
     const room = fakeRoom(async () => {});
     const buildProviders = vi.fn();
-    const startVoiceAgent = vi.fn(async () => fakeHandle);
+    const startVoiceAgent = vi.fn(async (_options: Record<string, unknown>) => fakeHandle);
     const bundle = fakeBundle("s2s", openai.live());
     const warm: WarmVoiceRunner = { definition: bundle.definition, settings: null, vad: FAKE_VAD, takeBundle: async () => bundle };
 
