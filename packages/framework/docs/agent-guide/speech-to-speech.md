@@ -42,12 +42,29 @@ for another endpoint on the same protocol ([`openai`](./providers/openai.md)):
 ## How a call runs
 
 The model owns the call: the microphone, turn-taking, interruptions, the transcript and the speech.
-It starts with the prompt the agent renders in `<Agent>` and the list of its tools and skills, and it
-answers what it can alone.
+It starts with the agent's [`<SystemPrompt>`](./components/system-prompt.md) and the list of its
+tools and skills, and it answers what it can alone.
 
 Anything else it hands over. Curb then runs an ordinary turn on `llm`, with the agent's skills, tools
 and held actions, and gives the model the outcome to say. So an agent with `s2s` still needs `llm`,
 and that key too.
+
+## Split the prompt between the model and `llm`
+
+The model reads `<SystemPrompt>` only. Everything else the agent renders, an
+[`<Instruction>`](./components/instruction.md), a [`<Procedure>`](./components/procedure.md), text and
+every skill, reaches `llm` alone. So put who the agent is and how it sounds in `<SystemPrompt>`, and
+the steps it follows in an `<Instruction>` or a `<Procedure>`. The model then talks like the agent and
+hands the steps over, instead of improvising them from a script it cannot run:
+
+```tsx
+<Agent llm={anthropic("claude-sonnet-5-5")} s2s={openai.live()}>
+  <SystemPrompt>You answer the phone for a bike shop. Be warm and brief.</SystemPrompt>
+  <Instruction>To book a repair, ask for the bike model, then call book_repair with the first free slot.</Instruction>
+</Agent>
+```
+
+A cascaded call reads both, as before.
 
 `<Agent s2s>` is set once for the whole agent. A `<Skill>` cannot change it, and neither can
 `adjustable`.
@@ -56,15 +73,21 @@ and that key too.
 
 - The model says the outcome in its own words, so a [`confirm`](./confirmations.md) read-back is not
   word for word. A held action runs only on what the caller said.
-- A fixed first line and a goodbye are worded by the model too.
-- Text of a skill reaches `llm`, not the model. Put what the model must always know in the agent's
-  prompt.
+- A fixed first line and a goodbye are worded by the model too. The transcript and the call's record
+  keep the fixed first line once, as written.
 - A call cannot be transferred.
-- The transcript holds what the caller and the model said. A back-office reply is not in it, and on
-  Realtime the model's request to the back office is marked as not the caller's.
+- The transcript holds what the caller and the model said, one caller message for each thing the
+  caller said, however the model sent it in parts. A back-office reply is not in it, and on Realtime
+  the model's request to the back office is marked as not the caller's.
+- The call's record has the same entries as a cascaded call's: one turn per line of the caller's and
+  the model's, and every tool the back office ran, with its arguments, its skill and whether it ran
+  or was held for the caller's yes.
 - When the caller is done, the model hands that over and the agent runs `end_call`. A model may answer
-  a goodbye by itself, so after 6 seconds of quiet following its line, `llm` reads the transcript once
-  and ends the call if it is over. That is one more `llm` call per long pause.
+  a goodbye by itself, so after a quiet spell following its line (`VOICE_SILENCE_FOLLOWUP_MS`, 6
+  seconds by default), `llm` reads the transcript once and ends the call if it is over. That is one
+  more `llm` call per long pause, at most one per line of the model's, and never while the caller is
+  speaking or once they spoke after that line. Nothing that turn writes is said unless it ends the
+  call.
 - When the model keeps dropping the connection, Curb ends the call rather than leave the caller in
   silence.
 
