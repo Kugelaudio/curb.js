@@ -12,13 +12,13 @@ describe("the record of a call on a speech-to-speech model", () => {
   it("reports a caller's turn once the model speaks, as the line its parts make", () => {
     const { record, turns } = reporter();
     const call = createS2sCallRecord(record);
-    call.callerSaid("My order number is L M");
-    call.callerSaid("My order number is L M 9 4 K");
-    call.callerSaid("1.");
+    call.callerSaid("A table for four");
+    call.callerSaid("A table for four at eight");
+    call.callerSaid("thirty.");
     expect(turns()).toEqual([]);
     call.agentSaid("Thanks.");
     expect(turns()).toEqual([
-      { speaker: "caller", text: "My order number is L M 9 4 K 1.", final: true },
+      { speaker: "caller", text: "A table for four at eight thirty.", final: true },
       { speaker: "agent", text: "Thanks.", final: true },
     ]);
   });

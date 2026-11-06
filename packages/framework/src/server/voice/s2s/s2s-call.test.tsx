@@ -198,7 +198,8 @@ async function callOn(s2s: S2sDescriptor, options: CallOptions, started: () => b
   });
   await until(started, "the session started");
   // A live microphone: LiveKit ends a caller's line after 800 ms of it with no new words.
-  // `speaking` puts the caller's voice on it, with no transcript: some models send none until the line ends.
+  // `speaking` puts the caller's voice on it, with no transcript: OpenAI Live allows a session to
+  // send the caller's transcript only once their line is done, and to send no speech-start event.
   const mic = { speaking: false };
   const microphone = setInterval(() => page.input?.push(mic.speaking ? SPEECH : Buffer.alloc(3200)), 100);
   const said = (role: "user" | "assistant") => session.messages.filter((m) => m.role === role && m.content && !("kind" in m && m.kind)).map((m) => m.content);
@@ -280,31 +281,31 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
 
   it("keeps one caller line, and one in the record, when the model sends the line again as it grows", async () => {
     const { model, said, record } = await call();
-    model.callerSays("My order number is L M");
+    model.callerSays("A table for four");
     await sleep(2100);
-    model.callerSays("My order number is L M 9 4 K");
+    model.callerSays("A table for four at eight");
     await sleep(2100);
-    model.callerSays("My order number is L M 9 4 K 1");
+    model.callerSays("A table for four at eight thirty");
     await sleep(1200);
     await model.say("Thanks, one moment.");
     await until(() => said("assistant").includes("Thanks, one moment."), "the model answered");
-    expect(said("user")).toEqual(["My order number is L M 9 4 K 1"]);
+    expect(said("user")).toEqual(["A table for four at eight thirty"]);
     expect(record.turns).toEqual([
-      { speaker: "caller", text: "My order number is L M 9 4 K 1", final: true },
+      { speaker: "caller", text: "A table for four at eight thirty", final: true },
       { speaker: "agent", text: "Thanks, one moment.", final: true },
     ]);
   });
 
   it("reports a caller's turn the model heard in parts as one line, once the turn is over", async () => {
     const { model, said, record } = await call();
-    model.callerSays("My order number is L M");
+    model.callerSays("A table for four");
     await sleep(2100);
-    model.callerSays("9 4 K 1.");
+    model.callerSays("at eight thirty.");
     await sleep(1200);
     expect(record.turns).toEqual([]);
     await model.say("Thanks.");
     await until(() => said("assistant").includes("Thanks."), "the model answered");
-    expect(record.turns.map((turn) => turn.text)).toEqual(["My order number is L M 9 4 K 1.", "Thanks."]);
+    expect(record.turns.map((turn) => turn.text)).toEqual(["A table for four at eight thirty.", "Thanks."]);
   });
 
   it("sends the caller's audio to the model and keeps a turn it answered alone, with no LLM call", async () => {
@@ -408,7 +409,7 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
   });
 
   it("never checks in while the caller is speaking, though the model sent no transcript yet", async () => {
-    const { model, llm, said, mic } = await call({ quietMs: 400, steps: [{ text: "Could you give me the order number?" }] });
+    const { model, llm, said, mic } = await call({ quietMs: 400, steps: [{ text: "How many people is the table for?" }] });
     model.callerSays("Let me find it.");
     await sleep(50);
     await model.say("Sure, take your time.");
@@ -437,7 +438,7 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
   });
 
   it("gives the model nothing to say from a check-in that did not end the call", async () => {
-    const { model, llm, said, closed, record } = await call({ quietMs: 300, steps: [{ text: "Could you give me the order number?" }] });
+    const { model, llm, said, closed, record } = await call({ quietMs: 300, steps: [{ text: "How many people is the table for?" }] });
     model.callerSays("Let me think.");
     await sleep(50);
     await model.say("Take your time.");

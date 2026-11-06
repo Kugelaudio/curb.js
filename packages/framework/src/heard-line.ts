@@ -1,9 +1,9 @@
 /**
- * A caller's line as a speech-to-speech model hears it, put back together.
+ * A caller's line put back together from a speech-to-speech session's input transcript.
  *
- * The model transcribes the caller in parts, cut at their pauses. A part may be the next words,
- * the same words again, or the whole line so far, grown by a few words: a model may send the line
- * once more each time it hears more. All three are one line. The conversation keeps one caller
+ * OpenAI Live reports what the caller said as input transcript events, cut at their pauses. A
+ * part may be the next words, the same words again, or the whole line so far with a few more
+ * words; the protocol allows each. All three are one line. The conversation keeps one caller
  * message for it (`AgentSession.recordHeard`), and a call's record one caller turn
  * (`server/voice/s2s/call-record.ts`).
  */
