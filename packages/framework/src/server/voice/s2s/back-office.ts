@@ -18,7 +18,7 @@ import { reportTurnEvent } from "../turn-report.js";
 
 /** Curb's way into the model when it did not ask, which LiveKit's `GPTLiveSession` fits. */
 export type VoiceBackChannel = {
-  appendCommentary(text: string, options: { delegationId: string | null }): void;
+  appendCommentary(text: string, options: { delegationId: string | null; expectsReply?: boolean }): void;
 };
 
 /** An append holds 500 tokens; this stays well under it. */
@@ -64,6 +64,8 @@ export function createBackOffice(options: {
   voice: () => VoiceBackChannel | null;
   /** The call's record: every turn's tools and failures go there, as on a cascaded call. */
   reporter?: CallReporter;
+  /** The model says each reply as written (`openai.live({ verbatim: true })`). */
+  verbatim?: boolean;
 }) {
   /** Turns running or done for words, so a delegation and a held answer share one. */
   const turns = new Map<string, Promise<string>>();
@@ -82,6 +84,8 @@ export function createBackOffice(options: {
   const speechStarts: number[] = [];
   /** When the back office learned an action is held; words begun earlier cannot answer it. */
   let heldSince: number | null = null;
+  /** A reply went out to be said as written, so the transcript's assistant lines add nothing. */
+  let saidVerbatim = false;
 
   const noteHeld = () => {
     if (!options.session().pendingConfirmation) heldSince = null;
@@ -105,7 +109,7 @@ export function createBackOffice(options: {
     if (!request) taken.add(key);
     const turn = options
       .session()
-      .runTurn(words, { unsaid: true, ...(request ? { kind: "synthetic" as const } : { heard: true }) }, (event) => {
+      .runTurn(words, { unsaid: request || options.verbatim !== true, ...(request ? { kind: "synthetic" as const } : { heard: true }) }, (event) => {
         reportTurnEvent(options.reporter, event);
         observe?.(event);
       })
@@ -128,8 +132,11 @@ export function createBackOffice(options: {
   };
 
   const tell = (reply: string, delegationId: string | null) => {
+    // An empty turn has nothing to say, so its note stays a note to the model.
+    const verbatim = options.verbatim === true && delegationId !== null && reply.trim() !== "";
+    if (verbatim) saidVerbatim = true;
     for (const piece of commentaryPieces(reply || NOTHING_TO_ADD)) {
-      options.voice()?.appendCommentary(piece, { delegationId });
+      options.voice()?.appendCommentary(piece, { delegationId, ...(verbatim ? { expectsReply: true } : {}) });
     }
   };
 
@@ -193,6 +200,8 @@ export function createBackOffice(options: {
         lastCallerLine = text;
         if (taken.delete(sameWords(text))) return;
       }
+      // The turn kept these words itself, and a transcript splits them too unevenly to match.
+      if (role === "assistant" && saidVerbatim) return;
       waiting.push({ role, text });
       flush();
       noteHeld();

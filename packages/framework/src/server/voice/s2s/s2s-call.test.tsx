@@ -516,6 +516,56 @@ describe("a call on openai.live()", { timeout: 12_000 }, () => {
   });
 });
 
+describe("a call on openai.live({ verbatim: true })", { timeout: 12_000 }, () => {
+  async function verbatimCall(steps: NonNullable<CallOptions["steps"]>) {
+    const model = await startFakeLiveModel();
+    open.push(async () => void (await model.close()));
+    const call = await callOn(openai.live({ baseURL: model.baseURL, verbatim: true }), { firstTurn: "agent", steps }, () => model.start() !== undefined);
+    await until(() => model.commentary().length === 1, "the model was asked to open");
+    return { model, ...call };
+  }
+
+  it("asks for each reply word for word, and the back office remembers saying it", async () => {
+    const { model, said } = await verbatimCall([{ text: "Would Monday suit you?" }]);
+    expect(model.commentary()[0]).not.toHaveProperty("expects_reply");
+    model.callerSays("My internet is down.", { delegate: true });
+    await until(() => model.commentary().length === 2, "the reply went back");
+    expect(model.commentary()[1]).toMatchObject({ content: "Would Monday suit you?", delegation_id: expect.stringMatching(/^del_/), expects_reply: true });
+    await until(() => said("assistant").includes("Would Monday suit you?"), "the reply was kept");
+  });
+
+  it("keeps the model's own lines out once a reply was said as written", async () => {
+    const { model, said } = await verbatimCall([{ text: "Would Monday suit you?" }]);
+    model.callerSays("My internet is down.", { delegate: true });
+    await until(() => model.commentary().length === 2, "the reply went back");
+    model.say("One moment, please.");
+    await until(() => said("user").includes("My internet is down."), "the line was recorded");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(said("assistant")).not.toContain("One moment, please.");
+    expect(said("assistant").filter((line) => line === "Would Monday suit you?")).toHaveLength(1);
+  });
+
+  it("leaves an empty turn a note to the model", async () => {
+    const { model } = await verbatimCall([{ calls: [{ name: "skip_turn" }] }]);
+    model.callerSays("Mhm.", { delegate: true });
+    await until(() => model.commentary().length === 2, "the delegation was answered");
+    expect(model.commentary()[1]?.content).toContain("Nothing to add");
+    expect(model.commentary()[1]).not.toHaveProperty("expects_reply");
+  });
+});
+
+describe("a call on openai.live() without verbatim", { timeout: 12_000 }, () => {
+  it("sends no expects_reply", async () => {
+    const model = await startFakeLiveModel();
+    open.push(async () => void (await model.close()));
+    await callOn(openai.live({ baseURL: model.baseURL }), { firstTurn: "agent", steps: [{ text: "Done for you." }] }, () => model.start() !== undefined);
+    await until(() => model.commentary().length === 1, "the model was asked to open");
+    model.callerSays("Do it.", { delegate: true });
+    await until(() => model.commentary().length === 2, "the delegation was answered");
+    expect(model.commentary()[1]).not.toHaveProperty("expects_reply");
+  });
+});
+
 describe("a call on openai.realtime()", { timeout: 12_000 }, () => {
   const askBackOffice = (request: string) => ({ calls: [{ name: "ask_back_office", args: { request } }] });
 

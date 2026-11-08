@@ -27,6 +27,7 @@ in its own words. Three things follow:
 | `model` | `string` | Defaults to `"gpt-live-1"` for `openai.live()` |
 | `voice` | `string` | The model's voice |
 | `baseURL` | `string` | Another endpoint on the same protocol |
+| `verbatim` | `boolean` | `openai.live()` only, on an endpoint that takes `expects_reply` on a commentary. The model says each reply of the back office word for word, and the caller's next finished turn goes back to `llm` |
 
 ## Example
 

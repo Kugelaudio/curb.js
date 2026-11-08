@@ -141,6 +141,10 @@ export type LlmDescriptor =
 
 /** OpenAI's speech-to-speech models. Key: `OPENAI_API_KEY`. */
 export type OpenaiS2sOptions = {
+  /** `openai.live()` only, on an endpoint that takes `expects_reply` on a commentary. The model
+   * says each reply of the back office word for word, and the caller's next finished turn goes back
+   * to `llm`, so the agent's procedure leads the call. */
+  verbatim?: boolean;
   /** Defaults to "gpt-live-1" for `openai.live()` and LiveKit's default for `openai.realtime()`. */
   model?: string;
   voice?: string;
