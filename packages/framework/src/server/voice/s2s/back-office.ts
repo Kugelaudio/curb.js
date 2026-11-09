@@ -18,7 +18,7 @@ import { reportTurnEvent } from "../turn-report.js";
 
 /** Curb's way into the model when it did not ask, which LiveKit's `GPTLiveSession` fits. */
 export type VoiceBackChannel = {
-  appendCommentary(text: string, options: { delegationId: string | null }): void;
+  appendCommentary(text: string, options: { delegationId: string | null; expectsReply?: boolean }): void;
 };
 
 /** An append holds 500 tokens; this stays well under it. */
@@ -59,11 +59,15 @@ const ALREADY_REPORTED = "The back office has reported this already. Say nothing
 
 const sameWords = (text: string) => text.trim().toLowerCase();
 
+const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+
 export function createBackOffice(options: {
   session: () => AgentSession;
   voice: () => VoiceBackChannel | null;
   /** The call's record: every turn's tools and failures go there, as on a cascaded call. */
   reporter?: CallReporter;
+  /** The model says each reply as written (`openai.live({ verbatim: true })`). */
+  verbatim?: boolean;
 }) {
   /** Turns running or done for words, so a delegation and a held answer share one. */
   const turns = new Map<string, Promise<string>>();
@@ -82,6 +86,8 @@ export function createBackOffice(options: {
   const speechStarts: number[] = [];
   /** When the back office learned an action is held; words begun earlier cannot answer it. */
   let heldSince: number | null = null;
+  /** The words of replies said as written whose transcript has not all come in. */
+  const unheardVerbatim: string[][] = [];
 
   const noteHeld = () => {
     if (!options.session().pendingConfirmation) heldSince = null;
@@ -96,16 +102,23 @@ export function createBackOffice(options: {
     }
   };
 
+  /** Only a delegation can open a reply the model says as written. */
+  const saysAsWritten = (delegationId: string | null) => options.verbatim === true && delegationId !== null;
+
   /** `request` is the model's own wording, which no caller said; anything else is the caller's.
-   * `observe` sees the events of a turn this call starts, after the call's record did. */
-  const turnFor = (words: string, request = false, observe?: (event: AgentTurnStreamEvent) => void): Promise<string> => {
+   * `saidAsWritten` keeps the reply as said. `observe` sees the events of a turn this call starts,
+   * after the call's record did. */
+  const turnFor = (
+    words: string,
+    { request = false, saidAsWritten = false, observe }: { request?: boolean; saidAsWritten?: boolean; observe?: (event: AgentTurnStreamEvent) => void } = {},
+  ): Promise<string> => {
     const key = sameWords(words);
     const known = turns.get(key);
     if (known) return known;
     if (!request) taken.add(key);
     const turn = options
       .session()
-      .runTurn(words, { unsaid: true, ...(request ? { kind: "synthetic" as const } : { heard: true }) }, (event) => {
+      .runTurn(words, { unsaid: !saidAsWritten, ...(request ? { kind: "synthetic" as const } : { heard: true }) }, (event) => {
         reportTurnEvent(options.reporter, event);
         observe?.(event);
       })
@@ -128,17 +141,36 @@ export function createBackOffice(options: {
   };
 
   const tell = (reply: string, delegationId: string | null) => {
+    // An empty turn has nothing to say, so its note stays a note to the model.
+    const verbatim = saysAsWritten(delegationId) && reply.trim() !== "";
+    if (verbatim) unheardVerbatim.push(wordsOf(reply));
     for (const piece of commentaryPieces(reply || NOTHING_TO_ADD)) {
-      options.voice()?.appendCommentary(piece, { delegationId });
+      options.voice()?.appendCommentary(piece, { delegationId, ...(verbatim ? { expectsReply: true } : {}) });
     }
   };
 
+  /** A transcript splits a reply however it likes, so a line is one when its words run unbroken
+   * in a reply said as written, and those words are then spent. Anything else is the model's own. */
+  const takeVerbatimTranscript = (line: string): boolean => {
+    const words = wordsOf(line);
+    if (words.length === 0) return false;
+    for (const reply of unheardVerbatim) {
+      for (let at = 0; at + words.length <= reply.length; at += 1) {
+        if (words.every((word, offset) => reply[at + offset] === word)) {
+          reply.splice(at, words.length);
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
   const ask = (words: string, delegationId: string | null): Promise<void> =>
-    counted(turnFor(words).then((reply) => tell(reply, delegationId)));
+    counted(turnFor(words, { saidAsWritten: saysAsWritten(delegationId) }).then((reply) => tell(reply, delegationId)));
 
   /** The caller answered a held action: a tool call waiting for it gets the outcome, else the model is told. */
   const answerHeld = (words: string) => {
-    const held = { outcome: turnFor(words).then((reply) => reply || NOTHING_TO_ADD), at: Date.now(), done: false, claimed: false };
+    const held = { outcome: turnFor(words, { saidAsWritten: saysAsWritten(latest) }), at: Date.now(), done: false, claimed: false };
     answer = held;
     answerArrived?.();
     void counted(
@@ -168,12 +200,12 @@ export function createBackOffice(options: {
     /** The model called its tool: the same turn, with the outcome as the tool's result. */
     async asked(request: string): Promise<string> {
       const recent = () => answer && (!answer.done || Date.now() - answer.at < ANSWER_WINDOW_MS);
-      if (!recent() && !options.session().pendingConfirmation) return counted(turnFor(request, true).then((reply) => reply || NOTHING_TO_ADD));
+      if (!recent() && !options.session().pendingConfirmation) return counted(turnFor(request, { request: true }).then((reply) => reply || NOTHING_TO_ADD));
       if (!recent()) await answerSoon();
       if (!recent()) return NO_ANSWER;
       if (answer!.done) return ALREADY_REPORTED;
       answer!.claimed = true;
-      return answer!.outcome;
+      return answer!.outcome.then((reply) => reply || NOTHING_TO_ADD);
     },
     /** Words typed into a call, which the model cannot hear. */
     typed: (text: string) => ask(text, null),
@@ -193,6 +225,7 @@ export function createBackOffice(options: {
         lastCallerLine = text;
         if (taken.delete(sameWords(text))) return;
       }
+      if (role === "assistant" && takeVerbatimTranscript(text)) return; // the turn kept these words itself
       waiting.push({ role, text });
       flush();
       noteHeld();
@@ -209,7 +242,7 @@ export function createBackOffice(options: {
       const watch = (event: AgentTurnStreamEvent) => {
         if (endedCall(event)) ended = true;
       };
-      void counted(turnFor(QUIET_NOTE, true, watch).then((reply) => (ended && reply ? tell(reply, null) : undefined)));
+      void counted(turnFor(QUIET_NOTE, { request: true, observe: watch }).then((reply) => (ended && reply ? tell(reply, null) : undefined)));
     },
     /** Resolves once everything asked so far went back to the model. */
     settled: () => (running === 0 ? Promise.resolve() : settled),

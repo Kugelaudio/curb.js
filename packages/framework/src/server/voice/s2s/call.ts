@@ -86,6 +86,7 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
     session: () => bundle.session,
     voice: () => modelVoice?.channel() ?? null,
     reporter: options.reporter,
+    verbatim: descriptor.protocol === "live" && descriptor.options.verbatim === true,
   });
   /** The caller's microphone carries speech now, whether or not the model sent words for it yet. */
   let callerAudio = false;
