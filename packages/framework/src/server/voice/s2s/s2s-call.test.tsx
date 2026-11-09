@@ -361,8 +361,18 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     await until(() => model.commentary().length === 2, "the result went back");
   });
 
+  it("offers llm no tool that ends a handed-over job with nothing", async () => {
+    const { model, llm } = await call({ steps: [{ text: "What is your account number?" }] });
+    model.callerSays("Uh.", { delegate: true });
+    await until(() => model.commentary().length === 1, "the delegation was answered");
+    const [request] = llm.mock.calls[0] as unknown as [{ tools: Array<{ name: string }> }];
+    expect(request.tools.map((tool) => tool.name)).not.toContain("skip_turn");
+    expect(JSON.stringify(request)).toContain("never with nothing");
+    expect(model.start().instructions).not.toContain("never with nothing");
+  });
+
   it("gives every delegation an answer, even from an empty turn", async () => {
-    const { model } = await call({ steps: [{ calls: [{ name: "skip_turn" }] }] });
+    const { model } = await call({ steps: [{ text: "[pauses]" }, { text: "[pauses]" }] });
     model.callerSays("Mhm.", { delegate: true });
     await until(() => model.commentary().length === 1, "the delegation was answered");
     expect(model.commentary()[0]?.content).toContain("Nothing to add");
@@ -397,7 +407,7 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
   });
 
   it("stays on the call and says nothing when llm finds it is not over", async () => {
-    const { model, closed, llm, said } = await call({ steps: [{ calls: [{ name: "skip_turn" }] }] });
+    const { model, closed, llm, said } = await call({ steps: [{ text: "Waiting." }] });
     model.callerSays("Let me think.");
     await sleep(50);
     await model.say("Take your time.");
@@ -427,7 +437,7 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
   });
 
   it("checks in once per line of the model's, however long the quiet lasts", async () => {
-    const { model, llm, said } = await call({ quietMs: 300, steps: [{ calls: [{ name: "skip_turn" }] }] });
+    const { model, llm, said } = await call({ quietMs: 300, steps: [{ text: "Waiting." }] });
     model.callerSays("Let me think.");
     await sleep(50);
     await model.say("Take your time.");

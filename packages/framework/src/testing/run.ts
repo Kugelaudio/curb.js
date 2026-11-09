@@ -80,13 +80,13 @@ export type PlayedTurn = {
 
 /** One spoken turn on the session, as a call runs it: the caller's line, or (`synthetic`) the
  * framework's own input. */
-export async function playTurn(session: AgentSession, text: string, kind?: "synthetic"): Promise<PlayedTurn> {
+export async function playTurn(session: AgentSession, text: string, kind?: "synthetic", spoken = true): Promise<PlayedTurn> {
   const before = session.messages.length;
   // The caller's line answers the action waiting for their yes, if one waits; framework input never does.
   const pending = kind ? null : session.pendingConfirmation;
   const errors: ScenarioTurnError[] = [];
   let reply = "";
-  for await (const event of session.runTurnStream(text, { spoken: true, ...(kind ? { kind } : {}) })) {
+  for await (const event of session.runTurnStream(text, { spoken, ...(kind ? { kind } : {}) })) {
     if (event.type === "error") errors.push({ kind: event.error.kind, message: event.error.message });
     else if (event.type === "done") reply = event.reply;
   }
@@ -303,7 +303,8 @@ export async function runScenario(params: {
       }
     }
     said += 1;
-    take(await playTurn(bundle.session, line), line, said);
+    // On an agent with `s2s` this text goes to the back office, whose turns carry no spoken rules.
+    take(await playTurn(bundle.session, line, undefined, !bundle.runtime.settings.s2s()), line, said);
     if (endedBy === null && hangsUpAfter) endedBy = "caller";
   }
   const ended: ScenarioEndedBy = endedBy;

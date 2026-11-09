@@ -47,7 +47,8 @@ tools and skills, and it answers what it can alone.
 
 Anything else it hands over. Curb then runs an ordinary turn on `llm`, with the agent's skills, tools
 and held actions, and gives the model the outcome to say. So an agent with `s2s` still needs `llm`,
-and that key too.
+and that key too. `llm` has no `skip_turn` here: it hears only what is handed over, so every hand-over
+ends in a tool call or a reply.
 
 ## Split the prompt between the model and `llm`
 

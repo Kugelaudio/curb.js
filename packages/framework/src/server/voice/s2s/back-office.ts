@@ -50,7 +50,7 @@ const SPEECH_START_STALE_MS = 30_000;
 
 /** A model may answer a goodbye by itself, in any language, so only `llm` can tell the call is over.
  * Only the goodbye of an `end_call` that ran reaches the model from this turn (`quiet`). */
-const QUIET_NOTE = "(The caller has been quiet since the last line. If they said goodbye or are clearly finished, end the call. If not, call skip_turn.)";
+const QUIET_NOTE = "(The caller has been quiet since the last line. If they said goodbye or are clearly finished, end the call. If not, reply with the one word: waiting.)";
 
 const endedCall = (event: AgentTurnStreamEvent) => event.type === "tool" && event.ok && event.toolCall.name === END_CALL_TOOL_NAME;
 
