@@ -3,7 +3,8 @@ import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { AgentSession } from "../../../agent-session.js";
-import { Agent, Skill, Skills, SystemPrompt, Tool } from "../../../components.js";
+import { Agent, Instruction, Skill, Skills, SystemPrompt, Tool } from "../../../components.js";
+import type { CallReporter } from "../../../hosted/call-reporter.js";
 import { openai, type S2sDescriptor } from "../../../providers.js";
 import { agentAppElement, type AgentRoute } from "../../../routing.js";
 import { AgentSiteRuntime } from "../../../runtime.js";
@@ -79,6 +80,8 @@ function ReportClaim() {
     </>
   );
 }
+/** A step-by-step procedure: the back office runs it, so the model never reads it. */
+const PROCEDURE = "First ask for the policy number, then verify it, then offer a meeting.";
 const routes: AgentRoute[] = [
   { path: "/report-claim", Component: ReportClaim, meta: { title: "Report a claim", description: "Reporting damage." } },
 ];
@@ -86,6 +89,7 @@ function App({ s2s }: { s2s: S2sDescriptor }) {
   return (
     <Agent s2s={s2s}>
       <SystemPrompt>You answer the phone at an insurer.</SystemPrompt>
+      <Instruction>{PROCEDURE}</Instruction>
       <Skills>
         {routes.map((route) => (
           <Skill key={route.path} path={route.path}>
@@ -107,8 +111,9 @@ async function until(check: () => boolean, what: string, ms = 5000) {
 }
 
 type Step = { text?: string; calls?: Array<{ name: string; input?: Record<string, unknown> }> };
+type CallOptions = { firstLine?: string; steps?: Step[]; firstTurn?: "agent"; quietMs?: number };
 
-async function call(options: { firstLine?: string; steps?: Step[]; greeting?: string; drops?: boolean } = {}) {
+async function call(options: CallOptions & { greeting?: string; drops?: boolean } = {}) {
   const model = await startFakeLiveModel({ greeting: options.greeting, drops: options.drops });
   const s2s = openai.live({ baseURL: model.baseURL, voice: "marin" });
   open.push(async () => void (await model.close()));
@@ -116,7 +121,23 @@ async function call(options: { firstLine?: string; steps?: Step[]; greeting?: st
   return { model, ...parts };
 }
 
-async function callOn(s2s: S2sDescriptor, options: { firstLine?: string; steps?: Step[]; firstTurn?: "agent" }, started: () => boolean) {
+/** The call's record, as a host reads it. */
+function fakeRecord() {
+  const turns: Array<{ speaker: "caller" | "agent"; text: string; final: boolean }> = [];
+  const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
+  const reporter: CallReporter = {
+    turn: (turn) => void turns.push(turn),
+    event: (name, payload) => void events.push({ name, payload }),
+    finish: async () => {},
+    undelivered: 0,
+  };
+  return { reporter, turns, events, tools: () => events.filter((event) => event.name === "tool").map((event) => event.payload) };
+}
+
+/** 100 ms of a caller speaking at a normal level, at the page's 16 kHz. */
+const SPEECH = Buffer.from(new Int16Array(1600).fill(4000).buffer);
+
+async function callOn(s2s: S2sDescriptor, options: CallOptions, started: () => boolean) {
   const Site = () => <App s2s={s2s} />;
   const runtime = new AgentSiteRuntime(({ path, loadedPaths }) => agentAppElement(Site, { path, loadedPaths, routes }), {
     maxLoadedSkills: 2,
@@ -156,24 +177,37 @@ async function callOn(s2s: S2sDescriptor, options: { firstLine?: string; steps?:
     disconnect: async () => {},
   };
   const closed = vi.fn();
+  const record = fakeRecord();
+  const spoken: string[] = [];
   const handle = await startVoiceAgent({
     room,
     roomName: "call",
     bundle: { runtime, session } as never,
     client: { bind: () => {}, detach: () => {} } as never,
-    env: { OPENAI_API_KEY: "test-key" } as never,
+    env: { OPENAI_API_KEY: "test-key", ...(options.quietMs ? { VOICE_SILENCE_FOLLOWUP_MS: String(options.quietMs) } : {}) } as never,
     onClosed: closed,
+    reporter: record.reporter,
+    // What the model said, as LiveKit hands it to the call: kept or not, every line is here.
+    pipeline: {
+      onSession: ({ session: live, events }) =>
+        void live.on(events.ConversationItemAdded, ({ item }) => {
+          if (item.type === "message" && item.role === "assistant") spoken.push(item.textContent ?? "");
+        }),
+    },
     ...(options.firstTurn ? { firstTurn: options.firstTurn } : {}),
   });
   await until(started, "the session started");
   // A live microphone: LiveKit ends a caller's line after 800 ms of it with no new words.
-  const mic = setInterval(() => page.input?.push(Buffer.alloc(3200)), 100);
+  // `speaking` puts the caller's voice on it, with no transcript: OpenAI Live allows a session to
+  // send the caller's transcript only once their line is done, and to send no speech-start event.
+  const mic = { speaking: false };
+  const microphone = setInterval(() => page.input?.push(mic.speaking ? SPEECH : Buffer.alloc(3200)), 100);
   const said = (role: "user" | "assistant") => session.messages.filter((m) => m.role === role && m.content && !("kind" in m && m.kind)).map((m) => m.content);
   open.push(async () => {
-    clearInterval(mic);
+    clearInterval(microphone);
     await handle.close();
   });
-  return { session, runtime, handle, llm, said, closed };
+  return { session, runtime, handle, llm, said, closed, record, mic, spoken };
 }
 const open: Array<() => Promise<void>> = [];
 /** session.start holds these and nothing else. */
@@ -198,6 +232,80 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     expect(start.instructions).toContain("A back office works behind you");
     expect(start.instructions).toContain("Report a claim");
     expect(start.instructions).not.toContain("read_skill");
+  });
+
+  it("keeps the agent's <Instruction> procedure for llm, out of what the model reads", async () => {
+    const { model, llm } = await call({ steps: [{ text: "Policy noted." }] });
+    expect(model.start().instructions).not.toContain(PROCEDURE);
+    model.callerSays("My policy is P-1.", { delegate: true });
+    await until(() => model.commentary().length === 1, "the delegation was answered");
+    expect(JSON.stringify(llm.mock.calls[0])).toContain(PROCEDURE);
+  });
+
+  it("reports the back office's tool calls to the call's record, in the shape a cascaded call does", async () => {
+    const { model, record, session } = await call({
+      steps: [
+        { calls: [{ name: "read_skill", input: { skill: "/report-claim" } }] },
+        { calls: [{ name: "verify_policy", input: { policy: "P-1" } }] },
+        { text: "Policy P-1 is verified." },
+      ],
+    });
+    model.callerSays("My policy is P-1.", { delegate: true });
+    await until(() => model.commentary().length === 1, "the result went back");
+    expect(record.tools()).toEqual([
+      { name: "read_skill", arguments: { skill: "/report-claim" }, ok: true },
+      { name: "verify_policy", arguments: { policy: "P-1" }, ok: true, skillPath: "/report-claim" },
+    ]);
+    // The conversation keeps them too, which is what the preview shows.
+    expect(session.messages.flatMap((message) => ("toolCalls" in message ? (message.toolCalls ?? []) : [])).map((tool) => tool.name)).toEqual(["read_skill", "verify_policy"]);
+  });
+
+  it("reports a call held for the caller's yes as held, with its read-back", async () => {
+    const { model, session, record } = await call({
+      steps: [
+        { calls: [{ name: "read_skill", input: { skill: "/report-claim" } }] },
+        { calls: [{ name: "verify_policy", input: { policy: "P-1" } }] },
+        { calls: [{ name: "book_meeting", input: { slot: "Tuesday" } }] },
+      ],
+    });
+    model.callerSays("Book Tuesday.", { delegate: true });
+    await until(() => session.pendingConfirmation !== null && model.commentary().length === 1, "the action was held");
+    expect(record.tools().at(-1)).toEqual({
+      name: "book_meeting",
+      arguments: { slot: "Tuesday" },
+      ok: false,
+      skillPath: "/report-claim",
+      heldFor: "Book Tuesday: is that right?",
+    });
+  });
+
+  it("keeps one caller line, and one in the record, when the model sends the line again as it grows", async () => {
+    const { model, said, record } = await call();
+    model.callerSays("A table for four");
+    await sleep(2100);
+    model.callerSays("A table for four at eight");
+    await sleep(2100);
+    model.callerSays("A table for four at eight thirty");
+    await sleep(1200);
+    await model.say("Thanks, one moment.");
+    await until(() => said("assistant").includes("Thanks, one moment."), "the model answered");
+    expect(said("user")).toEqual(["A table for four at eight thirty"]);
+    expect(record.turns).toEqual([
+      { speaker: "caller", text: "A table for four at eight thirty", final: true },
+      { speaker: "agent", text: "Thanks, one moment.", final: true },
+    ]);
+  });
+
+  it("reports a caller's turn the model heard in parts as one line, once the turn is over", async () => {
+    const { model, said, record } = await call();
+    model.callerSays("A table for four");
+    await sleep(2100);
+    model.callerSays("at eight thirty.");
+    await sleep(1200);
+    expect(record.turns).toEqual([]);
+    await model.say("Thanks.");
+    await until(() => said("assistant").includes("Thanks."), "the model answered");
+    expect(record.turns.map((turn) => turn.text)).toEqual(["A table for four at eight thirty.", "Thanks."]);
   });
 
   it("sends the caller's audio to the model and keeps a turn it answered alone, with no LLM call", async () => {
@@ -300,6 +408,49 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     expect(model.commentary()).toEqual([]);
   });
 
+  it("never checks in while the caller is speaking, though the model sent no transcript yet", async () => {
+    const { model, llm, said, mic } = await call({ quietMs: 400, steps: [{ text: "How many people is the table for?" }] });
+    model.callerSays("Let me find it.");
+    await sleep(50);
+    await model.say("Sure, take your time.");
+    await until(() => said("assistant").includes("Sure, take your time."), "the model answered alone");
+    mic.speaking = true;
+    await sleep(1500);
+    mic.speaking = false;
+    await sleep(1000);
+    // The caller spoke after that line: the model answers them, so nothing checks in for it.
+    expect(llm).not.toHaveBeenCalled();
+    expect(model.commentary()).toEqual([]);
+
+    await model.say("Are you still there?");
+    await until(() => llm.mock.calls.length === 1, "llm was asked after a real quiet");
+  });
+
+  it("checks in once per line of the model's, however long the quiet lasts", async () => {
+    const { model, llm, said } = await call({ quietMs: 300, steps: [{ calls: [{ name: "skip_turn" }] }] });
+    model.callerSays("Let me think.");
+    await sleep(50);
+    await model.say("Take your time.");
+    await until(() => said("assistant").includes("Take your time."), "the model answered alone");
+    await until(() => llm.mock.calls.length === 1, "llm was asked");
+    await sleep(1200);
+    expect(llm).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the model nothing to say from a check-in that did not end the call", async () => {
+    const { model, llm, said, closed, record } = await call({ quietMs: 300, steps: [{ text: "How many people is the table for?" }] });
+    model.callerSays("Let me think.");
+    await sleep(50);
+    await model.say("Take your time.");
+    await until(() => said("assistant").includes("Take your time."), "the model answered alone");
+    await until(() => llm.mock.calls.length === 1, "llm was asked");
+    await sleep(500);
+    expect(model.commentary()).toEqual([]);
+    expect(closed).not.toHaveBeenCalled();
+    expect(said("assistant")).toEqual(["Take your time."]);
+    expect(record.turns.map((turn) => turn.text)).toEqual(["Let me think.", "Take your time."]);
+  });
+
   it("tells the model to hand over the end of the call, since only the back office can hang up", async () => {
     const { model } = await call();
     expect(model.start().instructions).toContain("You cannot hang up.");
@@ -326,10 +477,19 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     expect(model.received.filter((event) => event.type === "session.start").length).toBe(starts);
   });
 
-  it("asks the model to open with a fixed first line", async () => {
-    const { model, said } = await call({ firstLine: "Hello, this is the claims line." });
-    expect(model.start().instructions).toContain('"Hello, this is the claims line."');
+  it("has the model say a fixed first line once, and records it once, as a cascaded call does", async () => {
+    const { model, said, record, spoken } = await call({ firstLine: "Hello, this is the claims line." });
+    await until(() => model.commentary().length === 1, "the model was asked to open");
+    expect(model.commentary()[0]?.content).toContain('"Hello, this is the claims line."');
+    expect(model.start().instructions).not.toContain("Hello, this is the claims line.");
+    // The fake model says the whole commentary: that is its opening line.
+    await sleep(1500);
+    model.callerSays("Hi.");
+    await until(() => spoken.length === 1, "the model's opening was transcribed");
+    await sleep(100);
     expect(said("assistant")).toEqual(["Hello, this is the claims line."]);
+    expect(record.turns.filter((turn) => turn.speaker === "agent").map((turn) => turn.text)).toEqual(["Hello, this is the claims line."]);
+    expect(model.commentary()).toHaveLength(1);
   });
 
   it("answers typed words through the back office, which the model cannot hear", async () => {

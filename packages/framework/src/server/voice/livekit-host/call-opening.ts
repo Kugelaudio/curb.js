@@ -3,13 +3,16 @@
  *
  * Every route runs this through the one voice host (`host.ts`): `curb dev`, `curb start`, and
  * the built artifact's worker, direct-join and managed modes. So the caller info an agent reads
- * and the way it greets cannot differ between the preview and production.
+ * and the way it greets cannot differ between the preview and production. A call on a
+ * speech-to-speech model opens the same way (`../s2s/call.ts`); only the model speaks the line.
  *
  * Extracted from `startLivekitVoiceAgent` so the rules are testable without a LiveKit room.
  */
 
 import { ParticipantKind } from "@livekit/rtc-node";
 import type { AgentFirstTurn } from "../../../config.js";
+import type { CallReporter } from "../../../hosted/call-reporter.js";
+import { logError } from "../../log.js";
 
 /** Synthetic input that asks the model to open an agent-first call. Kept out of the visible
  * transcript while still giving the model a normal turn. */
@@ -82,6 +85,24 @@ export type CallOpening = {
    */
   greeted(): Promise<void>;
 };
+
+/**
+ * Run one step of the opening (`update`, `sessionStarted`) where a throw must not escape: inside
+ * the call's room events, where it could end every call the process serves, and once the session
+ * starts, where a `firstTurn: { say }` function that returns no line would fail a call that can
+ * go on.
+ */
+export function runOpeningStep(step: () => void, call: { roomName: string; reporter?: CallReporter }): void {
+  try {
+    step();
+  } catch (error) {
+    // KEEP-JUSTIFIED: the caller can still speak to an agent that failed to greet; the
+    // cause is logged and lands in the call's record.
+    const message = error instanceof Error ? error.message : String(error);
+    logError("voice", `${call.roomName}: could not open the call: ${message}`);
+    call.reporter?.event("error", { kind: "call_opening", message });
+  }
+}
 
 /**
  * Record the caller as soon as one is in the room, then open the call once the session runs: for
