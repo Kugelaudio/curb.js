@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { CURB_MARK } from "../../brand.js";
 import { login, logout, pkceChallenge } from "./auth.js";
 import {
   credentialsPath,
@@ -69,8 +70,8 @@ describe("curb login", () => {
         void (async () => {
           const forged = await fetch(`http://127.0.0.1:${port}/callback?code=code-1&state=forged`);
           expect(forged.status).toBe(400);
-          const real = await fetch(`http://127.0.0.1:${port}/callback?code=code-1&state=${state}`);
-          expect(real.status).toBe(200);
+          const real = await fetch(`http://127.0.0.1:${port}/callback?code=code-1&state=${state}`, { redirect: "manual" });
+          expect(real.status).toBe(302);
         })();
       },
     });
@@ -90,7 +91,7 @@ describe("curb login", () => {
   function allowAtOnce(seen: { url?: URL }) {
     return (url: string) => {
       seen.url = new URL(url);
-      void fetch(`http://127.0.0.1:${seen.url.searchParams.get("port")}/callback?code=code-1&state=${seen.url.searchParams.get("state")}`);
+      void fetch(`http://127.0.0.1:${seen.url.searchParams.get("port")}/callback?code=code-1&state=${seen.url.searchParams.get("state")}`, { redirect: "manual" });
     };
   }
 
@@ -158,11 +159,186 @@ describe("curb login", () => {
           const signIn = new URL(url);
           void fetch(
             `http://127.0.0.1:${signIn.searchParams.get("port")}/callback?error=access_denied&state=${signIn.searchParams.get("state")}`,
+            { redirect: "manual" },
           );
         },
       }),
     ).rejects.toThrow("Sign-in was cancelled in the browser.");
     expect(readCredentials(path)).toBeNull();
+  });
+
+  describe("where the browser ends", () => {
+    interface BrowserAnswer {
+      status: number;
+      location: string | null;
+      body: string;
+    }
+
+    /** One login whose browser sends one callback, and what that browser got. */
+    async function browserAfter(query: (signIn: URL) => string, seen: { url?: URL } = {}) {
+      let answer: Promise<BrowserAnswer> | undefined;
+      const login_ = login({
+        webUrl: cloud.url,
+        path,
+        log: () => {},
+        timeoutMs: 500,
+        exchangeTimeoutMs: 100,
+        open: (url) => {
+          seen.url = new URL(url);
+          answer = fetch(`http://127.0.0.1:${seen.url.searchParams.get("port")}/callback?${query(seen.url)}`, { redirect: "manual" })
+            .then(async (response) => ({ status: response.status, location: response.headers.get("location"), body: await response.text() }));
+        },
+      }).then(() => null, (error: Error) => error);
+      const error = await login_;
+      return { error, browser: await (answer as Promise<BrowserAnswer>) };
+    }
+
+    const stateOf = (signIn: URL) => signIn.searchParams.get("state");
+    const allow = (signIn: URL) => `code=code-1&state=${stateOf(signIn)}`;
+    const result = (outcome: string) => `${cloud.url}/cli/login/result?outcome=${outcome}`;
+
+    it("holds the browser until the credentials are stored, then sends it to the hosted success page", async () => {
+      const seen: { url?: URL } = {};
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let storedBeforeAnswer: boolean | undefined;
+      let browserAnswered = false;
+      cloud.route("POST /api/cli/token", async () => {
+        await released;
+        return {
+          body: {
+            accessToken: "access-1", refreshToken: "refresh-1", expiresAt: 2_000_000_000, supabaseUrl: cloud.url,
+            supabaseAnonKey: "anon-key", platformApiUrl: cloud.url, user: { id: "user-1", email: "dev@example.com" },
+          },
+        };
+      });
+      let answer: Promise<Response> | undefined;
+      const running = login({
+        webUrl: cloud.url,
+        path,
+        log: () => {},
+        open: (url) => {
+          seen.url = new URL(url);
+          answer = fetch(`http://127.0.0.1:${seen.url.searchParams.get("port")}/callback?${allow(seen.url)}`, { redirect: "manual" });
+          void answer.then(() => {
+            browserAnswered = true;
+            storedBeforeAnswer = readCredentials(path) !== null;
+          });
+        },
+      });
+      await expect.poll(() => cloud.requests.some((request) => request.path === "/api/cli/token")).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(browserAnswered).toBe(false);
+
+      release();
+      await running;
+      const response = await (answer as Promise<Response>);
+      expect(storedBeforeAnswer).toBe(true);
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(result("success"));
+    });
+
+    it("sends the browser to the failure page and the terminal gets the error when the exchange is refused", async () => {
+      cloud.route("POST /api/cli/token", { status: 400, body: { error: "This sign-in code is invalid.", error_code: "INVALID_GRANT" } });
+
+      const { error, browser } = await browserAfter(allow);
+
+      expect(error?.message).toContain("This sign-in code is invalid.");
+      expect(browser).toMatchObject({ status: 302, location: result("failed") });
+      expect(readCredentials(path)).toBeNull();
+    });
+
+    it("sends the browser to the failure page when the answer breaks the login contract", async () => {
+      cloud.route("POST /api/cli/token", { body: { accessToken: "access-1" } });
+
+      const { error, browser } = await browserAfter(allow);
+
+      expect(error?.message).toMatch(/disagree on the login contract/);
+      expect(browser.location).toBe(result("failed"));
+    });
+
+    it("answers the browser when the exchange never returns", async () => {
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      cloud.route("POST /api/cli/token", async () => {
+        await released;
+        return { status: 500 };
+      });
+
+      const { error, browser } = await browserAfter(allow);
+      release();
+
+      expect(error?.message).toMatch(/Could not reach/);
+      expect(browser.location).toBe(result("failed"));
+    });
+
+    it("still finishes when the browser has gone while it was held", async () => {
+      const seen: { url?: URL } = {};
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const answer = {
+        accessToken: "access-1", refreshToken: "refresh-1", expiresAt: 2_000_000_000, supabaseUrl: cloud.url,
+        supabaseAnonKey: "anon-key", platformApiUrl: cloud.url, user: { id: "user-1", email: "dev@example.com" },
+      };
+      cloud.route("POST /api/cli/token", async () => {
+        await released;
+        return { body: answer };
+      });
+      const leaving = new AbortController();
+      const running = login({
+        webUrl: cloud.url,
+        path,
+        log: () => {},
+        open: (url) => {
+          seen.url = new URL(url);
+          void fetch(`http://127.0.0.1:${seen.url.searchParams.get("port")}/callback?${allow(seen.url)}`, { signal: leaving.signal }).catch(() => {});
+        },
+      });
+      await expect.poll(() => cloud.requests.some((request) => request.path === "/api/cli/token")).toBe(true);
+
+      leaving.abort();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      release();
+
+      expect((await running).credentials.user.email).toBe("dev@example.com");
+    });
+
+    it.each([
+      ["access_denied", "cancelled"],
+      ["server_error", "failed"],
+    ])("sends a callback with error=%s to the %s page", async (error, outcome) => {
+      const { browser } = await browserAfter((signIn) => `error=${error}&state=${stateOf(signIn)}`);
+
+      expect(browser).toMatchObject({ status: 302, location: result(outcome) });
+    });
+
+    it("carries nothing from the callback in the redirect", async () => {
+      const { browser } = await browserAfter((signIn) => `error=${encodeURIComponent("<b>x</b>")}&state=${stateOf(signIn)}`);
+
+      expect(browser.location).toBe(result("failed"));
+    });
+
+    it.each([
+      ["a callback that is not ours", () => "code=code-1&state=forged", "Sign-in link mismatch"],
+      ["no code", (signIn: URL) => `state=${stateOf(signIn)}`, "Sign-in incomplete"],
+    ])("answers %s from this server, redirecting nowhere, with no Curb mark", async (_name, query, title) => {
+      const { browser } = await browserAfter(query);
+
+      expect(browser.status).toBe(400);
+      expect(browser.location).toBeNull();
+      expect(browser.body).toContain(`<h1>${title}</h1>`);
+      expect(browser.body).not.toContain(CURB_MARK);
+      expect(browser.body).toContain("prefers-color-scheme: dark");
+      expect(browser.body).toContain(`name="viewport"`);
+      expect(browser.body).not.toMatch(/https?:|<script|<img|@import|url\(/);
+      expect(browser.body).toContain(`<link rel="icon" href="data:,">`);
+    });
   });
 
   it("gives up after the timeout", async () => {
