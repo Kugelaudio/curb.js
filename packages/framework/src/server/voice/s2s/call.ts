@@ -12,16 +12,18 @@ import { voice } from "@livekit/agents";
 import type { S2sDescriptor } from "../../../providers.js";
 import type { AgentSiteRuntime } from "../../../runtime.js";
 import { logError, logInfo } from "../../log.js";
-import { createCallOpening } from "../livekit-host/call-opening.js";
+import { createCallOpening, runOpeningStep, type GreetingReply } from "../livekit-host/call-opening.js";
 import { createCallerWatchdog, EMPTY_ROOM_GRACE_MS } from "../livekit-host/caller-watchdog.js";
 import { ConversationClips } from "../livekit-host/clip-store.js";
 import type { VoiceAgentStartOptions } from "../livekit-host/host.js";
 import { voiceSessionOptions } from "../livekit-host/pipeline.js";
+import { createSilenceFollowup, silenceFollowupDelayMs } from "../livekit-host/silence-followup.js";
 import { callerSide } from "../livekit-host/transfer-handoff.js";
 import { createEndCallHangup } from "../end-call.js";
 import type { AgentSessionBundle } from "../../connection.js";
 import type { VoiceSessionHandle } from "../orchestration.js";
 import { createBackOffice } from "./back-office.js";
+import { createS2sCallRecord } from "./call-record.js";
 import { s2sVoice, type S2sVoice } from "./voices.js";
 
 /** How the model works with the back office, after the agent's own prompt. */
@@ -36,17 +38,23 @@ const BACK_OFFICE_RULES = [
 /** How long a goodbye may take to start and play before the call ends anyway. */
 const GOODBYE_MS = 15_000;
 const GOODBYE_STOPPED_MS = 1_500;
-/** Quiet after the model's line this long, and `llm` is asked whether the call is over. */
-const QUIET_MS = 6_000;
 const NO_CALLER_GRACE_MS = 60_000;
 
-/** The model starts with the agent's prompt and learns the rest from commentary; it only needs
- * to know what to hand over. */
-export function voiceInstructions(runtime: AgentSiteRuntime, firstLine: string | null): string {
+/** What the model is asked when the agent opens the call (`firstTurn: "agent"`). */
+const OPEN_NOW = "Open the call now.";
+/** What the model is asked when the agent opens with a fixed line (`firstTurn: { say }`). */
+const openWith = (line: string) => `Open the call with this line, in these words: ${JSON.stringify(line)}`;
+
+/** The model owns its playout: an opening it is asked for is not waited on. */
+const MODEL_SPEAKS: GreetingReply = { done: () => true, waitForPlayout: async () => {} };
+
+/** The model reads the agent's `<SystemPrompt>`: who it is and how it sounds. Everything else the
+ * agent renders (an `<Instruction>`, text, a skill) is the procedure, which `llm` runs behind it;
+ * the model only needs to know what to hand over, and learns the rest from commentary. */
+export function voiceInstructions(runtime: AgentSiteRuntime): string {
   return [
     runtime.snapshot().context.systemPrompt ?? "",
     `${BACK_OFFICE_RULES}\n${backOfficeWork(runtime).map((work) => `- ${work}`).join("\n")}`,
-    firstLine ? `Open the call with this line, in these words: ${JSON.stringify(firstLine)}` : "",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -57,7 +65,7 @@ function backOfficeWork(runtime: AgentSiteRuntime): string[] {
   const { tools, links } = runtime.snapshot().context;
   return [
     ...tools
-      .filter((tool) => tool.name !== "skip_turn" && tool.name !== "read_skill")
+      .filter((tool) => tool.name !== "read_skill")
       .map((tool) => tool.description ?? tool.name),
     ...links.map((link) => `${link.label}${link.description ? `: ${link.description}` : ""}`),
   ];
@@ -72,8 +80,15 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
   const descriptor = bundle.runtime.settings.s2s() as S2sDescriptor;
   const clips = new ConversationClips();
 
+  const record = createS2sCallRecord(options.reporter);
   let modelVoice: S2sVoice | null = null;
-  const backOffice = createBackOffice({ session: () => bundle.session, voice: () => modelVoice?.channel() ?? null });
+  const backOffice = createBackOffice({
+    session: () => bundle.session,
+    voice: () => modelVoice?.channel() ?? null,
+    reporter: options.reporter,
+  });
+  /** The caller's microphone carries speech now, whether or not the model sent words for it yet. */
+  let callerAudio = false;
   modelVoice = s2sVoice(descriptor, env, {
     delegated: (id, words) => {
       void backOffice.delegated(id, words).catch((error: unknown) => {
@@ -86,33 +101,62 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
       logError("voice", `${roomName}: the model keeps dropping the call, ending it`);
       closeFromRoom();
     },
+    callerAudio: (speaking) => {
+      callerAudio = speaking;
+      silence.cancel();
+    },
   });
   const { model: voiceModel, tools } = modelVoice;
 
   const session = new voice.AgentSession(voiceSessionOptions({ llm: voiceModel }, options.pipeline));
   options.pipeline?.onSession?.({ session, roomName, events: voice.AgentSessionEventTypes });
 
-  let quietTimer: ReturnType<typeof setTimeout> | undefined;
+  // After each line of the model's, quiet from the caller asks `llm` once whether the call is
+  // over (`backOffice.quiet`). Any sign of the caller cancels it for that line: they have the
+  // floor, and the model answers them.
+  const silence = createSilenceFollowup({
+    delayMs: silenceFollowupDelayMs(env),
+    // A call on a speech-to-speech model is never transferred.
+    handedOff: () => false,
+    callerAway: () => callerSide(room.participants()).length === 0,
+    callerSpeaking: () => callerAudio || session.userState === "speaking",
+    reply: () => backOffice.quiet(),
+    onError: (error) => logError("voice", `${roomName}: silence check-in failed: ${String(error)}`),
+  });
   session.on(voice.AgentSessionEventTypes.UserStateChanged, ({ newState }) => {
-    clearTimeout(quietTimer);
+    silence.cancel();
     if (newState === "speaking") backOffice.callerStarted();
   });
+  session.on(voice.AgentSessionEventTypes.UserInputTranscribed, () => silence.cancel());
   session.on(voice.AgentSessionEventTypes.AgentStateChanged, ({ newState }) => {
-    if (newState === "speaking") clearTimeout(quietTimer);
+    if (newState === "speaking") silence.cancel();
   });
+
+  /** The model was asked to say the agent's fixed first line, which the conversation and the record
+   * hold already: its next line is that one, said, not a line to keep again. */
+  let openingAsked = false;
   session.on(voice.AgentSessionEventTypes.ConversationItemAdded, ({ item }) => {
     if (item.type !== "message" || (item.role !== "user" && item.role !== "assistant")) return;
     const text = item.textContent?.trim();
     if (!text) return;
-    backOffice.heard(item.role, text);
-    clearTimeout(quietTimer);
-    if (item.role === "assistant") quietTimer = setTimeout(() => backOffice.quiet(), QUIET_MS);
-    options.reporter?.turn({ speaker: item.role === "user" ? "caller" : "agent", text, final: true });
+    if (item.role === "user") {
+      silence.cancel();
+      record.callerSaid(text);
+      backOffice.heard("user", text);
+      return;
+    }
+    if (openingAsked) openingAsked = false;
+    else {
+      record.agentSaid(text);
+      backOffice.heard("assistant", text);
+    }
+    silence.arm();
   });
 
   let closing: Promise<void> | null = null;
   const closeNow = async () => {
-    clearTimeout(quietTimer);
+    silence.stop();
+    record.close();
     bundle.runtime.setEndCallRequest(null);
     options.client.detach();
     const results = await Promise.allSettled([session.close(), room.disconnect()]);
@@ -155,34 +199,41 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
   });
   bundle.runtime.setEndCallRequest(hangup.request);
 
-  // A model may speak as soon as its session starts, so that waits for a caller.
-  let ready: Promise<void> | null = null;
+  // The call opens as a cascaded call does (`call-opening.ts`): the caller's info, then the
+  // greeting or the agent's fixed line, which the conversation and the record keep as written.
+  // Only the model says it. A model may speak as soon as its session starts, so the session
+  // starts once a caller is there.
   const startModel = () => {
-    const firstLine = bundle.session.open();
-    const agent = new voice.Agent({ instructions: voiceInstructions(bundle.runtime, firstLine), tools });
-    ready = room
+    const agent = new voice.Agent({ instructions: voiceInstructions(bundle.runtime), tools });
+    room
       .startSession({ session, agent, onTypedText: async (_session, text) => void backOffice.typed(text) })
-      .then(() => {
-        if (firstLine || options.firstTurn === "agent") session.generateReply({ instructions: "Open the call now." });
+      .then(() => runOpeningStep(() => opening.sessionStarted(), options))
+      .catch((error: unknown) => {
+        logError("voice", `${roomName}: could not start the call: ${String(error)}`);
+        closeFromRoom();
       });
-    ready.catch((error: unknown) => {
-      logError("voice", `${roomName}: could not start the call: ${String(error)}`);
-      closeFromRoom();
-    });
   };
   const opening = createCallOpening({
-    firstTurn: undefined,
+    firstTurn: options.firstTurn,
     participants: () => callerSide(room.participants()),
-    recordCaller: (info) => bundle.session.updateInfo(info),
-    openConversation: () => {
+    recordCaller: (info) => {
+      bundle.session.updateInfo(info);
       startModel();
-      return null;
     },
-    generateReply: () => ({ done: () => true, waitForPlayout: async () => {} }),
-    say: () => ({ done: () => true, waitForPlayout: async () => {} }),
+    openConversation: () => bundle.session.open(),
+    generateReply: () => {
+      session.generateReply({ instructions: OPEN_NOW });
+      return MODEL_SPEAKS;
+    },
+    say: (line) => {
+      record.agentSaid(line);
+      openingAsked = true;
+      session.generateReply({ instructions: openWith(line) });
+      return MODEL_SPEAKS;
+    },
   });
-  room.onParticipantConnected(() => opening.update());
-  opening.sessionStarted();
+  room.onParticipantConnected(() => runOpeningStep(() => opening.update(), options));
+  runOpeningStep(() => opening.update(), options);
 
   const watchdog = createCallerWatchdog({
     remoteCount: () => [...room.participants()].length,

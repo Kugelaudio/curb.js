@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSilenceFollowup } from "./silence-followup.js";
+import { createSilenceFollowup, silenceFollowupDelayMs } from "./silence-followup.js";
 
 function followup(
   reply: () => void,
@@ -88,5 +88,35 @@ describe("createSilenceFollowup", () => {
     silence.arm();
     expect(() => vi.advanceTimersByTime(6000)).not.toThrow();
     expect(onError).toHaveBeenCalledWith(failure);
+  });
+
+  it("does not check in over a caller who is speaking when the wait ends", () => {
+    vi.useFakeTimers();
+    const reply = vi.fn();
+    let speaking = true;
+    const silence = createSilenceFollowup({
+      delayMs: 6000,
+      handedOff: () => false,
+      callerAway: () => false,
+      callerSpeaking: () => speaking,
+      reply,
+      onError: () => {},
+    });
+    silence.arm();
+    vi.advanceTimersByTime(6000);
+    expect(reply).not.toHaveBeenCalled();
+    speaking = false;
+    vi.advanceTimersByTime(6000);
+    expect(reply).not.toHaveBeenCalled();
+    silence.arm();
+    vi.advanceTimersByTime(6000);
+    expect(reply).toHaveBeenCalledOnce();
+  });
+});
+
+describe("silenceFollowupDelayMs", () => {
+  it("reads VOICE_SILENCE_FOLLOWUP_MS, 6 s when unset", () => {
+    expect(silenceFollowupDelayMs({})).toBe(6000);
+    expect(silenceFollowupDelayMs({ VOICE_SILENCE_FOLLOWUP_MS: "2500" })).toBe(2500);
   });
 });

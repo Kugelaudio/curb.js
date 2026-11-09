@@ -384,7 +384,8 @@ export class AgentSiteRuntime {
     this.registry = registry;
     this.confirming = confirmingTools(this.root.container.root);
     this.installLoadSkillTool(context);
-    this.installStaySilentTool(context);
+    if (this.settings.s2s()) context.instructions.push(HANDED_OVER_RULE);
+    else this.installStaySilentTool(context);
     this.installEndCallTool(context);
     this.addToolErrorsToContext(context);
     this.context = context;
@@ -509,12 +510,15 @@ export class AgentSiteRuntime {
   }
 
   /**
-   * Framework-provided, ALWAYS-available tool (unlike read_skill, not gated on
-   * links existing) that lets the model end its turn with no reply — for when
-   * the user says something like "wait", "hold on", or "don't say anything".
-   * The session (agent-session.ts) special-cases this call: it drops any text
-   * from that step and stops the turn immediately — the whole point is zero
+   * Framework-provided tool (unlike read_skill, not gated on links existing)
+   * that lets the model end its turn with no reply — for when the user says
+   * something like "wait", "hold on", or "don't say anything". The session
+   * (agent-session.ts) special-cases this call: it drops any text from that
+   * step and stops the turn immediately — the whole point is zero
    * spoken/written output.
+   *
+   * An agent with `s2s` does not get it: there `llm` hears only what is handed
+   * over, so a job it skipped has no next line to pick it up again.
    */
   private installStaySilentTool(context: CompiledContext) {
     const staySilentDefinition: ToolDefinition = {
@@ -610,6 +614,11 @@ export class AgentSiteRuntime {
     }
   }
 }
+
+/** For `llm` behind a speech-to-speech model, which words no turn of its own: a turn left empty
+ * would end the job with the caller still waiting. */
+const HANDED_OVER_RULE =
+  "You hear only what the voice model hands over, and nothing runs again until the next hand-over. End every turn with a tool call or a short reply for the caller, never with nothing. If what you were handed does not let you act yet, reply with one short question for what you still need.";
 
 /** What the model reads when a tool handler throws something other than a
  * `ToolInputError`: it failed, the input was not the cause, and what to do
