@@ -111,7 +111,7 @@ async function until(check: () => boolean, what: string, ms = 5000) {
 }
 
 type Step = { text?: string; calls?: Array<{ name: string; input?: Record<string, unknown> }> };
-type CallOptions = { firstLine?: string; steps?: Step[]; firstTurn?: "agent"; quietMs?: number };
+type CallOptions = { env?: Record<string, string>; firstLine?: string; steps?: Step[]; firstTurn?: "agent"; quietMs?: number };
 
 async function call(options: CallOptions & { greeting?: string; drops?: boolean } = {}) {
   const model = await startFakeLiveModel({ greeting: options.greeting, drops: options.drops });
@@ -184,7 +184,7 @@ async function callOn(s2s: S2sDescriptor, options: CallOptions, started: () => b
     roomName: "call",
     bundle: { runtime, session } as never,
     client: { bind: () => {}, detach: () => {} } as never,
-    env: { OPENAI_API_KEY: "test-key", ...(options.quietMs ? { VOICE_SILENCE_FOLLOWUP_MS: String(options.quietMs) } : {}) } as never,
+    env: { ...(options.env ?? { OPENAI_API_KEY: "test-key" }), ...(options.quietMs ? { VOICE_SILENCE_FOLLOWUP_MS: String(options.quietMs) } : {}) } as never,
     onClosed: closed,
     reporter: record.reporter,
     // What the model said, as LiveKit hands it to the call: kept or not, every line is here.
@@ -523,6 +523,14 @@ describe("a call on openai.live()", { timeout: 12_000 }, () => {
     model.callerSays("Do it.", { delegate: true });
     await until(() => model.commentary().some((event) => event.content === "Done for you."), "the delegation was answered");
     await until(() => said("user").includes("Do it."), "the line was recorded");
+  });
+
+  it("connects with the key apiKeyEnv names, read from the call's environment", async () => {
+    const model = await startFakeLiveModel();
+    open.push(async () => void (await model.close()));
+    const s2s = openai.live({ baseURL: model.baseURL, voice: "marin", apiKeyEnv: "ENDPOINT_KEY" });
+    await callOn(s2s, { env: { ENDPOINT_KEY: "endpoint-key" } }, () => model.start() !== undefined);
+    expect(model.authorization).toEqual(["Bearer endpoint-key"]);
   });
 });
 

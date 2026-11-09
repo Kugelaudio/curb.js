@@ -138,8 +138,9 @@ export type WarmVoiceRunner = {
   /** The authored agent: its first turn is known before any call. */
   readonly definition: VoiceAgentBundle["definition"];
   /** The speech providers the warm bundle rendered with. A call builds these alongside its
-   * room connect; if its own conversation renders others, the call swaps at once. */
-  readonly settings: VoiceProviderSettings;
+   * room connect; if its own conversation renders others, the call swaps at once. Null for an
+   * `<Agent s2s>`: its model hears and speaks, so a call builds no speech provider. */
+  readonly settings: VoiceProviderSettings | null;
   /** Shared by every call. Each session opens its own stream on it. */
   readonly vad: VAD;
   /**
@@ -192,9 +193,11 @@ export async function warmVoiceRunner(steps: WarmupSteps = {}): Promise<WarmVoic
   // The plugins to import are the ones the agent renders with, so they follow the bundle.
   const [bundle, vad] = await Promise.all([
     step("build the agent from this artifact", createWarmBundle).then(async (built) => {
-      await step("import the selected voice provider plugins", () =>
-        preloadPlugins(built.runtime.settings.current(), env),
-      );
+      if (!built.runtime.settings.s2s()) {
+        await step("import the selected voice provider plugins", () =>
+          preloadPlugins(built.runtime.settings.current(), env),
+        );
+      }
       return built;
     }),
     step("load the Silero VAD model", loadVad),
@@ -204,7 +207,7 @@ export async function warmVoiceRunner(steps: WarmupSteps = {}): Promise<WarmVoic
   let spare: VoiceAgentBundle | null = bundle;
   return {
     definition: bundle.definition,
-    settings: { stt, tts },
+    settings: bundle.runtime.settings.s2s() ? null : { stt, tts },
     vad,
     takeBundle: async () => {
       if (spare === null) return createBundle();
@@ -355,8 +358,9 @@ export async function joinRoomAndServe(
 
   // WARM: the providers start connecting NOW, alongside the room. They need only the
   // environment's secrets, and a TTS socket that finishes its handshake while the room does
-  // is one the greeting does not wait for. Cold paths build them after the join.
-  const providers = warm
+  // is one the greeting does not wait for. Cold paths build them after the join, and an
+  // `<Agent s2s>` (no warm settings) builds none.
+  const providers = warm?.settings
     ? (seams.buildProviders ?? buildVoiceProviders)({
         settings: warm.settings,
         reporter: config.reporter,
@@ -471,8 +475,7 @@ export async function joinRoomAndServe(
       ...experimentInfo(config.experiments),
       "call.direction": config.direction ?? "inbound",
     });
-    const warmed =
-      warm && providers ? { providers: await providers, vad: warm.vad } : {};
+    const warmed = warm ? { vad: warm.vad, ...(providers ? { providers: await providers } : {}) } : {};
     const startOptions = {
       roomName,
       bundle,

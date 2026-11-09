@@ -22,8 +22,8 @@ and the agent keeps its skills, tools and held actions: nothing else in the proj
 
 3. Run `npx curb check`, then call the agent with `npm run dev`.
 
-`curb check` warns with `AGENT_S2S_SPEECH_PROVIDER_IGNORED` when `stt` or `tts` is still set, and it
-may still list speech keys of the agent's default providers. A call does not need them.
+`curb check` warns with `AGENT_S2S_SPEECH_PROVIDER_IGNORED` when `stt` or `tts` is still set. It lists
+the model's key and the `llm` key, and no speech key: a call builds no speech provider.
 
 ## Choose a model
 
@@ -38,6 +38,16 @@ for another endpoint on the same protocol ([`openai`](./providers/openai.md)):
 ```tsx
 <Agent llm={anthropic("claude-sonnet-5-5")} s2s={openai.realtime({ model: "my-model", voice: "marin" })}>
 ```
+
+An endpoint of another provider takes that provider's key. Name its variable with `apiKeyEnv`, and
+Curb reads it when a call starts and connects with it; nothing is copied into `OPENAI_API_KEY`:
+
+```tsx
+<Agent s2s={openai.live({ model: "my-model", baseURL: "https://api.example.com/v1", apiKeyEnv: "EXAMPLE_API_KEY" })}>
+```
+
+`curb check` lists that variable as the model's key. Read keys in the descriptor's options like this,
+never as `process.env.X` in the module: a hosted agent gets its secrets when a call starts.
 
 ## How a call runs
 

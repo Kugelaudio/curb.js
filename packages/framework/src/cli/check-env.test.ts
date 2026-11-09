@@ -139,6 +139,16 @@ describe("what the agent's providers need", () => {
     expect(providerKeys(uses, { ELEVENLABS_API_KEY: "e" }).find((key) => key.name === "ELEVEN_API_KEY")?.set).toBe(true);
   });
 
+  it("lists an <Agent s2s> model's key under the name its apiKeyEnv gives", () => {
+    const s2s = openai.live({ baseURL: "https://example.test/v1", apiKeyEnv: "KUGELAUDIO_API_KEY" });
+    expect(providerKeys([{ where: "", settings: { llm: kugelaudio.llm() }, s2s }], {})).toEqual([
+      { name: "KUGELAUDIO_API_KEY", set: false, neededBy: "llm kugelaudio, s2s openai", optional: false },
+    ]);
+    expect(providerKeys([{ where: "", settings: {}, s2s: openai.live() }], { OPENAI_API_KEY: "k" })).toEqual([
+      { name: "OPENAI_API_KEY", set: true, neededBy: "s2s openai", optional: false },
+    ]);
+  });
+
   it("lists one key once for every provider that reads it, and openaiCompatible's as optional", () => {
     const onOpenai = [{ where: "", settings: { llm: openai("gpt-5"), stt: kugelaudio.stt(), tts: openai.tts() } }];
 

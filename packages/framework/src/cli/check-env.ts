@@ -5,10 +5,10 @@ import { parse } from "@babel/parser";
 import type { DiscoveredAgent } from "../agent.node.js";
 import { AUTHORING_DIAGNOSTIC_CODES, type AuthoringDiagnostic } from "../authoring.js";
 import { bundleRequiredSecrets } from "../bundler/declarations.js";
-import { LLM_KEYS, PLATFORM_PROVIDED, SPEECH_KEYS, type Env, type ProviderVariable } from "../provider-keys.js";
+import { LLM_KEYS, PLATFORM_PROVIDED, s2sKey, SPEECH_KEYS, type Env, type ProviderVariable } from "../provider-keys.js";
 import { agentAppElement } from "../routing.js";
 import { AgentSiteRuntime } from "../runtime.js";
-import type { LlmProviderId, SttProviderId, TtsProviderId } from "../providers.js";
+import type { LlmProviderId, S2sDescriptor, SttProviderId, TtsProviderId } from "../providers.js";
 import type { ProviderSettings } from "../session-settings.js";
 import type { StoredProjectKey } from "./cloud/credentials.js";
 import { runsOnHostKey } from "./cloud/host-model-key.js";
@@ -48,6 +48,8 @@ export type Configuration = {
 export type ProviderUse = {
   where: string;
   settings: { [Slot in keyof ProviderSettings]?: Pick<ProviderSettings[Slot], "provider"> };
+  /** The agent's `<Agent s2s>` model, at the agent level only. */
+  s2s?: S2sDescriptor;
 };
 
 /** One place the project's code reads a variable from `process.env`. */
@@ -179,7 +181,8 @@ export function providerKeys(uses: readonly ProviderUse[], env: Env): Configurat
     entry.users.set(user, (entry.users.get(user) ?? new Set<string>()).add(where));
     found.set(variable.name, entry);
   };
-  for (const { where, settings } of uses) {
+  for (const use of uses) {
+    const { where, settings } = use;
     for (const slot of ["llm", "stt", "tts"] as const) {
       const provider = settings[slot]?.provider;
       if (!provider) continue;
@@ -188,6 +191,7 @@ export function providerKeys(uses: readonly ProviderUse[], env: Env): Configurat
       if (!keys) continue;
       for (const variable of [keys.key, ...(keys.also ?? [])]) read(variable, `${slot} ${provider}`, where);
     }
+    if (use.s2s) read(s2sKey(use.s2s), `s2s ${use.s2s.provider}`, where);
   }
   return [...found].map(([name, { set, optional, users }]) => ({
     name,
@@ -202,7 +206,8 @@ export function providerKeys(uses: readonly ProviderUse[], env: Env): Configurat
 /**
  * The providers a conversation can run on: the agent level's, then each skill's while it is
  * the active one (its `<Skill>` link may set its own), read by the runtime exactly as a
- * session reads them, with every skill loaded.
+ * session reads them, with every skill loaded. With `<Agent s2s>` the model hears and speaks,
+ * so a call reads its key and the llm's, and no stt or tts key.
  */
 function agentProviderUses(agent: DiscoveredAgent): ProviderUse[] {
   const paths = agent.routes.map((route) => route.path);
@@ -210,10 +215,15 @@ function agentProviderUses(agent: DiscoveredAgent): ProviderUse[] {
     ({ path, loadedPaths }) => agentAppElement(agent.definition.app, { path, loadedPaths, routes: agent.routes }),
     { maxLoadedSkills: Math.max(paths.length, 1) },
   );
-  const uses: ProviderUse[] = [{ where: "", settings: runtime.settings.current() }];
+  const s2s = runtime.settings.s2s();
+  const used = (): ProviderUse["settings"] => {
+    const settings = runtime.settings.current();
+    return s2s ? { llm: settings.llm } : settings;
+  };
+  const uses: ProviderUse[] = [{ where: "", settings: used(), ...(s2s ? { s2s } : {}) }];
   for (const path of paths) {
     runtime.loadSkill(path);
-    uses.push({ where: path, settings: runtime.settings.current() });
+    uses.push({ where: path, settings: used() });
   }
   return uses;
 }
