@@ -51,9 +51,9 @@ import {
   type VoiceProviders,
 } from "../providers.js";
 import { logError, logInfo } from "../../log.js";
-import { AGENT_FIRST_TURN_PROMPT, createCallOpening } from "./call-opening.js";
+import { AGENT_FIRST_TURN_PROMPT, createCallOpening, runOpeningStep } from "./call-opening.js";
 import { EMPTY_ROOM_GRACE_MS, createCallerWatchdog } from "./caller-watchdog.js";
-import { createSilenceFollowup } from "./silence-followup.js";
+import { createSilenceFollowup, silenceFollowupDelayMs } from "./silence-followup.js";
 import type {
   VoiceSessionHandle,
   VoiceSessionStartOptions,
@@ -327,7 +327,7 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
     log: (message) => logInfo("voice", `${options.roomName}: ${message}`),
   });
   const silence = createSilenceFollowup({
-    delayMs: Number(env.VOICE_SILENCE_FOLLOWUP_MS ?? 6000),
+    delayMs: silenceFollowupDelayMs(env),
     handedOff: () => handoff.handedOff(),
     callerAway: () => callerSide(room.participants()).length === 0,
     reply: () => session?.generateReply({ userInput: SILENCE_FOLLOWUP_PROMPT }),
@@ -474,17 +474,7 @@ export async function startVoiceAgent(options: VoiceAgentStartOptions): Promise<
   // Runs inside the call's room events (rtc-node's, on LiveKit), where a throw would escape
   // into its event loop and could end every call this process serves, and once the session starts, where a throw (a
   // `firstTurn: { say }` function that returns no line) would fail a call that can go on.
-  const openCall = (step: () => void = () => opening.update()) => {
-    try {
-      step();
-    } catch (error) {
-      // KEEP-JUSTIFIED: the caller can still speak to an agent that failed to greet; the
-      // cause is logged and lands in the call's record.
-      const message = error instanceof Error ? error.message : String(error);
-      logError("voice", `${options.roomName}: could not open the call: ${message}`);
-      options.reporter?.event("error", { kind: "call_opening", message });
-    }
-  };
+  const openCall = (step: () => void = () => opening.update()) => runOpeningStep(step, options);
   room.onParticipantConnected(() => openCall());
   // A caller already in the room is on the conversation before anything else can run.
   openCall();
