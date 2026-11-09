@@ -65,7 +65,7 @@ function backOfficeWork(runtime: AgentSiteRuntime): string[] {
   const { tools, links } = runtime.snapshot().context;
   return [
     ...tools
-      .filter((tool) => tool.name !== "skip_turn" && tool.name !== "read_skill")
+      .filter((tool) => tool.name !== "read_skill")
       .map((tool) => tool.description ?? tool.name),
     ...links.map((link) => `${link.label}${link.description ? `: ${link.description}` : ""}`),
   ];

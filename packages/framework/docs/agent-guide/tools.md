@@ -266,7 +266,7 @@ versions of them:
 | Tool | When the model has it | What it does |
 |---|---|---|
 | `read_skill` | whenever the current context has skill links | loads a skill's instructions and tools |
-| `skip_turn` | always | ends the turn with no reply at all ("hold on", the user thinking out loud) |
+| `skip_turn` | always, except on an agent with `s2s` | ends the turn with no reply at all ("hold on", the user thinking out loud) |
 | `end_call` | only during a live voice call | says its `goodbye` to the caller and hangs up |
 
 `end_call` is the one to know about when you write a voice agent's prompts.
