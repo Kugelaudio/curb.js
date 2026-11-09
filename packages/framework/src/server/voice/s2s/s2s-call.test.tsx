@@ -581,9 +581,10 @@ describe("a call on openai.realtime()", { timeout: 12_000 }, () => {
     await model.callerSays("Yes.", { reply: askBackOffice("The caller confirmed") });
     await until(() => ran.length === 2 && toolOutputs(model).length === 2, "the action ran and the call got its result");
     expect(ran).toEqual(["verify_policy P-1", "book_meeting Tuesday"]);
-    expect(toolOutputs(model).at(-1)).toContain("reported this already");
     expect(llm).toHaveBeenCalledTimes(5);
-    await until(() => model.responses().some((event: unknown) => JSON.stringify(event).includes("You are booked.")), "the model was told");
+    // The tool call lands during the turn or after it: the outcome reaches the model either way.
+    const told = () => JSON.stringify([toolOutputs(model), model.responses()]);
+    await until(() => told().includes("You are booked."), "the model was told");
   });
 
   it("waits for the caller's own words when the model's tool call comes first", async () => {
