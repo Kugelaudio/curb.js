@@ -11,6 +11,10 @@
  */
 
 import type { AgentSession } from "../../../agent-session.js";
+import type { CallReporter } from "../../../hosted/call-reporter.js";
+import type { AgentTurnStreamEvent } from "../../../llm/types.js";
+import { END_CALL_TOOL_NAME } from "../../../types.js";
+import { reportTurnEvent } from "../turn-report.js";
 
 /** Curb's way into the model when it did not ask, which LiveKit's `GPTLiveSession` fits. */
 export type VoiceBackChannel = {
@@ -44,15 +48,23 @@ const ANSWER_WINDOW_MS = 4000;
 /** A transcript lags its speech by seconds, so a start this old belongs to no line still coming. */
 const SPEECH_START_STALE_MS = 30_000;
 
-/** A model may answer a goodbye by itself, in any language, so only `llm` can tell the call is over. */
+/** A model may answer a goodbye by itself, in any language, so only `llm` can tell the call is over.
+ * Only the goodbye of an `end_call` that ran reaches the model from this turn (`quiet`). */
 const QUIET_NOTE = "(The caller has been quiet since the last line. If they said goodbye or are clearly finished, end the call. If not, call skip_turn.)";
+
+const endedCall = (event: AgentTurnStreamEvent) => event.type === "tool" && event.ok && event.toolCall.name === END_CALL_TOOL_NAME;
 
 const NO_ANSWER = "The caller has not answered yet. Ask the question again and wait for their answer.";
 const ALREADY_REPORTED = "The back office has reported this already. Say nothing more about it.";
 
 const sameWords = (text: string) => text.trim().toLowerCase();
 
-export function createBackOffice(options: { session: () => AgentSession; voice: () => VoiceBackChannel | null }) {
+export function createBackOffice(options: {
+  session: () => AgentSession;
+  voice: () => VoiceBackChannel | null;
+  /** The call's record: every turn's tools and failures go there, as on a cascaded call. */
+  reporter?: CallReporter;
+}) {
   /** Turns running or done for words, so a delegation and a held answer share one. */
   const turns = new Map<string, Promise<string>>();
   /** Words a turn recorded itself, so the transcript does not take them twice. */
@@ -84,15 +96,19 @@ export function createBackOffice(options: { session: () => AgentSession; voice: 
     }
   };
 
-  /** `request` is the model's own wording, which no caller said; anything else is the caller's. */
-  const turnFor = (words: string, request = false): Promise<string> => {
+  /** `request` is the model's own wording, which no caller said; anything else is the caller's.
+   * `observe` sees the events of a turn this call starts, after the call's record did. */
+  const turnFor = (words: string, request = false, observe?: (event: AgentTurnStreamEvent) => void): Promise<string> => {
     const key = sameWords(words);
     const known = turns.get(key);
     if (known) return known;
     if (!request) taken.add(key);
     const turn = options
       .session()
-      .runTurn(words, { unsaid: true, ...(request ? { kind: "synthetic" as const } : { heard: true }) })
+      .runTurn(words, { unsaid: true, ...(request ? { kind: "synthetic" as const } : { heard: true }) }, (event) => {
+        reportTurnEvent(options.reporter, event);
+        observe?.(event);
+      })
       .finally(() => {
         turns.delete(key);
         noteHeld();
@@ -184,10 +200,16 @@ export function createBackOffice(options: { session: () => AgentSession; voice: 
         answerHeld(text);
       }
     },
-    /** Nobody spoke for a while after the model's line: the call may be over. */
+    /** Nobody spoke for a while after the model's line: the call may be over. This turn may act,
+     * but it speaks only to end the call: anything else it writes would be said over a caller who
+     * is thinking, or about to answer the model's own question. */
     quiet(): void {
       if (running > 0 || !lastCallerLine || options.session().pendingConfirmation) return;
-      void counted(turnFor(QUIET_NOTE, true).then((reply) => (reply ? tell(reply, null) : undefined)));
+      let ended = false;
+      const watch = (event: AgentTurnStreamEvent) => {
+        if (endedCall(event)) ended = true;
+      };
+      void counted(turnFor(QUIET_NOTE, true, watch).then((reply) => (ended && reply ? tell(reply, null) : undefined)));
     },
     /** Resolves once everything asked so far went back to the model. */
     settled: () => (running === 0 ? Promise.resolve() : settled),

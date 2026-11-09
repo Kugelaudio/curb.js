@@ -49,6 +49,7 @@ import {
   type ToolDefinition,
 } from "./types.js";
 import { END_CALL_VOICE_STYLE } from "./voice-style.js";
+import { continuesHeardLine, joinHeardLine } from "./heard-line.js";
 
 export { normalizeLlmPunctuation } from "./llm/punctuation.js";
 
@@ -296,12 +297,13 @@ export class AgentSession {
   }
 
   /** The transcript with `content` added to the caller's newest line, when a pause only cut one
-   * sentence in two, or null. A model can send a part twice. An answer to a held action stays whole. */
+   * sentence in two, or null. A model can send a part twice, or the whole line again as it grows,
+   * after any pause (`heard-line.ts`). An answer to a held action stays whole. */
   private joinedHeardLine(content: string, at: number): AgentChatMessage[] | null {
     const newest = this.conversation.at(-1);
-    if (newest?.role !== "user" || newest.kind || this.pending || at - (newest.at ?? 0) >= HEARD_LINE_GAP_MS) return null;
-    const joined = newest.content.endsWith(content) ? newest.content : `${newest.content}${/^[.,;:!?]/.test(content) ? "" : " "}${content}`;
-    return [...this.conversation.slice(0, -1), { ...newest, content: joined, at }];
+    if (newest?.role !== "user" || newest.kind || this.pending) return null;
+    if (at - (newest.at ?? 0) >= HEARD_LINE_GAP_MS && !continuesHeardLine(newest.content, content)) return null;
+    return [...this.conversation.slice(0, -1), { ...newest, content: joinHeardLine(newest.content, content), at }];
   }
 
   recordContextEvent(lines: string[]): void {
@@ -331,10 +333,18 @@ export class AgentSession {
    * fallback line in the agent's language; a failure's cause is logged
    * (console.error) and recorded on the step's {@link llmTrace} entry. Throws
    * when the input queue is full.
+   *
+   * `observe` sees each event of the turn as it happens: the tools it ran and why it failed,
+   * the same events {@link runTurnStream} yields, without its deltas.
    */
-  async runTurn(userText: string, options: AgentTurnOptions = {}): Promise<string> {
+  async runTurn(
+    userText: string,
+    options: AgentTurnOptions = {},
+    observe?: (event: AgentTurnStreamEvent) => void,
+  ): Promise<string> {
     let reply = "";
     for await (const event of this.turn(userText, options, false)) {
+      observe?.(event);
       if (event.type === "error" && event.error.kind === "busy") throw new Error(event.error.message);
       if (event.type === "done") reply = event.reply;
     }
