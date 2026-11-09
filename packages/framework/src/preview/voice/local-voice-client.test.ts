@@ -52,7 +52,7 @@ function fakeTrack(): MediaStreamTrack {
 }
 
 /** A call's IO with the browser taken out: what it opened, and the events it was given. */
-function fakeIO(options: { echoCancelled?: boolean } = {}) {
+function fakeIO(options: { echoCancelled?: boolean; microphones?: MediaDeviceInfo[] } = {}) {
   const sockets: FakeSocket[] = [];
   let events: CallMediaEvents | null = null;
   let media: FakeMedia | null = null;
@@ -89,7 +89,7 @@ function fakeIO(options: { echoCancelled?: boolean } = {}) {
       queueMicrotask(() => socket.accept());
       return socket as unknown as WebSocket;
     },
-    listMicrophones: async () => [],
+    listMicrophones: async () => options.microphones ?? [],
     pageUrl: () => "http://127.0.0.1:4000/?resume=abc",
   };
   return {
@@ -123,6 +123,24 @@ describe("LocalVoiceClient", () => {
     const client = new LocalVoiceClient(noRecordings(), fakeIO({ echoCancelled: false }).io);
     await client.start(TICKET);
     expect(client.getState().connected).toBe(true);
+    expect(client.getState().error).toBe(NO_ECHO_CANCELLATION);
+  });
+
+  it("keeps the echo cancellation warning when the caller mutes", async () => {
+    const client = new LocalVoiceClient(noRecordings(), fakeIO({ echoCancelled: false }).io);
+    await client.start(TICKET);
+    await client.setMicMuted(true);
+    expect(client.getState().micMuted).toBe(true);
+    expect(client.getState().error).toBe(NO_ECHO_CANCELLATION);
+  });
+
+  it("keeps the echo cancellation warning when the caller switches microphone", async () => {
+    const microphone = (deviceId: string) => ({ deviceId, kind: "audioinput", label: deviceId, groupId: "" }) as MediaDeviceInfo;
+    const io = fakeIO({ echoCancelled: false, microphones: [microphone("built-in"), microphone("headset")] }).io;
+    const client = new LocalVoiceClient(noRecordings(), io);
+    await client.start(TICKET);
+    await client.selectMicrophone("headset");
+    expect(client.getState().selectedMicrophoneId).toBe("headset");
     expect(client.getState().error).toBe(NO_ECHO_CANCELLATION);
   });
 

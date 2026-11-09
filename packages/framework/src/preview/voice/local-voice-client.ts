@@ -34,6 +34,11 @@ const NORMAL_CLOSE = new Set([1000, 1005]);
 export const NO_ECHO_CANCELLATION =
   "This browser blocked the audio path echo cancellation needs, so the agent may hear itself. Use headphones, or check for a VPN or a privacy extension that limits WebRTC.";
 
+/** The page's error line on a call with nothing wrong: empty, or this call's standing warning. */
+function callWarning(media: CallMedia): string | null {
+  return media.echoCancelled ? null : NO_ECHO_CANCELLATION;
+}
+
 /** What a local call reaches outside itself; a test passes its own. */
 export type LocalCallIO = {
   openMedia: OpenCallMedia;
@@ -135,7 +140,7 @@ export class LocalVoiceClient {
     }
     if (this.state.micMuted === muted) return;
     call.media.microphone.enabled = !muted;
-    this.patch({ micMuted: muted, error: null });
+    this.patch({ micMuted: muted, error: callWarning(call.media) });
   }
 
   /** Select an input for the next call or switch the live call in place. */
@@ -153,14 +158,14 @@ export class LocalVoiceClient {
       return;
     }
     if (this.state.switchingMicrophone || this.state.selectedMicrophoneId === deviceId) return;
-    this.patch({ switchingMicrophone: true, error: null });
+    this.patch({ switchingMicrophone: true, error: callWarning(call.media) });
     const previous = call.media.microphone;
     try {
       const next = await call.media.switchMicrophone(deviceId);
       this.recordings.disconnect(previous);
       this.recordings.connect(next);
       this.preferredMicrophoneId = deviceId;
-      this.patch({ selectedMicrophoneId: deviceId, switchingMicrophone: false, error: null });
+      this.patch({ selectedMicrophoneId: deviceId, switchingMicrophone: false, error: callWarning(call.media) });
       await this.refreshMicrophones();
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause);
@@ -206,7 +211,7 @@ export class LocalVoiceClient {
       this.patch({ connecting: false, error: joinFailureMessage(error) });
       return;
     }
-    this.patch({ connected: true, connecting: false, listening: true, error: media.echoCancelled ? null : NO_ECHO_CANCELLATION });
+    this.patch({ connected: true, connecting: false, listening: true, error: callWarning(media) });
   }
 
   /** The call's socket, open; rejects when it closes or fails first. */
