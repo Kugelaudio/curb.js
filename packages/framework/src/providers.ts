@@ -218,7 +218,8 @@ function defined<T extends object>(options: T | undefined): T {
 }
 
 /** An environment variable name as a shell and a dashboard accept it. */
-const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** Upper case only: `curb check` prints this name, and a pasted key can look like a lowercase one. */
+const ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
 
 /** `openai.live()` / `openai.realtime()` options; refused when `apiKeyEnv` names no variable. */
 function s2sOptions(factory: string, options: OpenaiS2sOptions | undefined): OpenaiS2sOptions {
@@ -227,7 +228,7 @@ function s2sOptions(factory: string, options: OpenaiS2sOptions | undefined): Ope
   if (apiKeyEnv !== undefined && (typeof apiKeyEnv !== "string" || !ENV_NAME.test(apiKeyEnv))) {
     refuseOption(
       `${factory}() apiKeyEnv must name an environment variable, and this value does not look like one.`,
-      `Pass the variable's name, not its value, for example ${factory}({ apiKeyEnv: "EXAMPLE_API_KEY" }).`,
+      `Pass the variable's name in capitals, not its value, for example ${factory}({ apiKeyEnv: "EXAMPLE_API_KEY" }).`,
       factory,
     );
   }

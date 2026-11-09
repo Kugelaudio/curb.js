@@ -43,6 +43,7 @@ describe("<Agent s2s> diagnostics", () => {
     expect(() => openai.live({ apiKeyEnv: "sk-live abc" })).toThrow(/apiKeyEnv must name an environment variable/);
     expect(() => openai.realtime({ apiKeyEnv: "" })).toThrow(/apiKeyEnv must name an environment variable/);
     expect(() => openai.live({ apiKeyEnv: "sk-live abc" })).not.toThrow(/sk-live/);
+    expect(() => openai.live({ apiKeyEnv: "sk_a1b2c3d4e5f60718293a4b5c6d7e8f90" })).toThrow(/apiKeyEnv must name an environment variable/);
   });
 
   it("refuses a value that is no speech-to-speech model", () => {
