@@ -86,7 +86,7 @@ export function s2sVoice(descriptor: S2sDescriptor, env: Env, hooks: S2sHooks): 
     };
   }
 
-  let live: GPTLiveSession | null = null;
+  let live: VoiceBackChannel | null = null;
   const attach = (session: GPTLiveSession) => {
     live = session;
     session.on("delegation_created", ({ id, pendingTranscript }) => hooks.delegated(id, pendingTranscript));
@@ -102,6 +102,27 @@ export function s2sVoice(descriptor: S2sDescriptor, env: Env, hooks: S2sHooks): 
   // Live reports a caller's speech only with its transcript, so the call watches the audio itself.
   class WatchedLiveSession extends GPTLiveSession {
     private readonly watchCaller = callerAudioWatch(hooks);
+    private expectsReply = false;
+
+    constructor(model: GPTLiveModel) {
+      super(model);
+      if (descriptor.options.verbatim !== true) return;
+      // LiveKit's append has no argument for `expects_reply`, and it builds the event inside.
+      const session = this as unknown as { queueEvent: (event: Record<string, unknown>, ...rest: unknown[]) => void };
+      const queue = session.queueEvent.bind(this);
+      session.queueEvent = (event, ...rest) =>
+        queue(this.expectsReply && event.type === "session.commentary.append" ? { ...event, expects_reply: true } : event, ...rest);
+    }
+
+    override appendCommentary(text: string, options: { delegationId?: string | null; expectsReply?: boolean } = {}): void {
+      this.expectsReply = options.expectsReply === true;
+      try {
+        super.appendCommentary(text, options);
+      } finally {
+        this.expectsReply = false;
+      }
+    }
+
     override pushAudio(frame: AudioFrame): void {
       this.watchCaller(frame);
       super.pushAudio(frame);

@@ -28,6 +28,7 @@ in its own words. Three things follow:
 | `voice` | `string` | The model's voice |
 | `baseURL` | `string` | Another endpoint on the same protocol |
 | `apiKeyEnv` | `string` | The environment variable holding the endpoint's key, read when a call starts; default `OPENAI_API_KEY` |
+| `verbatim` | `boolean` | `openai.live()` only, on an endpoint that takes `expects_reply` on a commentary. The model says each reply of the back office word for word, and the caller's next finished turn goes back to `llm` |
 
 ## Example
 
@@ -39,6 +40,6 @@ in its own words. Three things follow:
 
 | Version | Changes |
 |---|---|
-| v1.18.0 | `apiKeyEnv` option on `openai.live()` and `openai.realtime()` added |
+| v1.18.0 | `verbatim` on `openai.live()`, and `apiKeyEnv` on `openai.live()` and `openai.realtime()`, added |
 | Unreleased | `openai.live()` and `openai.realtime()` added |
 | v1.2.6 | `openai` introduced |
