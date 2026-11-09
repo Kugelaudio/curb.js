@@ -43,7 +43,7 @@ describe("the providers curb info reads from the source", () => {
     const root = project({ "src/agent/agent.tsx": agentWith("tts={voices.main}") });
     const report = await infoReport(root, {});
     expect(report).toContain("LLM  kugelaudio (default)");
-    expect(report).toContain("STT  azure (default)");
+    expect(report).toContain("STT  kugelaudio (default)");
     expect(report).toContain("TTS  set in code");
   });
 
@@ -114,7 +114,7 @@ describe("curb info", () => {
     const root = project({
       "package.json": JSON.stringify({ dependencies: { curb: "*" } }),
       "src/agent/agent.tsx": agentWith(
-        `llm={openaiCompatible({ baseURL: "http://127.0.0.1/v1", model: "m", apiKey: "${secrets[2]}" })}`,
+        `stt={azure.stt()} llm={openaiCompatible({ baseURL: "http://127.0.0.1/v1", model: "m", apiKey: "${secrets[2]}" })}`,
       ),
       ".env": `KUGELAUDIO_API_KEY=${secrets[0]}\nAZURE_SPEECH_KEY=${secrets[1]}\n`,
     });

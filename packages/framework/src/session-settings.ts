@@ -6,7 +6,7 @@
  *      `PATCH /v1/sessions/{id}`), gated by `<Agent adjustable>`; see `settings-update.ts`,
  *   2. the ACTIVE skill's `<Skill path=… tts={…}>` prop,
  *   3. the `<Agent tts={…}>` prop,
- *   4. the framework default: `kugelaudio.tts()`, `azure.stt()`, `kugelaudio.llm()`.
+ *   4. the framework default: `kugelaudio.tts()`, `kugelaudio.stt()`, `kugelaudio.llm()`.
  *
  * An override changes one option of the provider underneath it (`tts.voice` is the voice of
  * whichever TTS the props pick) and lasts until the next outside change of the same path.
@@ -18,7 +18,7 @@
  */
 
 import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES } from "./authoring.js";
-import { azure, kugelaudio, type AgentProviderProps, type ProviderProps, type S2sDescriptor } from "./providers.js";
+import { kugelaudio, type AgentProviderProps, type ProviderProps, type S2sDescriptor } from "./providers.js";
 import {
   ADJUSTABLE_PATHS,
   applySettingsOverrides,
@@ -43,7 +43,7 @@ const SLOTS: readonly ProviderSlot[] = ["llm", "stt", "tts"];
 
 /** What a conversation runs on when the tree sets no provider prop: today's defaults. */
 export function defaultProviderSettings(): ProviderSettings {
-  return { llm: kugelaudio.llm(), stt: azure.stt(), tts: kugelaudio.tts() };
+  return { llm: kugelaudio.llm(), stt: kugelaudio.stt(), tts: kugelaudio.tts() };
 }
 
 export type SettingsListener = (settings: ProviderSettings, changed: readonly ProviderSlot[]) => void;
@@ -238,7 +238,7 @@ function assertDescriptor(slot: ProviderSlot | "s2s", value: unknown, component:
       (slot === "tts"
         ? 'kugelaudio.tts({ language: "en" })'
         : slot === "stt"
-          ? "azure.stt()"
+          ? "kugelaudio.stt()"
           : slot === "s2s"
             ? "openai.live()"
             : "kugelaudio.llm()") +
