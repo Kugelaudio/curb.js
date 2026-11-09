@@ -118,8 +118,8 @@ error naming it.
 | `anthropic(model)` | `ANTHROPIC_API_KEY` |
 | `openai(model)`, `openai.stt()`, `openai.tts()` | `OPENAI_API_KEY` |
 | `openaiCompatible({ baseURL, model })` | `AGENT_LLM_API_KEY`, else `OPENAI_API_KEY`; optional |
-| `azure.stt()` (default STT) | `AZURE_SPEECH_KEY`; `AZURE_SPEECH_REGION` (default `eastus`) |
-| `kugelaudio.stt()` | `KUGELAUDIO_API_KEY`; `KUGELAUDIO_API_BASE` (default `https://api.kugelaudio.com`) |
+| `azure.stt()` | `AZURE_SPEECH_KEY`; `AZURE_SPEECH_REGION` (default `eastus`) |
+| `kugelaudio.stt()` (default STT) | `KUGELAUDIO_API_KEY`; `KUGELAUDIO_API_BASE` (default `https://api.kugelaudio.com`) |
 | `kugelaudio.tts()` (default TTS) | `KUGELAUDIO_API_KEY`; `KUGELAUDIO_API_BASE` (default `https://api.kugelaudio.com`) |
 | `deepgram.stt()` | `DEEPGRAM_API_KEY` |
 | `elevenlabs.stt()`, `elevenlabs.tts()` | `ELEVEN_API_KEY` (or `ELEVENLABS_API_KEY`) |

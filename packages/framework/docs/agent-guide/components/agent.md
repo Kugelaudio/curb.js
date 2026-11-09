@@ -13,7 +13,7 @@ function Agent(props: AgentProps): ReactNode;
 | Prop | Type | Default | What it does |
 |---|---|---|---|
 | `llm` | [LLM provider](../providers.md) | `kugelaudio.llm()` | The model |
-| `stt` | [Speech-to-text provider](../providers.md) | `azure.stt()` | Speech recognition |
+| `stt` | [Speech-to-text provider](../providers.md) | `kugelaudio.stt()` | Speech recognition |
 | `tts` | [Text-to-speech provider](../providers.md) | `kugelaudio.tts()` | The voice |
 | `s2s` | [`openai.live()`, `openai.realtime()`](../providers/openai.md) | none | A speech-to-speech model that hears the caller and speaks. `stt` and `tts` are then unused, and `llm` runs skills and tools behind it |
 | `adjustable` | `{ client?: paths, host?: paths }` | nothing | What the caller's page and the host may change during a call. Paths: `"tts.voice"`, `"tts.model"`, `"stt.language"`, `"llm"` ([Mid-call changes](../mid-call-changes.md)) |

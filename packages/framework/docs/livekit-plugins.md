@@ -111,7 +111,7 @@ import { azure, deepgram, kugelaudio } from "curb/providers";
 </Agent>
 ```
 
-`azure.stt()` + `kugelaudio.tts()` (the defaults) and `kugelaudio.stt()` are the
+`kugelaudio.stt()` + `kugelaudio.tts()` (the defaults) and `azure.stt()` are the
 framework-native paths; `deepgram.stt`, `elevenlabs.stt/tts`, `cartesia.tts` and
 `openai.stt/tts` lazy-load the matching `@livekit/agents-plugin-*` package,
 resolved from the consuming project's node_modules. `create-curb.js` asks

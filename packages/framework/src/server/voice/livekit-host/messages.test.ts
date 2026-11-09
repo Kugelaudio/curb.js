@@ -188,7 +188,7 @@ describe("live settings over LiveKit (curb.update)", () => {
     const answer = JSON.parse(await update(invoke, { tts: { voice: "17" } }));
     expect(answer).toEqual({
       tts: { provider: "kugelaudio", voice: 17 },
-      stt: { provider: "azure" },
+      stt: { provider: "kugelaudio" },
       llm: { provider: "kugelaudio", model: "qwen3.8-27b" },
     });
     expect(settings.current().tts).toStrictEqual(kugelaudio.tts({ voice: 17 }));
