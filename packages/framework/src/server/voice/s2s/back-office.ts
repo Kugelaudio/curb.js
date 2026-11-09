@@ -59,6 +59,10 @@ const ALREADY_REPORTED = "The back office has reported this already. Say nothing
 
 const sameWords = (text: string) => text.trim().toLowerCase();
 
+const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+/** A line whose words are mostly a reply's is that reply's transcript, however it was split. */
+const TRANSCRIPT_SHARE = 0.7;
+
 export function createBackOffice(options: {
   session: () => AgentSession;
   voice: () => VoiceBackChannel | null;
@@ -84,8 +88,8 @@ export function createBackOffice(options: {
   const speechStarts: number[] = [];
   /** When the back office learned an action is held; words begun earlier cannot answer it. */
   let heldSince: number | null = null;
-  /** A reply went out to be said as written, so the transcript's assistant lines add nothing. */
-  let saidVerbatim = false;
+  /** The words of the last reply said as written, whose transcript is not a new line. */
+  let lastVerbatimWords: ReadonlySet<string> = new Set();
 
   const noteHeld = () => {
     if (!options.session().pendingConfirmation) heldSince = null;
@@ -141,10 +145,15 @@ export function createBackOffice(options: {
   const tell = (reply: string, delegationId: string | null) => {
     // An empty turn has nothing to say, so its note stays a note to the model.
     const verbatim = saysAsWritten(delegationId) && reply.trim() !== "";
-    saidVerbatim = verbatim;
+    if (verbatim) lastVerbatimWords = new Set(wordsOf(reply));
     for (const piece of commentaryPieces(reply || NOTHING_TO_ADD)) {
       options.voice()?.appendCommentary(piece, { delegationId, ...(verbatim ? { expectsReply: true } : {}) });
     }
+  };
+
+  const isVerbatimTranscript = (line: string) => {
+    const words = wordsOf(line);
+    return words.length > 0 && words.filter((word) => lastVerbatimWords.has(word)).length / words.length >= TRANSCRIPT_SHARE;
   };
 
   const ask = (words: string, delegationId: string | null): Promise<void> =>
@@ -152,7 +161,7 @@ export function createBackOffice(options: {
 
   /** The caller answered a held action: a tool call waiting for it gets the outcome, else the model is told. */
   const answerHeld = (words: string) => {
-    const held = { outcome: turnFor(words, { saidAsWritten: saysAsWritten(latest) }).then((reply) => reply || NOTHING_TO_ADD), at: Date.now(), done: false, claimed: false };
+    const held = { outcome: turnFor(words, { saidAsWritten: saysAsWritten(latest) }), at: Date.now(), done: false, claimed: false };
     answer = held;
     answerArrived?.();
     void counted(
@@ -187,7 +196,7 @@ export function createBackOffice(options: {
       if (!recent()) return NO_ANSWER;
       if (answer!.done) return ALREADY_REPORTED;
       answer!.claimed = true;
-      return answer!.outcome;
+      return answer!.outcome.then((reply) => reply || NOTHING_TO_ADD);
     },
     /** Words typed into a call, which the model cannot hear. */
     typed: (text: string) => ask(text, null),
@@ -207,8 +216,7 @@ export function createBackOffice(options: {
         lastCallerLine = text;
         if (taken.delete(sameWords(text))) return;
       }
-      // The turn kept these words itself, and a transcript splits them too unevenly to match.
-      if (role === "assistant" && saidVerbatim) return;
+      if (role === "assistant" && isVerbatimTranscript(text)) return; // the turn kept these words itself
       waiting.push({ role, text });
       flush();
       noteHeld();

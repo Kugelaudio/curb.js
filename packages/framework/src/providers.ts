@@ -314,7 +314,7 @@ export const openai = Object.assign(
       options: { model: "gpt-live-1", ...defined(options) },
     }),
     /** OpenAI Realtime as the agent's voice (`<Agent s2s>`). */
-    realtime: (options?: OpenaiS2sOptions): S2sDescriptor => ({
+    realtime: (options?: Omit<OpenaiS2sOptions, "verbatim">): S2sDescriptor => ({
       provider: "openai",
       kind: "s2s",
       protocol: "realtime",

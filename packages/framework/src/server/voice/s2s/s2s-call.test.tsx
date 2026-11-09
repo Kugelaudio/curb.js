@@ -545,14 +545,14 @@ describe("a call on openai.live({ verbatim: true })", { timeout: 12_000 }, () =>
     await until(() => said("assistant").includes("Would Monday suit you?"), "the reply was kept");
   });
 
-  it("keeps the model's own lines out once a reply was said as written", async () => {
+  it("keeps a reply once, and what the model says beside it", async () => {
     const { model, said, spoken } = await verbatimCall([{ text: "Would Monday suit you?" }]);
     model.callerSays("My internet is down.", { delegate: true });
     await until(() => spoken.some((line) => line.includes("Would Monday suit you?")), "the reply was said");
     model.say("One moment, please.");
     await until(() => said("user").includes("My internet is down."), "the line was recorded");
     await until(() => spoken.some((line) => line.includes("One moment, please.")), "the model's line finished");
-    expect(said("assistant")).not.toContain("One moment, please.");
+    expect(said("assistant")).toContain("One moment, please.");
     expect(said("assistant").filter((line) => line === "Would Monday suit you?")).toHaveLength(1);
   });
 
