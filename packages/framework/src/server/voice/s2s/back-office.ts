@@ -100,16 +100,23 @@ export function createBackOffice(options: {
     }
   };
 
+  /** Only a delegation can open a reply the model says as written. */
+  const saysAsWritten = (delegationId: string | null) => options.verbatim === true && delegationId !== null;
+
   /** `request` is the model's own wording, which no caller said; anything else is the caller's.
-   * `observe` sees the events of a turn this call starts, after the call's record did. */
-  const turnFor = (words: string, request = false, observe?: (event: AgentTurnStreamEvent) => void): Promise<string> => {
+   * `saidAsWritten` keeps the reply as said. `observe` sees the events of a turn this call starts,
+   * after the call's record did. */
+  const turnFor = (
+    words: string,
+    { request = false, saidAsWritten = false, observe }: { request?: boolean; saidAsWritten?: boolean; observe?: (event: AgentTurnStreamEvent) => void } = {},
+  ): Promise<string> => {
     const key = sameWords(words);
     const known = turns.get(key);
     if (known) return known;
     if (!request) taken.add(key);
     const turn = options
       .session()
-      .runTurn(words, { unsaid: request || options.verbatim !== true, ...(request ? { kind: "synthetic" as const } : { heard: true }) }, (event) => {
+      .runTurn(words, { unsaid: !saidAsWritten, ...(request ? { kind: "synthetic" as const } : { heard: true }) }, (event) => {
         reportTurnEvent(options.reporter, event);
         observe?.(event);
       })
@@ -133,19 +140,19 @@ export function createBackOffice(options: {
 
   const tell = (reply: string, delegationId: string | null) => {
     // An empty turn has nothing to say, so its note stays a note to the model.
-    const verbatim = options.verbatim === true && delegationId !== null && reply.trim() !== "";
-    if (verbatim) saidVerbatim = true;
+    const verbatim = saysAsWritten(delegationId) && reply.trim() !== "";
+    saidVerbatim = verbatim;
     for (const piece of commentaryPieces(reply || NOTHING_TO_ADD)) {
       options.voice()?.appendCommentary(piece, { delegationId, ...(verbatim ? { expectsReply: true } : {}) });
     }
   };
 
   const ask = (words: string, delegationId: string | null): Promise<void> =>
-    counted(turnFor(words).then((reply) => tell(reply, delegationId)));
+    counted(turnFor(words, { saidAsWritten: saysAsWritten(delegationId) }).then((reply) => tell(reply, delegationId)));
 
   /** The caller answered a held action: a tool call waiting for it gets the outcome, else the model is told. */
   const answerHeld = (words: string) => {
-    const held = { outcome: turnFor(words).then((reply) => reply || NOTHING_TO_ADD), at: Date.now(), done: false, claimed: false };
+    const held = { outcome: turnFor(words, { saidAsWritten: saysAsWritten(latest) }).then((reply) => reply || NOTHING_TO_ADD), at: Date.now(), done: false, claimed: false };
     answer = held;
     answerArrived?.();
     void counted(
@@ -175,7 +182,7 @@ export function createBackOffice(options: {
     /** The model called its tool: the same turn, with the outcome as the tool's result. */
     async asked(request: string): Promise<string> {
       const recent = () => answer && (!answer.done || Date.now() - answer.at < ANSWER_WINDOW_MS);
-      if (!recent() && !options.session().pendingConfirmation) return counted(turnFor(request, true).then((reply) => reply || NOTHING_TO_ADD));
+      if (!recent() && !options.session().pendingConfirmation) return counted(turnFor(request, { request: true }).then((reply) => reply || NOTHING_TO_ADD));
       if (!recent()) await answerSoon();
       if (!recent()) return NO_ANSWER;
       if (answer!.done) return ALREADY_REPORTED;
@@ -218,7 +225,7 @@ export function createBackOffice(options: {
       const watch = (event: AgentTurnStreamEvent) => {
         if (endedCall(event)) ended = true;
       };
-      void counted(turnFor(QUIET_NOTE, true, watch).then((reply) => (ended && reply ? tell(reply, null) : undefined)));
+      void counted(turnFor(QUIET_NOTE, { request: true, observe: watch }).then((reply) => (ended && reply ? tell(reply, null) : undefined)));
     },
     /** Resolves once everything asked so far went back to the model. */
     settled: () => (running === 0 ? Promise.resolve() : settled),

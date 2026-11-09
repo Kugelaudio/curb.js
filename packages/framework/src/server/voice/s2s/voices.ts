@@ -103,6 +103,7 @@ export function s2sVoice(descriptor: S2sDescriptor, env: Env, hooks: S2sHooks): 
 
     constructor(model: GPTLiveModel) {
       super(model);
+      if (descriptor.options.verbatim !== true) return;
       // LiveKit's append has no argument for `expects_reply`, and it builds the event inside.
       const session = this as unknown as { queueEvent: (event: Record<string, unknown>, ...rest: unknown[]) => void };
       const queue = session.queueEvent.bind(this);

@@ -39,5 +39,6 @@ in its own words. Three things follow:
 
 | Version | Changes |
 |---|---|
+| v1.18.0 | `verbatim` option on `openai.live()` added |
 | Unreleased | `openai.live()` and `openai.realtime()` added |
 | v1.2.6 | `openai` introduced |
