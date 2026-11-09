@@ -17,8 +17,8 @@ npx curb login [--url <web>] [--no-open]
 ## How it ends
 
 The browser ends on a page of the web app that says whether the sign-in worked: `/cli/login/result`.
-The CLI holds the browser's answer until the login is stored, so a failure in the terminal is a
-failure in the browser too. With `--url`, a web app that does not have that page shows its own "not
+The CLI holds the browser's answer until the login is stored, so a login it could not store shows
+as failed in the browser too. With `--url`, a web app that does not have that page shows its own "not
 found" there. The login itself still completes, and the terminal says how it ended.
 
 A link that does not belong to the running `curb login`, or that comes back without a code, gets a
@@ -28,6 +28,6 @@ small page from the CLI itself, on `127.0.0.1`.
 
 | Version | Changes |
 |---|---|
-| v1.17.0 | The browser ends on a page of the web app |
+| v1.18.0 | The browser ends on a page of the web app |
 | v1.11.9 | Replaces the key in `.env` for a KugelAudio project |
 | v1.3.4 | `curb login` introduced |
