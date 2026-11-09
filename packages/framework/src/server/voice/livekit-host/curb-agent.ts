@@ -12,6 +12,7 @@ import type { AudioFrame } from "@livekit/rtc-node";
 import type { AgentTurnStreamEvent } from "../../../llm/types.js";
 import { SKIP_TURN_TOOL_NAME } from "../../../types.js";
 import { logError, logInfo } from "../../log.js";
+import { reportTurnEvent } from "../turn-report.js";
 import type { CallReporter } from "../../../hosted/call-reporter.js";
 import type { ConversationClips } from "./clip-store.js";
 
@@ -179,28 +180,8 @@ export class CurbVoiceAgent extends voice.Agent {
               reply += event.delta;
               controller.enqueue(event.delta);
             }
-            if (event.type === "error") {
-              // The caller hears the session's fixed apology; the cause is for us.
-              logError("voice", `turn ${event.error.kind}: ${event.error.message}`);
-              reporter?.event("error", { kind: event.error.kind, message: event.error.message });
-            }
-            if (event.type === "tool") {
-              if (event.toolCall.name === SKIP_TURN_TOOL_NAME) sawSkipTurn = true;
-              // Every tool, including skip_turn: "the agent chose to say nothing" is a
-              // fact worth seeing in a transcript, not an absence to infer.
-              reporter?.event("tool", {
-                name: event.toolCall.name,
-                arguments: event.toolCall.input,
-                ok: event.ok,
-                // The skill that owned the tool, when one did. This is what lets a reader
-                // say "the agent entered Billing, then looked the invoice up" rather than
-                // showing a tool call with no idea where it came from.
-                ...(event.toolCall.skillPath ? { skillPath: event.toolCall.skillPath } : {}),
-                // Held for the caller's yes (`<Tool confirm>`): `ok` is false because it did not
-                // run, not because it failed. The read-back says what the caller was asked.
-                ...(event.toolCall.heldFor ? { heldFor: event.toolCall.heldFor } : {}),
-              });
-            }
+            reportTurnEvent(reporter, event);
+            if (event.type === "tool" && event.toolCall.name === SKIP_TURN_TOOL_NAME) sawSkipTurn = true;
           }
           // Reported after the stream closes, so an interrupted reply carries the words
           // that actually made it out rather than the ones that were planned.
