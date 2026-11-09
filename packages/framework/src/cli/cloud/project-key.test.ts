@@ -220,7 +220,7 @@ describe("npx curb login in a project, against a stub web", () => {
       const opening = /^Opening (\S+)$/.exec(line);
       if (!opening) return;
       signIn = new URL(opening[1]);
-      void fetch(`http://127.0.0.1:${signIn.searchParams.get("port")}/callback?code=code-1&state=${signIn.searchParams.get("state")}`);
+      void fetch(`http://127.0.0.1:${signIn.searchParams.get("port")}/callback?code=code-1&state=${signIn.searchParams.get("state")}`, { redirect: "manual" });
     });
     return { signIn: () => signIn };
   }

@@ -34,6 +34,8 @@ export interface CloudRequest {
   webUrl?: string;
   /** What a 401 means for this credential; `curb login`'s session expiring when absent. */
   unauthorized?: string;
+  /** Ends the request early; it then fails like an unreachable server. */
+  signal?: AbortSignal;
 }
 
 export interface CloudResponse<T> {
@@ -58,6 +60,7 @@ export async function requestJson<T>(request: CloudRequest): Promise<CloudRespon
       method: request.method,
       headers,
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
+      signal: request.signal,
     });
   } catch (cause) {
     const reason = cause instanceof Error ? (cause.cause instanceof Error ? cause.cause.message : cause.message) : String(cause);
