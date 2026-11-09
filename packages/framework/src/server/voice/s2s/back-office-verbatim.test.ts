@@ -38,6 +38,22 @@ describe("the back office on verbatim", () => {
     expect(recorded).toEqual([]);
   });
 
+  it("does not keep a reply's late transcript after another reply went out", async () => {
+    const { office, recorded } = verbatimOffice(["Would Monday suit you?", "And which address is it for?"]);
+    await office.delegated("del_1", "My internet is down.");
+    await office.delegated("del_2", "Mhm.");
+    office.heard("assistant", "Would Monday suit you?");
+    office.heard("assistant", "And which address is it for?");
+    expect(recorded).toEqual([]);
+  });
+
+  it("keeps a line of the model's that changes a word of the reply", async () => {
+    const { office, recorded } = verbatimOffice(["Would Monday suit you?"]);
+    await office.delegated("del_1", "My internet is down.");
+    office.heard("assistant", "Would Tuesday suit you?");
+    expect(recorded).toEqual(["assistant: Would Tuesday suit you?"]);
+  });
+
   it("keeps the model's own question, right after a reply said as written", async () => {
     const { office, recorded } = verbatimOffice(["Would Monday suit you?"]);
     await office.delegated("del_1", "My internet is down.");

@@ -60,8 +60,6 @@ const ALREADY_REPORTED = "The back office has reported this already. Say nothing
 const sameWords = (text: string) => text.trim().toLowerCase();
 
 const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-/** A line whose words are mostly a reply's is that reply's transcript, however it was split. */
-const TRANSCRIPT_SHARE = 0.7;
 
 export function createBackOffice(options: {
   session: () => AgentSession;
@@ -88,8 +86,8 @@ export function createBackOffice(options: {
   const speechStarts: number[] = [];
   /** When the back office learned an action is held; words begun earlier cannot answer it. */
   let heldSince: number | null = null;
-  /** The words of the last reply said as written, whose transcript is not a new line. */
-  let lastVerbatimWords: ReadonlySet<string> = new Set();
+  /** The words of replies said as written whose transcript has not all come in. */
+  const unheardVerbatim: string[][] = [];
 
   const noteHeld = () => {
     if (!options.session().pendingConfirmation) heldSince = null;
@@ -145,15 +143,26 @@ export function createBackOffice(options: {
   const tell = (reply: string, delegationId: string | null) => {
     // An empty turn has nothing to say, so its note stays a note to the model.
     const verbatim = saysAsWritten(delegationId) && reply.trim() !== "";
-    if (verbatim) lastVerbatimWords = new Set(wordsOf(reply));
+    if (verbatim) unheardVerbatim.push(wordsOf(reply));
     for (const piece of commentaryPieces(reply || NOTHING_TO_ADD)) {
       options.voice()?.appendCommentary(piece, { delegationId, ...(verbatim ? { expectsReply: true } : {}) });
     }
   };
 
-  const isVerbatimTranscript = (line: string) => {
+  /** A transcript splits a reply however it likes, so a line is one when its words run unbroken
+   * in a reply said as written, and those words are then spent. Anything else is the model's own. */
+  const takeVerbatimTranscript = (line: string): boolean => {
     const words = wordsOf(line);
-    return words.length > 0 && words.filter((word) => lastVerbatimWords.has(word)).length / words.length >= TRANSCRIPT_SHARE;
+    if (words.length === 0) return false;
+    for (const reply of unheardVerbatim) {
+      for (let at = 0; at + words.length <= reply.length; at += 1) {
+        if (words.every((word, offset) => reply[at + offset] === word)) {
+          reply.splice(at, words.length);
+          return true;
+        }
+      }
+    }
+    return false;
   };
 
   const ask = (words: string, delegationId: string | null): Promise<void> =>
@@ -216,7 +225,7 @@ export function createBackOffice(options: {
         lastCallerLine = text;
         if (taken.delete(sameWords(text))) return;
       }
-      if (role === "assistant" && isVerbatimTranscript(text)) return; // the turn kept these words itself
+      if (role === "assistant" && takeVerbatimTranscript(text)) return; // the turn kept these words itself
       waiting.push({ role, text });
       flush();
       noteHeld();
