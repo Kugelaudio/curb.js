@@ -149,7 +149,7 @@ export type OpenaiS2sOptions = {
   /**
    * The environment variable that holds the endpoint's key, read when a call starts; default
    * `OPENAI_API_KEY`. Set it when `baseURL` is another provider's endpoint whose key the project
-   * already has, e.g. `apiKeyEnv: "KUGELAUDIO_API_KEY"`.
+   * already has, e.g. `apiKeyEnv: "EXAMPLE_API_KEY"`.
    */
   apiKeyEnv?: string;
 };
@@ -226,8 +226,8 @@ function s2sOptions(factory: string, options: OpenaiS2sOptions | undefined): Ope
   const { apiKeyEnv } = given;
   if (apiKeyEnv !== undefined && (typeof apiKeyEnv !== "string" || !ENV_NAME.test(apiKeyEnv))) {
     refuseOption(
-      `${factory}() apiKeyEnv must name an environment variable, got ${JSON.stringify(apiKeyEnv)}.`,
-      `Pass the variable's name, not its value, for example ${factory}({ apiKeyEnv: "KUGELAUDIO_API_KEY" }).`,
+      `${factory}() apiKeyEnv must name an environment variable, and this value does not look like one.`,
+      `Pass the variable's name, not its value, for example ${factory}({ apiKeyEnv: "EXAMPLE_API_KEY" }).`,
       factory,
     );
   }
