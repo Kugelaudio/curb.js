@@ -33,7 +33,7 @@ const RULES = [
   [/^examples\//, ["examples"]],
   [/^compat\//, ["compat"]],
   // scripts/pr-rules.test.mjs reads the template, so an edit to it can fail that test.
-  [/^\.github\/(workflows\/(publish|pr-rules)\.yml|pull_request_template\.md)$/, ["scripts"]],
+  [/^\.github\/(workflows\/(publish|published|pr-rules)\.yml|pull_request_template\.md)$/, ["scripts"]],
   [/^scripts\/check-projects\./, ["scripts", "examples", "compat"]],
   [/^scripts\/self-host-smoke\./, ["smoke"]],
   [/^scripts\/browser-build-check\./, ["scripts", "browser"]],
