@@ -6,8 +6,9 @@
 // release-install-test.mjs tried the tarballs before they went out, through a local registry.
 // This runs after the publish, with nothing of this repository in the path: the real
 // `npm create curb.js@<version>` in an empty folder, `npm create curb@<version>` beside it to
-// compare, then `curb --version`, `curb check` and
-// `curb upgrade --check`. npm can take minutes to serve a publication, so it waits the way
+// compare, then `curb --version`, `curb check`, `curb build` (verification on) and
+// `curb upgrade --check`. published.yml runs it every day against `latest` and `preview`, since a
+// published version also breaks when a dependency it allows by range ships a new release. npm can take minutes to serve a publication, so it waits the way
 // publish.yml's read-back does, and a registry that lags past `npm view` gets another try.
 
 import { execFile } from "node:child_process";
@@ -87,11 +88,12 @@ async function main([version]) {
     const printed = await run("npx", ["curb", "--version"], { cwd: project, env });
     expect(printed.trim() === version, `\`curb --version\` printed ${printed.trim()}, expected ${version}`);
     await run("npx", ["curb", "check"], { cwd: project, env });
+    await run("npx", ["curb", "build", "--out", join(work, "dist")], { cwd: project, env });
     await run("npx", ["curb", "upgrade", "--check"], { cwd: project, env });
     if (channelOf(version) === "preview") {
       await run("npx", ["curb", "upgrade", "--check", "--preview"], { cwd: project, env });
     }
-    console.log(`\nnpm create curb.js@${version} installs and checks from the public registry.`);
+    console.log(`\nnpm create curb.js@${version} installs, checks and builds from the public registry.`);
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

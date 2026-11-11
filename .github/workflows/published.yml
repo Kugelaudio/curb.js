@@ -1,0 +1,42 @@
+name: published
+
+# Installs, checks and builds the versions npm serves today, the way a new user meets them.
+# A published curb.js allows its dependencies by range, so a dependency's new release can break
+# `npm create curb.js` with no change here. publish.yml checks a version once, right after it
+# goes out; this checks `latest` and `preview` again every day, and on demand.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: published
+  cancel-in-progress: false
+
+jobs:
+  installed:
+    name: installed (${{ matrix.tag }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [latest, preview]
+    env:
+      # CPU binaries ship in npm; the Linux postinstall otherwise downloads CUDA from NuGet.
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The engines floor: a new user on the oldest Node the README allows.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.12'
+      - env:
+          TAG: ${{ matrix.tag }}
+        run: node scripts/published-install-test.mjs "$(npm view "curb.js@$TAG" version)"

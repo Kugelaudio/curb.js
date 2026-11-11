@@ -24,6 +24,7 @@ import {
 } from "./declarations.js";
 import { MEDIA_RELAY_PROTOCOL } from "../relay-wire.js";
 import { mergeFramesPlugin } from "./merge-frames-plugin.js";
+import { packageSideEffectsPlugin } from "./package-side-effects-plugin.js";
 import { rawLoaderPlugin } from "./raw-plugin.js";
 import { generateContextRegistryCode, projectContextFiles } from "./context-registry.js";
 import { hostBuildTarget } from "./build-target.js";
@@ -356,7 +357,8 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     format: "esm",
     target: "node24",
     external: externalPackages(),
-    plugins: [rawLoaderPlugin(traceBase), mergeFramesPlugin()],
+    // Last, so `?raw` is claimed first; see the plugin for the crash it prevents.
+    plugins: [rawLoaderPlugin(traceBase), mergeFramesPlugin(), packageSideEffectsPlugin()],
     logLevel: "silent",
     metafile: true,
     // A dependency-layer build keeps the output in memory until its escape checks pass.
