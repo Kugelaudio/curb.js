@@ -52,7 +52,7 @@ describe("tool spans", () => {
 
     expect(tools).toHaveLength(1);
     expect(tools[0]!.ok).toBe(true);
-    expect(tools[0]!.durationMs).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(tools[0]!.durationMs)).toBe(true);
 
     const spans = exporter.getFinishedSpans();
     const parent = spans.find((span) => span.name === "llm_node")!;

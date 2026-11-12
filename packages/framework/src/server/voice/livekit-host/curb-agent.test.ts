@@ -20,7 +20,7 @@ describe("hosted tool outcome reporting", () => {
       instructions: "Test agent",
       reporter,
       async *runTurn(): AsyncGenerator<AgentTurnStreamEvent> {
-        yield { type: "tool", toolCall: { id: "tool-1", name: "add_task", input: { title: "Buy milk" }, skillPath: "/tasks" }, ok, durationMs: 41.5 };
+        yield { type: "tool", toolCall: { id: "tool-1", name: "add_task", input: { title: "Buy milk" }, skillPath: "/tasks" }, ok, durationMs: 41 };
         yield { type: "delta", delta: "Done.", text: "Done." };
       },
     });
@@ -32,7 +32,7 @@ describe("hosted tool outcome reporting", () => {
     while (!(await reader.read()).done) { /* Drain the real reporting path. */ }
     expect(event).toHaveBeenCalledExactlyOnceWith("tool", {
       name: "add_task", arguments: { title: "Buy milk" }, skillPath: "/tasks", ok,
-    }, 41.5);
+    }, 41);
     expect(reporter.turn).toHaveBeenCalledExactlyOnceWith({ speaker: "agent", text: "Done.", final: true });
   });
 

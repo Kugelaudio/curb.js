@@ -14,7 +14,7 @@ import type { ToolCallOutcome } from "./types.js";
 
 const tracer = trace.getTracer("curb");
 
-/** A tool run, and how long its handler took in milliseconds, one decimal. */
+/** A tool run, and how long its handler took in whole milliseconds, as every timed record of a call. */
 export type TimedOutcome = { outcome: ToolCallOutcome; durationMs: number };
 
 export async function traceToolRun(toolCall: AgentToolCallRecord, run: () => Promise<ToolCallOutcome>): Promise<TimedOutcome> {
@@ -41,7 +41,7 @@ export async function traceToolRun(toolCall: AgentToolCallRecord, run: () => Pro
           span.setAttribute("error.type", "tool_error");
           span.setStatus({ code: SpanStatusCode.ERROR });
         }
-        return { outcome, durationMs: Math.round((performance.now() - startedAt) * 10) / 10 };
+        return { outcome, durationMs: Math.round(performance.now() - startedAt) };
       } finally {
         span.end();
       }
