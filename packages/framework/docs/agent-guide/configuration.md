@@ -54,6 +54,12 @@ naming it.
 | `MCP_AUTH_DIR` | `.mcp-auth` | Where MCP sign-ins are stored |
 | `MCP_<ID>_TOKEN` | | A bearer token for the MCP server with that id |
 
+Browser WebSocket connections to `curb dev` and `curb server` must have an HTTP or HTTPS
+origin on `localhost`, `127.0.0.1`, `[::1]`, or the configured listening host (`WS_HOST`).
+Other browser origins, including `null` origins, receive HTTP 403. Native clients that omit
+`Origin` can still connect. A preview served through a tunnel with a different hostname
+is refused by this policy.
+
 ## Runner
 
 These apply to a built artifact, and to `curb dev` and `curb start` with a management port

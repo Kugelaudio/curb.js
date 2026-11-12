@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import { parseUrlOrNull } from "../server/request-url.js";
 import type { DeliverOutcome, SessionRegistry, StartOutcome, UpdateOutcome } from "./session-registry.js";
 import { CursorTooOldError, type EventJournal } from "./event-journal.js";
 import type { HookRuns, HookStartOutcome } from "./hook-runs.js";
@@ -237,7 +238,13 @@ async function handle(
   streams: Set<ServerResponse>,
 ): Promise<void> {
   // The base is a placeholder; the Host header is caller-controlled and nothing routes on it.
-  const url = new URL(request.url ?? "/", "http://curb.local");
+  // Parsed before the try below, so a target `new URL` refuses (`GET http://[ HTTP/1.1`) is a
+  // 400 here, not an unhandled rejection that takes the runner and every live call down.
+  const url = parseUrlOrNull(request.url, "http://curb.local");
+  if (url === null) {
+    fail(response, 400, "invalid_request", { detail: "the request target is not a valid URL" });
+    return;
+  }
   const method = request.method ?? "GET";
 
   // The one unversioned route: a client that guessed the prefix wrong must still be able to

@@ -25,6 +25,7 @@ import {
   type LocalVoiceServerMessage,
 } from "../../../local-voice-wire.js";
 import { logError, logInfo } from "../../log.js";
+import { parseUrlOrNull } from "../../request-url.js";
 import type { VoiceCallRoom } from "../call-room.js";
 import type { CallParticipant } from "../livekit-host/call-opening.js";
 import { createSynchronizer, type TranscriptSink } from "./synchronizer.js";
@@ -320,7 +321,11 @@ export class LocalVoiceCalls {
 
   /** Hand an upgrade on the local voice path to its call, or refuse it with a status. */
   upgrade(wss: WebSocketServer, request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    const url = new URL(request.url ?? "/", "http://localhost");
+    const url = parseUrlOrNull(request.url, "http://localhost");
+    if (url === null) {
+      socket.end("HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain\r\n\r\nBad request.\n");
+      return;
+    }
     const call = this.calls.get(url.searchParams.get("call") ?? "");
     if (!call || url.searchParams.get("token") !== call.token) {
       socket.end("HTTP/1.1 404 Not Found\r\ncontent-type: text/plain\r\n\r\nNo such local call.\n");

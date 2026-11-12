@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
-import { createServer, type AddressInfo } from "node:net";
+import { connect, createServer, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -237,6 +237,25 @@ describe("curb dev reloading the agent on save", () => {
     await stopCurbDev(dev);
     rmSync(root, { recursive: true, force: true });
   });
+
+  it("refuses foreign origins and malformed targets at the preview port", async () => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/`, { origin: "https://evil.example" });
+    const refused = new Promise<Error>((resolve) => socket.once("error", resolve));
+    expect((await refused).message).toContain("403");
+    for (const upgrade of [false, true]) {
+      const status = await new Promise<string>((resolve, reject) => {
+        const client = connect(port, "127.0.0.1", () => {
+          client.write(`GET http://[ HTTP/1.1\r\nHost: localhost\r\n${upgrade ? "Connection: Upgrade\r\nUpgrade: websocket" : "Connection: close"}\r\n\r\n`);
+        });
+        let raw = "";
+        client.on("data", (chunk) => (raw += String(chunk)));
+        client.on("close", () => resolve(raw.split("\r\n")[0]));
+        client.on("error", reject);
+      });
+      expect(status).toContain("400");
+    }
+    expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
+  }, TEST_TIMEOUT_MS);
 
   /**
    * Onboarding sweep 2026-10-25: a customer without an LLM key saw only "Your agent is not
