@@ -10,6 +10,8 @@ import { printBootBanner } from "../server/banner.js";
 import { VITE_HMR_PATH } from "../server/hmr-path.js";
 import { listenPlan, listenWithPortWalk } from "../server/listen.js";
 import { logError, logInfo } from "../server/log.js";
+import { parseUrlOrNull } from "../server/request-url.js";
+import { isAllowedOrigin, LOCAL_ORIGIN_HOSTS } from "../server/origin.js";
 import { livekitCredentials, realtimeSessionUrl } from "../server/voice/livekit-host/rooms.js";
 import type { ChildMessage, DevChildOptions } from "./dev-ipc.js";
 import { AgentForwarder } from "./dev-proxy.js";
@@ -36,11 +38,21 @@ export async function runDev(options: { projectRoot: string; baseEnv: NodeJS.Pro
   const env = projectEnv(projectRoot, baseEnv);
   if (!realtimeSessionUrl(env)) livekitCredentials(env);
   const forwarder = new AgentForwarder();
+  const plan = listenPlan();
+  const allowedOriginHosts = new Set([...LOCAL_ORIGIN_HOSTS, plan.host]);
   // ONE port: the agent's paths and sockets go to the agent server, everything else is the
   // preview app (Vite in middleware mode, its HMR socket on its own path of this server).
   let preview: ((req: IncomingMessage, res: ServerResponse) => void) | null = null;
   const httpServer = createServer((req, res) => {
-    if (isAgentHttpPath(new URL(req.url ?? "/", "http://localhost").pathname)) {
+    // Parsed first: a malformed request line must be a 400, not an uncaught exception that
+    // takes the preview port, and the agent server behind it, down.
+    const url = parseUrlOrNull(req.url, "http://localhost");
+    if (url === null) {
+      res.writeHead(400, { "content-type": "text/plain" });
+      res.end("Bad request");
+      return;
+    }
+    if (isAgentHttpPath(url.pathname)) {
       forwarder.request(req, res);
       return;
     }
@@ -52,7 +64,17 @@ export async function runDev(options: { projectRoot: string; baseEnv: NodeJS.Pro
     res.end("The preview is starting.");
   });
   httpServer.on("upgrade", (request, socket, head) => {
-    if (new URL(request.url ?? "/", "http://localhost").pathname === VITE_HMR_PATH) return; // Vite's own listener
+    const url = parseUrlOrNull(request.url, "http://localhost");
+    if (url === null) {
+      socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nBad request.\n");
+      return;
+    }
+    if (url.pathname === VITE_HMR_PATH) return; // Vite's own listener
+    // Check here too: the forwarder can answer with diagnostics while no child is running.
+    if (!isAllowedOrigin(request.headers.origin, allowedOriginHosts)) {
+      socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nForbidden.\n");
+      return;
+    }
     forwarder.upgrade(request, socket, head);
   });
   const { createServer: createViteServer } = await import("vite");
@@ -60,7 +82,6 @@ export async function runDev(options: { projectRoot: string; baseEnv: NodeJS.Pro
   const vite = await createViteServer(createPreviewConfig({ projectRoot, attachTo: httpServer }));
   preview = vite.middlewares;
 
-  const plan = listenPlan();
   const port = await listenWithPortWalk(httpServer, plan);
   const url = `http://${plan.host}:${port}`;
 

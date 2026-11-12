@@ -27,6 +27,8 @@ import { AGENT_HTTP_PATHS } from "./agent-http-paths.js";
 import { ServerActivity, type ServerActivityCounts } from "./activity.js";
 import { printBootBanner, type BootBanner } from "./banner.js";
 import { listenPlan, listenWithPortWalk, type ListenPlan } from "./listen.js";
+import { isAllowedOrigin, LOCAL_ORIGIN_HOSTS } from "./origin.js";
+import { parseUrlOrNull } from "./request-url.js";
 import { previewAgent } from "./frames.js";
 import {
   parseClientMessage,
@@ -403,6 +405,13 @@ export async function createAgentServer(options: { dev?: DevServerLink } = {}): 
   const plan: ListenPlan = dev ? { host: "127.0.0.1", port: 0, explicit: true } : listenPlan();
   /** The port actually bound: the planned one until listen() resolves. */
   let boundPort = plan.port;
+  // A browser may hold only a loopback origin, or wherever the preview is served (`WS_HOST`
+  // may name a LAN box). Anything else — a public site, a DNS-rebinding name — must not
+  // reach the agent's transcript or tools.
+  const allowedOriginHosts = new Set<string>(LOCAL_ORIGIN_HOSTS);
+  allowedOriginHosts.add(
+    dev ? (parseUrlOrNull(dev.publicUrl, "http://localhost")?.hostname ?? plan.host) : plan.host,
+  );
   const publicUrl = () => dev?.publicUrl ?? `http://${plan.host}:${boundPort}`;
   const setOAuthUrls = () => {
     setMcpOAuthCallbackUrl(`${publicUrl()}${AGENT_HTTP_PATHS.oauthCallback}`);
@@ -471,7 +480,12 @@ export async function createAgentServer(options: { dev?: DevServerLink } = {}): 
   const controllers = new Map<WebSocket, ConnectionController>();
 
   const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${plan.host}:${boundPort}`}`);
+    const url = parseUrlOrNull(req.url, `http://${req.headers.host ?? `${plan.host}:${boundPort}`}`);
+    if (url === null) {
+      res.writeHead(400, { "content-type": "text/plain" });
+      res.end("Bad request");
+      return;
+    }
     if (url.pathname === AGENT_HTTP_PATHS.oauthCallback) {
       void handleOAuthCallback(url, res);
       return;
@@ -506,7 +520,18 @@ export async function createAgentServer(options: { dev?: DevServerLink } = {}): 
   const wss = new WebSocketServer({ noServer: true });
 
   httpServer.on("upgrade", (request, socket, head) => {
-    if (new URL(request.url ?? "/", "http://localhost").pathname === AGENT_HTTP_PATHS.localVoice) {
+    // A request line and an origin are both caller-controlled: parse before either is used,
+    // and refuse a page the server did not serve before it can reach the agent's tools.
+    const url = parseUrlOrNull(request.url, "http://localhost");
+    if (url === null) {
+      socket.end("HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain\r\n\r\nBad request.\n");
+      return;
+    }
+    if (!isAllowedOrigin(request.headers.origin, allowedOriginHosts)) {
+      socket.end("HTTP/1.1 403 Forbidden\r\ncontent-type: text/plain\r\n\r\nForbidden.\n");
+      return;
+    }
+    if (url.pathname === AGENT_HTTP_PATHS.localVoice) {
       localCalls.upgrade(wss, request, socket, head);
       return;
     }
@@ -622,9 +647,9 @@ type ConnectionContext = {
 
 /** `?resume=<id>` on the page's WebSocket URL: the stored conversation it was on. */
 function resumeIdFrom(request: IncomingMessage): number | null {
-  const raw = new URL(request.url ?? "/", "http://localhost").searchParams.get("resume");
+  const raw = parseUrlOrNull(request.url, "http://localhost")?.searchParams.get("resume");
   const id = Number(raw);
-  return raw !== null && Number.isInteger(id) && id > 0 ? id : null;
+  return raw !== null && raw !== undefined && Number.isInteger(id) && id > 0 ? id : null;
 }
 
 /** The default agent's authoring errors: where a conversation that could not start failed.

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
-import { createServer, type AddressInfo } from "node:net";
+import { connect, createServer, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -116,5 +116,40 @@ describe("curb server when no conversation can start", () => {
 
     expect(frames).toEqual([{ type: "error", scope: "llm", message: expect.stringMatching(/^Failed to start session: .*boom in render/) }]);
     expect(code).toBe(1005);
+  }, 60_000);
+
+  it("refuses a browser connection from a foreign origin before it reaches the agent", async () => {
+    let opened = false;
+    let failed = "";
+    const frames: ServerMessage[] = [];
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/`, { origin: "https://evil.example" });
+    socket.on("open", () => (opened = true));
+    socket.on("message", (data) => frames.push(JSON.parse(String(data)) as ServerMessage));
+    socket.on("error", (error) => (failed = error.message));
+    await new Promise<void>((resolve, reject) => {
+      socket.on("close", () => resolve());
+      setTimeout(() => reject(new Error(`the socket stayed open:\n${output}`)), 30_000).unref();
+    });
+
+    expect(opened).toBe(false);
+    expect(failed).toContain("403");
+    expect(frames).toEqual([]);
+  }, 60_000);
+
+  it.each([false, true])("answers 400 to a malformed request target (upgrade: %s), without crashing", async (upgrade) => {
+    const status = await new Promise<string>((resolve, reject) => {
+      const socket = connect(port, "127.0.0.1", () => {
+        socket.write(`GET http://[ HTTP/1.1\r\nHost: localhost\r\n${upgrade ? "Connection: Upgrade\r\nUpgrade: websocket" : "Connection: close"}\r\n\r\n`);
+      });
+      let raw = "";
+      socket.on("data", (chunk) => (raw += String(chunk)));
+      socket.on("close", () => resolve(raw.split("\r\n")[0]));
+      socket.on("error", reject);
+    });
+
+    expect(status).toContain("400");
+    // The process is still up: a malformed target must be a 400, not an uncaught exception.
+    expect(server!.exitCode).toBeNull();
+    expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(404);
   }, 60_000);
 });

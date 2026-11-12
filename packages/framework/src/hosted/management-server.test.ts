@@ -1,4 +1,5 @@
 import { request as httpRequest } from "node:http";
+import { connect } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MANAGEMENT_ADDRESS_ENV,
@@ -734,5 +735,28 @@ describe("POST /v1/sessions/{id}/messages", () => {
       "handler_failed",
     );
     expect((await call("/v1/sessions/s1")).status).toBe(200);
+  });
+});
+
+describe("a malformed request target", () => {
+  it("answers 400 and keeps serving, instead of crashing the runner", async () => {
+    await start(registry());
+    const [host, port] = server!.address.split(":");
+
+    // A raw absolute-form target `new URL` refuses (`GET http://[ HTTP/1.1`); sent over the
+    // wire so the HTTP parser, not just the handler, sees it.
+    const status = await new Promise<string>((resolve, reject) => {
+      const socket = connect(Number(port), host, () => {
+        socket.write("GET http://[ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+      });
+      let raw = "";
+      socket.on("data", (chunk) => (raw += String(chunk)));
+      socket.on("close", () => resolve(raw.split("\r\n")[0]));
+      socket.on("error", reject);
+    });
+
+    expect(status).toContain("400");
+    // Still serving: one malformed request must not take the runner, and its calls, down.
+    expect((await call("/health", "GET", undefined, null)).status).toBe(200);
   });
 });
