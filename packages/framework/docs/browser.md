@@ -25,7 +25,9 @@ wasm, ONNX Runtime Web and the Silero model, and the template project as
 `curb-browser/template.json`). Any static host serves them. The KugelAudio API answers no
 CORS and a browser WebSocket sends no `Authorization`, so model and speech calls need a
 relay that adds the key: `serve-static.ts` relays `/kugel/*` locally, and a page opened from
-a hosting platform's link uses the relay that platform names (below).
+a hosting platform's link uses the relay that platform names (below). The local relay answers
+only the page it serves: a request on a loopback host from that page, never one another site
+sends.
 
 ## The page's API
 

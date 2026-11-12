@@ -66,7 +66,8 @@ export function readTarballs(directory) {
 export async function startRegistry(tarballs) {
   const packages = new Map(tarballs.map((entry) => [entry.manifest.name, entry]));
   const server = createServer((request, response) => {
-    const path = decodeURIComponent(new URL(request.url, "http://registry").pathname);
+    const target = new URL(request.url, "http://registry");
+    const path = decodeURIComponent(target.pathname);
     const json = (body) => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
     const base = `http://127.0.0.1:${server.address().port}`;
     const local = packages.get(path.slice(1));
@@ -77,7 +78,8 @@ export async function startRegistry(tarballs) {
       const { manifest } = packages.get(tags[1]);
       json({ latest: manifest.version, [channelOf(manifest.version)]: manifest.version });
     } else if (file) response.writeHead(200).end(readFileSync(file.path));
-    else response.writeHead(307, { location: `${UPSTREAM}${request.url}` }).end();
+    // Only the path and query go upstream: the redirect never names another host.
+    else response.writeHead(307, { location: `${UPSTREAM}/${target.pathname.slice(1)}${target.search}` }).end();
   });
   await new Promise((listening) => server.listen(0, "127.0.0.1", listening));
   return { server, url: `http://127.0.0.1:${server.address().port}` };

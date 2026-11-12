@@ -526,7 +526,15 @@ function location(
 
 function canonicalPath(path: string): string {
   const withSlash = path.startsWith("/") ? path : `/${path}`;
-  return withSlash.length > 1 ? withSlash.replace(/\/+$/, "") : withSlash;
+  return withSlash.length > 1 ? trimTrailingSlashes(withSlash) : withSlash;
+}
+
+/** `text` without the slashes it ends in. A scan from the end: `/\/+$/` retries the run of
+ * slashes at every one of them, which is quadratic on a long run that does not end the text. */
+export function trimTrailingSlashes(text: string): string {
+  let end = text.length;
+  while (end > 0 && text.charCodeAt(end - 1) === 47) end -= 1;
+  return text.slice(0, end);
 }
 
 function agentDirLabel(agentId: string): string {
@@ -636,7 +644,7 @@ export function renderErrorOrigin(
   );
   const component = components.find((frame) => frame.name && !isHostElement(frame.name))?.name;
   const relative = (file: string) => {
-    const root = projectRoot === undefined ? undefined : `${toPosix(projectRoot).replace(/\/+$/, "")}/`;
+    const root = projectRoot === undefined ? undefined : `${trimTrailingSlashes(toPosix(projectRoot))}/`;
     return root && file.startsWith(root) ? file.slice(root.length) : file;
   };
 
@@ -699,7 +707,7 @@ const FRAMEWORK_SOURCE_DIR = (() => {
 
 function projectFrameFilter(projectRoot: string | undefined): (frame: StackFrame) => boolean {
   const projectSource =
-    projectRoot === undefined ? undefined : `${toPosix(projectRoot).replace(/\/+$/, "")}/src/`;
+    projectRoot === undefined ? undefined : `${trimTrailingSlashes(toPosix(projectRoot))}/src/`;
   return ({ file }) => {
     if (file === undefined || file.includes("/node_modules/") || file.startsWith("node:")) return false;
     if (projectSource !== undefined) return file.startsWith(projectSource);

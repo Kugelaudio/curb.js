@@ -13,10 +13,10 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
+import { relayAllowed, relayTarget, staticFile, RELAY_PREFIX } from "./static-serving.js";
 
-const UPSTREAM = "https://api.eu.kugelaudio.com";
 const TYPES: Record<string, string> = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -57,7 +57,11 @@ async function relay(req: IncomingMessage, res: ServerResponse, url: URL): Promi
     const value = req.headers[name];
     if (typeof value === "string") headers[name] = value;
   }
-  const target = UPSTREAM + url.pathname.slice("/kugel".length) + url.search;
+  const target = relayTarget(url, "https");
+  if (target === null) {
+    res.statusCode = 404;
+    return void res.end("not found");
+  }
   try {
     const upstream = await fetch(target, {
       method: req.method,
@@ -74,14 +78,35 @@ async function relay(req: IncomingMessage, res: ServerResponse, url: URL): Promi
   } catch (error) {
     console.error(`[relay] ${req.method} ${url.pathname} failed: ${(error as Error).message}`);
     res.statusCode = 502;
-    res.end((error as Error).message);
+    res.end("The KugelAudio API could not be reached. The relay's log has the details.");
+  }
+}
+
+/** The request's URL, or null for a target `new URL` refuses. */
+function requestUrl(req: IncomingMessage): URL | null {
+  try {
+    return new URL(req.url ?? "/", "http://localhost");
+  } catch {
+    return null;
   }
 }
 
 const server = createServer((req, res) => {
-  const url = new URL(req.url ?? "/", "http://localhost");
-  if (url.pathname.startsWith("/kugel/")) return void relay(req, res, url);
-  const file = join(root, normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, ""));
+  const url = requestUrl(req);
+  if (url === null) {
+    res.statusCode = 400;
+    return void res.end("bad request");
+  }
+  if (url.pathname.startsWith(RELAY_PREFIX)) {
+    if (relayAllowed(req.headers)) return void relay(req, res, url);
+    res.statusCode = 403;
+    return void res.end("forbidden");
+  }
+  const file = staticFile(root, url.pathname);
+  if (file === null) {
+    res.statusCode = 404;
+    return void res.end("not found");
+  }
   // The preview routes skills by path (`/claim-procedure`): a path with no file is the app.
   if (!extname(url.pathname) && !existsSync(file)) return send(res, join(root, "index.html"));
   return send(res, statSync(file, { throwIfNoEntry: false })?.isDirectory() ? join(file, "index.html") : file);
@@ -91,13 +116,15 @@ const server = createServer((req, res) => {
 const closable = (code: number) => (code >= 1000 && code < 5000 && ![1004, 1005, 1006, 1015].includes(code) ? code : 1011);
 const sockets = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
-  const url = new URL(req.url ?? "/", "http://localhost");
-  if (!url.pathname.startsWith("/kugel/")) return void socket.destroy();
-  const path = url.pathname.slice("/kugel".length);
+  const url = requestUrl(req);
+  if (url === null || !url.pathname.startsWith(RELAY_PREFIX) || !relayAllowed(req.headers)) return void socket.destroy();
+  const path = url.pathname.slice(RELAY_PREFIX.length - 1);
   // The TTS socket names its key in the query: the page's is a placeholder.
   if (url.searchParams.has("api_key")) url.searchParams.set("api_key", apiKey);
+  const target = relayTarget(url, "wss");
+  if (target === null) return void socket.destroy();
   sockets.handleUpgrade(req, socket, head, (client) => {
-    const upstream = new WebSocket(`wss://api.eu.kugelaudio.com${path}${url.search}`, {
+    const upstream = new WebSocket(target, {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     const queue: Array<[Buffer, boolean]> = [];

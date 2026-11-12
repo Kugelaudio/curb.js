@@ -28,6 +28,11 @@ describe('the landing page requests', () => {
     expect(steps[1]!.lines.join()).not.toContain('verify_policy')
   })
 
+  it('sets every apostrophe of a caller\'s words as a typographic one', () => {
+    const block = "=== It's mine, it's 4711: verify_policy\nstate: verified = false\n=== Done: open_claim\nstate: verified = true"
+    expect(stateSteps(block)[0]!.caller).toBe('It’s mine, it’s 4711')
+  })
+
   it('prints a short skill with its two states', () => {
     const skill = plainSkill(codeBlock(guide, 'src/agent/report-claim/skill.tsx, with a switch'))
     expect(skill.split('\n')).toHaveLength(12)
