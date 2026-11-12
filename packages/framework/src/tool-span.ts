@@ -1,4 +1,4 @@
-import { SpanStatusCode, trace, type Attributes } from "@opentelemetry/api";
+import { context, SpanStatusCode, trace, type Attributes, type Context } from "@opentelemetry/api";
 
 import type { AgentToolCallRecord } from "./llm/types.js";
 import type { ToolCallOutcome } from "./types.js";
@@ -8,7 +8,8 @@ import type { ToolCallOutcome } from "./types.js";
  * GenAI semantic conventions. Curb only creates spans: it registers no tracer provider, so with no
  * OpenTelemetry SDK set up in the process a span costs nothing and goes nowhere. A project that
  * starts an SDK (any backend) receives them as children of whatever span is active when the tool
- * runs. A span never carries the tool's arguments or result: those are the caller's data.
+ * runs, and inside a call's trace on a call (`call-trace.ts`). A span never carries the tool's
+ * arguments or result: those are the caller's data.
  */
 
 const tracer = trace.getTracer("curb");
@@ -35,6 +36,7 @@ export async function traceToolRun(
   session: SpanAttributes,
   run: () => Promise<ToolCallOutcome>,
   activeSkill: () => ActiveSkill,
+  parent: Context = context.active(),
 ): Promise<TimedOutcome> {
   return tracer.startActiveSpan(
     `execute_tool ${toolCall.name}`,
@@ -48,6 +50,7 @@ export async function traceToolRun(
         ...(toolCall.skillPath ? { "curb.skill.path": toolCall.skillPath } : {}),
       },
     },
+    parent,
     async (span) => {
       const startedAt = performance.now();
       const before = activeSkill();

@@ -1,4 +1,6 @@
 import { endCallGoodbye, unexpectedToolFailureMessage, type AgentSiteRuntime } from "./runtime.js";
+import { callTraceOf } from "./call-trace.js";
+import { procedureChanges, proceduresOf, type ProcedureChange, type ProcedureProgress } from "./procedure-progress.js";
 import { traceToolRun, type SkillChange, type SpanAttributes } from "./tool-span.js";
 import {
   isToolInputStart,
@@ -150,6 +152,8 @@ export class AgentSession {
   private readonly llmTimeoutMs: number;
   private readonly maxQueuedTurns: number;
   private readonly traceAttributes: () => SpanAttributes;
+  /** The context's procedures as last seen (`procedureChanges`). */
+  private procedures: ReadonlyMap<string, ProcedureProgress> = new Map();
   private readonly timeZone: string;
   private readonly opening: AgentSessionOptions["opening"];
   private readonly listeners = new Set<() => void>();
@@ -254,6 +258,7 @@ export class AgentSession {
     this.endedOnFallbackLine = false;
     this.pending = null;
     this.lateCutReport = false;
+    this.procedures = new Map();
     this.notify();
   }
 
@@ -431,6 +436,8 @@ export class AgentSession {
         return;
       }
 
+      // A procedure already in the context when the conversation opens starts here.
+      for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
       let outcome: TurnOutcome;
       this.activeTurn = cancel;
       try {
@@ -622,6 +629,7 @@ export class AgentSession {
           yield { type: "tool", ...tool };
           if (skill) yield { type: "skill", ...skill };
         }
+        for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
         const closing = outcome.held?.readBack ?? outcome.goodbye;
         if (closing !== undefined) {
           // The turn ends with the held action's question, or the goodbye of the end_call that
@@ -920,6 +928,7 @@ export class AgentSession {
     next = this.append(next, toolMessage(toolCall, outcome));
     yield { type: "tool", toolCall, ok: outcome.result.ok !== false, ...(durationMs === undefined ? {} : { durationMs }) };
     if (skill) yield { type: "skill", ...skill };
+    for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
     return next;
   }
 
@@ -932,10 +941,36 @@ export class AgentSession {
     toolCall: AgentToolCallRecord,
   ): Promise<{ outcome: ToolCallOutcome; durationMs?: number; skill?: SkillChange }> {
     if (toolCall.invalid) return { outcome: { result: { ok: false, message: toolCall.invalid }, contextDiff: [] } };
-    return traceToolRun(toolCall, this.traceAttributes(), () => this.runTool(toolCall), () => {
-      const { path, title } = this.runtime.snapshot().context;
-      return { path, title };
-    });
+    // On a call the span joins the call's trace, and the call hears which skill it is in now.
+    const callTrace = callTraceOf(this.runtime.info);
+    const timed = await traceToolRun(
+      toolCall,
+      this.traceAttributes(),
+      () => this.runTool(toolCall),
+      () => {
+        const { path, title } = this.runtime.snapshot().context;
+        return { path, title };
+      },
+      callTrace?.context(),
+    );
+    if (timed.skill) callTrace?.skill(timed.skill);
+    return timed;
+  }
+
+  /** The span attributes of this session's spans, for the call that carries it. */
+  spanAttributes(): SpanAttributes {
+    return this.traceAttributes();
+  }
+
+  /** What moved in the context's procedures since the last look: read at the start of a turn
+   * and after every tool run, the only moments a procedure can have moved. */
+  private procedureChanges(): ProcedureChange[] {
+    const now = proceduresOf(this.runtime.snapshot().context.blocks);
+    const changes = procedureChanges(this.procedures, now);
+    this.procedures = now;
+    const callTrace = callTraceOf(this.runtime.info);
+    for (const change of changes) callTrace?.procedure(change);
+    return changes;
   }
 
   private async runTool(toolCall: AgentToolCallRecord): Promise<ToolCallOutcome> {

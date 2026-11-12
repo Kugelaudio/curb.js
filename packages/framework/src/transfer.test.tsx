@@ -9,6 +9,7 @@ import {
   type TransferEnded,
   type TransferEndedOption,
 } from "./index.js";
+import { attachCallTrace, type CallTrace } from "./call-trace.js";
 import type { OutgoingHostMessage } from "./messages.js";
 import { CALL_TRANSFER_RESULT_MESSAGE, attachTransferAudio, transferToolResult, type TransferAudio } from "./transfer.js";
 import { decideTransferEnded } from "./transfer-ended.js";
@@ -332,6 +333,31 @@ describe("TransferCallTool", () => {
     expect(transferToolResult({ outcome: "answered" }).message).toContain("call skip_turn");
     expect(transferToolResult({ outcome: "busy" }).message).toContain("busy");
     expect(transferToolResult({ outcome: "refused", code: "transfer_unsupported_session" }).message).toContain("phone call");
+  });
+
+  it("reports each transfer and its outcome to the call's trace", async () => {
+    const outcomes: string[] = [];
+    const callTrace = { transfer: vi.fn(() => ({ outcome: (outcome: string) => outcomes.push(outcome) })) } as unknown as CallTrace;
+
+    // No host to dial: refused before anything was asked.
+    const refused = phoneCall({ host: false });
+    attachCallTrace(refused.runtime.info, callTrace);
+    await refused.transfer()({ to: "+493012345678" });
+
+    // The host accepts, then nobody picks up.
+    const dialed = phoneCall({
+      reply: () => ({ transferId: "t-1" }),
+      onSend: () => queueMicrotask(() => void dialed.runtime.messages.deliver("host", {
+        id: "m-1",
+        key: CALL_TRANSFER_RESULT_MESSAGE,
+        payload: { transferId: "t-1", outcome: "no_answer" },
+      })),
+    });
+    attachCallTrace(dialed.runtime.info, callTrace);
+    await dialed.transfer()({ to: "+493012345678" });
+
+    expect(callTrace.transfer).toHaveBeenCalledTimes(2);
+    expect(outcomes).toEqual(["refused", "no_answer"]);
   });
 
   it("refuses a bad number or onEnded when it renders", () => {

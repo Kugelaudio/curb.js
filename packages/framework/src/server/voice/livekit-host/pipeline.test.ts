@@ -1,5 +1,6 @@
 import { llm, voice } from "@livekit/agents";
 import { describe, expect, it } from "vitest";
+import { AgentInfoStore } from "../../../info-store.js";
 import type { AgentTurnStreamEvent } from "../../../llm/types.js";
 import { CurbVoiceAgent } from "./curb-agent.js";
 import { startVoiceAgent, type VoiceAgentStartOptions } from "./host.js";
@@ -110,7 +111,12 @@ describe("a project's voice pipeline", () => {
     const start = startVoiceAgent({
       room: {},
       roomName: "room-1",
-      bundle: { runtime: { settings: { s2s: () => undefined } } },
+      // What a call reads of its bundle before the session is built: its speech settings, and
+      // the info, active skill and span attributes its trace starts from.
+      bundle: {
+        runtime: { settings: { s2s: () => undefined }, info: new AgentInfoStore(), snapshot: () => ({ context: { path: "", title: "" } }) },
+        session: { spanAttributes: () => ({}) },
+      },
       client: { bind() {} },
       providers: { stt: {}, tts: {} },
       vad: {},

@@ -25,6 +25,12 @@ export function reportTurnEvent(reporter: CallReporter | undefined, event: Agent
     reporter?.event("skill", { action: event.action, path: event.path, ...(event.title ? { title: event.title } : {}) });
     return;
   }
+  if (event.type === "procedure") {
+    // Where a caller got to in a procedure, and whether they finished it.
+    const { type: _type, ...change } = event;
+    reporter?.event("procedure", change);
+    return;
+  }
   if (event.type !== "tool") return;
   // Every tool, including skip_turn: "the agent chose to say nothing" is a
   // fact worth seeing in a transcript, not an absence to infer.

@@ -6,21 +6,37 @@ registers nothing itself: with no OpenTelemetry SDK running, a span costs nothin
 
 ## What you get
 
-| Span | When | Attributes |
-| --- | --- | --- |
-| `execute_tool <name>` | Every tool run, from the handler's start to its result | `gen_ai.operation.name` (`execute_tool`), `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.type`, `gen_ai.agent.name` (the agent's id), `gen_ai.conversation.id` once the conversation is recorded, `curb.skill.path` when a skill owns the tool, `curb.tool.ok` |
+On a voice call, the call is one trace. Its root span is the call, and everything that lasts
+inside it is a span under it:
 
-A tool run that changes the active skill says so on its span: `curb.skill.entered` names the skill
-it opened (`read_skill`, or a tool that routes with `useRouter`), `curb.skill.exited` the one it
-left for the agent level. The time between two such spans is the time a call spent in a skill.
+| Span | From, to | Attributes |
+| --- | --- | --- |
+| `invoke_agent <agent>` | The call, from before the session starts until it has closed | `gen_ai.operation.name` (`invoke_agent`), `curb.call.channel` (`phone` or `web`), `curb.call.direction` when the host names it |
+| `curb.skill <path>` | A stay in a skill, from entering it to the next skill, the agent level, or the end of the call | `curb.skill.path`, `curb.skill.title` |
+| `curb.procedure <title>` | A `<Procedure>`, from entering the context until its last step is completed, it leaves the context, or the call ends | `curb.procedure.title`, `curb.procedure.steps`, `curb.procedure.step` (the step it is on), `curb.procedure.completed` |
+| `curb.transfer` | A transfer, from the request until nobody answered, or until an answered one is over | `curb.transfer.outcome` (`answered`, `no_answer`, `busy`, `failed`, `refused`), `curb.transfer.ended` for an answered one (`resumed`, `ended_call`, `call_ended`) |
+| `execute_tool <name>` | A tool run, from the handler's start to its result | `gen_ai.operation.name` (`execute_tool`), `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.type`, `curb.skill.path` when a skill owns the tool, `curb.tool.ok` |
+
+Every span also carries `gen_ai.agent.name` (the agent's id) and, once the conversation is
+recorded, `gen_ai.conversation.id`.
+
+Moments are events on the span they happen in: `step_completed` on a procedure (with
+`curb.procedure.step` and `curb.procedure.step.title`), `handed_off` on a transfer when its
+target is on the line. A tool run that changes the active skill also says so on its own span,
+as `curb.skill.entered` or `curb.skill.exited`.
 
 A tool whose result has `ok: false` ends its span with an error status and `error.type`
 (`tool_error`). A call that never ran (an unknown tool, invalid input, or one held for the caller's
-yes) has no span. A span never carries the tool's arguments or its result.
+yes) has no span. No span carries what was said, a tool's arguments or result, or a phone number.
 
-A tool span is a child of whatever span is active when the tool runs. On a voice call the same
-backend also receives the LiveKit Agents pipeline's own spans (`agent_turn`, `llm_node`, `tts_node`
-and more), so you can see how long the caller waited and which part of it was your tool.
+Outside a voice call (a typed conversation in `curb dev`, `curb say`) there is no call span, and
+no skill, procedure or transfer span: only tool runs are traced, as children of whatever span is
+active when they run.
+
+On a voice call the same backend also receives the LiveKit Agents pipeline's own spans
+(`agent_turn`, `llm_node`, `tts_node` and more). A tool run stays under the pipeline span that
+asked for it when that span is part of the call's trace, and goes directly under the call
+otherwise, so it never ends up in a trace of its own.
 
 ## Send spans to a backend
 
@@ -83,6 +99,22 @@ new NodeSDK({ serviceName: "booking-agent", spanProcessors: [toolTimes] }).start
 ```
 
 `onEnd` runs inside the call, so keep it quick: queue the event and send it in the background.
+
+The same processor can pick any other span by its name, for example how far callers get in a
+procedure:
+
+```ts
+onEnd(span: ReadableSpan) {
+  if (!span.name.startsWith("curb.procedure ")) return;
+  analytics.capture("procedure", {
+    conversation: span.attributes["gen_ai.conversation.id"],
+    title: span.attributes["curb.procedure.title"],
+    completed: span.attributes["curb.procedure.completed"],
+    step: span.attributes["curb.procedure.step"],
+    of: span.attributes["curb.procedure.steps"],
+  });
+},
+```
 
 ## Turn it off
 

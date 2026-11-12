@@ -1,3 +1,4 @@
+import type { ProcedureChange } from "../procedure-progress.js";
 import type { ToolDefinition, ToolResult } from "../types.js";
 
 /** Real call audio captured for a message — clip ordinals into the voice
@@ -141,6 +142,10 @@ export type AgentTurnStreamEvent =
   /** The active skill changed during a tool run: `loaded` names the skill now active, `exited`
    * the one left for the agent level. Emitted after that tool's event. */
   | { type: "skill"; action: "loaded" | "exited"; path: string; title: string }
+  /** A `<Procedure>` moved: it entered the context, a step was completed, it was completed, or
+   * it left the context unfinished (`procedure-progress.ts`). Emitted at the start of a turn
+   * and after the tool run that moved it. */
+  | ({ type: "procedure" } & ProcedureChange)
   /** The turn could not run, or did not end in a reply. `message` is the real cause, for
    * developers (logs, error frames); the caller never hears it. A failed turn still ends
    * with `done`: its reply ends in a fixed line in the agent's language, which the caller
