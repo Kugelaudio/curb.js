@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/Kugelaudio/curb.js/discussions
+    about: Ask how to do something with Curb, or talk an idea through before it becomes a feature request.
+  - name: Report a vulnerability
+    url: https://github.com/Kugelaudio/curb.js/security/advisories/new
+    about: Report a security problem privately. Please do not open a public issue for it.
+  - name: Documentation
+    url: https://curbjs.com/docs/
+    about: Guides and the reference for every component, hook and command.

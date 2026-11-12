@@ -15,8 +15,11 @@ npm's `latest` dist-tag. A fix ships as a new release, so `curb upgrade` is how 
 
 Please do not report a security problem in a public issue, discussion or pull request.
 
-1. Email **hello@kugelaudio.com**.
-2. Or use **Security > Report a vulnerability** on this repository, where GitHub offers it.
+1. **Report it privately on GitHub:** open
+   [Report a vulnerability](https://github.com/Kugelaudio/curb.js/security/advisories/new), also
+   under **Security > Report a vulnerability** on this repository. Only you and the maintainers see
+   the report, and we can work on the fix with you there.
+2. **Or email hello@kugelaudio.com** if you cannot use GitHub's form.
 
 Tell us the affected version, how to reproduce the problem and what an attacker gains from it. Leave
 out real credentials and other people's data.

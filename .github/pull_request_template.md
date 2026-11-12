@@ -6,7 +6,7 @@
 
 ## Why
 
-<!-- The reason for it, or the issue it closes. -->
+<!-- The reason for it. If it closes an issue, say so: Closes #123 -->
 
 ## Checklist
 
