@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Curb does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. [Reporting a bug](https://curbjs.com/docs/reporting-a-bug/) explains what a good report holds.
+
+        This issue is public: remove keys, phone numbers, caller names and transcripts of real calls. For a security problem, do not open an issue; [report a vulnerability](https://github.com/Kugelaudio/curb.js/security/advisories/new) privately instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What went wrong, with any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce
+      description: |
+        A link to a minimal repository, or the smallest steps or snippet that show it. Remove everything from the project that the bug does not need. `npx curb conversations --last 1` prints the failing conversation with every tool call; paste only the part that shows the bug.
+      placeholder: |
+        1. npm create curb.js my-agent
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: curb-info
+    attributes:
+      label: Output of npx curb info
+      description: Run `npx curb info` in your project and paste what it prints. It shows the versions of Curb, Node and npm, the OS, and which environment variables are set, by name only.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: node-and-os
+    attributes:
+      label: Node version and OS
+      description: Only if `npx curb info` could not run.
+      placeholder: Node 22.12.0 on macOS 15
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you post
+      options:
+        - label: I searched the existing issues and found none about this bug.
+          required: true
+        - label: I tried the latest version of Curb (`npx curb upgrade`) and the bug is still there.
+          required: true

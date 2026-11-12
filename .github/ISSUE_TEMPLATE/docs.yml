@@ -1,0 +1,19 @@
+name: Documentation
+description: A docs page is wrong, unclear or missing something.
+labels: ["documentation"]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page URL
+      description: The page on curbjs.com, or the file in this repository.
+      placeholder: https://curbjs.com/docs/
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing
+      description: What the page says, what is actually true or what you were looking for, and what you would change.
+    validations:
+      required: true

@@ -2,25 +2,47 @@
 
 Thanks for helping improve Curb.
 
+Everyone taking part in this project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## How this repository works
 
-Curb is developed here. Pull requests are reviewed and merged in this repository. Each merge
-to `main` that changes a published package is released as a preview, and a maintainer cuts
-stable releases.
+Curb is developed here, in the open. Pull requests are reviewed and merged in this repository.
+Each merge to `main` that changes a published package is released as a preview, and a maintainer
+cuts stable releases.
 
-- **Issues** are welcome: bugs, missing features, unclear docs. To report a bug, follow
+- **Questions and ideas** go to [Discussions](https://github.com/Kugelaudio/curb.js/discussions):
+  how to do something with Curb, or an idea you want to talk through before it becomes an issue.
+- **Issues** are for bugs, feature requests and docs problems. Pick the form that fits on
+  [New issue](https://github.com/Kugelaudio/curb.js/issues/new/choose). To report a bug, follow
   [Reporting a bug](packages/framework/docs/agent-guide/reporting-a-bug.md).
 - **Pull requests** are welcome too. The title is the changelog line, written for someone
   using Curb: `fix: ...`, `feat: ...`, or `feat!: ...` for a breaking change.
+- **Security problems** never go in a public issue, discussion or pull request; see
+  [Security](#security).
 
 ## Making a change
 
 1. Open an issue first for anything larger than a small fix, so we can agree on
    the approach before you spend time on it.
-2. Keep a pull request to one change, and add or update tests for it.
-3. Run the tests locally. The exact commands are in
+2. Fork the repository, clone your fork and create a branch for the change. Run `npm install` once
+   at the root; [`AGENTS.md`](AGENTS.md) lists every command and what the tests cover.
+3. Keep a pull request to one change, and add or update tests for it.
+4. Run the tests locally. The exact commands are in
    [`.github/workflows/test.yml`](.github/workflows/test.yml), which runs on
    every pull request.
+5. Push the branch to your fork and open a pull request against `main`. Fill in the template, and
+   write `Closes #<issue>` in the body when it closes an issue.
+
+## What happens to your pull request
+
+- **CI waits for a maintainer.** On a pull request from a fork, a maintainer approves the workflow
+  runs before they start, so the checks show as waiting until then. They run on GitHub-hosted
+  runners with no access to this repository's secrets.
+- **Every check must pass:** `pr-rules` checks the title and body, `test` runs the suites the change
+  affects, and `gate` passes only when everything it needs passed.
+- **Only maintainers merge,** and always as a squash: the whole pull request becomes one commit on
+  `main` that takes its title. Push fixes for review comments to the same branch; there is no need
+  to squash or force-push yourself.
 
 ## What we ask of you
 
@@ -91,10 +113,11 @@ The notes come from the commit subjects since the last stable tag (`cliff.toml`)
 
 ## Security
 
-Please do not report security problems in public issues. Email
-hello@kugelaudio.com, or use **Security > Report a vulnerability** on this
-repository, where GitHub offers it. [SECURITY.md](SECURITY.md) says which versions
-are supported, what is in scope and what to expect back.
+Please do not report security problems in public issues, discussions or pull requests. Report them
+privately through
+[Report a vulnerability](https://github.com/Kugelaudio/curb.js/security/advisories/new), or email
+hello@kugelaudio.com if you cannot use GitHub's form. [SECURITY.md](SECURITY.md) says which
+versions are supported, what is in scope and what to expect back.
 
 ## License
 

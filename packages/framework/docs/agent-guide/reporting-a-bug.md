@@ -38,20 +38,15 @@ An issue is public. Remove keys, phone numbers, caller names and transcripts of 
 
 ## Filing it
 
-In a terminal, this opens the template:
+In a browser, open a [new issue](https://github.com/Kugelaudio/curb.js/issues/new/choose) and choose
+**Bug report**. Its form asks for the same four things, and for a link or steps to reproduce.
 
-```bash
-gh issue create --repo Kugelaudio/curb.js --template "Bug report" --label bug
-```
-
-`--template` needs a terminal and cannot be combined with `--body-file`. Without a terminal, as a
-coding agent usually is, write the report with the four headings to a file and pass it:
+From a terminal, as a coding agent usually is, write the report with the four headings to a file
+and pass it to `gh`:
 
 ```bash
 gh issue create --repo Kugelaudio/curb.js --title "<what goes wrong>" --label bug --body-file report.md
 ```
-
-Without `gh`, open a [new issue](https://github.com/Kugelaudio/curb.js/issues/new/choose) and choose **Bug report**.
 
 ## Next steps
 
