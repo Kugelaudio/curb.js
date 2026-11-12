@@ -135,8 +135,9 @@ export type AgentTurnStreamEvent =
    * (it carries the separating space); `text` is what the current step said so far. */
   | ({ type: "delta" } & AgentStreamChunk)
   /** A tool the agent ran this turn (e.g. read_skill) — emitted after the step
-   * executes so voice/streaming clients can show tool activity like chat. */
-  | { type: "tool"; toolCall: AgentToolCallRecord; ok: boolean }
+   * executes so voice/streaming clients can show tool activity like chat. `durationMs` is how
+   * long its handler took, when it ran: a refused or held call has none. */
+  | { type: "tool"; toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number }
   /** The turn could not run, or did not end in a reply. `message` is the real cause, for
    * developers (logs, error frames); the caller never hears it. A failed turn still ends
    * with `done`: its reply ends in a fixed line in the agent's language, which the caller

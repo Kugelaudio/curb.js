@@ -1,4 +1,5 @@
 import { endCallGoodbye, unexpectedToolFailureMessage, type AgentSiteRuntime } from "./runtime.js";
+import { traceToolRun } from "./tool-span.js";
 import {
   isToolInputStart,
   type AgentChatMessage,
@@ -612,7 +613,7 @@ export class AgentSession {
         const outcome = await this.applyLlmResponse(response, speech.stepText, messages, asksCaller);
         messages = outcome.messages;
         for (const executed of outcome.toolCalls) {
-          yield { type: "tool", toolCall: executed.toolCall, ok: executed.ok };
+          yield { type: "tool", ...executed };
         }
         const closing = outcome.held?.readBack ?? outcome.goodbye;
         if (closing !== undefined) {
@@ -783,7 +784,7 @@ export class AgentSession {
     done: boolean;
     /** Tool calls executed this step, with their success — streaming callers
      * yield these; runTurn ignores them. */
-    toolCalls: Array<{ toolCall: AgentToolCallRecord; ok: boolean }>;
+    toolCalls: Array<{ toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number }>;
     /** The action this step held: the turn ends asking the caller about it. */
     held?: HeldCall;
     /** The goodbye of the end_call this step ran: the turn ends saying it. */
@@ -824,7 +825,7 @@ export class AgentSession {
 
     if (toolCalls.length === 0) return { messages: next, done: true, toolCalls: [] };
 
-    const executed: Array<{ toolCall: AgentToolCallRecord; ok: boolean }> = [];
+    const executed: Array<{ toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number }> = [];
     let held: HeldCall | undefined;
     let goodbye: string | undefined;
     for (const { record, published } of planned) {
@@ -835,6 +836,7 @@ export class AgentSession {
       const refusal = toolCall.invalid ? undefined : this.refusal(toolCall.name, asksCaller, held);
       if (refusal) toolCall = { ...toolCall, invalid: refusal };
       let outcome: ToolCallOutcome;
+      let durationMs: number | undefined;
       if (!toolCall.invalid && this.runtime.confirms(toolCall.name)) {
         // The model's call of a `confirm` tool never runs it; runLoop asks the caller.
         const hold = await holdCall(this.runtime, toolCall, this.pending);
@@ -842,13 +844,13 @@ export class AgentSession {
         outcome = hold.outcome;
         held ??= hold.held;
       } else {
-        outcome = await this.executeToolCall(toolCall);
+        ({ outcome, durationMs } = await this.executeToolCall(toolCall));
       }
       if (toolCall !== published) next = withToolCallRecord(next, assistantAt, toolCall);
       const ok = outcome.result.ok !== false;
       // Refused (invalid input, or CALL_STAYS_OPEN), an end_call hung up nothing and says nothing.
       if (ok && toolCall.name === END_CALL_TOOL_NAME) goodbye ??= endCallGoodbye(toolCall.input);
-      executed.push({ toolCall, ok });
+      executed.push({ toolCall, ok, ...(durationMs === undefined ? {} : { durationMs }) });
       next = this.append(next, toolMessage(toolCall, outcome));
     }
 
@@ -906,18 +908,23 @@ export class AgentSession {
     this.pending = null;
     const toolCall = confirmedCall(this.runtime, pending, words);
     let next = this.append(messages, { role: "assistant", content: "", at: Date.now(), toolCalls: [toolCall] });
-    const outcome = await this.executeToolCall(toolCall);
+    const { outcome, durationMs } = await this.executeToolCall(toolCall);
     next = this.append(next, toolMessage(toolCall, outcome));
-    yield { type: "tool", toolCall, ok: outcome.result.ok !== false };
+    yield { type: "tool", toolCall, ok: outcome.result.ok !== false, ...(durationMs === undefined ? {} : { durationMs }) };
     return next;
   }
 
   /** Run one recorded tool call. Always yields a result: the call is already
    * in the transcript, and a call without a result would make every later
    * request invalid (tool_use/tool_result pairing). A call the model cannot
-   * make (`invalid`) gets a failed result it can correct itself from. */
-  private async executeToolCall(toolCall: AgentToolCallRecord): Promise<ToolCallOutcome> {
-    if (toolCall.invalid) return { result: { ok: false, message: toolCall.invalid }, contextDiff: [] };
+   * make (`invalid`) gets a failed result it can correct itself from, and no
+   * duration: it never ran. A call that ran is a span (`tool-span.ts`). */
+  private async executeToolCall(toolCall: AgentToolCallRecord): Promise<{ outcome: ToolCallOutcome; durationMs?: number }> {
+    if (toolCall.invalid) return { outcome: { result: { ok: false, message: toolCall.invalid }, contextDiff: [] } };
+    return traceToolRun(toolCall, () => this.runTool(toolCall));
+  }
+
+  private async runTool(toolCall: AgentToolCallRecord): Promise<ToolCallOutcome> {
     try {
       return await this.runtime.callTool(toolCall.name, toolCall.input);
     } catch (error) {

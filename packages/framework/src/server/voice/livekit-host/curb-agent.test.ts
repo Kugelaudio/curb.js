@@ -13,14 +13,14 @@ function userSaid(text: string): llm.ChatContext {
 }
 
 describe("hosted tool outcome reporting", () => {
-  it.each([true, false])("preserves tool success=%s without reporting its result data", async (ok) => {
+  it.each([true, false])("preserves tool success=%s and its run time without reporting its result data", async (ok) => {
     const event = vi.fn();
     const reporter: CallReporter = { event, turn: vi.fn(), async finish() {}, undelivered: 0 };
     const agent = new CurbVoiceAgent({
       instructions: "Test agent",
       reporter,
       async *runTurn(): AsyncGenerator<AgentTurnStreamEvent> {
-        yield { type: "tool", toolCall: { id: "tool-1", name: "add_task", input: { title: "Buy milk" }, skillPath: "/tasks" }, ok };
+        yield { type: "tool", toolCall: { id: "tool-1", name: "add_task", input: { title: "Buy milk" }, skillPath: "/tasks" }, ok, durationMs: 41.5 };
         yield { type: "delta", delta: "Done.", text: "Done." };
       },
     });
@@ -32,7 +32,7 @@ describe("hosted tool outcome reporting", () => {
     while (!(await reader.read()).done) { /* Drain the real reporting path. */ }
     expect(event).toHaveBeenCalledExactlyOnceWith("tool", {
       name: "add_task", arguments: { title: "Buy milk" }, skillPath: "/tasks", ok,
-    });
+    }, 41.5);
     expect(reporter.turn).toHaveBeenCalledExactlyOnceWith({ speaker: "agent", text: "Done.", final: true });
   });
 
@@ -63,7 +63,7 @@ describe("hosted tool outcome reporting", () => {
     while (!(await reader.read()).done) { /* Drain the real reporting path. */ }
     expect(event).toHaveBeenCalledExactlyOnceWith("tool", {
       name: "book_meeting", arguments: { email: "lisa@example.com" }, ok: false, heldFor: readBack,
-    });
+    }, undefined); // Held, so it never ran and took no time.
   });
 });
 

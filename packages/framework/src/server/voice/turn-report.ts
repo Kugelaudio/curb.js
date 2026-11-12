@@ -1,5 +1,6 @@
 /**
- * What a call's record says about a turn Curb ran: its tools and its failure.
+ * What a call's record says about a turn Curb ran: its tools, how long each one that ran took, and
+ * its failure.
  *
  * Every voice call reports its turns through here, whichever way it runs: the cascaded pipeline's
  * spoken turns (`livekit-host/curb-agent.ts`) and the back-office turns behind a speech-to-speech
@@ -32,5 +33,5 @@ export function reportTurnEvent(reporter: CallReporter | undefined, event: Agent
     // Held for the caller's yes (`<Tool confirm>`): `ok` is false because it did not
     // run, not because it failed. The read-back says what the caller was asked.
     ...(event.toolCall.heldFor ? { heldFor: event.toolCall.heldFor } : {}),
-  });
+  }, event.durationMs);
 }
