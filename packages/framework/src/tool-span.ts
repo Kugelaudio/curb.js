@@ -18,12 +18,23 @@ const tracer = trace.getTracer("curb");
 export type SpanAttributes = Attributes;
 
 /** A tool run, and how long its handler took in whole milliseconds, as every timed record of a call. */
-export type TimedOutcome = { outcome: ToolCallOutcome; durationMs: number };
+export type TimedOutcome = { outcome: ToolCallOutcome; durationMs: number; skill?: SkillChange };
+
+/** The active skill a tool run left behind, when it is not the one it found. */
+export type SkillChange = { action: "loaded" | "exited"; path: string; title: string };
+
+type ActiveSkill = { path: string; title: string };
+
+function skillChange(before: ActiveSkill, after: ActiveSkill): SkillChange | undefined {
+  if (after.path === before.path) return undefined;
+  return after.path ? { action: "loaded", ...after } : { action: "exited", ...before };
+}
 
 export async function traceToolRun(
   toolCall: AgentToolCallRecord,
   session: SpanAttributes,
   run: () => Promise<ToolCallOutcome>,
+  activeSkill: () => ActiveSkill,
 ): Promise<TimedOutcome> {
   return tracer.startActiveSpan(
     `execute_tool ${toolCall.name}`,
@@ -39,8 +50,13 @@ export async function traceToolRun(
     },
     async (span) => {
       const startedAt = performance.now();
+      const before = activeSkill();
       try {
         const outcome = await run();
+        // A skill is only ever entered by a tool run (`read_skill`, or a tool that routes), so
+        // the span that changed it says so.
+        const skill = skillChange(before, activeSkill());
+        if (skill) span.setAttribute(skill.action === "loaded" ? "curb.skill.entered" : "curb.skill.exited", skill.path);
         const ok = outcome.result.ok !== false;
         span.setAttribute("curb.tool.ok", ok);
         // A failed result is the tool's answer, not a crash: the model reads it and carries on.
@@ -49,7 +65,7 @@ export async function traceToolRun(
           span.setAttribute("error.type", "tool_error");
           span.setStatus({ code: SpanStatusCode.ERROR });
         }
-        return { outcome, durationMs: Math.round(performance.now() - startedAt) };
+        return { outcome, durationMs: Math.round(performance.now() - startedAt), ...(skill ? { skill } : {}) };
       } finally {
         span.end();
       }

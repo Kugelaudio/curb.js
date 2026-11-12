@@ -67,6 +67,25 @@ describe("hosted tool outcome reporting", () => {
   });
 });
 
+describe("hosted skill reporting", () => {
+  it("records the skill a turn entered, with its title", async () => {
+    const event = vi.fn();
+    const reporter: CallReporter = { event, turn: vi.fn(), async finish() {}, undelivered: 0 };
+    const agent = new CurbVoiceAgent({
+      instructions: "Test agent",
+      reporter,
+      async *runTurn(): AsyncGenerator<AgentTurnStreamEvent> {
+        yield { type: "skill", action: "loaded", path: "/billing", title: "Billing" };
+        yield { type: "delta", delta: "Sure.", text: "Sure." };
+      },
+    });
+    const stream = await agent.llmNode(userSaid("My invoice is wrong."), new llm.ToolContext(), {});
+    const reader = stream!.getReader();
+    while (!(await reader.read()).done) { /* Drain the real reporting path. */ }
+    expect(event).toHaveBeenCalledExactlyOnceWith("skill", { action: "loaded", path: "/billing", title: "Billing" });
+  });
+});
+
 describe("turn cancellation and failures", () => {
   it("cancelling the reply stream aborts that reply's turn, not only the generator", async () => {
     let turnSignal: AbortSignal | undefined;

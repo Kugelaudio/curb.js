@@ -28,13 +28,17 @@ afterAll(() => {
 
 beforeEach(() => exporter.reset());
 
-async function turn(responses: AgentRunResponse[], options: ConstructorParameters<typeof AgentSession>[2] = {}) {
+async function turnEvents(responses: AgentRunResponse[], options: ConstructorParameters<typeof AgentSession>[2] = {}) {
   let step = 0;
   const llm = vi.fn<AgentLlmClient>(async () => responses[step++] ?? { text: "", toolCalls: [] });
   const session = new AgentSession(createInsuranceDemoRuntime(), llm, options);
   const events: AgentTurnStreamEvent[] = [];
   for await (const event of session.runTurnStream("My roof is damaged")) events.push(event);
-  return events.flatMap((event) => (event.type === "tool" ? [event] : []));
+  return events;
+}
+
+async function turn(responses: AgentRunResponse[], options: ConstructorParameters<typeof AgentSession>[2] = {}) {
+  return (await turnEvents(responses, options)).flatMap((event) => (event.type === "tool" ? [event] : []));
 }
 
 describe("tool spans", () => {
@@ -98,6 +102,17 @@ describe("tool spans", () => {
       "gen_ai.conversation.id": "conv-1",
       "gen_ai.tool.name": "read_skill",
     });
+  });
+
+  it("says which skill a tool run entered, on its span and as a skill event after the tool's", async () => {
+    const events = await turnEvents([
+      { text: "", toolCalls: [{ name: "read_skill", input: { skill: "/property-damage" } }] },
+      { text: "Is everyone safe?", toolCalls: [] },
+    ]);
+    const kinds = events.flatMap((event) => (event.type === "tool" || event.type === "skill" ? [event.type] : []));
+    expect(kinds).toEqual(["tool", "skill"]);
+    expect(events.find((event) => event.type === "skill")).toMatchObject({ action: "loaded", path: "/property-damage" });
+    expect(exporter.getFinishedSpans()[0]!.attributes["curb.skill.entered"]).toBe("/property-damage");
   });
 
   it("marks a failed tool result on its span", async () => {

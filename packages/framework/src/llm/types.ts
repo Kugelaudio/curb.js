@@ -138,6 +138,9 @@ export type AgentTurnStreamEvent =
    * executes so voice/streaming clients can show tool activity like chat. `durationMs` is how
    * long its handler took, when it ran: a refused or held call has none. */
   | { type: "tool"; toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number }
+  /** The active skill changed during a tool run: `loaded` names the skill now active, `exited`
+   * the one left for the agent level. Emitted after that tool's event. */
+  | { type: "skill"; action: "loaded" | "exited"; path: string; title: string }
   /** The turn could not run, or did not end in a reply. `message` is the real cause, for
    * developers (logs, error frames); the caller never hears it. A failed turn still ends
    * with `done`: its reply ends in a fixed line in the agent's language, which the caller

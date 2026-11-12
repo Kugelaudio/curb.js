@@ -10,6 +10,10 @@ registers nothing itself: with no OpenTelemetry SDK running, a span costs nothin
 | --- | --- | --- |
 | `execute_tool <name>` | Every tool run, from the handler's start to its result | `gen_ai.operation.name` (`execute_tool`), `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.type`, `gen_ai.agent.name` (the agent's id), `gen_ai.conversation.id` once the conversation is recorded, `curb.skill.path` when a skill owns the tool, `curb.tool.ok` |
 
+A tool run that changes the active skill says so on its span: `curb.skill.entered` names the skill
+it opened (`read_skill`, or a tool that routes with `useRouter`), `curb.skill.exited` the one it
+left for the agent level. The time between two such spans is the time a call spent in a skill.
+
 A tool whose result has `ok: false` ends its span with an error status and `error.type`
 (`tool_error`). A call that never ran (an unknown tool, invalid input, or one held for the caller's
 yes) has no span. A span never carries the tool's arguments or its result.
