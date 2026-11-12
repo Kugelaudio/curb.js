@@ -1,4 +1,4 @@
-import { SpanStatusCode, trace } from "@opentelemetry/api";
+import { SpanStatusCode, trace, type Attributes } from "@opentelemetry/api";
 
 import type { AgentToolCallRecord } from "./llm/types.js";
 import type { ToolCallOutcome } from "./types.js";
@@ -13,14 +13,23 @@ import type { ToolCallOutcome } from "./types.js";
 
 const tracer = trace.getTracer("curb");
 
+/** What every span of a session carries: `gen_ai.agent.name`, and `gen_ai.conversation.id` once
+ * the conversation has one, so a backend can group a call's spans and tell agents apart. */
+export type SpanAttributes = Attributes;
+
 /** A tool run, and how long its handler took in whole milliseconds, as every timed record of a call. */
 export type TimedOutcome = { outcome: ToolCallOutcome; durationMs: number };
 
-export async function traceToolRun(toolCall: AgentToolCallRecord, run: () => Promise<ToolCallOutcome>): Promise<TimedOutcome> {
+export async function traceToolRun(
+  toolCall: AgentToolCallRecord,
+  session: SpanAttributes,
+  run: () => Promise<ToolCallOutcome>,
+): Promise<TimedOutcome> {
   return tracer.startActiveSpan(
     `execute_tool ${toolCall.name}`,
     {
       attributes: {
+        ...session,
         "gen_ai.operation.name": "execute_tool",
         "gen_ai.tool.name": toolCall.name,
         "gen_ai.tool.call.id": toolCall.id,

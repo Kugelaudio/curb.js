@@ -8,7 +8,7 @@ registers nothing itself: with no OpenTelemetry SDK running, a span costs nothin
 
 | Span | When | Attributes |
 | --- | --- | --- |
-| `execute_tool <name>` | Every tool run, from the handler's start to its result | `gen_ai.operation.name` (`execute_tool`), `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.type`, `curb.skill.path` when a skill owns the tool, `curb.tool.ok` |
+| `execute_tool <name>` | Every tool run, from the handler's start to its result | `gen_ai.operation.name` (`execute_tool`), `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.type`, `gen_ai.agent.name` (the agent's id), `gen_ai.conversation.id` once the conversation is recorded, `curb.skill.path` when a skill owns the tool, `curb.tool.ok` |
 
 A tool whose result has `ok: false` ends its span with an error status and `error.type`
 (`tool_error`). A call that never ran (an unknown tool, invalid input, or one held for the caller's
@@ -64,6 +64,8 @@ const toolTimes: SpanProcessor = {
     if (span.attributes["gen_ai.operation.name"] !== "execute_tool") return;
     const [seconds, nanos] = span.duration;
     analytics.capture("tool_run", {
+      conversation: span.attributes["gen_ai.conversation.id"],
+      agent: span.attributes["gen_ai.agent.name"],
       tool: span.attributes["gen_ai.tool.name"],
       ok: span.attributes["curb.tool.ok"],
       ms: seconds * 1000 + nanos / 1e6,

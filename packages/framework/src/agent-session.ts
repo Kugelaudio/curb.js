@@ -1,5 +1,5 @@
 import { endCallGoodbye, unexpectedToolFailureMessage, type AgentSiteRuntime } from "./runtime.js";
-import { traceToolRun } from "./tool-span.js";
+import { traceToolRun, type SpanAttributes } from "./tool-span.js";
 import {
   isToolInputStart,
   type AgentChatMessage,
@@ -91,6 +91,9 @@ export type AgentSessionOptions = {
   timeZone?: string;
   /** The line each conversation opens with, said without the model (`firstTurn: { say }`). */
   opening?: (info: Readonly<Record<string, unknown>>) => string;
+  /** Which agent and conversation this session is, read when a span starts (`tool-span.ts`):
+   * the conversation's id exists only once its first message is recorded. */
+  traceAttributes?: () => SpanAttributes;
 };
 
 /** Per-turn options — one session serves typed and spoken turns alike. */
@@ -146,6 +149,7 @@ export class AgentSession {
   private readonly spokenStyleSuffix: string | undefined;
   private readonly llmTimeoutMs: number;
   private readonly maxQueuedTurns: number;
+  private readonly traceAttributes: () => SpanAttributes;
   private readonly timeZone: string;
   private readonly opening: AgentSessionOptions["opening"];
   private readonly listeners = new Set<() => void>();
@@ -187,6 +191,7 @@ export class AgentSession {
     this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
     this.maxTranscriptMessages = options.maxTranscriptMessages ?? DEFAULT_MAX_TRANSCRIPT_MESSAGES;
     this.spokenStyleSuffix = options.spokenStyleSuffix;
+    this.traceAttributes = options.traceAttributes ?? (() => ({}));
     this.llmTimeoutMs = options.llmTimeoutMs ?? llmTimeoutFromEnv();
     this.maxQueuedTurns = options.maxQueuedTurns ?? DEFAULT_MAX_QUEUED_TURNS;
     this.timeZone = options.timeZone ?? DEFAULT_TIME_ZONE;
@@ -921,7 +926,7 @@ export class AgentSession {
    * duration: it never ran. A call that ran is a span (`tool-span.ts`). */
   private async executeToolCall(toolCall: AgentToolCallRecord): Promise<{ outcome: ToolCallOutcome; durationMs?: number }> {
     if (toolCall.invalid) return { outcome: { result: { ok: false, message: toolCall.invalid }, contextDiff: [] } };
-    return traceToolRun(toolCall, () => this.runTool(toolCall));
+    return traceToolRun(toolCall, this.traceAttributes(), () => this.runTool(toolCall));
   }
 
   private async runTool(toolCall: AgentToolCallRecord): Promise<ToolCallOutcome> {

@@ -10,7 +10,7 @@ import { resolveAgentDir } from "../project.node.js";
 import { bundledAgentRegistry, discoverAgentFromRegistry } from "../agent-registry.node.js";
 import { openingLineOf } from "../config.js";
 import { AgentSiteRuntime } from "../runtime.js";
-import { attachConversationSink, resolveConversationSink } from "./conversation-store.js";
+import { attachConversationSink, recordedConversationId, resolveConversationSink } from "./conversation-store.js";
 
 /**
  * One hosted agent session: a headless React runtime plus the agent turn loop
@@ -174,6 +174,11 @@ export async function createAgentSession(
     // `firstTurn: { say }`: the session opens every conversation with the line, on every route
     // (a call, typed chat, curb say, curb test), so none can skip it or say it twice.
     opening: openingLineOf(definition.firstTurn),
+    // Every span names the agent and, once the recording has one, the conversation.
+    traceAttributes: () => {
+      const conversationId = recordedConversationId(session);
+      return { "gen_ai.agent.name": id, ...(conversationId ? { "gen_ai.conversation.id": conversationId } : {}) };
+    },
   });
   // Mirror the transcript (incl. tool calls/results) into the durable sink — one
   // conversation covers typed and spoken turns alike. A JSONL file by default, whatever
