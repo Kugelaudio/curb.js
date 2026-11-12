@@ -59,10 +59,22 @@ import { openCallManagement, serveCall } from "../hosted/serve-call.js";
 import { logError, logInfo } from "./log.js";
 import { CURB_MARK } from "../brand.js";
 
+/** `text` as HTML text: every character that could open markup or end an attribute is escaped. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** The page the browser lands on after an MCP sign-in. `title` and `detail` are text, never markup:
+ * they can carry what the request named (the provider's `error`, a server id). */
 function oauthResultPage(title: string, detail: string): string {
-  return `<!doctype html><meta charset="utf-8"><title>${title}</title>
+  return `<!doctype html><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <body style="font-family: system-ui; display: grid; place-items: center; height: 100vh; margin: 0">
-<div style="text-align: center">${CURB_MARK}<h1 style="font-size: 1.2rem">${title}</h1><p>${detail}</p></div></body>`;
+<div style="text-align: center">${CURB_MARK}<h1 style="font-size: 1.2rem">${escapeHtml(title)}</h1><p>${escapeHtml(detail)}</p></div></body>`;
 }
 
 /** OAuth redirect target for MCP servers. The provider registered this exact
@@ -145,12 +157,17 @@ async function handleTtsRequest(
     res.writeHead(200, { "content-type": "audio/wav", "content-length": wav.length });
     res.end(wav);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status =
-      error instanceof VoiceProviderError ? 503 : error instanceof SyntaxError ? 400 : 500;
-    logError("tts", `synthesis failed: ${message}`);
+    logError("tts", `synthesis failed: ${error instanceof Error ? error.message : String(error)}`);
+    // The page shows the body. A provider error is written for the user (a missing key, a
+    // voice that does not exist); anything else stays in the server log.
+    const [status, body] =
+      error instanceof VoiceProviderError
+        ? [503, error.message]
+        : error instanceof SyntaxError
+          ? [400, 'Expected JSON body { "text": "…" }.']
+          : [500, "Speech synthesis failed. The server log has the details."];
     res.writeHead(status, { "content-type": "text/plain" });
-    res.end(message);
+    res.end(body);
   }
 }
 

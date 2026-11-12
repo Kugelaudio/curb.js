@@ -136,6 +136,26 @@ describe("curb server when no conversation can start", () => {
     expect(frames).toEqual([]);
   }, 60_000);
 
+  it("shows what an OAuth callback names as text, never as markup", async () => {
+    const injected = `<script>alert("x")</script><img src=x onerror='y'>`;
+    const response = await fetch(
+      `http://127.0.0.1:${port}/oauth/callback?error=${encodeURIComponent(injected)}`,
+    );
+    const page = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(page).not.toContain("<script>");
+    expect(page).not.toContain("<img");
+    expect(page).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&lt;img src=x onerror=&#39;y&#39;&gt;");
+  });
+
+  it("answers a malformed speech request without the parser's own message", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/tts`, { method: "POST", body: "{not json" });
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe('Expected JSON body { "text": "…" }.');
+  });
+
   it.each([false, true])("answers 400 to a malformed request target (upgrade: %s), without crashing", async (upgrade) => {
     const status = await new Promise<string>((resolve, reject) => {
       const socket = connect(port, "127.0.0.1", () => {
