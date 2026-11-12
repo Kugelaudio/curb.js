@@ -12,18 +12,26 @@ export const RELAY_UPSTREAM = "https://api.eu.kugelaudio.com";
 /** The path prefix the page sends relayed requests under. */
 export const RELAY_PREFIX = "/kugel/";
 
+/** What the browser runtime asks the API for over HTTP: `kugelaudio.llm()`'s chat. */
+export const RELAY_HTTP_PATHS: readonly string[] = ["/v1/chat/completions"];
+/** Its sockets: Kugel TTS and Kugel Ear STT. */
+export const RELAY_SOCKET_PATHS: readonly string[] = ["/ws/tts/multi", "/v1/audio/transcriptions/stream"];
+
 /**
- * The upstream URL a `/kugel/<rest>` request goes to, over `https` or `wss`; null when the
- * request is not a relay request or would leave the API's origin.
+ * The upstream URL a `/kugel/<path>` request goes to, over HTTP or as a socket; null for
+ * anything but the API routes the browser runtime uses. The relay adds the developer's key, so
+ * it forwards those routes and nothing else. A socket keeps its query (the TTS socket names its
+ * key there); an HTTP request needs none.
  */
-export function relayTarget(url: URL, scheme: "https" | "wss"): string | null {
+export function relayTarget(url: URL, kind: "http" | "socket"): string | null {
   if (!url.pathname.startsWith(RELAY_PREFIX)) return null;
-  const rest = url.pathname.slice(RELAY_PREFIX.length).replace(/^\/+/, "") + url.search;
-  // The host is written out ahead of the path, so nothing the request names can change it.
-  const target = new URL(
-    scheme === "https" ? `https://api.eu.kugelaudio.com/${rest}` : `wss://api.eu.kugelaudio.com/${rest}`,
-  );
-  return target.host === new URL(RELAY_UPSTREAM).host ? target.href : null;
+  const path = url.pathname.slice(RELAY_PREFIX.length - 1);
+  if (kind === "http") {
+    const known = RELAY_HTTP_PATHS.find((candidate) => candidate === path);
+    return known === undefined ? null : `${RELAY_UPSTREAM}${known}`;
+  }
+  const known = RELAY_SOCKET_PATHS.find((candidate) => candidate === path);
+  return known === undefined ? null : `wss://api.eu.kugelaudio.com${known}${url.search}`;
 }
 
 /**

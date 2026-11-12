@@ -57,7 +57,7 @@ async function relay(req: IncomingMessage, res: ServerResponse, url: URL): Promi
     const value = req.headers[name];
     if (typeof value === "string") headers[name] = value;
   }
-  const target = relayTarget(url, "https");
+  const target = relayTarget(url, "http");
   if (target === null) {
     res.statusCode = 404;
     return void res.end("not found");
@@ -121,7 +121,7 @@ server.on("upgrade", (req, socket, head) => {
   const path = url.pathname.slice(RELAY_PREFIX.length - 1);
   // The TTS socket names its key in the query: the page's is a placeholder.
   if (url.searchParams.has("api_key")) url.searchParams.set("api_key", apiKey);
-  const target = relayTarget(url, "wss");
+  const target = relayTarget(url, "socket");
   if (target === null) return void socket.destroy();
   sockets.handleUpgrade(req, socket, head, (client) => {
     const upstream = new WebSocket(target, {

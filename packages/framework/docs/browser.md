@@ -26,8 +26,9 @@ wasm, ONNX Runtime Web and the Silero model, and the template project as
 CORS and a browser WebSocket sends no `Authorization`, so model and speech calls need a
 relay that adds the key: `serve-static.ts` relays `/kugel/*` locally, and a page opened from
 a hosting platform's link uses the relay that platform names (below). The local relay answers
-only the page it serves: a request on a loopback host from that page, never one another site
-sends.
+only the page it serves (a request on a loopback host from that page, never one another site
+sends) and forwards only the routes the runtime uses: `/v1/chat/completions`, and the
+`/ws/tts/multi` and `/v1/audio/transcriptions/stream` sockets.
 
 ## The page's API
 

@@ -5,21 +5,28 @@ import { relayAllowed, relayTarget, staticFile } from "./static-serving.js";
 const at = (target: string) => new URL(target, "http://localhost");
 
 describe("relayTarget", () => {
-  it("forwards a relay path and its query to the API", () => {
-    expect(relayTarget(at("/kugel/v1/models?x=1"), "https")).toBe("https://api.eu.kugelaudio.com/v1/models?x=1");
-    expect(relayTarget(at("/kugel/ws/tts?api_key=k"), "wss")).toBe("wss://api.eu.kugelaudio.com/ws/tts?api_key=k");
+  it("forwards the chat route the browser runtime calls", () => {
+    expect(relayTarget(at("/kugel/v1/chat/completions"), "http")).toBe("https://api.eu.kugelaudio.com/v1/chat/completions");
   });
 
-  it.each(["/kugel//evil.example/x", "/kugel/@evil.example/x", "/kugel/%2F%2Fevil.example", "/kugel/..%2F..%2Fx"])(
-    "keeps %s on the API's origin",
+  it("forwards the speech sockets with their query", () => {
+    expect(relayTarget(at("/kugel/ws/tts/multi?api_key=k"), "socket")).toBe("wss://api.eu.kugelaudio.com/ws/tts/multi?api_key=k");
+    expect(relayTarget(at("/kugel/v1/audio/transcriptions/stream"), "socket")).toBe(
+      "wss://api.eu.kugelaudio.com/v1/audio/transcriptions/stream",
+    );
+  });
+
+  it.each(["/kugel/v1/models", "/kugel//evil.example/x", "/kugel/@evil.example/x", "/kugel/%2F%2Fevil.example", "/kugel/v1/chat/completions/../../admin", "/index.html"])(
+    "forwards nothing for %s",
     (path) => {
-      const target = relayTarget(at(path), "https");
-      expect(target === null || new URL(target).origin === "https://api.eu.kugelaudio.com").toBe(true);
+      expect(relayTarget(at(path), "http")).toBeNull();
+      expect(relayTarget(at(path), "socket")).toBeNull();
     },
   );
 
-  it("is null for a path outside the relay", () => {
-    expect(relayTarget(at("/index.html"), "https")).toBeNull();
+  it("forwards a socket route only as a socket, and the chat route only over HTTP", () => {
+    expect(relayTarget(at("/kugel/ws/tts/multi"), "http")).toBeNull();
+    expect(relayTarget(at("/kugel/v1/chat/completions"), "socket")).toBeNull();
   });
 });
 
