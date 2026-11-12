@@ -7,9 +7,8 @@ import type { ToolCallOutcome } from "./types.js";
  * Every tool run is an OpenTelemetry span, `execute_tool <name>`, named and attributed after the
  * GenAI semantic conventions. Curb only creates spans: it registers no tracer provider, so with no
  * OpenTelemetry SDK set up in the process a span costs nothing and goes nowhere. A project that
- * starts an SDK (any backend) receives them, nested under the voice pipeline's own `llm_node` span
- * when the call runs on LiveKit agents. A span never carries the tool's arguments or result: those
- * are the caller's data.
+ * starts an SDK (any backend) receives them as children of whatever span is active when the tool
+ * runs. A span never carries the tool's arguments or result: those are the caller's data.
  */
 
 const tracer = trace.getTracer("curb");
