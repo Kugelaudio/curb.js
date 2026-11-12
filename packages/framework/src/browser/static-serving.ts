@@ -18,11 +18,12 @@ export const RELAY_PREFIX = "/kugel/";
  */
 export function relayTarget(url: URL, scheme: "https" | "wss"): string | null {
   if (!url.pathname.startsWith(RELAY_PREFIX)) return null;
-  const upstream = new URL(RELAY_UPSTREAM);
-  upstream.protocol = `${scheme}:`;
-  const rest = url.pathname.slice(RELAY_PREFIX.length).replace(/^\/+/, "");
-  const target = new URL(`${upstream.origin}/${rest}${url.search}`);
-  return target.origin === upstream.origin ? target.href : null;
+  const rest = url.pathname.slice(RELAY_PREFIX.length).replace(/^\/+/, "") + url.search;
+  // The host is written out ahead of the path, so nothing the request names can change it.
+  const target = new URL(
+    scheme === "https" ? `https://api.eu.kugelaudio.com/${rest}` : `wss://api.eu.kugelaudio.com/${rest}`,
+  );
+  return target.host === new URL(RELAY_UPSTREAM).host ? target.href : null;
 }
 
 /**
