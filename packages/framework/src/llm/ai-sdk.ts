@@ -259,7 +259,7 @@ export function llmCredentialDiagnostic(descriptor: LlmDescriptor): AuthoringDia
       variable === "KUGELAUDIO_API_KEY" && hostedFix
         ? hostedFix
         : variable === "KUGELAUDIO_API_KEY"
-        ? "Run `npx curb login` in the project to sign in in the browser, then restart `curb dev`: Curb uses that login, and " +
+        ? "Run `npx curb login` in the project to sign in in the browser, then run the command again (restart `curb dev` if it is running): Curb uses that login, and " +
           "there is no key to copy. Or set KUGELAUDIO_API_KEY (an API key from the dashboard). A hosted agent gets it from the platform."
         : `Set ${variable} in ${projectDir ? `${projectDir}/.env` : "the project's .env"} (see .env.example): ` +
           "`curb dev` reloads when you save it, and every other command reads it when it starts. " +

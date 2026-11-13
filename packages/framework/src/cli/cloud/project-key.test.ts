@@ -217,9 +217,9 @@ describe("npx curb login in a project, against a stub web", () => {
     vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
       const line = args.map(String).join(" ");
       printed.push(line);
-      const opening = /^Opening (\S+)$/.exec(line);
-      if (!opening) return;
-      signIn = new URL(opening[1]);
+      const link = /(https?:\/\/\S+\/cli\/login\?\S+)$/.exec(line);
+      if (!link) return;
+      signIn = new URL(link[1]);
       void fetch(`http://127.0.0.1:${signIn.searchParams.get("port")}/callback?code=code-1&state=${signIn.searchParams.get("state")}`, { redirect: "manual" });
     });
     return { signIn: () => signIn };
@@ -256,6 +256,9 @@ describe("npx curb login in a project, against a stub web", () => {
 
     expect(browser.signIn()?.searchParams.get("project_key")).toBe("1");
     expect(browser.signIn()?.searchParams.get("device_name")).toBeTruthy();
+    // CURB_NO_OPEN: nothing opens, so the CLI hands over the link and says nothing about opening one.
+    expect(printed[0]).toBe(`Open this link in a browser on this machine to sign in: ${browser.signIn()?.href}`);
+    expect(printed.join("\n")).not.toMatch(/Opening|If no browser opens/);
     expect(readFileSync(join(root, ".env"), "utf8")).toBe(TEMPLATE_ENV);
     expect(readLink(root)).toEqual({ webUrl: cloud.url, orgId: "org_pub_acme", projectId: "prj_pub_voice" });
     const stored = projectKeysPath(join(dir, "config", "curb", "credentials.json"));

@@ -12,7 +12,7 @@ npx curb login [--url <web>] [--no-open]
 | Option | What it does |
 |---|---|
 | `--url <web>` | Another app URL |
-| `--no-open` | Only prints the sign-in URL |
+| `--no-open` | Only prints the sign-in URL, to open in a browser on the same machine |
 
 ## How it ends
 
@@ -28,6 +28,7 @@ small page from the CLI itself, on `127.0.0.1`.
 
 | Version | Changes |
 |---|---|
+| v1.19.0 | `--no-open` no longer says it is opening a browser |
 | v1.18.0 | The browser ends on a page of the web app |
 | v1.11.9 | Replaces the key in `.env` for a KugelAudio project |
 | v1.3.4 | `curb login` introduced |

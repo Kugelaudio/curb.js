@@ -70,7 +70,7 @@ export async function checkConfiguration(options: {
   env?: Env;
   /** The key `curb login` stored that this run uses (see `useLoginKey`), when it uses one. */
   loginKey?: StoredProjectKey | null;
-}): Promise<{ configuration: Configuration; diagnostics: AuthoringDiagnostic[] }> {
+}): Promise<{ configuration: Configuration; diagnostics: AuthoringDiagnostic[]; uses: ProviderUse[] | null }> {
   const { projectRoot, agent, agentId } = options;
   const env = projectEnvironment(projectRoot, options.env ?? process.env);
 
@@ -110,6 +110,7 @@ export async function checkConfiguration(options: {
   return {
     configuration: { providers, code: codeEntries(reads, declared, env, providerNames).map(fromLogin), declarationError },
     diagnostics: undeclaredReads(reads, namesInEnvExample(projectRoot), agentId),
+    uses,
   };
 }
 

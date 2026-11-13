@@ -2,7 +2,7 @@ import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { resolveProjectRoot } from "../../project.node.js";
-import { type CommandOptions, rejectUnknownArguments } from "../args.js";
+import { type CommandOptions, flagValue, rejectUnknownArguments } from "../args.js";
 import { openBrowser } from "../open-browser.js";
 import { login, loginWebUrl, logout } from "./auth.js";
 import { CloudClient } from "./client.js";
@@ -16,15 +16,6 @@ import { pushSecrets } from "./secrets.js";
 /** The `curb login | logout | deploy | secrets push` entry points `main.ts` dispatches to. */
 
 const log = (line: string) => console.log(line);
-
-function flagValue(args: string[], flag: string): string | undefined {
-  const index = args.findIndex((arg) => arg === flag || arg.startsWith(`${flag}=`));
-  if (index < 0) return undefined;
-  const arg = args[index];
-  const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : args[index + 1];
-  if (value === undefined || value === "" || value.startsWith("--")) throw new Error(`${flag} needs a value.`);
-  return value;
-}
 
 /** What each command takes. A dry run is the option a coding agent reaches for first. */
 export const CLOUD_COMMAND_OPTIONS = {
@@ -67,7 +58,7 @@ export async function loginCommand(args: string[]): Promise<void> {
   const askForKey = root !== null && !envHasProjectKey(root);
   const result = await login({
     webUrl: loginWebUrl(flagValue(args, "--url")),
-    open: skipOpen ? () => {} : openBrowser,
+    ...(skipOpen ? {} : { open: openBrowser }),
     log,
     requestProjectKey: askForKey,
     deviceName: hostname().replace(/\.local$/i, ""),

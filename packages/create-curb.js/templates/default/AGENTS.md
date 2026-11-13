@@ -9,7 +9,8 @@ her prompt, skills and tools with the user's agent and delete what it does not n
 The agent runs on KugelAudio: its EU-hosted LLM (`kugelaudio.llm()`), Kugel Ear and Kugel TTS.
 Sign in with `npx curb login` in this folder: it opens the browser once to sign in, and
 every curb command here then runs on that login (`--no-open` only prints the link, for a
-machine without a browser). There is no key to copy; never ask for a key in the chat. A `KUGELAUDIO_API_KEY` the user sets in `.env` or the environment (an
+machine without a browser). Run it in the background and read its output unpiped: `| tail` or
+`| head` holds the link back until the command ends. There is no key to copy; never ask for a key in the chat. A `KUGELAUDIO_API_KEY` the user sets in `.env` or the environment (an
 API key from the dashboard, for CI or a server) also works and wins over the login. Another
 LLM (`anthropic()`, `openai()`, `openaiCompatible()`) is one `llm` prop away and brings its
 own key. A turn answered 403 `LLM_NOT_ENABLED` means the user's organization does not have
@@ -109,6 +110,9 @@ context/*.md                knowledge a skill reads with <Text src="file.md" />
   or an MCP tool's arguments (`agent_set_secrets` included). The user puts it in `.env`
   themselves, and `npx curb secrets push` sends it to the hosted agent. A hosted agent gets
   `KUGELAUDIO_API_KEY` from KugelAudio, so the default agent has nothing to push.
+- **A voice is an id.** `npx curb voices --language <code>` lists the voices this project can use,
+  with what each sounds like; set one as `kugelaudio.tts({ voice: <id>, language: "<code>" })`.
+  `curb say` and `curb test` only print text, so `curb check` is what catches an id that does not exist.
 - **No hard-coded names or dates.** The framework tells the model today's date on every
   turn; set `defineAgent({ timeZone })` to the callers' zone (default UTC). Examples use
   placeholders such as "Max Mustermann" or "the caller's name".

@@ -50,6 +50,15 @@ export function hostKeyPendingFix(env: Env): string | null {
     : null;
 }
 
+/** Where KugelAudio's speech API (TTS, STT, the voice list) is served when `KUGELAUDIO_API_BASE`
+ * is unset. */
+export const DEFAULT_KUGELAUDIO_SPEECH_BASE = "https://api.kugelaudio.com";
+
+/** The base URL of KugelAudio's speech API: `KUGELAUDIO_API_BASE`, else the default. */
+export function kugelaudioSpeechBase(env: Env): string {
+  return (env.KUGELAUDIO_API_BASE?.trim() || DEFAULT_KUGELAUDIO_SPEECH_BASE).replace(/\/+$/, "");
+}
+
 /** Where `kugelaudio.llm()` is served when `KUGELAUDIO_API_BASE` is unset: the EU ingress, the
  * only one that serves the LLM. */
 export const DEFAULT_KUGELAUDIO_LLM_BASE = "https://api.eu.kugelaudio.com";
