@@ -46,6 +46,6 @@
     "test": "node --test \"test/**/*.test.mjs\""
   },
   "dependencies": {
-    "picocolors": "^1.1.1"
+    "picocolors": "1.1.1"
   }
 }

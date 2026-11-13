@@ -20,12 +20,14 @@ const IGNORED = [
 const RULES = [
   // The site renders the agent guide, and website/src/seo.test.ts holds every README and both
   // manifests to its tagline.
+  // scripts/dependency-pins.test.mjs reads every lockfile and both published manifests.
+  [/^website\/package-lock\.json$/, ["scripts", "website"]],
   [/^(website\/|README\.md$|packages\/framework\/docs\/agent-guide\/)/, ["website"]],
   // scripts/pages-workflow.test.mjs and scripts/workflow-safety.test.mjs read it, so an edit can fail them.
   [/^\.github\/workflows\/pages\.yml$/, ["scripts", "website"]],
   [/^packages\/(framework|create-curb\.js)\/README\.md$/, ["package", "website"]],
-  [/^packages\/framework\/package\.json$/, ["framework", "examples", "compat", "smoke", "browser", "package", "website"]],
-  [/^packages\/create-curb\.js\/package\.json$/, ["scaffolders", "package", "website"]],
+  [/^packages\/framework\/package\.json$/, ["framework", "scripts", "examples", "compat", "smoke", "browser", "package", "website"]],
+  [/^packages\/create-curb\.js\/package\.json$/, ["scaffolders", "scripts", "package", "website"]],
   [/^packages\/framework\//, ["framework", "examples", "compat", "smoke", "browser", "package"]],
   [/^packages\/create-curb\.js\/templates\//, ["scaffolders", "browser", "package"]],
   [/^packages\/create-curb\.js\//, ["scaffolders", "package"]],
