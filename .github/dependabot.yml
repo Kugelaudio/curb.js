@@ -13,6 +13,9 @@ updates:
     directory: /
     exclude-paths:
       - compat/**
+    # The published packages pin exact versions (scripts/dependency-pins.test.mjs): move a pin,
+    # never widen it into a range.
+    versioning-strategy: increase
     schedule:
       interval: weekly
     open-pull-requests-limit: 3

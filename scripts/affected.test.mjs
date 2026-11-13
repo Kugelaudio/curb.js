@@ -21,7 +21,6 @@ test("repository settings no test reads run nothing", () => {
 test("what the site reads runs the website suite", () => {
   for (const file of [
     "website/src/pages/index.astro",
-    "website/package-lock.json",
     "packages/framework/docs/agent-guide/tools.md",
     "README.md",
   ]) {
@@ -32,7 +31,9 @@ test("what the site reads runs the website suite", () => {
 test("the manifests the site checks run the website suite with their own suites", () => {
   assert.ok(affectedSuites(["packages/framework/package.json"]).includes("website"));
   assert.ok(affectedSuites(["packages/framework/package.json"]).includes("framework"));
-  assert.deepEqual(affectedSuites(["packages/create-curb.js/package.json"]), ["scaffolders", "package", "website"]);
+  assert.deepEqual(affectedSuites(["packages/create-curb.js/package.json"]), ["scaffolders", "scripts", "package", "website"]);
+  assert.ok(affectedSuites(["packages/framework/package.json"]).includes("scripts"));
+  assert.deepEqual(affectedSuites(["website/package-lock.json"]), ["scripts", "website"]);
   assert.deepEqual(affectedSuites(["packages/framework/README.md"]), ["package", "website"]);
   assert.deepEqual(affectedSuites(["packages/create-curb.js/README.md"]), ["package", "website"]);
   assert.ok(!affectedSuites(["packages/framework/src/index.ts"]).includes("website"));
