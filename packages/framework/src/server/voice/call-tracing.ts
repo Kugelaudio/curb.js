@@ -6,7 +6,7 @@ import type { VoiceSessionHandle, VoiceSessionStartOptions } from "./orchestrati
  * session does and ends when the session has closed, however it closed. The trace is attached
  * to the call's runtime while the call runs, and moves with it on a rewind.
  */
-export async function traceCall<Options extends Pick<VoiceSessionStartOptions, "bundle" | "onClosed">>(
+export async function traceCall<Options extends Pick<VoiceSessionStartOptions, "bundle" | "onClosed" | "reporter">>(
   options: Options,
   start: (options: Options) => Promise<VoiceSessionHandle>,
 ): Promise<VoiceSessionHandle> {
@@ -14,11 +14,19 @@ export async function traceCall<Options extends Pick<VoiceSessionStartOptions, "
   const info = bundle.runtime.info.snapshot();
   const direction = info["call.direction"];
   const phoneNumber = info["caller.phoneNumber"];
-  const callTrace = startCallTrace(() => bundle.session.spanAttributes(), {
-    // Whether the caller is on a phone line. Never the number: that is the caller's data.
-    "curb.call.channel": typeof phoneNumber === "string" && phoneNumber.trim() !== "" ? "phone" : "web",
-    ...(typeof direction === "string" ? { "curb.call.direction": direction } : {}),
-  });
+  const callTrace = startCallTrace(
+    () => bundle.session.spanAttributes(),
+    {
+      // Whether the caller is on a phone line. Never the number: that is the caller's data.
+      "curb.call.channel": typeof phoneNumber === "string" && phoneNumber.trim() !== "" ? "phone" : "web",
+      ...(typeof direction === "string" ? { "curb.call.direction": direction } : {}),
+    },
+    {
+      // What a transfer came to is in the call's record too, with how long the caller waited
+      // for it. Never the number that was dialed.
+      transfer: (outcome, durationMs) => options.reporter?.event("transfer", { outcome }, durationMs),
+    },
+  );
   attachCallTrace(bundle.runtime.info, callTrace);
   // A call that opens inside a skill is in it from its first moment.
   const { path, title } = bundle.runtime.snapshot().context;

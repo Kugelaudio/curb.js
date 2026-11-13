@@ -129,6 +129,23 @@ describe("a call's trace", () => {
     expect(named("curb.transfer").attributes).toMatchObject({ "curb.transfer.outcome": "answered", "curb.transfer.ended": "call_ended" });
   });
 
+  it("tells its observer what each transfer came to and how long the dial took", () => {
+    vi.useFakeTimers();
+    try {
+      const outcomes: Array<[string, number]> = [];
+      const call = startCallTrace(attributes, {}, { transfer: (outcome, durationMs) => outcomes.push([outcome, durationMs]) });
+      const first = call.transfer();
+      vi.advanceTimersByTime(7000);
+      first.outcome("answered");
+      // Asked for again while the first is under way: its host refuses it at once.
+      call.transfer().outcome("refused");
+      call.end();
+      expect(outcomes).toEqual([["answered", 7000], ["refused", 0]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("starts nothing once the call has ended", () => {
     const call = startCallTrace(attributes);
     call.end();

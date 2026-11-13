@@ -44,11 +44,21 @@ export type CallTrace = {
   end(): void;
 };
 
+/** Who else wants a fact the trace learns, such as the call's own record. */
+export type CallTraceObserver = {
+  /** A transfer request got its outcome, `durationMs` after it was asked for. */
+  transfer?(outcome: string, durationMs: number): void;
+};
+
 /**
  * Start a call's trace. `attributes` is read whenever a span starts and once more when the call
  * ends: `gen_ai.agent.name`, and `gen_ai.conversation.id` once the conversation has one.
  */
-export function startCallTrace(attributes: () => Attributes, call: Attributes = {}): CallTrace {
+export function startCallTrace(
+  attributes: () => Attributes,
+  call: Attributes = {},
+  observer: CallTraceObserver = {},
+): CallTrace {
   const named = attributes();
   const agent = named["gen_ai.agent.name"];
   const root = tracer.startSpan(typeof agent === "string" ? `invoke_agent ${agent}` : "invoke_agent", {
@@ -122,11 +132,14 @@ export function startCallTrace(attributes: () => Attributes, call: Attributes = 
 
     transfer: () => {
       if (ended) return { outcome: () => {} };
+      const askedAt = Date.now();
+      const observed = (outcome: string) => observer.transfer?.(outcome, Date.now() - askedAt);
       if (transfer) {
         // A request while a transfer is under way is refused by its host: an event on that one.
         const open = transfer;
         return {
           outcome: (outcome) => {
+            observed(outcome);
             if (transfer === open) open.addEvent("transfer_requested_again", { "curb.transfer.outcome": outcome });
           },
         };
@@ -135,6 +148,7 @@ export function startCallTrace(attributes: () => Attributes, call: Attributes = 
       transfer = span;
       return {
         outcome: (outcome) => {
+          observed(outcome);
           if (transfer !== span) return;
           span.setAttribute("curb.transfer.outcome", outcome);
           if (outcome !== "answered") {

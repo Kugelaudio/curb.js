@@ -38,6 +38,20 @@ function handle(): VoiceSessionHandle {
 }
 
 describe("a traced call", () => {
+  it("writes what a transfer came to in the call's record, without the number", async () => {
+    const call = bundle();
+    const event = vi.fn();
+    const reporter = { turn: vi.fn(), event, finish: vi.fn(async () => {}), undelivered: 0 };
+    await traceCall({ bundle: call, reporter }, async () => handle());
+
+    callTraceOf(call.runtime.info)!.transfer().outcome("no_answer");
+
+    expect(event).toHaveBeenCalledTimes(1);
+    const [name, payload, durationMs] = event.mock.calls[0]!;
+    expect([name, payload]).toEqual(["transfer", { outcome: "no_answer" }]);
+    expect(durationMs).toBeGreaterThanOrEqual(0);
+  });
+
   it("spans the session from before it starts until it has closed", async () => {
     const call = bundle();
     call.runtime.updateInfo({ "caller.phoneNumber": "+491701234567", "call.direction": "inbound" });

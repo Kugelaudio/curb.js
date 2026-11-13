@@ -23,7 +23,7 @@ describe("procedure progress", () => {
 
   it("says a procedure started when it enters the context, at the step it is on", () => {
     expect(procedureChanges(at(), at(procedure("Claim", ["completed", "current", "locked"])))).toEqual([
-      { action: "started", title: "Claim", step: 2, steps: 3 },
+      { action: "started", title: "Claim", step: 2, steps: 3, stepTitles: ["Step 1", "Step 2", "Step 3"] },
     ]);
   });
 

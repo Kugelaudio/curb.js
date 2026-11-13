@@ -11,9 +11,10 @@ import type { PageBlock } from "./types.js";
 export type ProcedureProgress = { title: string; steps: number; done: number; stepTitles: string[] };
 
 /**
- * What happened to a procedure. `started`: it entered the context, at `step`. `step_completed`:
- * `step` (1-based, titled `stepTitle`) was completed. `completed`: its last step was. `left`: it
- * left the context unfinished, with `step` the one it was on.
+ * What happened to a procedure. `started`: it entered the context, at `step`, with every step's
+ * title in order (`stepTitles`). `step_completed`: `step` (1-based, titled `stepTitle`) was
+ * completed. `completed`: its last step was. `left`: it left the context unfinished, with `step`
+ * the one it was on.
  */
 export type ProcedureChange = {
   action: "started" | "step_completed" | "completed" | "left";
@@ -21,6 +22,7 @@ export type ProcedureChange = {
   step: number;
   steps: number;
   stepTitle?: string;
+  stepTitles?: string[];
 };
 
 /** The procedures in a compiled context, keyed by title: the first of two with one title counts. */
@@ -55,7 +57,7 @@ export function procedureChanges(
     const was = before.get(title);
     // First seen already finished: nothing happened in this conversation.
     if (!was && now.done >= now.steps) continue;
-    if (!was) changes.push({ action: "started", title, step: now.done + 1, steps: now.steps });
+    if (!was) changes.push({ action: "started", title, step: now.done + 1, steps: now.steps, stepTitles: now.stepTitles });
     for (let step = (was?.done ?? now.done) + 1; step <= now.done; step += 1) {
       changes.push({ action: "step_completed", title, step, steps: now.steps, stepTitle: now.stepTitles[step - 1] });
     }
