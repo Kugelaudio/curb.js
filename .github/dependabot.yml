@@ -2,6 +2,9 @@
 # Dependabot capitalises the subject, which scripts/pr-rules.mjs allows for its login alone.
 # compat/ holds projects frozen from older releases: it is neither a workspace nor listed here,
 # and exclude-paths keeps it that way.
+#
+# cooldown waits until a release is a week old before proposing it: a hijacked package is
+# usually caught and pulled within days. Security updates ignore it and still open at once.
 
 version: 2
 
@@ -13,6 +16,8 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore(deps)
     groups:
@@ -25,6 +30,8 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore(deps)
     # astro check embeds the TypeScript language service, and TypeScript 7 ships no API for it.
@@ -42,6 +49,8 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: ci(deps)
     groups:
