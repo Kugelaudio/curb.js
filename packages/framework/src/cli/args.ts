@@ -63,6 +63,16 @@ function editDistance(left: string, right: string): number {
   return previous[right.length];
 }
 
+/** The value of `flag` (`--agent <id>` or `--agent=<id>`), undefined when it is not given. */
+export function flagValue(args: readonly string[], flag: string): string | undefined {
+  const index = args.findIndex((arg) => arg === flag || arg.startsWith(`${flag}=`));
+  if (index < 0) return undefined;
+  const arg = args[index];
+  const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : args[index + 1];
+  if (value === undefined || value === "" || value.startsWith("--")) throw new Error(`${flag} needs a value.`);
+  return value;
+}
+
 /** `--help` or `-h` anywhere: print the usage and run nothing. */
 export function wantsHelp(args: readonly string[]): boolean {
   return args.includes("--help") || args.includes("-h");

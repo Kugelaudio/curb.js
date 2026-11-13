@@ -52,8 +52,9 @@ export function pkceChallenge(verifier: string): string {
 
 export interface LoginOptions {
   webUrl: string;
-  /** Opens the sign-in page; tests drive the browser side through it. */
-  open: (url: string) => void;
+  /** Opens the sign-in page; tests drive the browser side through it. Absent (`--no-open`), the
+   * link is only printed. */
+  open?: (url: string) => void;
   log?: (line: string) => void;
   timeoutMs?: number;
   path?: string;
@@ -142,9 +143,15 @@ export async function login(options: LoginOptions): Promise<LoginResult> {
     signIn.searchParams.set("code_challenge", pkce.challenge);
     if (options.deviceName) signIn.searchParams.set("device_name", options.deviceName);
     if (options.requestProjectKey) signIn.searchParams.set("project_key", "1");
-    log(`Opening ${signIn.href}`);
-    log("If no browser opens, paste that URL into one. Waiting up to 5 minutes...");
-    options.open(signIn.href);
+    if (options.open) {
+      log(`Opening ${signIn.href}`);
+      log("If no browser opens, paste that URL into one. Waiting up to 5 minutes...");
+      options.open(signIn.href);
+    } else {
+      // The callback listens on this machine, so the browser that signs in must run here too.
+      log(`Open this link in a browser on this machine to sign in: ${signIn.href}`);
+      log("Waiting up to 5 minutes...");
+    }
 
     const code = await callback.code;
     const { body } = await requestJson<TokenResponse>({

@@ -95,6 +95,7 @@ const ALL_PAGES = [
   { id: 'cli/build', file: 'cli/build.md', title: 'curb build', group: 'API Reference', parent: 'cli', description: "Bundle a project for hosting, then start the finished artifact and render every skill to prove it runs." },
   { id: 'cli/upgrade', file: 'cli/upgrade.md', title: 'curb upgrade', group: 'API Reference', parent: 'cli', description: "Update a project's curb dependency to the latest version on npm, or check whether one is available." },
   { id: 'cli/info', file: 'cli/info.md', title: 'curb info', group: 'API Reference', parent: 'cli', description: "Print what a bug report needs: versions, providers and which environment variables are set, never a value." },
+  { id: 'cli/voices', file: 'cli/voices.md', title: 'curb voices', group: 'API Reference', parent: 'cli', description: "List the KugelAudio voices a project can use, with the id kugelaudio.tts({ voice }) takes." },
   { id: 'cli/login', file: 'cli/login.md', title: 'curb login', group: 'API Reference', parent: 'cli', description: "Sign in to KugelAudio in the browser, so a project runs with no key in .env." },
   { id: 'cli/logout', file: 'cli/logout.md', title: 'curb logout', group: 'API Reference', parent: 'cli', description: "Revoke this machine's session and delete the stored credentials and project keys." },
   { id: 'cli/deploy', file: 'cli/deploy.md', title: 'curb deploy', group: 'API Reference', parent: 'cli', description: "Upload a project and make it the agent's live production deployment on KugelAudio hosting." },

@@ -275,3 +275,4 @@ curb test
 curb upgrade
 curb upgrade --check
 curb upgrade --preview
+curb voices

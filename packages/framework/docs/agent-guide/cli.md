@@ -15,6 +15,7 @@ Run `npx curb <command>` from the project root. `--help` prints the usage and ru
 | [`curb build`](./cli/build.md) | Bundles the project and proves the bundle starts |
 | [`curb upgrade`](./cli/upgrade.md) | Updates the project's `curb` dependency |
 | [`curb info`](./cli/info.md) | Prints the facts a bug report needs |
+| [`curb voices`](./cli/voices.md) | Lists the KugelAudio voices and their ids |
 | [`curb login`](./cli/login.md) | Signs in to KugelAudio in the browser |
 | [`curb logout`](./cli/logout.md) | Signs out |
 | [`curb deploy`](./cli/deploy.md) | Uploads the project and makes it live |
