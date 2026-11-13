@@ -113,7 +113,7 @@ describe("curb check's voice lookup", () => {
   const env = { KUGELAUDIO_API_KEY: "sk-test" };
   const base = { agentId: "agent", agentSource: "src/agent/agent.tsx" };
 
-  it("is an AGENT_VOICE_NOT_FOUND error, naming curb voices, for a voice id the API does not have", async () => {
+  it("is an AGENT_VOICE_NOT_FOUND error, naming curb voices, at each <Agent> or <Skill> link that sets an unknown id", async () => {
     const find = vi.fn(async (_api: unknown, id: number) => (id === 2352 ? voice(2352) : null));
 
     const { diagnostics, notes } = await diagnoseVoices({
@@ -122,23 +122,51 @@ describe("curb check's voice lookup", () => {
       find,
       uses: [
         { where: "", tts: kugelaudio.tts({ voice: 999999 }) },
-        { where: "/orders", tts: kugelaudio.tts({ voice: 999999 }) },
+        // No tts of its own: it speaks with the agent's voice, reported once at the agent.
+        { where: "/faq", tts: kugelaudio.tts({ voice: 999999 }) },
+        { where: "/orders", tts: kugelaudio.tts({ voice: 888 }) },
+        { where: "/returns", tts: kugelaudio.tts({ voice: 888 }) },
         { where: "/billing", tts: kugelaudio.tts({ voice: 2352 }) },
       ],
     });
 
     // One lookup per voice id, however many places use it.
-    expect(find.mock.calls.map(([, id]) => id)).toEqual([999999, 2352]);
+    expect(find.mock.calls.map(([, id]) => id)).toEqual([999999, 888, 2352]);
     expect(notes).toEqual([]);
-    expect(diagnostics).toEqual([
-      expect.objectContaining({
-        code: "AGENT_VOICE_NOT_FOUND",
-        severity: "error",
-        location: { agentId: "agent", source: "src/agent/agent.tsx" },
-      }),
+    expect(diagnostics.map((diagnostic) => diagnostic.location)).toEqual([
+      { agentId: "agent", source: "src/agent/agent.tsx", component: "Agent" },
+      { agentId: "agent", skillPath: "/orders", component: 'Skill path="/orders"' },
+      { agentId: "agent", skillPath: "/returns", component: 'Skill path="/returns"' },
     ]);
-    expect(diagnostics[0]!.message).toMatch(/voice: 999999 \}\) \(the agent, skill \/orders\)/);
+    expect(diagnostics.every((diagnostic) => diagnostic.code === "AGENT_VOICE_NOT_FOUND" && diagnostic.severity === "error")).toBe(true);
+    expect(diagnostics[0]!.message).toMatch(/voice: 999999 \}\) \(the agent\)/);
+    expect(diagnostics[1]!.message).toMatch(/voice: 888 \}\) \(skill \/orders\)/);
     expect(diagnostics[0]!.fix).toMatch(/npx curb voices --language <code>/);
+  });
+
+  it("asks all ids at once, so the slowest lookup bounds the wait", async () => {
+    let inFlight = 0;
+    let most = 0;
+    const find = vi.fn(async () => {
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight -= 1;
+      return voice(1);
+    });
+
+    await diagnoseVoices({
+      ...base,
+      env,
+      find,
+      uses: [
+        { where: "", tts: kugelaudio.tts({ voice: 1 }) },
+        { where: "/a", tts: kugelaudio.tts({ voice: 2 }) },
+        { where: "/b", tts: kugelaudio.tts({ voice: 3 }) },
+      ],
+    });
+
+    expect(most).toBe(3);
   });
 
   it("looks nothing up for the default voice, another provider, or without KugelAudio access", async () => {

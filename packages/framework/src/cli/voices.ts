@@ -33,6 +33,9 @@ export type Voice = {
 /** What the speech API answers on `/v1/voices`. */
 type VoicePage = { voices: Voice[]; total: number };
 
+/** How long `curb check` waits for one voice lookup before it notes the voice as not checked. */
+const LOOKUP_TIMEOUT_MS = 5_000;
+
 /** The most `/v1/voices` returns in one page; it refuses a larger `limit`. */
 const PAGE_SIZE = 100;
 
@@ -73,6 +76,7 @@ export async function findVoice(api: VoiceApi, id: number): Promise<Voice | null
       url: `${api.apiBase}/v1/voices/${id}`,
       accessToken: api.apiKey,
       unauthorized: unauthorized(),
+      signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
     });
     return body;
   } catch (error) {
@@ -136,34 +140,53 @@ export async function diagnoseVoices(options: {
   find?: typeof findVoice;
 }): Promise<{ diagnostics: AuthoringDiagnostic[]; notes: string[] }> {
   const api = voiceApi(options.env);
+  const voiceOf = (use: VoiceUse | undefined): number | undefined => {
+    const tts = use?.tts as TtsDescriptor | undefined;
+    return tts?.provider === "kugelaudio" && typeof tts.options?.voice === "number" ? tts.options.voice : undefined;
+  };
+  const agentVoice = voiceOf(options.uses.find((use) => use.where === ""));
   const byVoice = new Map<number, string[]>();
   for (const use of options.uses) {
-    const tts = use.tts as TtsDescriptor | undefined;
-    if (tts?.provider !== "kugelaudio" || typeof tts.options?.voice !== "number") continue;
-    byVoice.set(tts.options.voice, [...(byVoice.get(tts.options.voice) ?? []), use.where]);
+    const voice = voiceOf(use);
+    // A skill whose link sets no tts speaks with the agent's voice: that is reported at the agent.
+    if (voice === undefined || (use.where !== "" && voice === agentVoice)) continue;
+    byVoice.set(voice, [...(byVoice.get(voice) ?? []), use.where]);
   }
   if (!api || byVoice.size === 0) return { diagnostics: [], notes: [] };
 
   const find = options.find ?? findVoice;
+  // One lookup per id, all at once: the slowest one bounds the wait, not their sum.
+  const answers = await Promise.all(
+    [...byVoice].map(async ([voice, wheres]) => {
+      try {
+        return { voice, wheres, found: await find(api, voice) };
+      } catch (error) {
+        return { voice, wheres, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+  );
   const diagnostics: AuthoringDiagnostic[] = [];
   const notes: string[] = [];
-  for (const [voice, wheres] of byVoice) {
-    let found: Voice | null;
-    try {
-      found = await find(api, voice);
-    } catch (error) {
-      notes.push(`Voice ${voice} not checked: ${error instanceof Error ? error.message : String(error)}`);
+  for (const answer of answers) {
+    if ("error" in answer) {
+      notes.push(`Voice ${answer.voice} not checked: ${answer.error}`);
       continue;
     }
-    if (found) continue;
-    const where = wheres.map((path) => (path === "" ? "the agent" : `skill ${path}`)).join(", ");
-    diagnostics.push({
-      code: AUTHORING_DIAGNOSTIC_CODES.voiceNotFound,
-      severity: "error",
-      message: `kugelaudio.tts({ voice: ${voice} }) (${where}) names a voice KugelAudio does not have for this project, so every reply would be silent.`,
-      location: { agentId: options.agentId, source: options.agentSource },
-      fix: 'Run `npx curb voices --language <code>` and set one of the ids it lists, or remove `voice` to use the default voice of `language`.',
-    });
+    if (answer.found) continue;
+    // One per place that sets the id, located as AGENT_VOICE_LANGUAGE_MISMATCH is: the <Agent>,
+    // or the <Skill> link whose tts names it.
+    for (const path of answer.wheres) {
+      diagnostics.push({
+        code: AUTHORING_DIAGNOSTIC_CODES.voiceNotFound,
+        severity: "error",
+        message: `kugelaudio.tts({ voice: ${answer.voice} }) (${path === "" ? "the agent" : `skill ${path}`}) names a voice KugelAudio does not have for this project, so every reply would be silent.`,
+        location:
+          path === ""
+            ? { agentId: options.agentId, source: options.agentSource, component: "Agent" }
+            : { agentId: options.agentId, skillPath: path, component: `Skill path=${JSON.stringify(path)}` },
+        fix: "Run `npx curb voices --language <code>` and set one of the ids it lists, or remove `voice` to use the default voice of `language`.",
+      });
+    }
   }
   return { diagnostics, notes };
 }
