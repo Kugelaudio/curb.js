@@ -23,8 +23,10 @@ export async function traceCall<Options extends Pick<VoiceSessionStartOptions, "
     },
     {
       // What a transfer came to is in the call's record too, with how long the caller waited
-      // for it. Never the number that was dialed.
-      transfer: (outcome, durationMs) => options.reporter?.event("transfer", { outcome }, durationMs),
+      // for it and the number it went to, so whoever reads the record can tell destinations
+      // apart. That number is the author's own; it stays off the spans.
+      transfer: (outcome, durationMs, to) =>
+        options.reporter?.event("transfer", { outcome, ...(to ? { to } : {}) }, durationMs),
     },
   );
   attachCallTrace(bundle.runtime.info, callTrace);

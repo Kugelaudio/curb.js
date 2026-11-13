@@ -100,7 +100,7 @@ describe("a call's trace", () => {
 
   it("ends a transfer nobody answered with its outcome", () => {
     const call = startCallTrace(attributes);
-    call.transfer().outcome("no_answer");
+    call.transfer("+493012345678").outcome("no_answer");
     expect(named("curb.transfer").attributes).toMatchObject({ "curb.transfer.outcome": "no_answer" });
     expect(named("curb.transfer").attributes).not.toHaveProperty("curb.transfer.ended");
     call.end();
@@ -108,7 +108,7 @@ describe("a call's trace", () => {
 
   it("keeps an answered transfer open until the agent has the call back", () => {
     const call = startCallTrace(attributes);
-    const transfer = call.transfer();
+    const transfer = call.transfer("+493012345678");
     // The target can join before the dial's result arrives.
     call.transferHandedOff();
     transfer.outcome("answered");
@@ -124,23 +124,24 @@ describe("a call's trace", () => {
 
   it("ends a transfer still on the line with the call", () => {
     const call = startCallTrace(attributes);
-    call.transfer().outcome("answered");
+    call.transfer("+493012345678").outcome("answered");
     call.end();
     expect(named("curb.transfer").attributes).toMatchObject({ "curb.transfer.outcome": "answered", "curb.transfer.ended": "call_ended" });
   });
 
-  it("tells its observer what each transfer came to and how long the dial took", () => {
+  it("tells its observer what each transfer came to, how long the dial took and where it went, and keeps the number off the span", () => {
     vi.useFakeTimers();
     try {
-      const outcomes: Array<[string, number]> = [];
-      const call = startCallTrace(attributes, {}, { transfer: (outcome, durationMs) => outcomes.push([outcome, durationMs]) });
-      const first = call.transfer();
+      const outcomes: Array<[string, number, string]> = [];
+      const call = startCallTrace(attributes, {}, { transfer: (outcome, durationMs, to) => outcomes.push([outcome, durationMs, to]) });
+      const first = call.transfer("+493012345678");
       vi.advanceTimersByTime(7000);
       first.outcome("answered");
       // Asked for again while the first is under way: its host refuses it at once.
-      call.transfer().outcome("refused");
+      call.transfer("+493087654321").outcome("refused");
       call.end();
-      expect(outcomes).toEqual([["answered", 7000], ["refused", 0]]);
+      expect(outcomes).toEqual([["answered", 7000, "+493012345678"], ["refused", 0, "+493087654321"]]);
+      expect(JSON.stringify(spans().map((span) => [span.attributes, span.events]))).not.toContain("4930");
     } finally {
       vi.useRealTimers();
     }
@@ -152,7 +153,7 @@ describe("a call's trace", () => {
     exporter.reset();
     call.skill({ action: "loaded", path: "/booking", title: "Booking" });
     call.procedure({ action: "started", title: "Claim", step: 1, steps: 2 });
-    call.transfer().outcome("no_answer");
+    call.transfer("+493012345678").outcome("no_answer");
     call.end();
     expect(spans()).toEqual([]);
   });

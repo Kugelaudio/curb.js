@@ -131,7 +131,7 @@ export interface TransferDeps {
 export async function transferCall(deps: TransferDeps, request: TransferCallRequest): Promise<TransferOutcome> {
   // A span from the request on. An answered transfer stays open until the agent has the call
   // back or the call ends, which the voice host reports (`call-trace.ts`).
-  const span = deps.trace?.()?.transfer();
+  const span = deps.trace?.()?.transfer(typeof request?.to === "string" ? request.to.trim() : "");
   try {
     const outcome = await dialTransfer(deps, request);
     span?.outcome(outcome.outcome);

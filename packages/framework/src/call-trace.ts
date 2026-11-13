@@ -34,8 +34,8 @@ export type CallTrace = {
   /** The active skill changed: the stay in the one before ends, a stay in the new one starts. */
   skill(change: SkillChange): void;
   procedure(change: ProcedureChange): void;
-  /** A transfer was asked for. */
-  transfer(): TransferTrace;
+  /** A transfer to `to`, the number as the request names it, was asked for. */
+  transfer(to: string): TransferTrace;
   /** The transfer target is on the line and the agent stays quiet. */
   transferHandedOff(): void;
   /** The handed-off transfer is over: the agent took the call back, or it ended the call. */
@@ -46,8 +46,9 @@ export type CallTrace = {
 
 /** Who else wants a fact the trace learns, such as the call's own record. */
 export type CallTraceObserver = {
-  /** A transfer request got its outcome, `durationMs` after it was asked for. */
-  transfer?(outcome: string, durationMs: number): void;
+  /** A transfer request to `to` got its outcome, `durationMs` after it was asked for. The
+   * number goes to the observer only, never onto a span. */
+  transfer?(outcome: string, durationMs: number, to: string): void;
 };
 
 /**
@@ -130,10 +131,10 @@ export function startCallTrace(
       endProcedure(change.title, change.action === "completed");
     },
 
-    transfer: () => {
+    transfer: (to) => {
       if (ended) return { outcome: () => {} };
       const askedAt = Date.now();
-      const observed = (outcome: string) => observer.transfer?.(outcome, Date.now() - askedAt);
+      const observed = (outcome: string) => observer.transfer?.(outcome, Date.now() - askedAt, to);
       if (transfer) {
         // A request while a transfer is under way is refused by its host: an event on that one.
         const open = transfer;

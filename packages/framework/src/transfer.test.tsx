@@ -357,6 +357,7 @@ describe("TransferCallTool", () => {
     await dialed.transfer()({ to: "+493012345678" });
 
     expect(callTrace.transfer).toHaveBeenCalledTimes(2);
+    expect(callTrace.transfer).toHaveBeenLastCalledWith("+493012345678");
     expect(outcomes).toEqual(["refused", "no_answer"]);
   });
 
