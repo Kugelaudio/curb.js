@@ -128,7 +128,8 @@ describe("a traced call", () => {
     const [root, ...others] = exporter.getFinishedSpans();
     expect(others).toEqual([]);
     expect(root!.name).toBe("invoke_agent insurance");
-    expect(root!.status).toEqual({ code: 2, message: "no room" }); // SpanStatusCode.ERROR
+    expect(root!.status).toEqual({ code: 2 }); // SpanStatusCode.ERROR
+    expect(root!.attributes["error.type"]).toBe("Error");
     expect(callTraceOf(call.runtime.info)).toBeUndefined();
   });
 });

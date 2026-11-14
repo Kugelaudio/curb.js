@@ -2,6 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Room } from "@livekit/rtc-node";
+import { trace } from "@opentelemetry/api";
+import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSession, type AgentLlmClient } from "../agent-session.js";
 import type { AgentChatMessage } from "../llm/types.js";
@@ -406,6 +408,25 @@ describe("a hosted call's conversation recording", () => {
 
     await expect(join()).rejects.toThrow(/voice session failed to start/);
     expect(loggedErrors()).toMatch(/lost 2 messages of conversation conversation-1/);
+  });
+
+  it("hands the call's spans to their exporter before the process can exit: after a start that failed, and after a call that ended", async () => {
+    const provider = new BasicTracerProvider();
+    const flushed = vi.spyOn(provider, "forceFlush");
+    trace.setGlobalTracerProvider(provider);
+    try {
+      await expect(recordedCall({ startFails: true }).join()).rejects.toThrow(/voice session failed to start/);
+      expect(flushed).toHaveBeenCalledTimes(1);
+
+      const { join, roomEmptied } = recordedCall();
+      const call = await join();
+      expect(flushed).toHaveBeenCalledTimes(1);
+      roomEmptied();
+      await call.ended;
+      expect(flushed).toHaveBeenCalledTimes(2);
+    } finally {
+      trace.disable();
+    }
   });
 
   it("does not let a hung sink hold the call open", async () => {

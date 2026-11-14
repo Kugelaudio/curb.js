@@ -139,8 +139,9 @@ export type AgentTurnStreamEvent =
    * executes so voice/streaming clients can show tool activity like chat. `durationMs` is how
    * long its handler took, when it ran: a refused or held call has none. */
   | { type: "tool"; toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number }
-  /** The active skill changed during a tool run: `loaded` names the skill now active, `exited`
-   * the one left for the agent level. Emitted after that tool's event. */
+  /** The active skill changed: `loaded` names the skill now active, `exited` the one left for
+   * the agent level. Emitted after the event of the tool whose run changed it, or at the start
+   * of a turn when the app changed it in between. */
   | { type: "skill"; action: "loaded" | "exited"; path: string; title: string }
   /** A `<Procedure>` moved: it entered the context, a step was completed, it was completed, or
    * it left the context unfinished (`procedure-progress.ts`). Emitted at the start of a turn

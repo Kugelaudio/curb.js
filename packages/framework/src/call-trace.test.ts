@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { context, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { BasicTracerProvider, BatchSpanProcessor, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
@@ -71,9 +72,11 @@ describe("a call's trace", () => {
 
     expect(spans()).toHaveLength(1);
     const root = named("invoke_agent insurance");
-    expect(root.status).toEqual({ code: 2, message: "no room" }); // SpanStatusCode.ERROR
+    // The class and nothing of the message, which can name a room or a number.
+    expect(root.status).toEqual({ code: 2 }); // SpanStatusCode.ERROR
     expect(root.attributes["error.type"]).toBe("RangeError");
-    expect(root.events.map((event) => event.name)).toEqual(["exception"]);
+    expect(root.events.map((event) => [event.name, event.attributes])).toEqual([["exception", { "exception.type": "RangeError" }]]);
+    expect(JSON.stringify([root.attributes, root.events, root.status])).not.toContain("no room");
   });
 
   it("keeps one stay for a skill it is told about twice", () => {
@@ -344,6 +347,18 @@ describe("flushing a call's spans", () => {
       await expect(flushSpans(20)).resolves.toBeUndefined();
     } finally {
       restore();
+    }
+  });
+});
+
+describe("the framework core", () => {
+  it("loads no OpenTelemetry of its own: a session is handed its tracer", () => {
+    // A layered build reads an agent's declarations without its dependencies, so what a
+    // session loads cannot need the tracing package. Types are erased and may name it.
+    for (const file of ["agent-session.ts", "runtime.ts", "call-trace.ts", "tool-run.ts"]) {
+      const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+      const loaded = source.split("\n").filter((line) => line.includes('from "@opentelemetry/') && !line.startsWith("import type "));
+      expect(loaded, file).toEqual([]);
     }
   });
 });

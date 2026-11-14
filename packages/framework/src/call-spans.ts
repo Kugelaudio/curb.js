@@ -1,6 +1,7 @@
 import { context, SpanStatusCode, trace, type Attributes, type Span } from "@opentelemetry/api";
 
 import type { CallTrace, CallTraceObserver } from "./call-trace.js";
+import { errorClass } from "./tool-run.js";
 import { tracer } from "./tool-span.js";
 
 /**
@@ -141,12 +142,12 @@ export function startCallTrace(
 
     fail: (error) => {
       if (ended) return;
-      // What stopped a call from running is the deployment's (a missing key, a room that could
-      // not be joined), not the caller's, so the message is on the span.
-      const exception = error instanceof Error ? error : new Error(String(error));
-      root.recordException(exception);
-      root.setAttribute("error.type", exception.name);
-      root.setStatus({ code: SpanStatusCode.ERROR, message: exception.message });
+      // The class only, as for a tool that threw: a message can name a room or a number, and no
+      // span carries either. Whoever failed the call has the message in the log.
+      const type = errorClass(error);
+      root.addEvent("exception", { "exception.type": type });
+      root.setAttribute("error.type", type);
+      root.setStatus({ code: SpanStatusCode.ERROR });
     },
 
     end: () => {

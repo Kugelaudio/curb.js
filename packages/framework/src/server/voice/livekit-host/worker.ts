@@ -92,10 +92,13 @@ export async function runVoiceWorkerJob(
     try {
       await handle?.close();
     } finally {
-      await detachConversationRecorder(bundle.session);
-      await scratch?.remove();
-      // The job process exits after this: the call's spans reach their exporter first.
-      await flushSpans();
+      try {
+        await detachConversationRecorder(bundle.session);
+        await scratch?.remove();
+      } finally {
+        // The job process exits after this: the call's spans reach their exporter first.
+        await flushSpans();
+      }
     }
   });
 

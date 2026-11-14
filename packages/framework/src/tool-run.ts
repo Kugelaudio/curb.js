@@ -49,7 +49,13 @@ const thrown = new WeakMap<ToolResult, string>();
  * class only: an error's message can quote the caller, and stays in the log.
  */
 export function markThrown(result: ToolResult, error: unknown): void {
-  thrown.set(result, error instanceof Error ? error.name : typeof error);
+  thrown.set(result, errorClass(error));
+}
+
+/** What a span's `error.type` says of something thrown: an error's class, and `_OTHER` for a
+ * value that is no error, as the OpenTelemetry conventions name it. */
+export function errorClass(error: unknown): string {
+  return error instanceof Error ? error.name : "_OTHER";
 }
 
 /** The class of the error `result` stands for, when a handler threw it. */

@@ -36,13 +36,13 @@ A span that failed has an error status and an `error.type`:
 | A tool answered `ok: false` | `tool_error` | |
 | A tool's handler threw | the error's class, such as `TypeError` | an `exception` event with `exception.type`, without the message |
 | A transfer's dial failed | `transfer_failed` | |
-| The call's session could not start | the error's class | an `exception` event with the message |
+| The call's session could not start | the error's class | an `exception` event with `exception.type`, without the message |
 
 A transfer nobody answered, or one to a busy line, is an outcome and not an error. A call that
 never ran (an unknown tool, invalid input, or one held for the caller's yes) has no span. No span
-carries what was said, a tool's arguments or result, or a phone number. The message of an error a
-tool threw can quote the caller, so only its class is on the span and the message stays in the
-log.
+carries what was said, a tool's arguments or result, or a phone number. An error's message can
+quote the caller or name a number, so only its class is on the span and the message stays in the
+log. Something thrown that is no error has the type `_OTHER`.
 
 Outside a voice call (a typed conversation in `curb dev`, `curb say`) there is no call span, and
 no skill, procedure or transfer span: only tool runs are traced, as children of whatever span is
@@ -154,22 +154,31 @@ span processor to your provider, and tell it not to allow that data:
 ```ts
 // src/instrumentation.ts
 import { telemetry } from "@livekit/agents";
-import { trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { NodeSDK } from "@opentelemetry/sdk-node";
+import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 
 const livekit = new telemetry.FanoutSpanProcessor();
-new NodeSDK({
-  serviceName: "booking-agent",
+const provider = new NodeTracerProvider({
+  resource: resourceFromAttributes({ "service.name": "booking-agent" }),
   spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter()), livekit],
-}).start();
+});
+provider.register();
 
-telemetry.setTracerProvider(trace.getTracerProvider(), {
+telemetry.setTracerProvider(provider, {
   allowPii: false,
   registerSpanProcessor: (processor) => livekit.add(processor),
 });
 ```
+
+```sh
+npm install @opentelemetry/sdk-trace-node @opentelemetry/resources @opentelemetry/exporter-trace-otlp-http
+```
+
+This builds the provider itself in place of `NodeSDK`, because LiveKit has to be handed the
+provider that exports: what `trace.getTracerProvider()` returns stands in for it, and LiveKit
+takes that for no provider of yours.
 
 `allowPii: false` alone does nothing: without `registerSpanProcessor` LiveKit cannot add the
 processor that removes the data, and says so in a warning when the agent starts.
