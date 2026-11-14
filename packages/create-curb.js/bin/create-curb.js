@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import pc from "picocolors";
 import { blockedInstallScripts, installScriptsFix } from "./install-scripts.js";
 import { exitOnUnsupportedNode } from "./node-version.js";
+import { installEnv, installFailureHint, readNpmConfig } from "./install-env.js";
 import { npmCommand } from "./npm-command.js";
 import { scaffoldArgs } from "./scaffold-args.js";
 
@@ -418,6 +419,9 @@ function gitInit() {
   }
 }
 
+/** The environment npm install runs in: onnxruntime-node downloads skipped unless the project or user chose. */
+const projectInstallEnv = () => installEnv(process.env, (key) => readNpmConfig(key, targetDir));
+
 /**
  * Animated install progress: spinner + what npm is fetching right now + an
  * elapsed-seconds counter, so a long install is never a silent wait.
@@ -425,6 +429,7 @@ function gitInit() {
  * instead and the current package name lifted from the fetch URLs.
  */
 function installWithSpinner() {
+  const env = projectInstallEnv(); // before the spinner, so its one-line note is not overwritten
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   let at = 0;
   const started = Date.now();
@@ -449,7 +454,7 @@ function installWithSpinner() {
       resolveInstall(ok);
     };
     const npm = npmCommand("npm", ["install", "--loglevel=http", "--no-fund", "--no-audit"]);
-    const child = spawn(npm.file, npm.args, { cwd: targetDir, shell: npm.shell });
+    const child = spawn(npm.file, npm.args, { cwd: targetDir, shell: npm.shell, env });
     const stderrLines = [];
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
@@ -480,7 +485,7 @@ function installWithSpinner() {
       finish(
         false,
         `${pc.red("✖")} npm install failed ${pc.dim(`after ${elapsed()}s`)}`,
-        `${tail}\nRun "npm install" inside ${targetArg} to see the full output.`,
+        `${tail}\nRun "npm install" inside ${targetArg} to see the full output.\n${installFailureHint(targetArg)}`,
       );
     });
   });
@@ -492,11 +497,11 @@ function installPlain() {
   try {
     // Warnings and errors only: no progress chatter, funding or audit summary.
     const npm = npmCommand("npm", ["install", "--loglevel=warn", "--no-fund", "--no-audit"]);
-    execFileSync(npm.file, npm.args, { cwd: targetDir, stdio: "inherit", shell: npm.shell });
+    execFileSync(npm.file, npm.args, { cwd: targetDir, stdio: "inherit", shell: npm.shell, env: projectInstallEnv() });
     return true;
   } catch (error) {
     // npm printed its errors above; this names what failed and where to retry.
-    console.error(`${pc.red("✖")} npm install failed (${error.message.split("\n")[0]}). Run "npm install" inside ${targetArg}.`);
+    console.error(`${pc.red("✖")} npm install failed (${error.message.split("\n")[0]}). Run "npm install" inside ${targetArg}.\n${installFailureHint(targetArg)}`);
     return false;
   }
 }
