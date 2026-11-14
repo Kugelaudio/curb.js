@@ -24,6 +24,7 @@ import type { VAD } from "@livekit/agents";
 import { Room } from "@livekit/rtc-node";
 import type { AgentSession } from "../agent-session.js";
 import { experimentInfo } from "../experiments.js";
+import { flushSpans } from "../call-spans.js";
 import { detachConversationRecorder } from "../server/conversation-store.js";
 import {
   loadSileroVad,
@@ -492,8 +493,10 @@ export async function joinRoomAndServe(
         reporter?.count({ undeliveredToClient: messages.undeliveredCounts().toClient });
         // `ended` frees a managed runner's slot, so the directory is gone before the slot
         // is: a full runner never holds more scratch directories than calls.
+        // The runner exits once the call has ended, so its spans reach their exporter first.
         void finishRecording()
           .then(() => scratch?.remove())
+          .then(() => flushSpans())
           .then(resolveEnded);
       },
       ...warmed,

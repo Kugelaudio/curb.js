@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { AgentSession, type AgentLlmClient } from "./agent-session.js";
 import type { AgentRunResponse, AgentTurnStreamEvent } from "./llm/types.js";
 import { createInsuranceDemoRuntime } from "./test-fixtures/insurance-runtime.js";
+import { traceToolRun } from "./tool-span.js";
 
 /**
  * A project that sets up an OpenTelemetry SDK sees every tool run as a span, nested under whatever
@@ -28,10 +29,15 @@ afterAll(() => {
 
 beforeEach(() => exporter.reset());
 
-async function turnEvents(responses: AgentRunResponse[], options: ConstructorParameters<typeof AgentSession>[2] = {}) {
+async function turnEvents(
+  responses: AgentRunResponse[],
+  options: ConstructorParameters<typeof AgentSession>[2] = {},
+  runtime = createInsuranceDemoRuntime(),
+) {
   let step = 0;
   const llm = vi.fn<AgentLlmClient>(async () => responses[step++] ?? { text: "", toolCalls: [] });
-  const session = new AgentSession(createInsuranceDemoRuntime(), llm, options);
+  // The tracer the server hands its sessions (`server/bootstrap.ts`).
+  const session = new AgentSession(runtime, llm, { traceTool: traceToolRun, ...options });
   const events: AgentTurnStreamEvent[] = [];
   for await (const event of session.runTurnStream("My roof is damaged")) events.push(event);
   return events;
@@ -125,6 +131,41 @@ describe("tool spans", () => {
     const [span] = exporter.getFinishedSpans();
     expect(span!.attributes).toMatchObject({ "curb.tool.ok": false, "error.type": "tool_error" });
     expect(span!.status.code).toBe(2); // SpanStatusCode.ERROR
+  });
+
+  it("names the class of an error a handler threw, and nothing of its message", async () => {
+    const runtime = createInsuranceDemoRuntime();
+    runtime.fakeTools({
+      read_skill: async () => {
+        throw new TypeError("no policy for Jane Doe");
+      },
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await turnEvents(
+        [{ text: "", toolCalls: [{ name: "read_skill", input: { skill: "/property-damage" } }] }, { text: "Sorry.", toolCalls: [] }],
+        {},
+        runtime,
+      );
+    } finally {
+      logged.mockRestore();
+    }
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span!.attributes).toMatchObject({ "curb.tool.ok": false, "error.type": "TypeError" });
+    expect(span!.events.map((event) => [event.name, event.attributes])).toEqual([["exception", { "exception.type": "TypeError" }]]);
+    expect(span!.status.code).toBe(2); // SpanStatusCode.ERROR
+    expect(JSON.stringify([span!.attributes, span!.events, span!.status])).not.toContain("Jane");
+  });
+
+  it("times a tool run and makes no span in a session that was handed no tracer", async () => {
+    const events = await turnEvents(
+      [{ text: "", toolCalls: [{ name: "read_skill", input: { skill: "/property-damage" } }] }, { text: "Is everyone safe?", toolCalls: [] }],
+      { traceTool: undefined },
+    );
+    const tool = events.find((event) => event.type === "tool");
+    expect(tool).toMatchObject({ ok: true, durationMs: expect.any(Number) });
+    expect(exporter.getFinishedSpans()).toEqual([]);
   });
 
   it("gives a call that never ran no span and no run time", async () => {

@@ -10,6 +10,7 @@ import { resolveAgentDir } from "../project.node.js";
 import { bundledAgentRegistry, discoverAgentFromRegistry } from "../agent-registry.node.js";
 import { openingLineOf } from "../config.js";
 import { AgentSiteRuntime } from "../runtime.js";
+import { traceToolRun } from "../tool-span.js";
 import { attachConversationSink, recordedConversationId, resolveConversationSink } from "./conversation-store.js";
 
 /**
@@ -174,7 +175,9 @@ export async function createAgentSession(
     // `firstTurn: { say }`: the session opens every conversation with the line, on every route
     // (a call, typed chat, curb say, curb test), so none can skip it or say it twice.
     opening: openingLineOf(definition.firstTurn),
-    // Every span names the agent and, once the recording has one, the conversation.
+    // Every tool run is a span, which names the agent and, once the recording has one, the
+    // conversation.
+    traceTool: traceToolRun,
     traceAttributes: () => {
       const conversationId = recordedConversationId(session);
       return { "gen_ai.agent.name": id, ...(conversationId ? { "gen_ai.conversation.id": conversationId } : {}) };

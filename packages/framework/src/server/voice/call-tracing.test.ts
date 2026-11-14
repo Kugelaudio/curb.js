@@ -54,7 +54,7 @@ describe("a traced call", () => {
 
   it("spans the session from before it starts until it has closed", async () => {
     const call = bundle();
-    call.runtime.updateInfo({ "caller.phoneNumber": "+491701234567", "call.direction": "inbound" });
+    call.runtime.updateInfo({ "call.direction": "inbound" });
     const onClosed = vi.fn();
     let closed = () => {};
     let activeAtStart: string | undefined;
@@ -64,6 +64,8 @@ describe("a traced call", () => {
       closed = options.onClosed!;
       return handle();
     });
+    // The caller joins once the session runs: a phone caller is known by its number only then.
+    call.runtime.updateInfo({ "caller.identity": "sip_491701234567", "caller.phoneNumber": "+491701234567" });
 
     expect(callTraceOf(call.runtime.info)).toBeDefined();
     expect(exporter.getFinishedSpans()).toEqual([]);
@@ -93,10 +95,40 @@ describe("a traced call", () => {
     expect(inner.setBundle).toHaveBeenCalledExactlyOnceWith(next);
   });
 
-  it("ends the trace of a session that could not start", async () => {
+  it("says a caller on the page is on the web, and names no channel for a call nobody joined", async () => {
+    const joined = bundle();
+    let closed = () => {};
+    await traceCall({ bundle: joined, onClosed: () => {} }, async (options) => ((closed = options.onClosed), handle()));
+    joined.runtime.updateInfo({ "caller.identity": "web-1" });
+    closed();
+    await traceCall({ bundle: bundle(), onClosed: () => {} }, async (options) => ((closed = options.onClosed), handle()));
+    closed();
+
+    const [web, empty] = exporter.getFinishedSpans();
+    expect(web!.attributes["curb.call.channel"]).toBe("web");
+    expect(empty!.attributes["curb.call.channel"]).toBeUndefined();
+  });
+
+  it("leaves the skill the rewound runtime is no longer in", async () => {
+    const first = bundle();
+    first.runtime.navigate("/property-damage");
+    let closed = () => {};
+    const traced = await traceCall({ bundle: first, onClosed: () => {} }, async (options) => ((closed = options.onClosed), handle()));
+
+    // Rewound to before the skill was opened: the call is at the agent level again.
+    traced.setBundle(bundle());
+    expect(exporter.getFinishedSpans().map((span) => span.name)).toEqual(["curb.skill /property-damage"]);
+    closed();
+    expect(exporter.getFinishedSpans().map((span) => span.name)).toEqual(["curb.skill /property-damage", "invoke_agent insurance"]);
+  });
+
+  it("ends the trace of a session that could not start, as a failed call", async () => {
     const call = bundle();
     await expect(traceCall({ bundle: call }, async () => Promise.reject(new Error("no room")))).rejects.toThrow("no room");
-    expect(exporter.getFinishedSpans().map((span) => span.name)).toEqual(["invoke_agent insurance"]);
+    const [root, ...others] = exporter.getFinishedSpans();
+    expect(others).toEqual([]);
+    expect(root!.name).toBe("invoke_agent insurance");
+    expect(root!.status).toEqual({ code: 2, message: "no room" }); // SpanStatusCode.ERROR
     expect(callTraceOf(call.runtime.info)).toBeUndefined();
   });
 });

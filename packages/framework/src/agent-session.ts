@@ -1,7 +1,7 @@
 import { endCallGoodbye, unexpectedToolFailureMessage, type AgentSiteRuntime } from "./runtime.js";
 import { callTraceOf } from "./call-trace.js";
 import { procedureChanges, proceduresOf, type ProcedureChange, type ProcedureProgress } from "./procedure-progress.js";
-import { traceToolRun, type SkillChange, type SpanAttributes } from "./tool-span.js";
+import { markThrown, timeToolRun, type SkillChange, type SpanAttributes, type ToolRunTracer } from "./tool-run.js";
 import {
   isToolInputStart,
   type AgentChatMessage,
@@ -96,6 +96,9 @@ export type AgentSessionOptions = {
   /** Which agent and conversation this session is, read when a span starts (`tool-span.ts`):
    * the conversation's id exists only once its first message is recorded. */
   traceAttributes?: () => SpanAttributes;
+  /** Runs and times each tool call. The server passes one that also makes the run a span
+   * (`tool-span.ts`); without it a tool run is timed and not traced. */
+  traceTool?: ToolRunTracer;
 };
 
 /** Per-turn options — one session serves typed and spoken turns alike. */
@@ -152,8 +155,11 @@ export class AgentSession {
   private readonly llmTimeoutMs: number;
   private readonly maxQueuedTurns: number;
   private readonly traceAttributes: () => SpanAttributes;
+  private readonly traceTool: ToolRunTracer;
   /** The context's procedures as last seen (`procedureChanges`). */
   private procedures: ReadonlyMap<string, ProcedureProgress> = new Map();
+  /** The active skill as last seen (`skillChange`); no path is the agent level. */
+  private skill = { path: "", title: "" };
   private readonly timeZone: string;
   private readonly opening: AgentSessionOptions["opening"];
   private readonly listeners = new Set<() => void>();
@@ -196,6 +202,7 @@ export class AgentSession {
     this.maxTranscriptMessages = options.maxTranscriptMessages ?? DEFAULT_MAX_TRANSCRIPT_MESSAGES;
     this.spokenStyleSuffix = options.spokenStyleSuffix;
     this.traceAttributes = options.traceAttributes ?? (() => ({}));
+    this.traceTool = options.traceTool ?? timeToolRun;
     this.llmTimeoutMs = options.llmTimeoutMs ?? llmTimeoutFromEnv();
     this.maxQueuedTurns = options.maxQueuedTurns ?? DEFAULT_MAX_QUEUED_TURNS;
     this.timeZone = options.timeZone ?? DEFAULT_TIME_ZONE;
@@ -259,6 +266,7 @@ export class AgentSession {
     this.pending = null;
     this.lateCutReport = false;
     this.procedures = new Map();
+    this.skill = { path: "", title: "" };
     this.notify();
   }
 
@@ -436,6 +444,9 @@ export class AgentSession {
         return;
       }
 
+      // The skill the conversation opens in, or one the app routed to since the last turn.
+      const routed = this.skillChange();
+      if (routed) yield { type: "skill", ...routed };
       // A procedure already in the context when the conversation opens starts here.
       for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
       let outcome: TurnOutcome;
@@ -936,25 +947,36 @@ export class AgentSession {
    * in the transcript, and a call without a result would make every later
    * request invalid (tool_use/tool_result pairing). A call the model cannot
    * make (`invalid`) gets a failed result it can correct itself from, and no
-   * duration: it never ran. A call that ran is a span (`tool-span.ts`). */
+   * duration: it never ran. A call that ran is timed, and a span when the session was handed
+   * a tracer (`tool-span.ts`). */
   private async executeToolCall(
     toolCall: AgentToolCallRecord,
   ): Promise<{ outcome: ToolCallOutcome; durationMs?: number; skill?: SkillChange }> {
     if (toolCall.invalid) return { outcome: { result: { ok: false, message: toolCall.invalid }, contextDiff: [] } };
-    // On a call the span joins the call's trace, and the call hears which skill it is in now.
-    const callTrace = callTraceOf(this.runtime.info);
-    const timed = await traceToolRun(
+    // On a call the span joins the call's trace.
+    const timed = await this.traceTool(
       toolCall,
       this.traceAttributes(),
       () => this.runTool(toolCall),
-      () => {
-        const { path, title } = this.runtime.snapshot().context;
-        return { path, title };
-      },
-      callTrace?.context(),
+      () => this.runtime.snapshot().context.path,
+      callTraceOf(this.runtime.info)?.context(),
     );
-    if (timed.skill) callTrace?.skill(timed.skill);
-    return timed;
+    const skill = this.skillChange();
+    return { ...timed, ...(skill ? { skill } : {}) };
+  }
+
+  /** The active skill, when it is not the one last seen: read at the start of a turn and after
+   * every tool run. A tool run is what mostly changes it (`read_skill`, a tool that routes); the
+   * app can route between turns too, and the next look says so. On a call the call's trace
+   * hears it. */
+  private skillChange(): SkillChange | undefined {
+    const { path, title } = this.runtime.snapshot().context;
+    const before = this.skill;
+    if (path === before.path) return undefined;
+    this.skill = { path, title };
+    const change: SkillChange = path ? { action: "loaded", path, title } : { action: "exited", ...before };
+    callTraceOf(this.runtime.info)?.skill(change);
+    return change;
   }
 
   /** The span attributes of this session's spans, for the call that carries it. */
@@ -981,7 +1003,9 @@ export class AgentSession {
       // this is a failure around the handler (e.g. the re-render). The model
       // gets a failed result, the developer the real error.
       console.error(`[curb] tool "${toolCall.name}" failed outside its handler:`, error);
-      return { result: { ok: false, message: unexpectedToolFailureMessage(toolCall.name) }, contextDiff: [] };
+      const result = { ok: false, message: unexpectedToolFailureMessage(toolCall.name) };
+      markThrown(result, error);
+      return { result, contextDiff: [] };
     }
   }
 

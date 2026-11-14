@@ -1,12 +1,14 @@
 import { context, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
-import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { BasicTracerProvider, BatchSpanProcessor, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentSession, type AgentLlmClient } from "./agent-session.js";
-import { attachCallTrace, callTraceOf, startCallTrace } from "./call-trace.js";
+import { flushSpans, startCallTrace } from "./call-spans.js";
+import { attachCallTrace, callTraceOf } from "./call-trace.js";
 import type { AgentRunResponse, AgentTurnStreamEvent } from "./llm/types.js";
 import { createInsuranceDemoRuntime } from "./test-fixtures/insurance-runtime.js";
+import { traceToolRun } from "./tool-span.js";
 
 /**
  * A call is one trace: the call is its root span, and each stay in a skill, each procedure,
@@ -37,7 +39,7 @@ describe("a call's trace", () => {
     let conversationId: string | undefined;
     const call = startCallTrace(
       () => ({ "gen_ai.agent.name": "insurance", ...(conversationId ? { "gen_ai.conversation.id": conversationId } : {}) }),
-      { "curb.call.channel": "phone" },
+      () => ({ "curb.call.channel": "phone" }),
     );
     conversationId = "conv-1";
     call.end();
@@ -52,6 +54,34 @@ describe("a call's trace", () => {
       "gen_ai.conversation.id": "conv-1",
       "curb.call.channel": "phone",
     });
+  });
+
+  it("says on the call's span what the call learned after it started", () => {
+    let caller: Record<string, string> = {};
+    const call = startCallTrace(attributes, () => caller);
+    caller = { "curb.call.channel": "phone" };
+    call.end();
+    expect(named("invoke_agent insurance").attributes).toMatchObject({ "curb.call.channel": "phone" });
+  });
+
+  it("marks a call that could not run as failed, and still ends it once", () => {
+    const call = startCallTrace(attributes);
+    call.fail(new RangeError("no room"));
+    call.end();
+
+    expect(spans()).toHaveLength(1);
+    const root = named("invoke_agent insurance");
+    expect(root.status).toEqual({ code: 2, message: "no room" }); // SpanStatusCode.ERROR
+    expect(root.attributes["error.type"]).toBe("RangeError");
+    expect(root.events.map((event) => event.name)).toEqual(["exception"]);
+  });
+
+  it("keeps one stay for a skill it is told about twice", () => {
+    const call = startCallTrace(attributes);
+    call.skill({ action: "loaded", path: "/booking", title: "Booking" });
+    call.skill({ action: "loaded", path: "/booking", title: "Booking" });
+    call.end();
+    expect(spans().map((span) => span.name)).toEqual(["curb.skill /booking", "invoke_agent insurance"]);
   });
 
   it("makes each stay in a skill a span under the call, ended by the next skill or the call", () => {
@@ -81,8 +111,8 @@ describe("a call's trace", () => {
     const procedure = named("curb.procedure Claim");
     expect(procedure.attributes).toMatchObject({ "curb.procedure.title": "Claim", "curb.procedure.steps": 2, "curb.procedure.step": 2, "curb.procedure.completed": true });
     expect(procedure.events.map((event) => [event.name, event.attributes])).toEqual([
-      ["step_completed", { "curb.procedure.step": 1, "curb.procedure.step.title": "Safety" }],
-      ["step_completed", { "curb.procedure.step": 2, "curb.procedure.step.title": "Evidence" }],
+      ["step_completed", { "curb.procedure.step": 1, "curb.procedure.step_title": "Safety" }],
+      ["step_completed", { "curb.procedure.step": 2, "curb.procedure.step_title": "Evidence" }],
     ]);
   });
 
@@ -104,6 +134,19 @@ describe("a call's trace", () => {
     expect(named("curb.transfer").attributes).toMatchObject({ "curb.transfer.outcome": "no_answer" });
     expect(named("curb.transfer").attributes).not.toHaveProperty("curb.transfer.ended");
     call.end();
+  });
+
+  it("marks a dial that failed as an error, and a call nobody answered as an outcome", () => {
+    const call = startCallTrace(attributes);
+    call.transfer("+493012345678").outcome("failed");
+    call.transfer("+493012345678").outcome("busy");
+    call.end();
+
+    const [failed, busy] = spans().filter((span) => span.name === "curb.transfer");
+    expect(failed!.status.code).toBe(2); // SpanStatusCode.ERROR
+    expect(failed!.attributes).toMatchObject({ "curb.transfer.outcome": "failed", "error.type": "transfer_failed" });
+    expect(busy!.status.code).toBe(0); // SpanStatusCode.UNSET
+    expect(busy!.attributes["error.type"]).toBeUndefined();
   });
 
   it("keeps an answered transfer open until the agent has the call back", () => {
@@ -133,7 +176,7 @@ describe("a call's trace", () => {
     vi.useFakeTimers();
     try {
       const outcomes: Array<[string, number, string]> = [];
-      const call = startCallTrace(attributes, {}, { transfer: (outcome, durationMs, to) => outcomes.push([outcome, durationMs, to]) });
+      const call = startCallTrace(attributes, undefined, { transfer: (outcome, durationMs, to) => outcomes.push([outcome, durationMs, to]) });
       const first = call.transfer("+493012345678");
       vi.advanceTimersByTime(7000);
       first.outcome("answered");
@@ -169,7 +212,7 @@ function sessionOnCall(responses: AgentRunResponse[]) {
   let step = 0;
   const llm = vi.fn<AgentLlmClient>(async () => responses[step++] ?? { text: "", toolCalls: [] });
   const runtime = createInsuranceDemoRuntime();
-  const session = new AgentSession(runtime, llm, { traceAttributes: attributes });
+  const session = new AgentSession(runtime, llm, { traceAttributes: attributes, traceTool: traceToolRun });
   const call = startCallTrace(() => session.spanAttributes());
   attachCallTrace(runtime.info, call);
   return { session, runtime, call };
@@ -240,5 +283,67 @@ describe("a session on a call", () => {
     const tool = named("execute_tool read_skill");
     expect(tool.parentSpanContext?.spanId).toBe(named("invoke_agent insurance").spanContext().spanId);
     expect(tool.spanContext().traceId).not.toBe(named("unrelated").spanContext().traceId);
+  });
+});
+
+describe("a session on a call that the app routes", () => {
+  it("says at its next turn which skill the app opened in between, in the trace and as an event", async () => {
+    const { session, runtime, call } = sessionOnCall([{ text: "Is everyone safe?", toolCalls: [] }]);
+    // No tool did this: `useRouter().push` from an app message, or the page.
+    runtime.navigate("/property-damage");
+
+    const events = await turn(session);
+    call.end();
+
+    expect(events.filter((event) => event.type === "skill")).toMatchObject([{ action: "loaded", path: "/property-damage" }]);
+    expect(named("curb.skill /property-damage").parentSpanContext?.spanId).toBe(named("invoke_agent insurance").spanContext().spanId);
+  });
+});
+
+describe("flushing a call's spans", () => {
+  const registered = (provider: BasicTracerProvider) => {
+    trace.disable();
+    trace.setGlobalTracerProvider(provider);
+  };
+  // Back to the provider every other test here records with.
+  const restore = () => registered(new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] }));
+
+  it("asks the registered provider to flush, so a batching exporter has the call before the process exits", async () => {
+    const batched = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({ spanProcessors: [new BatchSpanProcessor(batched, { scheduledDelayMillis: 60_000 })] });
+    registered(provider);
+    try {
+      // Through the API, as Curb's own tracer reaches the provider a project registered.
+      trace.getTracer("a-project").startSpan("invoke_agent insurance").end();
+      expect(batched.getFinishedSpans()).toEqual([]);
+      await flushSpans();
+      expect(batched.getFinishedSpans().map((span) => span.name)).toEqual(["invoke_agent insurance"]);
+    } finally {
+      await provider.shutdown();
+      restore();
+    }
+  });
+
+  it("does nothing with no provider, and neither rejects nor waits on one that cannot flush", async () => {
+    trace.disable();
+    try {
+      await expect(flushSpans()).resolves.toBeUndefined();
+
+      const failing = new BasicTracerProvider();
+      vi.spyOn(failing, "forceFlush").mockRejectedValue(new Error("collector down"));
+      trace.setGlobalTracerProvider(failing);
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      await expect(flushSpans()).resolves.toBeUndefined();
+      expect(logged).toHaveBeenCalledOnce();
+      logged.mockRestore();
+
+      trace.disable();
+      const hanging = new BasicTracerProvider();
+      vi.spyOn(hanging, "forceFlush").mockReturnValue(new Promise(() => {}));
+      trace.setGlobalTracerProvider(hanging);
+      await expect(flushSpans(20)).resolves.toBeUndefined();
+    } finally {
+      restore();
+    }
   });
 });

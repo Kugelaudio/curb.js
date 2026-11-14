@@ -15,6 +15,7 @@ import type { Room } from "@livekit/rtc-node";
 import { openCallScratch } from "../../../hosted/call-scratch.js";
 import { serveCall } from "../../../hosted/serve-call.js";
 import { createVoiceAgentBundle, type VoiceAgentBundle } from "../../../voice-host.js";
+import { flushSpans } from "../../../call-spans.js";
 import { detachConversationRecorder } from "../../conversation-store.js";
 import type { VoiceSessionHandle } from "../orchestration.js";
 import { startLivekitVoiceAgent, type LivekitVoiceStartOptions } from "./host.js";
@@ -93,6 +94,8 @@ export async function runVoiceWorkerJob(
     } finally {
       await detachConversationRecorder(bundle.session);
       await scratch?.remove();
+      // The job process exits after this: the call's spans reach their exporter first.
+      await flushSpans();
     }
   });
 
