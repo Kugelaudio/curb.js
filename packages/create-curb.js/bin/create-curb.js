@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import pc from "picocolors";
 import { blockedInstallScripts, installScriptsFix } from "./install-scripts.js";
 import { exitOnUnsupportedNode } from "./node-version.js";
-import { installEnv, installFailureHint } from "./install-env.js";
+import { installEnv, installFailureHint, readNpmConfig } from "./install-env.js";
 import { npmCommand } from "./npm-command.js";
 import { scaffoldArgs } from "./scaffold-args.js";
 
@@ -419,6 +419,9 @@ function gitInit() {
   }
 }
 
+/** The environment npm install runs in: onnxruntime-node downloads skipped unless the project or user chose. */
+const projectInstallEnv = () => installEnv(process.env, (key) => readNpmConfig(key, targetDir));
+
 /**
  * Animated install progress: spinner + what npm is fetching right now + an
  * elapsed-seconds counter, so a long install is never a silent wait.
@@ -450,7 +453,7 @@ function installWithSpinner() {
       resolveInstall(ok);
     };
     const npm = npmCommand("npm", ["install", "--loglevel=http", "--no-fund", "--no-audit"]);
-    const child = spawn(npm.file, npm.args, { cwd: targetDir, shell: npm.shell, env: installEnv() });
+    const child = spawn(npm.file, npm.args, { cwd: targetDir, shell: npm.shell, env: projectInstallEnv() });
     const stderrLines = [];
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
@@ -493,7 +496,7 @@ function installPlain() {
   try {
     // Warnings and errors only: no progress chatter, funding or audit summary.
     const npm = npmCommand("npm", ["install", "--loglevel=warn", "--no-fund", "--no-audit"]);
-    execFileSync(npm.file, npm.args, { cwd: targetDir, stdio: "inherit", shell: npm.shell, env: installEnv() });
+    execFileSync(npm.file, npm.args, { cwd: targetDir, stdio: "inherit", shell: npm.shell, env: projectInstallEnv() });
     return true;
   } catch (error) {
     // npm printed its errors above; this names what failed and where to retry.
