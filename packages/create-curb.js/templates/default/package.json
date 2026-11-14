@@ -29,5 +29,10 @@
   "devDependencies": {
     "@types/react": "^19.2.17",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "@livekit/agents-plugin-silero": {
+      "onnxruntime-node": "1.31.1"
+    }
   }
 }

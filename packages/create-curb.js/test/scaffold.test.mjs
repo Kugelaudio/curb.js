@@ -61,6 +61,19 @@ function* symlinks(dir) {
 
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 
+test("a new project installs one onnxruntime-node, the version curb runs", (t) => {
+  // Silero pins an older onnxruntime-node that npm would install a second time under it.
+  // Built agents load the framework's copy, so the template points Silero at that one too.
+  const project = scaffold(t);
+  const framework = readJson(fileURLToPath(new URL("../../framework/package.json", import.meta.url)));
+  const root = readJson(fileURLToPath(new URL("../../../package.json", import.meta.url)));
+  const runtime = framework.dependencies["onnxruntime-node"];
+  assert.match(runtime, /^\d+\.\d+\.\d+$/);
+  const overrides = readJson(join(project, "package.json")).overrides;
+  assert.deepEqual(overrides, { "@livekit/agents-plugin-silero": { "onnxruntime-node": runtime } });
+  assert.deepEqual(root.overrides["@livekit/agents-plugin-silero"], overrides["@livekit/agents-plugin-silero"]);
+});
+
 test("the generated project contains no symbolic link", (t) => {
   const project = scaffold(t);
   const links = [...symlinks(project)].map((path) => relative(project, path));
