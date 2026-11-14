@@ -141,13 +141,14 @@ describe("finishLogin", () => {
     expect(existsSync(join(root, ".curb", "link.json"))).toBe(false);
   });
 
-  it("changes nothing when the web sent no key, and names the missing admin role and says an organization admin can grant it", () => {
+  it("changes nothing when the web sent no key, and names who may create keys, and how to get the role, without claiming that is the only cause", () => {
     const lines = finishLogin(root, true, result(null), keys);
 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^Signed in as dev@example\.com \(https:\/\/www\.kugelaudio\.com\), but no API key came with the sign-in/);
-    expect(lines[0]).toMatch(/admin role/);
-    expect(lines[0]).toMatch(/ask an organization admin to grant it/);
+    expect(lines[0]).toMatch(/only organization owners or admins and project admins can/);
+    expect(lines[0]).toMatch(/Ask an organization admin for the admin role/);
+    expect(lines[0]).toMatch(/already have it, this KugelAudio server may not issue keys at sign-in yet/);
     expect(existsSync(keys)).toBe(false);
     expect(existsSync(join(root, ".curb", "link.json"))).toBe(false);
   });
