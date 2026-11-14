@@ -16,21 +16,36 @@ const hasPreference = (env) =>
       value && /^(?:ONNXRUNTIME_NODE_INSTALL(?:_CUDA)?|npm_config_onnxruntime_node_install(?:_cuda)?)$/i.test(name),
   );
 
-/** The value npm resolves for a config key (environment, project and user .npmrc), or undefined. */
+/** The value npm resolves for a config key (environment, project and user .npmrc), or undefined
+ * when it is unset. Throws when npm cannot answer, for example inside an npm 10 workspace
+ * (ENOWORKSPACES). The workspace flags are no way round that: they answer "undefined" for a
+ * key the workspace root's .npmrc sets. */
 export function readNpmConfig(key, cwd) {
-  try {
-    const command = npmCommand("npm", ["config", "get", key]);
-    const value = execFileSync(command.file, command.args, { cwd, encoding: "utf8", shell: command.shell }).trim();
-    return value && value !== "undefined" && value !== "null" ? value : undefined;
-  } catch {
-    return undefined;
-  }
+  const command = npmCommand("npm", ["config", "get", key]);
+  const value = execFileSync(command.file, command.args, {
+    cwd,
+    encoding: "utf8",
+    shell: command.shell,
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
+  return value && value !== "undefined" && value !== "null" ? value : undefined;
 }
 
+const LOOKUP_FAILED_NOTE =
+  "Could not read npm config, so the install keeps your onnxruntime-node settings as they are and may download extra binaries.";
+
 /** The environment for `npm install`: the downloads are skipped, unless the user set a
- * preference for them in the environment or in npm's config, which is then left alone. */
-export function installEnv(base = process.env, npmConfig = readNpmConfig) {
-  if (hasPreference(base) || INSTALL_PREFERENCE_KEYS.some((key) => npmConfig(key))) return { ...base };
+ * preference for them in the environment or in npm's config, which is then left alone. When
+ * npm's config cannot be read the preference is unknown, so nothing is injected and `note`
+ * gets one line saying so. */
+export function installEnv(base = process.env, npmConfig = readNpmConfig, note = console.error) {
+  if (hasPreference(base)) return { ...base };
+  try {
+    if (INSTALL_PREFERENCE_KEYS.some((key) => npmConfig(key))) return { ...base };
+  } catch {
+    note(LOOKUP_FAILED_NOTE);
+    return { ...base };
+  }
   return { ...base, ONNXRUNTIME_NODE_INSTALL: "skip", ONNXRUNTIME_NODE_INSTALL_CUDA: "skip" };
 }
 

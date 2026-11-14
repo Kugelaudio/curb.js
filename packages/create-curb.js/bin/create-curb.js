@@ -429,6 +429,7 @@ const projectInstallEnv = () => installEnv(process.env, (key) => readNpmConfig(k
  * instead and the current package name lifted from the fetch URLs.
  */
 function installWithSpinner() {
+  const env = projectInstallEnv(); // before the spinner, so its one-line note is not overwritten
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   let at = 0;
   const started = Date.now();
@@ -453,7 +454,7 @@ function installWithSpinner() {
       resolveInstall(ok);
     };
     const npm = npmCommand("npm", ["install", "--loglevel=http", "--no-fund", "--no-audit"]);
-    const child = spawn(npm.file, npm.args, { cwd: targetDir, shell: npm.shell, env: projectInstallEnv() });
+    const child = spawn(npm.file, npm.args, { cwd: targetDir, shell: npm.shell, env });
     const stderrLines = [];
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
