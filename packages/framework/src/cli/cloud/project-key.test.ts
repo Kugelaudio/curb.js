@@ -141,12 +141,13 @@ describe("finishLogin", () => {
     expect(existsSync(join(root, ".curb", "link.json"))).toBe(false);
   });
 
-  it("changes nothing when the web sent no key, and says to sign in again later", () => {
+  it("changes nothing when the web sent no key, and names the missing admin role and says an organization admin can grant it", () => {
     const lines = finishLogin(root, true, result(null), keys);
 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^Signed in as dev@example\.com \(https:\/\/www\.kugelaudio\.com\), but no API key came with the sign-in/);
-    expect(lines[0]).toMatch(/Run `npx curb login` again later\.$/);
+    expect(lines[0]).toMatch(/admin role/);
+    expect(lines[0]).toMatch(/ask an organization admin to grant it/);
     expect(existsSync(keys)).toBe(false);
     expect(existsSync(join(root, ".curb", "link.json"))).toBe(false);
   });

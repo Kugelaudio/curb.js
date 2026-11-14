@@ -70,8 +70,9 @@ export function finishLogin(
   }
   if (!projectKey) {
     return [
-      `${signedIn}, but no API key came with the sign-in (this KugelAudio server does not issue one yet, or you manage ` +
-        "API keys in no project), so this project cannot run on your login yet. Run `npx curb login` again later.",
+      `${signedIn}, but no API key came with the sign-in. Creating API keys takes the admin role in an organization or ` +
+        "a project, and this account has it in none: ask an organization admin to grant it, then run `npx curb login` " +
+        "again. (An older KugelAudio server that does not issue keys at sign-in shows the same message.)",
     ];
   }
   const link = readLink(root);
