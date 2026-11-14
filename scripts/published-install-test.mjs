@@ -8,8 +8,9 @@
 // `npm create curb.js@<version>` in an empty folder, `npm create curb@<version>` beside it to
 // compare, then `curb --version`, `curb check`, `curb build` (verification on) and
 // `curb upgrade --check`. published.yml runs it every day against `latest` and `preview`, since a
-// published version also breaks when a dependency it allows by range ships a new release. npm can take minutes to serve a publication, so it waits the way
-// publish.yml's read-back does, and a registry that lags past `npm view` gets another try.
+// published version also breaks when a dependency it allows by range ships a new release. npm can take minutes to serve a publication, and its
+// tarballs lag `npm view`, so it first waits until every package names its tarball and that
+// tarball answers, then gives an `npm create` that still meets E404 or ETARGET another try.
 
 import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -27,34 +28,89 @@ export function publishedNames(kugelaudioTag) {
   return kugelaudioTag ? PACKAGES : PACKAGES.filter((name) => name !== "create-kugelaudio");
 }
 
-/** Resolves once `read()` answers `version`; throws after `attempts` tries. */
-export async function waitForVersion(spec, version, read, { attempts = 60, wait = () => delay(10_000) } = {}) {
-  let found = "";
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    found = await read().catch(() => "");
-    if (found === version) return;
-    if (attempt < attempts) await wait();
+/** How long npm gets to serve a fresh publication before the check gives up. */
+export const SERVE_DEADLINE_MS = 10 * 60_000;
+
+/**
+ * Resolves once npm serves every `name@version`: `npm view` names its tarball and that tarball
+ * answers. Both lag a publish, the tarball longest, so both are asked, each package in turn,
+ * backing off from `firstWaitMs` to `maxWaitMs` until `deadlineMs` after the start.
+ */
+export async function waitForRelease(
+  names,
+  version,
+  {
+    viewTarball,
+    probe,
+    now = Date.now,
+    sleep = (ms) => delay(ms),
+    log = console.log,
+    deadlineMs = SERVE_DEADLINE_MS,
+    firstWaitMs = 5_000,
+    maxWaitMs = 60_000,
+  },
+) {
+  const started = now();
+  for (const name of names) {
+    const spec = `${name}@${version}`;
+    let waitMs = firstWaitMs;
+    for (let attempt = 1; ; attempt += 1) {
+      const state = await serveState(spec, viewTarball, probe);
+      if (state.ready) {
+        log(`${spec} is on npm: ${state.url}`);
+        break;
+      }
+      const left = started + deadlineMs - now();
+      if (left <= 0) {
+        const minutes = Math.round((now() - started) / 60_000);
+        throw new Error(
+          `the npm registry has not served ${spec} after ${minutes} minutes (${attempt} tries; last: ${state.reason})`,
+        );
+      }
+      const pause = Math.min(waitMs, left);
+      log(`waiting for npm to serve ${spec}, try ${attempt}: ${state.reason}; next try in ${Math.ceil(pause / 1000)} s`);
+      await sleep(pause);
+      waitMs = Math.min(waitMs * 2, maxWaitMs);
+    }
   }
-  throw new Error(`npm serves ${found || "nothing"} for ${spec} after ${attempts} tries`);
 }
 
-/** The result of `task`, tried up to `attempts` times; the last failure is thrown. */
-export async function withRetries(task, { attempts = 3, wait = () => delay(30_000) } = {}) {
+async function serveState(spec, viewTarball, probe) {
+  const url = await viewTarball(spec).then((answer) => answer.trim(), () => "");
+  if (!url) return { ready: false, reason: "npm view names no tarball" };
+  const status = await probe(url).catch((error) => error.message);
+  if (status === 200) return { ready: true, url };
+  return { ready: false, reason: `${url} answers ${status}` };
+}
+
+/** Whether a failed npm command is the registry still lagging a publication (E404, ETARGET). */
+export function isRegistryLag(error) {
+  return /\b(E404|ETARGET)\b/.test(`${error?.output ?? ""}\n${error?.message ?? ""}`);
+}
+
+/** The result of `task`, tried again up to `attempts` times in all while npm still lags; any other failure is thrown at once. */
+export async function retryOnRegistryLag(task, { attempts = 3, wait = () => delay(30_000), log = console.log } = {}) {
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await task();
     } catch (error) {
-      if (attempt === attempts) throw error;
-      console.log(`\nattempt ${attempt} failed: ${error.message}`);
+      if (attempt === attempts || !isRegistryLag(error)) throw error;
+      log(`\nnpm does not serve everything yet (try ${attempt} of ${attempts}): ${error.message}`);
       await wait();
     }
   }
 }
 
-function npmView(spec, env) {
+function npmViewTarball(spec, env) {
   return new Promise((done, failed) => {
-    execFile("npm", ["view", spec, "version"], { env }, (error, stdout) => (error ? failed(error) : done(stdout.trim())));
+    execFile("npm", ["view", spec, "dist.tarball"], { env }, (error, stdout) => (error ? failed(error) : done(stdout)));
   });
+}
+
+/** The HTTP status of a tarball URL; the body is not downloaded. */
+async function tarballStatus(url) {
+  const response = await fetch(url, { method: "HEAD", cache: "no-store" });
+  return response.status;
 }
 
 async function main([version]) {
@@ -68,19 +124,15 @@ async function main([version]) {
   const env = { ...environment, npm_config_cache: join(work, "npm-cache"), npm_config_prefer_online: "true" };
   try {
     const names = publishedNames(process.env.KUGELAUDIO_TAG);
-    for (const name of names) {
-      const spec = `${name}@${version}`;
-      await waitForVersion(spec, version, () => npmView(spec, env));
-      console.log(`${spec} is on npm`);
-    }
+    await waitForRelease(names, version, { viewTarball: (spec) => npmViewTarball(spec, env), probe: tarballStatus });
 
-    await withRetries(async () => {
+    await retryOnRegistryLag(async () => {
       rmSync(project, { recursive: true, force: true });
       mkdirSync(project);
       await run("npm", ["create", "--yes", `curb.js@${version}`, ".", "--", "--skip-git"], { cwd: project, env });
     });
-    await expectSameProject(project, `curb@${version}`, work, { env });
-    if (names.includes("create-kugelaudio")) await expectSameProject(project, `kugelaudio@${version}`, work, { env });
+    await expectSameProject(project, `curb@${version}`, work, { env, attempt: retryOnRegistryLag });
+    if (names.includes("create-kugelaudio")) await expectSameProject(project, `kugelaudio@${version}`, work, { env, attempt: retryOnRegistryLag });
 
     const manifest = JSON.parse(readFileSync(join(project, "package.json"), "utf8"));
     const expected = `npm:curb.js@${version}`;
