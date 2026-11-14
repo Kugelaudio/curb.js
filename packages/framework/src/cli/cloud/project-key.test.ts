@@ -141,12 +141,16 @@ describe("finishLogin", () => {
     expect(existsSync(join(root, ".curb", "link.json"))).toBe(false);
   });
 
-  it("changes nothing when the web sent no key, and says to sign in again later", () => {
+  it("changes nothing when the web sent no key, and names who may create keys, and how to get the role, without claiming that is the only cause", () => {
     const lines = finishLogin(root, true, result(null), keys);
 
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/^Signed in as dev@example\.com \(https:\/\/www\.kugelaudio\.com\), but no API key came with the sign-in/);
-    expect(lines[0]).toMatch(/Run `npx curb login` again later\.$/);
+    expect(lines[0]).toBe(
+      "Signed in as dev@example.com (https://www.kugelaudio.com), but no API key came with the sign-in, so this project " +
+        "cannot run on your login yet. If your account may not create API keys, that is the cause: only organization " +
+        "owners or admins and project admins can. Ask an organization admin for the admin role, then run " +
+        "`npx curb login` again. If you already have it, this KugelAudio server may not issue keys at sign-in yet; try again later.",
+    );
     expect(existsSync(keys)).toBe(false);
     expect(existsSync(join(root, ".curb", "link.json"))).toBe(false);
   });
