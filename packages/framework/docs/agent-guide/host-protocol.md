@@ -154,6 +154,12 @@ record writes none of them.
 
 | `kind` | When | `payload` |
 |---|---|---|
+| `curb.tool` | every tool call, when it ends | `{name, arguments, ok, skillPath?, heldFor?}`; `durationMs` is how long the handler ran |
+| `curb.skill` | the active skill changed | `{action: "loaded" \| "exited", path, title?}` |
+| `curb.procedure` | a `<Procedure>` moved | `{action: "started" \| "step_completed" \| "completed" \| "left", title, step, steps, stepTitle?, stepTitles?}`; `stepTitles` is every step's title, on `started` |
+| `curb.transfer` | a transfer request got its outcome | `{outcome: "answered" \| "no_answer" \| "busy" \| "failed" \| "refused", to?}`; `durationMs` is the time since the request, `to` the number the request named, as written |
+| `curb.transfer_handed_off` | the transfer target is on the line and the agent stays quiet | `{}` |
+| `curb.transfer_resumed`, `curb.transfer_ended_call` | the target left: the agent has the call back, or the transfer ended the call | `{}` |
 | `curb.message_to_client` | every `useSend().toClient` message that left for the caller's app | `{key, id, payload, truncated?}` |
 | `curb.reply_to_client` | every reply the agent gave to the app's `curb.message` RPC (an `ask`) | `{key, id, reply, truncated?}` |
 | `curb.messages` | once, just before `curb.ended`, only when something is non-zero | `{undeliveredToClient: {[key]: n}, refusedQueuedHostMessages: n}` |

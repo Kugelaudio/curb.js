@@ -20,6 +20,7 @@ import { voiceSessionOptions } from "../livekit-host/pipeline.js";
 import { createSilenceFollowup, silenceFollowupDelayMs } from "../livekit-host/silence-followup.js";
 import { callerSide } from "../livekit-host/transfer-handoff.js";
 import { createEndCallHangup } from "../end-call.js";
+import { callTraceOf } from "../../../call-trace.js";
 import type { AgentSessionBundle } from "../../connection.js";
 import type { VoiceSessionHandle } from "../orchestration.js";
 import { createBackOffice } from "./back-office.js";
@@ -211,6 +212,7 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
       .then(() => runOpeningStep(() => opening.sessionStarted(), options))
       .catch((error: unknown) => {
         logError("voice", `${roomName}: could not start the call: ${String(error)}`);
+        callTraceOf(bundle.runtime.info)?.fail(error);
         closeFromRoom();
       });
   };

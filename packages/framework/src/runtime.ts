@@ -8,6 +8,7 @@ import { RouterProvider, type AgentRouterApi } from "./route-context.js";
 import { AgentInfoStore } from "./info-store.js";
 import { createSemanticRoot, type SemanticRoot } from "./reconciler.js";
 import { SessionProvider, type CallView } from "./session-context.js";
+import { markThrown } from "./tool-run.js";
 import { adjustableFromTree, providerPropsFromTree, SessionSettings } from "./session-settings.js";
 import {
   END_CALL_TOOL_NAME,
@@ -193,6 +194,7 @@ export class AgentSiteRuntime {
         // can recover from; the raw error is for the developer only.
         console.error(`[curb] tool "${name}" threw:`, caughtError);
         result = { ok: false, message: unexpectedToolFailureMessage(name) };
+        markThrown(result, caughtError);
       }
       this.toolErrors.set(name, result.message ?? "");
     } finally {

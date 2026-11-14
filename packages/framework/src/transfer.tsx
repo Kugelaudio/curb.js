@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { AUTHORING_DIAGNOSTIC_CODES, AgentAuthoringError } from "./authoring.js";
+import { callTraceOf, type CallTrace } from "./call-trace.js";
 import type { AgentInfo, AgentInfoStore } from "./info-store.js";
 import { useAgentInfoStore } from "./info-context.js";
 import { HostTimeoutError, HostUnavailableError, useAppMessages, type AppMessages } from "./messages.js";
@@ -115,6 +116,8 @@ export interface TransferDeps {
   info: () => AgentInfo;
   /** The call's audio, read when the transfer starts. */
   audio?: () => TransferAudio | undefined;
+  /** The call's trace, read when the transfer starts: the transfer is a span in it. */
+  trace?: () => CallTrace | undefined;
   error?: (line: string) => void;
   /** Where an accepted transfer is tracked until it ends unanswered, so the voice host applies
    * the request's `onEnded` once its target leaves (`transfer-ended.ts`). */
@@ -126,6 +129,20 @@ export interface TransferDeps {
 
 /** One transfer, start to outcome. `useTransferCall` binds it to the rendering runtime. */
 export async function transferCall(deps: TransferDeps, request: TransferCallRequest): Promise<TransferOutcome> {
+  // A span from the request on. An answered transfer stays open until the agent has the call
+  // back or the call ends, which the voice host reports (`call-trace.ts`).
+  const span = deps.trace?.()?.transfer(typeof request?.to === "string" ? request.to.trim() : "");
+  try {
+    const outcome = await dialTransfer(deps, request);
+    span?.outcome(outcome.outcome);
+    return outcome;
+  } catch (error) {
+    span?.outcome("failed");
+    throw error;
+  }
+}
+
+async function dialTransfer(deps: TransferDeps, request: TransferCallRequest): Promise<TransferOutcome> {
   const payload = transferPayload(request);
   const announcement = announceLine(request);
   const logError = deps.error ?? ((line: string) => console.error(line));
@@ -329,6 +346,7 @@ export function useTransferCall(): TransferCall {
           messages,
           info: info.snapshot,
           audio: () => transferAudioByRuntime.get(info),
+          trace: () => callTraceOf(info),
           tracking: {
             track: (transfer) => trackTransfer(info, transfer),
             untrack: (transferId) => untrackTransfer(info, transferId),

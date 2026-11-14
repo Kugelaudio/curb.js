@@ -1,4 +1,6 @@
 import { initializeLogger } from "@livekit/agents";
+import { trace } from "@opentelemetry/api";
+import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -111,7 +113,7 @@ async function until(check: () => boolean, what: string, ms = 5000) {
 }
 
 type Step = { text?: string; calls?: Array<{ name: string; input?: Record<string, unknown> }> };
-type CallOptions = { env?: Record<string, string>; firstLine?: string; steps?: Step[]; firstTurn?: "agent"; quietMs?: number };
+type CallOptions = { env?: Record<string, string>; firstLine?: string; steps?: Step[]; firstTurn?: "agent"; quietMs?: number; startFails?: boolean };
 
 async function call(options: CallOptions & { greeting?: string; drops?: boolean } = {}) {
   const model = await startFakeLiveModel({ greeting: options.greeting, drops: options.drops });
@@ -161,6 +163,7 @@ async function callOn(s2s: S2sDescriptor, options: CallOptions, started: () => b
     onParticipantDisconnected: () => {},
     onDisconnected: () => {},
     startSession: async ({ session: live, agent }) => {
+      if (options.startFails) throw new RangeError("room of +493012345678 is gone");
       page.input = new PageAudioInput();
       const sync = await createSynchronizer(page.output!, {
         captureText: async () => {},
@@ -507,6 +510,28 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     await handle.sendText("Typed question.");
     await until(() => model.commentary().length === 1, "the answer went back");
     expect(model.commentary()[0]).toMatchObject({ content: "Typed answer.", delegation_id: null });
+  });
+});
+
+describe("a call on <Agent s2s> whose session cannot start", { timeout: 12_000 }, () => {
+  it("is closed, and its span says it failed with the error's class and nothing of its message", async () => {
+    const exporter = new InMemorySpanExporter();
+    trace.setGlobalTracerProvider(new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] }));
+    try {
+      const model = await startFakeLiveModel({});
+      open.push(async () => void (await model.close()));
+      const s2s = openai.live({ baseURL: model.baseURL, voice: "marin" });
+      const { closed } = await callOn(s2s, { startFails: true }, () => true);
+      await until(() => closed.mock.calls.length > 0, "the call closed");
+
+      const call = exporter.getFinishedSpans().find((span) => span.name.startsWith("invoke_agent"))!;
+      expect(call.status).toEqual({ code: 2 }); // SpanStatusCode.ERROR
+      expect(call.attributes["error.type"]).toBe("RangeError");
+      expect(call.events.map((event) => [event.name, event.attributes])).toEqual([["exception", { "exception.type": "RangeError" }]]);
+      expect(JSON.stringify(call.attributes)).not.toContain("493012345678");
+    } finally {
+      trace.disable();
+    }
   });
 });
 

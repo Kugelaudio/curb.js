@@ -1,4 +1,7 @@
 import { endCallGoodbye, unexpectedToolFailureMessage, type AgentSiteRuntime } from "./runtime.js";
+import { callTraceOf } from "./call-trace.js";
+import { procedureChanges, proceduresOf, type ProcedureChange, type ProcedureProgress } from "./procedure-progress.js";
+import { markThrown, timeToolRun, type SkillChange, type SpanAttributes, type ToolRunTracer } from "./tool-run.js";
 import {
   isToolInputStart,
   type AgentChatMessage,
@@ -90,6 +93,12 @@ export type AgentSessionOptions = {
   timeZone?: string;
   /** The line each conversation opens with, said without the model (`firstTurn: { say }`). */
   opening?: (info: Readonly<Record<string, unknown>>) => string;
+  /** Which agent and conversation this session is, read when a span starts (`tool-span.ts`):
+   * the conversation's id exists only once its first message is recorded. */
+  traceAttributes?: () => SpanAttributes;
+  /** Runs and times each tool call. The server passes one that also makes the run a span
+   * (`tool-span.ts`); without it a tool run is timed and not traced. */
+  traceTool?: ToolRunTracer;
 };
 
 /** Per-turn options — one session serves typed and spoken turns alike. */
@@ -145,6 +154,12 @@ export class AgentSession {
   private readonly spokenStyleSuffix: string | undefined;
   private readonly llmTimeoutMs: number;
   private readonly maxQueuedTurns: number;
+  private readonly traceAttributes: () => SpanAttributes;
+  private readonly traceTool: ToolRunTracer;
+  /** The context's procedures as last seen (`procedureChanges`). */
+  private procedures: ReadonlyMap<string, ProcedureProgress> = new Map();
+  /** The active skill as last seen (`skillChange`); no path is the agent level. */
+  private skill = { path: "", title: "" };
   private readonly timeZone: string;
   private readonly opening: AgentSessionOptions["opening"];
   private readonly listeners = new Set<() => void>();
@@ -186,6 +201,8 @@ export class AgentSession {
     this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
     this.maxTranscriptMessages = options.maxTranscriptMessages ?? DEFAULT_MAX_TRANSCRIPT_MESSAGES;
     this.spokenStyleSuffix = options.spokenStyleSuffix;
+    this.traceAttributes = options.traceAttributes ?? (() => ({}));
+    this.traceTool = options.traceTool ?? timeToolRun;
     this.llmTimeoutMs = options.llmTimeoutMs ?? llmTimeoutFromEnv();
     this.maxQueuedTurns = options.maxQueuedTurns ?? DEFAULT_MAX_QUEUED_TURNS;
     this.timeZone = options.timeZone ?? DEFAULT_TIME_ZONE;
@@ -248,6 +265,8 @@ export class AgentSession {
     this.endedOnFallbackLine = false;
     this.pending = null;
     this.lateCutReport = false;
+    this.procedures = new Map();
+    this.skill = { path: "", title: "" };
     this.notify();
   }
 
@@ -425,6 +444,11 @@ export class AgentSession {
         return;
       }
 
+      // The skill the conversation opens in, or one the app routed to since the last turn.
+      const routed = this.skillChange();
+      if (routed) yield { type: "skill", ...routed };
+      // A procedure already in the context when the conversation opens starts here.
+      for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
       let outcome: TurnOutcome;
       this.activeTurn = cancel;
       try {
@@ -612,8 +636,11 @@ export class AgentSession {
         const outcome = await this.applyLlmResponse(response, speech.stepText, messages, asksCaller);
         messages = outcome.messages;
         for (const executed of outcome.toolCalls) {
-          yield { type: "tool", toolCall: executed.toolCall, ok: executed.ok };
+          const { skill, ...tool } = executed;
+          yield { type: "tool", ...tool };
+          if (skill) yield { type: "skill", ...skill };
         }
+        for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
         const closing = outcome.held?.readBack ?? outcome.goodbye;
         if (closing !== undefined) {
           // The turn ends with the held action's question, or the goodbye of the end_call that
@@ -783,7 +810,7 @@ export class AgentSession {
     done: boolean;
     /** Tool calls executed this step, with their success — streaming callers
      * yield these; runTurn ignores them. */
-    toolCalls: Array<{ toolCall: AgentToolCallRecord; ok: boolean }>;
+    toolCalls: Array<{ toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number; skill?: SkillChange }>;
     /** The action this step held: the turn ends asking the caller about it. */
     held?: HeldCall;
     /** The goodbye of the end_call this step ran: the turn ends saying it. */
@@ -824,7 +851,7 @@ export class AgentSession {
 
     if (toolCalls.length === 0) return { messages: next, done: true, toolCalls: [] };
 
-    const executed: Array<{ toolCall: AgentToolCallRecord; ok: boolean }> = [];
+    const executed: Array<{ toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number; skill?: SkillChange }> = [];
     let held: HeldCall | undefined;
     let goodbye: string | undefined;
     for (const { record, published } of planned) {
@@ -835,6 +862,8 @@ export class AgentSession {
       const refusal = toolCall.invalid ? undefined : this.refusal(toolCall.name, asksCaller, held);
       if (refusal) toolCall = { ...toolCall, invalid: refusal };
       let outcome: ToolCallOutcome;
+      let durationMs: number | undefined;
+      let skill: SkillChange | undefined;
       if (!toolCall.invalid && this.runtime.confirms(toolCall.name)) {
         // The model's call of a `confirm` tool never runs it; runLoop asks the caller.
         const hold = await holdCall(this.runtime, toolCall, this.pending);
@@ -842,13 +871,13 @@ export class AgentSession {
         outcome = hold.outcome;
         held ??= hold.held;
       } else {
-        outcome = await this.executeToolCall(toolCall);
+        ({ outcome, durationMs, skill } = await this.executeToolCall(toolCall));
       }
       if (toolCall !== published) next = withToolCallRecord(next, assistantAt, toolCall);
       const ok = outcome.result.ok !== false;
       // Refused (invalid input, or CALL_STAYS_OPEN), an end_call hung up nothing and says nothing.
       if (ok && toolCall.name === END_CALL_TOOL_NAME) goodbye ??= endCallGoodbye(toolCall.input);
-      executed.push({ toolCall, ok });
+      executed.push({ toolCall, ok, ...(durationMs === undefined ? {} : { durationMs }), ...(skill ? { skill } : {}) });
       next = this.append(next, toolMessage(toolCall, outcome));
     }
 
@@ -906,18 +935,67 @@ export class AgentSession {
     this.pending = null;
     const toolCall = confirmedCall(this.runtime, pending, words);
     let next = this.append(messages, { role: "assistant", content: "", at: Date.now(), toolCalls: [toolCall] });
-    const outcome = await this.executeToolCall(toolCall);
+    const { outcome, durationMs, skill } = await this.executeToolCall(toolCall);
     next = this.append(next, toolMessage(toolCall, outcome));
-    yield { type: "tool", toolCall, ok: outcome.result.ok !== false };
+    yield { type: "tool", toolCall, ok: outcome.result.ok !== false, ...(durationMs === undefined ? {} : { durationMs }) };
+    if (skill) yield { type: "skill", ...skill };
+    for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
     return next;
   }
 
   /** Run one recorded tool call. Always yields a result: the call is already
    * in the transcript, and a call without a result would make every later
    * request invalid (tool_use/tool_result pairing). A call the model cannot
-   * make (`invalid`) gets a failed result it can correct itself from. */
-  private async executeToolCall(toolCall: AgentToolCallRecord): Promise<ToolCallOutcome> {
-    if (toolCall.invalid) return { result: { ok: false, message: toolCall.invalid }, contextDiff: [] };
+   * make (`invalid`) gets a failed result it can correct itself from, and no
+   * duration: it never ran. A call that ran is timed, and a span when the session was handed
+   * a tracer (`tool-span.ts`). */
+  private async executeToolCall(
+    toolCall: AgentToolCallRecord,
+  ): Promise<{ outcome: ToolCallOutcome; durationMs?: number; skill?: SkillChange }> {
+    if (toolCall.invalid) return { outcome: { result: { ok: false, message: toolCall.invalid }, contextDiff: [] } };
+    // On a call the span joins the call's trace.
+    const timed = await this.traceTool(
+      toolCall,
+      this.traceAttributes(),
+      () => this.runTool(toolCall),
+      () => this.runtime.snapshot().context.path,
+      callTraceOf(this.runtime.info)?.context(),
+    );
+    const skill = this.skillChange();
+    return { ...timed, ...(skill ? { skill } : {}) };
+  }
+
+  /** The active skill, when it is not the one last seen: read at the start of a turn and after
+   * every tool run. A tool run is what mostly changes it (`read_skill`, a tool that routes); the
+   * app can route between turns too, and the next look says so. On a call the call's trace
+   * hears it. */
+  private skillChange(): SkillChange | undefined {
+    const { path, title } = this.runtime.snapshot().context;
+    const before = this.skill;
+    if (path === before.path) return undefined;
+    this.skill = { path, title };
+    const change: SkillChange = path ? { action: "loaded", path, title } : { action: "exited", ...before };
+    callTraceOf(this.runtime.info)?.skill(change);
+    return change;
+  }
+
+  /** The span attributes of this session's spans, for the call that carries it. */
+  spanAttributes(): SpanAttributes {
+    return this.traceAttributes();
+  }
+
+  /** What moved in the context's procedures since the last look: read at the start of a turn
+   * and after every tool run, the only moments a procedure can have moved. */
+  private procedureChanges(): ProcedureChange[] {
+    const now = proceduresOf(this.runtime.snapshot().context.blocks);
+    const changes = procedureChanges(this.procedures, now);
+    this.procedures = now;
+    const callTrace = callTraceOf(this.runtime.info);
+    for (const change of changes) callTrace?.procedure(change);
+    return changes;
+  }
+
+  private async runTool(toolCall: AgentToolCallRecord): Promise<ToolCallOutcome> {
     try {
       return await this.runtime.callTool(toolCall.name, toolCall.input);
     } catch (error) {
@@ -925,7 +1003,9 @@ export class AgentSession {
       // this is a failure around the handler (e.g. the re-render). The model
       // gets a failed result, the developer the real error.
       console.error(`[curb] tool "${toolCall.name}" failed outside its handler:`, error);
-      return { result: { ok: false, message: unexpectedToolFailureMessage(toolCall.name) }, contextDiff: [] };
+      const result = { ok: false, message: unexpectedToolFailureMessage(toolCall.name) };
+      markThrown(result, error);
+      return { result, contextDiff: [] };
     }
   }
 
