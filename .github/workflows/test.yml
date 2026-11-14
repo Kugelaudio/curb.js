@@ -3,9 +3,14 @@ name: test
 # Linux only for now. A pull request runs only the suites its changes can affect
 # (scripts/affected.mjs); main runs them all. check:independence always runs, on everything.
 # gate is the required check: it always reports, so a pull request that skips test can merge.
-# The test job runs on curb-js-runner, this repository's self-hosted runner. It takes one job at a
-# time, so the legs of a matrix run one after another. affected suites and gate take seconds and
-# run on curb-js-light, a runner of their own, so they never wait behind a test job.
+# The test and package jobs run on curb-js-runner, this repository's self-hosted runner. affected
+# suites and gate take seconds and run on curb-js-light, a runner of their own, so they never wait
+# behind a test job.
+#
+# A test leg's steps should finish in well under 20 minutes. Its 40-minute timeout is a margin for
+# a busy machine, not room to grow into. What runs on one Node only (the static
+# browser build and the tarballs) is the package job, which runs beside the legs instead of
+# after one of them.
 #
 # Self-hosted runners persist between jobs, so a fork's pull request runs the same jobs on a
 # GitHub-hosted runner instead. It must run them, not skip them: gate passes a skipped job. Each
@@ -52,7 +57,7 @@ jobs:
     needs: affected
     if: needs.affected.outputs.suites != '' && needs.affected.outputs.suites != 'website'
     runs-on: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'curb-js-runner' || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +89,8 @@ jobs:
         if: contains(needs.affected.outputs.suites, 'framework')
       - run: npm test --workspace packages/create-curb.js
         if: contains(needs.affected.outputs.suites, 'scaffolders')
-      - run: node --test "scripts/*.test.mjs"
+      # A test that hangs fails with its name after two minutes instead of using up the job.
+      - run: node --test --test-timeout=120000 "scripts/*.test.mjs"
         if: contains(needs.affected.outputs.suites, 'scripts')
       - run: npm run check:examples
         if: contains(needs.affected.outputs.suites, 'examples')
@@ -92,13 +98,32 @@ jobs:
         if: contains(needs.affected.outputs.suites, 'compat')
       - run: npm run smoke:self-host
         if: contains(needs.affected.outputs.suites, 'smoke')
+
+  # What one Node is enough for, beside the test legs rather than after one of them.
+  package:
+    name: package (Node 22.12)
+    needs: affected
+    if: contains(needs.affected.outputs.suites, 'browser') || contains(needs.affected.outputs.suites, 'package')
+    runs-on: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'curb-js-runner' || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    env:
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.12'
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
+      - run: npm ci --prefer-offline --no-audit --no-fund || { npm cache clean --force && npm ci --prefer-offline --no-audit --no-fund; }
       - run: npm run check:browser
-        if: contains(needs.affected.outputs.suites, 'browser') && strategy.job-index == 0
-      # The tarball half of publish.yml's verify job, on one Node. This workflow has no token, no
-      # id-token and no npm environment, so it cannot publish: the version only ever lands in a
-      # dry run. It is a preview so that the channel's own paths run.
+        if: contains(needs.affected.outputs.suites, 'browser')
+      # The tarball half of publish.yml's verify job. This workflow has no token, no id-token and
+      # no npm environment, so it cannot publish: the version only ever lands in a dry run. It is
+      # a preview so that the channel's own paths run.
       - name: Pack, install and dry-run the tarballs
-        if: contains(needs.affected.outputs.suites, 'package') && strategy.job-index == 0
+        if: contains(needs.affected.outputs.suites, 'package')
         env:
           VERSION: 0.0.0-preview.0
         run: |
@@ -133,7 +158,7 @@ jobs:
         working-directory: website
 
   gate:
-    needs: [affected, test, website]
+    needs: [affected, test, package, website]
     if: always()
     runs-on: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'curb-js-light' || 'ubuntu-24.04' }}
     timeout-minutes: 5
@@ -141,10 +166,11 @@ jobs:
       - env:
           AFFECTED: ${{ needs.affected.result }}
           TEST: ${{ needs.test.result }}
+          PACKAGE: ${{ needs.package.result }}
           WEBSITE: ${{ needs.website.result }}
         run: |
-          echo "affected: $AFFECTED, test: $TEST, website: $WEBSITE"
+          echo "affected: $AFFECTED, test: $TEST, package: $PACKAGE, website: $WEBSITE"
           [ "$AFFECTED" = success ]
-          for result in "$TEST" "$WEBSITE"; do
+          for result in "$TEST" "$PACKAGE" "$WEBSITE"; do
             [ "$result" = success ] || [ "$result" = skipped ]
           done

@@ -77,6 +77,7 @@ test("the jobs on self-hosted runners are the ones this test knows, so its parse
     "pages.yml:deploy",
     "test.yml:affected",
     "test.yml:gate",
+    "test.yml:package",
     "test.yml:test",
     "test.yml:website",
   ]);
@@ -104,6 +105,7 @@ test("each runner takes the same jobs it took before forks were routed", () => {
   assert.equal(label("test.yml", "affected"), "curb-js-light");
   assert.equal(label("test.yml", "gate"), "curb-js-light");
   assert.equal(label("test.yml", "test"), "curb-js-runner");
+  assert.equal(label("test.yml", "package"), "curb-js-runner");
   assert.equal(label("test.yml", "website"), "curb-js-runner");
   assert.equal(label("pages.yml", "build"), "curb-js-runner");
   assert.equal(label("pages.yml", "deploy"), "curb-js-runner");

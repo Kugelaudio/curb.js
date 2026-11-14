@@ -125,28 +125,37 @@ function gate(results) {
 }
 
 test("gate reports on every run, and waits for every job", () => {
-  assert.match(gateJob, /needs: \[affected, test, website\]/);
+  assert.match(gateJob, /needs: \[affected, test, package, website\]/);
   assert.match(gateJob, /if: always\(\)/);
+  assert.match(gateJob, /PACKAGE: \$\{\{ needs\.package\.result \}\}/);
   assert.match(gateJob, /WEBSITE: \$\{\{ needs\.website\.result \}\}/);
 });
 
 test("gate fails when the website suite fails, and when it is cancelled", () => {
   for (const WEBSITE of ["failure", "cancelled"]) {
     for (const TEST of ["success", "skipped"]) {
-      assert.equal(gate({ AFFECTED: "success", TEST, WEBSITE }), 1, `test ${TEST}, website ${WEBSITE}`);
+      assert.equal(gate({ AFFECTED: "success", TEST, PACKAGE: "success", WEBSITE }), 1, `test ${TEST}, website ${WEBSITE}`);
     }
   }
 });
 
+test("gate fails when the package job fails, and when it is cancelled", () => {
+  for (const PACKAGE of ["failure", "cancelled"]) {
+    assert.equal(gate({ AFFECTED: "success", TEST: "success", PACKAGE, WEBSITE: "success" }), 1, `package ${PACKAGE}`);
+  }
+});
+
 test("gate fails when test or affected fails, whatever the website suite did", () => {
-  assert.equal(gate({ AFFECTED: "success", TEST: "failure", WEBSITE: "success" }), 1);
-  assert.equal(gate({ AFFECTED: "failure", TEST: "skipped", WEBSITE: "skipped" }), 1);
+  assert.equal(gate({ AFFECTED: "success", TEST: "failure", PACKAGE: "success", WEBSITE: "success" }), 1);
+  assert.equal(gate({ AFFECTED: "failure", TEST: "skipped", PACKAGE: "skipped", WEBSITE: "skipped" }), 1);
 });
 
 test("gate passes a suite that succeeded or was not needed", () => {
   for (const TEST of ["success", "skipped"]) {
-    for (const WEBSITE of ["success", "skipped"]) {
-      assert.equal(gate({ AFFECTED: "success", TEST, WEBSITE }), 0, `test ${TEST}, website ${WEBSITE}`);
+    for (const PACKAGE of ["success", "skipped"]) {
+      for (const WEBSITE of ["success", "skipped"]) {
+        assert.equal(gate({ AFFECTED: "success", TEST, PACKAGE, WEBSITE }), 0, `test ${TEST}, package ${PACKAGE}, website ${WEBSITE}`);
+      }
     }
   }
 });
