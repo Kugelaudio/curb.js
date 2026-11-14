@@ -7,6 +7,7 @@
 // with each path exactly as the workflows spell it.
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -78,24 +79,40 @@ echo "$GET_REF"
   return { ...result, posted };
 }
 
-/** Runs one step of the publish job with a stand-in for npm that knows no version, and returns
- * the npm commands it ran, and the step's result. */
-function runPublishStep(t, step, { distTag, kugelaudioTag }) {
+/** Runs one step of the publish job in a folder holding the four tarballs, with a stand-in for npm
+ * that knows no version, except that `npm view` serves the right integrity for every name in
+ * `served`, and with a `sleep` that returns at once and is counted. Returns the npm commands it
+ * ran, how often it slept, and the step's result. */
+function runPublishStep(t, step, { distTag, kugelaudioTag, served = [] }) {
   const start = job("publish").indexOf(`- name: ${step}\n`);
   assert.notEqual(start, -1, `the publish job has no step named ${step}`);
   const script = /run: \|\n((?: {10}.*\n)+)/.exec(job("publish").slice(start))?.[1].replace(/^ {10}/gm, "");
   const bin = mkdtempSync(join(tmpdir(), "curb-publish-step-"));
   t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const cwd = join(bin, "work");
+  mkdirSync(join(cwd, "out"), { recursive: true });
+  mkdirSync(join(bin, "integrity"));
+  for (const name of ["curb.js", "create-curb.js", "create-curb", "create-kugelaudio"]) {
+    const tarball = Buffer.from(`${name} 9.9.9 tarball`);
+    writeFileSync(join(cwd, "out", `${name}-9.9.9.tgz`), tarball);
+    const integrity = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
+    if (served.includes(name)) writeFileSync(join(bin, "integrity", name), integrity);
+  }
   const calls = join(bin, "calls");
+  const sleeps = join(bin, "sleeps");
   writeFileSync(
     join(bin, "npm"),
     `#!/usr/bin/env bash
 echo "$*" >> "${calls}"
-[[ "$1" != view ]]
+[[ "$1" == view ]] || exit 0
+served="${join(bin, "integrity")}/\${2%@*}"
+[[ -f "$served" ]] && cat "$served"
 `,
     { mode: 0o755 },
   );
+  writeFileSync(join(bin, "sleep"), `#!/usr/bin/env bash\necho "$*" >> "${sleeps}"\n`, { mode: 0o755 });
   const result = spawnSync("bash", ["-e", "-c", script], {
+    cwd,
     encoding: "utf8",
     env: {
       PATH: `${bin}:${process.env.PATH}`,
@@ -105,7 +122,13 @@ echo "$*" >> "${calls}"
     },
   });
   const ran = existsSync(calls) ? readFileSync(calls, "utf8").split("\n").filter(Boolean) : [];
-  return { ...result, published: ran.filter((line) => line.startsWith("publish ")) };
+  const slept = existsSync(sleeps) ? readFileSync(sleeps, "utf8").split("\n").filter(Boolean).length : 0;
+  return {
+    ...result,
+    slept,
+    published: ran.filter((line) => line.startsWith("publish ")),
+    viewed: ran.filter((line) => line.startsWith("view ")).map((line) => line.split(" ")[1]),
+  };
 }
 
 /** The lines of a workflow_dispatch input, up to the next input. */
@@ -227,9 +250,41 @@ test("create-kugelaudio goes to latest only when plan says so, and always last",
   assert.equal(published.at(-1), "publish --access public --tag latest ./out/create-kugelaudio-9.9.9.tgz");
 });
 
+const published3 = ["curb.js", "create-curb.js", "create-curb"];
+
 test("the read-back does not wait for a name that was not published", (t) => {
-  const { stdout } = runPublishStep(t, "Read the publication back", { distTag: "latest", kugelaudioTag: "" });
+  const { status, stderr, stdout, viewed, slept } = runPublishStep(t, "Read the publication back", {
+    distTag: "latest",
+    kugelaudioTag: "",
+    served: published3,
+  });
+  assert.equal(status, 0, stderr);
+  assert.deepEqual(viewed, published3.map((name) => `${name}@9.9.9`));
+  for (const name of published3) assert.match(stdout, new RegExp(`^${name}@9\\.9\\.9 is on npm$`, "m"));
   assert.doesNotMatch(stdout, /create-kugelaudio/);
+  assert.equal(slept, 0);
+});
+
+test("the read-back waits for create-kugelaudio when plan publishes it", (t) => {
+  const { status, stderr, viewed } = runPublishStep(t, "Read the publication back", {
+    distTag: "latest",
+    kugelaudioTag: "preview",
+    served: [...published3, "create-kugelaudio"],
+  });
+  assert.equal(status, 0, stderr);
+  assert.equal(viewed.at(-1), "create-kugelaudio@9.9.9");
+});
+
+test("the read-back keeps asking for ten minutes, then fails on a publication npm does not serve", (t) => {
+  const { status, stderr, viewed, slept } = runPublishStep(t, "Read the publication back", {
+    distTag: "latest",
+    kugelaudioTag: "",
+    served: ["curb.js"],
+  });
+  assert.notEqual(status, 0);
+  assert.match(stderr, /npm serves nothing for create-curb\.js@9\.9\.9, expected sha512-/);
+  assert.equal(viewed.filter((spec) => spec === "create-curb.js@9.9.9").length, slept);
+  assert.ok(slept * 10 >= 600, `the read-back gave up after ${slept} waits`);
 });
 
 test("the tag create-kugelaudio gets comes from plan, for every job that needs it", () => {

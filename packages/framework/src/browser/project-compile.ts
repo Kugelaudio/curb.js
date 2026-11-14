@@ -152,7 +152,8 @@ function exportTarget(exports: unknown, subpath: string): string | null | undefi
     const [before, after] = [pattern.slice(0, star), pattern.slice(star + 1)];
     if (subpath.startsWith(before) && subpath.endsWith(after) && subpath.length >= pattern.length - 1) {
       const target = pick(value);
-      return typeof target === "string" ? target.replace("*", subpath.slice(before.length, subpath.length - after.length)) : target;
+      // Node substitutes every `*` of the target, not only the first.
+      return typeof target === "string" ? target.replaceAll("*", subpath.slice(before.length, subpath.length - after.length)) : target;
     }
   }
   return undefined;

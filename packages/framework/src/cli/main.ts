@@ -43,6 +43,8 @@ Commands:
              --emit-layers <dir> also records the dependency layer split for a hosted builder;
              --dependency-layer <descriptor.json> builds only the app layer, and exits 75
              when the project reaches past the recorded build inputs.
+  voices     List the KugelAudio voices this project can use, with the id kugelaudio.tts({ voice })
+             takes (--language <code>, --json; see curb voices --help).
   upgrade    Update this project's curb dependency to the latest published version (--check to only report, --preview for the newest preview).
   info       Print the versions, providers and environment variable names a bug report needs.
              Runs anywhere and starts nothing. Prints names only, never a value.
@@ -80,7 +82,9 @@ if (process.argv[2] === "help" || wantsHelp(process.argv.slice(2))) {
           ? (await import("./test.js")).TEST_USAGE
           : process.argv[2] === "hook"
             ? (await import("./hook.js")).HOOK_USAGE
-            : USAGE;
+            : process.argv[2] === "voices"
+              ? (await import("./voices.js")).VOICES_USAGE
+              : USAGE;
   process.stdout.write(`${usage}\n`, () => process.exit(0));
   await new Promise(() => {});
 }
@@ -326,6 +330,12 @@ async function build(): Promise<void> {
   console.log();
 }
 
+async function voices(): Promise<void> {
+  prepareProject();
+  const { voicesCommand } = await import("./voices.js");
+  process.exitCode = await voicesCommand(process.argv.slice(3));
+}
+
 async function conversations(): Promise<void> {
   const { conversationsCommand } = await import("./conversations.js");
   process.exitCode = conversationsCommand(process.argv.slice(3), resolveProjectRoot());
@@ -364,6 +374,7 @@ const commands: Record<string, () => Promise<void>> = {
   upgrade,
   info,
   conversations,
+  voices,
   login: () => cloudCommand("login"),
   logout: () => cloudCommand("logout"),
   deploy: () => cloudCommand("deploy"),

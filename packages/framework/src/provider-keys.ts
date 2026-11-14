@@ -50,6 +50,23 @@ export function hostKeyPendingFix(env: Env): string | null {
     : null;
 }
 
+/** Where KugelAudio's speech API (TTS, STT, the voice list) is served when `KUGELAUDIO_API_BASE`
+ * is unset. */
+export const DEFAULT_KUGELAUDIO_SPEECH_BASE = "https://api.kugelaudio.com";
+
+/** The base URL of KugelAudio's speech API: `KUGELAUDIO_API_BASE`, else the default. */
+export function kugelaudioSpeechBase(env: Env): string {
+  return withoutTrailingSlashes(env.KUGELAUDIO_API_BASE?.trim() || DEFAULT_KUGELAUDIO_SPEECH_BASE);
+}
+
+/** `url` without the slashes it ends in. A loop, not a regex: the value is user input, and a
+ * `/\/+$/` on it backtracks polynomially on a long run of slashes. */
+function withoutTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end -= 1;
+  return url.slice(0, end);
+}
+
 /** Where `kugelaudio.llm()` is served when `KUGELAUDIO_API_BASE` is unset: the EU ingress, the
  * only one that serves the LLM. */
 export const DEFAULT_KUGELAUDIO_LLM_BASE = "https://api.eu.kugelaudio.com";
@@ -57,7 +74,7 @@ export const DEFAULT_KUGELAUDIO_LLM_BASE = "https://api.eu.kugelaudio.com";
 /** The OpenAI-compatible base URL of `kugelaudio.llm()`: `KUGELAUDIO_API_BASE` (else the EU
  * ingress) plus `/v1`. */
 export function kugelaudioLlmBaseUrl(env: Env): string {
-  return `${(env.KUGELAUDIO_API_BASE?.trim() || DEFAULT_KUGELAUDIO_LLM_BASE).replace(/\/+$/, "")}/v1`;
+  return `${withoutTrailingSlashes(env.KUGELAUDIO_API_BASE?.trim() || DEFAULT_KUGELAUDIO_LLM_BASE)}/v1`;
 }
 
 export const LLM_KEYS: Record<LlmProviderId, ProviderKeys> = {

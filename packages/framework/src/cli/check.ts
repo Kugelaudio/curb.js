@@ -11,8 +11,9 @@ import {
 import { resolveAgentDir } from "../project.node.js";
 import type { Env } from "../provider-keys.js";
 import type { StoredProjectKey } from "./cloud/credentials.js";
-import { checkConfiguration, formatConfiguration, type Configuration } from "./check-env.js";
+import { checkConfiguration, formatConfiguration, projectEnvironment, type Configuration } from "./check-env.js";
 import { typeCheckProject, type TypeCheckResult } from "./typecheck.js";
+import { diagnoseVoices, type findVoice } from "./voices.js";
 
 /** The single agent a project keeps in src/agent/ (see `discoverAgent`). */
 const AGENT_ID = "agent";
@@ -23,6 +24,8 @@ export type CheckReport = {
   typeCheckMs: number;
   /** The environment variables the project needs, set or missing (names only). */
   configuration: Configuration;
+  /** What could not be checked and why (a voice lookup that did not get an answer). */
+  notes: string[];
 };
 
 /**
@@ -36,7 +39,12 @@ export type CheckReport = {
  */
 export async function checkProject(
   projectRoot: string,
-  options: { typeCheck?: typeof typeCheckProject; env?: Env; loginKey?: StoredProjectKey | null } = {},
+  options: {
+    typeCheck?: typeof typeCheckProject;
+    env?: Env;
+    loginKey?: StoredProjectKey | null;
+    findVoice?: typeof findVoice;
+  } = {},
 ): Promise<CheckReport> {
   const root = realpathSync(projectRoot);
   const started = Date.now();
@@ -72,11 +80,20 @@ export async function checkProject(
     loginKey: options.loginKey ?? null,
   });
   diagnostics.push(...environment.diagnostics);
+  const voices = await diagnoseVoices({
+    uses: (environment.uses ?? []).map((use) => ({ where: use.where, tts: use.settings.tts })),
+    env: projectEnvironment(root, options.env ?? process.env),
+    agentId: AGENT_ID,
+    agentSource: "src/agent/agent.tsx",
+    ...(options.findVoice ? { find: options.findVoice } : {}),
+  });
+  diagnostics.push(...voices.diagnostics);
   return {
     diagnostics: mergeAuthoringDiagnostics(diagnostics),
     typeCheck,
     typeCheckMs,
     configuration: environment.configuration,
+    notes: voices.notes,
   };
 }
 
@@ -86,7 +103,7 @@ export async function checkProject(
  * platform.
  */
 export function printCheckReport(report: CheckReport): number {
-  const { diagnostics, typeCheck, typeCheckMs, configuration } = report;
+  const { diagnostics, typeCheck, typeCheckMs, configuration, notes } = report;
   for (const diagnostic of diagnostics) {
     const output = `[agent:${diagnostic.location.agentId ?? AGENT_ID}] ${formatAuthoringDiagnostic(diagnostic)}`;
     if (diagnostic.severity === "error") console.error(output);
@@ -103,6 +120,7 @@ export function printCheckReport(report: CheckReport): number {
     );
   }
   for (const line of formatConfiguration(configuration)) console.log(line);
+  for (const note of notes) console.log(note);
   const errors =
     diagnostics.filter((diagnostic) => diagnostic.severity === "error").length + typeCheck.unlisted;
   const warnings = diagnostics.length + typeCheck.unlisted - errors;

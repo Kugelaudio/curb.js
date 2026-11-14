@@ -30,7 +30,7 @@ describe("createVoiceAgentBundle", () => {
     expect(runtime.snapshot().context.systemPrompt).toBeTruthy();
     expect(missingLlmKey).toMatchObject({ code: "AGENT_INVALID_AUTHORING_PROP", severity: "error" });
     expect(missingLlmKey?.message).toMatch(/needs KUGELAUDIO_API_KEY/);
-    expect(missingLlmKey?.fix).toMatch(/Run `npx curb login`.*restart `curb dev`.*Or set KUGELAUDIO_API_KEY.*A hosted agent gets it from the platform/);
+    expect(missingLlmKey?.fix).toMatch(/Run `npx curb login`.*then run the command again \(restart `curb dev` if it is running\).*Or set KUGELAUDIO_API_KEY.*A hosted agent gets it from the platform/);
   });
 
   it("names no missing key in the preview bundle when the key is there", async () => {

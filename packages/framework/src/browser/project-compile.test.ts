@@ -27,6 +27,17 @@ describe("compileProject: installed packages", () => {
     expect(code).not.toContain("from-import");
   });
 
+  it("substitutes every * of a subpath pattern's target, as Node does", async () => {
+    const code = await compileProject(
+      project('import value from "patterned/feature";', "value", {
+        "node_modules/patterned/package.json": json({ name: "patterned", exports: { "./*": "./dist/*/*.js" } }),
+        "node_modules/patterned/dist/feature/feature.js": 'export default "from-pattern";',
+      }),
+      ORIGIN,
+    );
+    expect(code).toContain("from-pattern");
+  });
+
   it("applies a package's browser map to its own relative imports and to bare names", async () => {
     const code = await compileProject(
       project('import adapter from "lib";', "adapter", {

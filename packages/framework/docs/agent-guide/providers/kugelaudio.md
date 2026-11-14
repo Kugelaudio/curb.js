@@ -35,7 +35,7 @@ Kugel Ear 1.
 
 | Option | Type | Default | What it does |
 |---|---|---|---|
-| `voice` | `number` | the voice of `language` | A KugelAudio voice id |
+| `voice` | `number` | the voice of `language` | A KugelAudio voice id; [`npx curb voices`](../cli/voices.md) lists them |
 | `model` | `string` | `"kugel-3.5"` | The TTS model |
 | `language` | `string` | `"en"` | How text is read, and which voice reads it when `voice` is not set |
 | `dictionaryIds` | `number[]` | | Pronunciation dictionaries. Needs `projectId` |

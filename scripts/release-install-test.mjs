@@ -66,7 +66,8 @@ export function readTarballs(directory) {
 export async function startRegistry(tarballs) {
   const packages = new Map(tarballs.map((entry) => [entry.manifest.name, entry]));
   const server = createServer((request, response) => {
-    const path = decodeURIComponent(new URL(request.url, "http://registry").pathname);
+    const target = new URL(request.url, "http://registry");
+    const path = decodeURIComponent(target.pathname);
     const json = (body) => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
     const base = `http://127.0.0.1:${server.address().port}`;
     const local = packages.get(path.slice(1));
@@ -77,7 +78,8 @@ export async function startRegistry(tarballs) {
       const { manifest } = packages.get(tags[1]);
       json({ latest: manifest.version, [channelOf(manifest.version)]: manifest.version });
     } else if (file) response.writeHead(200).end(readFileSync(file.path));
-    else response.writeHead(307, { location: `${UPSTREAM}${request.url}` }).end();
+    // Only the path and query go upstream: the redirect never names another host.
+    else response.writeHead(307, { location: `${UPSTREAM}/${target.pathname.slice(1)}${target.search}` }).end();
   });
   await new Promise((listening) => server.listen(0, "127.0.0.1", listening));
   return { server, url: `http://127.0.0.1:${server.address().port}` };
@@ -87,16 +89,22 @@ export async function startRegistry(tarballs) {
 export function run(command, args, options) {
   console.log(`\n$ ${command} ${args.join(" ")}`);
   return new Promise((done, failed) => {
-    const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "inherit"] });
+    const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
+    let stderr = "";
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
       process.stdout.write(chunk);
     });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+      process.stderr.write(chunk);
+    });
     child.on("error", failed);
     child.on("close", (code) => {
-      if (code === 0) done(stdout);
-      else failed(new Error(`${command} ${args.join(" ")} exited with ${code}`));
+      if (code === 0) return done(stdout);
+      // What the command printed travels with the failure, so a caller can tell npm's codes apart.
+      failed(Object.assign(new Error(`${command} ${args.join(" ")} exited with ${code}`), { output: stderr }));
     });
   });
 }
@@ -113,11 +121,13 @@ export function projectDifferences(first, second) {
 }
 
 /** Creates a project in a folder named like `project` and fails unless it matches `project`. */
-export async function expectSameProject(project, spec, base, { env }) {
+export async function expectSameProject(project, spec, base, { env, attempt = (task) => task() }) {
   const twin = join(base, "twin", basename(project));
-  rmSync(twin, { recursive: true, force: true });
-  mkdirSync(twin, { recursive: true });
-  await run("npm", ["create", "--yes", spec, ".", "--", "--skip-git", "--skip-install"], { cwd: twin, env });
+  await attempt(() => {
+    rmSync(twin, { recursive: true, force: true });
+    mkdirSync(twin, { recursive: true });
+    return run("npm", ["create", "--yes", spec, ".", "--", "--skip-git", "--skip-install"], { cwd: twin, env });
+  });
   const different = projectDifferences(project, twin);
   expect(different.length === 0, `npm create ${spec} wrote a different project: ${different.join(", ")}`);
 }

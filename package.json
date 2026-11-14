@@ -10,7 +10,7 @@
     "new": "create-curb.js",
     "dev": "npm run dev --workspace examples/insurance-agent",
     "check": "npm run check --workspace examples/insurance-agent",
-    "test": "npm test --workspace packages/framework --workspace packages/create-curb.js && node --test \"scripts/*.test.mjs\"",
+    "test": "npm test --workspace packages/framework --workspace packages/create-curb.js && node --test --test-timeout=120000 \"scripts/*.test.mjs\"",
     "build": "npm run build --workspace packages/framework",
     "smoke:self-host": "node scripts/self-host-smoke.mjs",
     "check:independence": "node scripts/check-independence.mjs",
@@ -22,7 +22,7 @@
   },
   "overrides": {
     "@livekit/agents-plugin-silero": {
-      "onnxruntime-node": "^1.30.0"
+      "onnxruntime-node": "1.31.1"
     },
     "glob": "^14.0.2",
     "minimatch": "^11.0.2"

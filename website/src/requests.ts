@@ -29,7 +29,7 @@ export function stateSteps(block: string): StateStep[] {
     if (!match) throw new Error(`The states block has no caller and tool in "${heading}"`)
     if (!state?.startsWith('state: ')) throw new Error(`The states block has no values under "${heading}"`)
     const values = state.slice(7).split(', ').map((pair) => pair.split(' = ') as [string, string])
-    return { caller: match[1]!.replace("'", '’'), tool: match[2]!, values, lines }
+    return { caller: match[1]!.replaceAll("'", '’'), tool: match[2]!, values, lines }
   })
   if (steps.length !== 2) throw new Error('The states block no longer has the two steps this page plays')
   return steps

@@ -164,6 +164,12 @@ edit a frozen project to make it pass.
   it is a new task.
 - **New diagnostics** get a code in `AUTHORING_DIAGNOSTIC_CODES`, a row in
   `docs/agent-guide/diagnostics.md`, and a test.
+- **Published dependencies are exact versions.** `curb.js` and `create-curb.js` pin every
+  runtime dependency (`1.2.3`, never `^1.2.3`), as Next.js does, so a project installs the
+  versions this repository tested and a hijacked release upstream reaches nobody until a Curb
+  release takes it. Dependabot moves the pins (`versioning-strategy: increase`, a week's
+  cooldown). `scripts/dependency-pins.test.mjs` fails on a range, on a lockfile that disagrees
+  with the pins, and on any lockfile entry not fetched from registry.npmjs.org with a sha512.
 - **Node floor is `engines.node`.** Both published `package.json` files declare
   `>=22.12.0` (Vite's floor on the 22 line), and `bin/node-version.js` in each
   package reads that field and exits with `UnsupportedNodeVersion` before
@@ -172,7 +178,7 @@ edit a frozen project to make it pass.
   floor and Node 24, every major the README promises.
 - **Dependency advisories.** The root `overrides` lifts the `onnxruntime-node`
   that `@livekit/agents-plugin-silero` pins exactly (1.24.3) to the framework's
-  own `^1.30.0`, which drops its vulnerable `adm-zip` 0.5 and `global-agent` 3
+  own pin (`scripts/dependency-pins.test.mjs` keeps the two equal), which drops its vulnerable `adm-zip` 0.5 and `global-agent` 3
   (`roarr`, `sprintf-js`). Overrides do not reach a scaffolded project, where the
   pinned copy stays; both packages are used only by `onnxruntime-node`'s
   postinstall (`script/install.js`, the Linux CUDA download from NuGet), never at
