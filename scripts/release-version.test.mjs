@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { npmDistTags, previewVersion, stableVersion, kugelaudioTag } from "./release-version.mjs";
+import { breakingSubjects, npmDistTags, previewVersion, stableVersion, kugelaudioTag } from "./release-version.mjs";
 
 const none = { tags: [], npmLatest: undefined };
 
@@ -91,4 +91,27 @@ test("create-kugelaudio held at preview leaves latest alone on a stable release"
 test("create-kugelaudio released follows the run, so a preview never reaches latest", () => {
   assert.equal(kugelaudioTag("release", "preview"), "preview");
   assert.equal(kugelaudioTag("release", "latest"), "latest");
+});
+
+test("a breaking change since the last release refuses minor and patch, and allows major", () => {
+  const sources = { tags: ["v1.21.0"], messages: ["fix(cli): keep the port (#1)", "feat(framework)!: rename the store option (#2)"] };
+  assert.throws(() => stableVersion({ ...sources, semver: "minor" }), /breaking change\(s\).*major, not minor[\s\S]*rename the store option/);
+  assert.throws(() => stableVersion({ ...sources, semver: "patch" }), /need semver major/);
+  assert.equal(stableVersion({ ...sources, semver: "major" }), "2.0.0");
+});
+
+test("a release with nothing breaking keeps the semver it was asked for", () => {
+  const messages = ["feat(framework): add a hook (#3)", "fix: keep the call (#4)", "docs: say that a breaking change is feat!: (#5)"];
+  assert.equal(stableVersion({ tags: ["v1.21.0"], semver: "minor", messages }), "1.22.0");
+  assert.equal(stableVersion({ tags: ["v1.21.0"], semver: "patch", messages }), "1.21.1");
+});
+
+test("a breaking change is a bang in the title or a footer, and nothing else", () => {
+  assert.deepEqual(breakingSubjects(["feat!: a", "fix(cli)!: b (#2)", "chore: c\n\nBREAKING CHANGE: d", "BREAKING-CHANGE: e"]), [
+    "feat!: a",
+    "fix(cli)!: b (#2)",
+    "chore: c",
+    "BREAKING-CHANGE: e",
+  ]);
+  assert.deepEqual(breakingSubjects(["fix: not! breaking", "feat: add a !: sign", "docs: a note\n\nsee BREAKING CHANGE: later"]), []);
 });

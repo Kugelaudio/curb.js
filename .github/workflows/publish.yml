@@ -8,7 +8,8 @@ name: publish
 #   preview   a merge to main that changes a published package, or a dispatch on main with
 #             channel preview. Publishes <next minor>-preview.<n> to the `preview` dist-tag, with
 #             a matching git tag.
-#   stable    a dispatch on main with channel stable and a semver. Adds a `v<version>` tag,
+#   stable    a dispatch on main with channel stable and a semver (major is required when a commit
+#             since the last stable tag is breaking). Adds a `v<version>` tag,
 #             publishes the bumped version to `latest`, then adds a GitHub Release. Being able to
 #             dispatch is the gate.
 #
