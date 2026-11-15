@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Agent, AgentSiteRuntime, type TransferEndedOption } from "./index.js";
+import { Agent, AgentSiteRuntime, type TransferEndedOption } from "../../index.js";
 import {
   checkTransferEndedOption,
   decideTransferEnded,
   moveTrackedTransfer,
   trackTransfer,
   untrackTransfer,
-} from "./transfer-ended.js";
+} from "./ended.js";
 
 afterEach(() => {
   vi.restoreAllMocks();

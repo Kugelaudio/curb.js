@@ -79,7 +79,7 @@ everything around a call that a framework cannot do:
 | Call log, recordings, retention, goals results, experiment assignment | Platform |
 | The agent's turn loop and everything in your code | Curb, the same as on your machine |
 
-Hosting is a closed alpha, switched on per organization. The details of a hosted call are in
+Hosting is switched on for an organization on request. The details of a hosted call are in
 [How a hosted agent runs](https://docs.kugelaudio.com/hosted-agents/how-it-runs), and what
 you take over when you run it yourself is in [Hosting a Curb agent yourself](./hosting.md).
 

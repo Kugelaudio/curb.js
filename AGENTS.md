@@ -22,6 +22,8 @@ curb.js/
 │   ├── src/layout.ts          # the one module that knows whether dist/ or src/ is running
 │   ├── src/cli/main.ts        # CLI commands: dev / check / start / server / upgrade
 │   ├── src/vite/              # Preview Vite config (the page never imports agent code)
+│   ├── src/components.tsx     # the primitives: <Agent>, <Skill>, <Tool>, <Text>, ...
+│   ├── src/blocks/            # higher-level components, one folder each: <Handoff>, <TransferCallTool>, <Procedure>
 │   ├── src/compiler.ts        # semantic tree -> compiled context + tools
 │   ├── src/runtime.ts         # AgentSiteRuntime: headless React host, event log
 │   ├── src/agent-session.ts   # conversation loop, LLM transport, transcript
@@ -178,6 +180,15 @@ edit a frozen project to make it pass.
   `website/src/guide.ts`. Document a new environment variable in `docs/agent-guide/configuration.md`
   and a voice session addition in `docs/agent-guide/voice-sessions.md`, with a guide page when
   it is a new task.
+- **A higher-level component is a block.** A component built from the primitives of
+  `src/components.tsx` or from other blocks, with logic of its own, gets a folder
+  `src/blocks/<id>/`: `index.tsx` for the component, its helpers and tests beside it, and
+  `definition.ts` + `preview.tsx` only when the preview draws it as UI of its own. A block that
+  follows the conversation or acts in it on its own (`<Handoff>` counts what fails and has its
+  tool called) adds `session.ts`, the `BlockSession` of `src/blocks/session.ts`, and one line in
+  `src/blocks/session-registry.ts`: `agent-session.ts`, `runtime.ts` and the compiler name no
+  block. The recipe and the steps to add one are at the top of `src/blocks/types.ts`;
+  `blocks.test.ts` fails on a block that is added halfway.
 - **New diagnostics** get a code in `AUTHORING_DIAGNOSTIC_CODES`, a row in
   `docs/agent-guide/diagnostics.md`, and a test.
 - **Published dependencies are exact versions.** `curb.js` and `create-curb.js` pin every

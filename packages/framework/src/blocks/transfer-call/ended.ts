@@ -1,4 +1,4 @@
-import type { AgentInfoStore } from "./info-store.js";
+import type { AgentInfoStore } from "../../info-store.js";
 
 /**
  * What happens when the person a call was transferred to hangs up while the caller stays:
@@ -14,7 +14,7 @@ import type { AgentInfoStore } from "./info-store.js";
  * neither listening nor speaking, until then. Without `onEnded` the agent takes the call back
  * and tells the caller the other person left.
  *
- * Browser-safe: no Node imports, because `transfer.tsx`, which `src/index.ts` exports, uses it.
+ * Browser-safe: no Node imports, because `index.tsx`, which `src/index.ts` exports, uses it.
  */
 
 /** The transfer whose target just left. */
@@ -56,7 +56,7 @@ export const TRANSFER_ENDED_TIMEOUT_MS = 5_000;
 const CONTINUE: TransferEndedDecision = { action: "continue" };
 const TIMED_OUT = Symbol("timed out");
 
-/** Keyed by the runtime's info store, whose identity is the runtime's (as in `transfer.tsx`).
+/** Keyed by the runtime's info store, whose identity is the runtime's (as in `index.tsx`).
  * The platform runs one transfer of a call at a time, so the tracked one is the one whose
  * target leaves. */
 const trackedByRuntime = new WeakMap<AgentInfoStore, TrackedTransfer>();

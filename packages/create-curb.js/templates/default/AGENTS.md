@@ -14,7 +14,7 @@ machine without a browser). Run it in the background and read its output unpiped
 API key from the dashboard, for CI or a server) also works and wins over the login. Another
 LLM (`anthropic()`, `openai()`, `openaiCompatible()`) is one `llm` prop away and brings its
 own key. A turn answered 403 `LLM_NOT_ENABLED` means the user's organization does not have
-KugelAudio's LLM yet (it comes with hosted agents, in closed alpha): they ask
+KugelAudio's LLM yet (it comes with hosted agents): they ask
 hello@kugelaudio.com, or the agent uses another LLM meanwhile.
 
 **Without a shell** (claude.ai, the Claude desktop chat), or when the person asks for it, build
@@ -161,9 +161,8 @@ names the version in the dashboard, which otherwise shows `Version N`.
 
 Not signed in? Do not stop there: run `npx curb login --no-open` in the background, give
 the user the link it prints to open in their browser on this machine, and go on once it
-prints `Signed in as`. Hosted agents are in a
-closed alpha, switched on per organization: on `CURB_HOSTED_AGENTS_NOT_ENABLED` the user
-asks hello@kugelaudio.com, and `curb dev` and `curb say` keep working meanwhile. A dry run
+prints `Signed in as`. Hosted agents are switched on for an organization on
+request: on `CURB_HOSTED_AGENTS_NOT_ENABLED` the user asks hello@kugelaudio.com, and `curb dev` and `curb say` keep working meanwhile. A dry run
 is `npx curb deploy --no-activate` (or `npx curb build`, which uploads nothing).
 
 Run `npx curb check` before deploying. `.env*`, `node_modules/`, `.git/`, `.curb/` and

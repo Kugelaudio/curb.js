@@ -140,6 +140,18 @@ export function startCallTrace(
     },
     transferEnded: endTransfer,
 
+    handoff: (record) => {
+      if (ended) return;
+      observer.handoff?.(record);
+      // Why and how it ended, never the summary: it can quote the caller.
+      root.addEvent("handoff", { "curb.handoff.reason": record.reason, "curb.handoff.outcome": record.outcome });
+    },
+    callbackRequest: (record) => {
+      if (ended) return;
+      observer.callbackRequest?.(record);
+      root.addEvent("callback_request", { "curb.handoff.reason": record.reason });
+    },
+
     fail: (error) => {
       if (ended) return;
       // The class only, as for a tool that threw: a message can name a room or a number, and no

@@ -88,9 +88,12 @@ export type {
   UseMessageWithSchema,
   UseMessageWithoutSchema,
 } from "./messages.js";
-export { TransferCallTool, useTransferCall } from "./transfer.js";
-export type { TransferCall, TransferCallRequest, TransferCallToolProps, TransferOutcome } from "./transfer.js";
-export type { TransferEnded, TransferEndedDecision, TransferEndedOption } from "./transfer-ended.js";
+export { Handoff } from "./blocks/handoff/index.js";
+export type { CallbackRequest, HandoffProps, HandoffReason } from "./blocks/handoff/index.js";
+export type { HandoffHours, OpeningHours, Weekday } from "./blocks/handoff/hours.js";
+export { TransferCallTool, useTransferCall } from "./blocks/transfer-call/index.js";
+export type { TransferCall, TransferCallRequest, TransferCallToolProps, TransferOutcome } from "./blocks/transfer-call/index.js";
+export type { TransferEnded, TransferEndedDecision, TransferEndedOption } from "./blocks/transfer-call/ended.js";
 export type { GetState, SetState, StoreInitializer, UseAgentStore } from "./agent-state.js";
 export { listPublicMarkdown, preloadPublicMarkdown, resolvePublicMarkdown } from "./public-context.js";
 export { AgentSiteRuntime } from "./runtime.js";
@@ -109,7 +112,7 @@ export type { AgentRouterApi } from "./route-context.js";
 export type { AgentRoute, SkillMeta } from "./routing.js";
 export { z } from "zod";
 export { zodSchemaToFields, validateSchemaInput } from "./form-schema.js";
-export { ToolInputError, isToolInputError } from "./types.js";
+export { ToolInputError, ToolUnavailableError, isToolInputError, isToolUnavailableError } from "./types.js";
 export type { ZodObjectSchema } from "./form-schema.js";
 export type { AgentChatMessage, AgentRunRequest, AgentRunResponse, AgentToolCall } from "./llm/types.js";
 // TYPE ONLY, and it has to stay that way: the implementation module is Node-only

@@ -8,11 +8,11 @@ import {
   type TransferCall,
   type TransferEnded,
   type TransferEndedOption,
-} from "./index.js";
-import { attachCallTrace, type CallTrace } from "./call-trace.js";
-import type { OutgoingHostMessage } from "./messages.js";
-import { CALL_TRANSFER_RESULT_MESSAGE, attachTransferAudio, transferToolResult, type TransferAudio } from "./transfer.js";
-import { decideTransferEnded } from "./transfer-ended.js";
+} from "../../index.js";
+import { attachCallTrace, type CallTrace } from "../../call-trace.js";
+import type { OutgoingHostMessage } from "../../messages.js";
+import { CALL_TRANSFER_RESULT_MESSAGE, attachTransferAudio, transferToolResult, type TransferAudio } from "./index.js";
+import { decideTransferEnded } from "./ended.js";
 
 afterEach(() => {
   vi.useRealTimers();

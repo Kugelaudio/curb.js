@@ -1,6 +1,6 @@
 import { endCallGoodbye, unexpectedToolFailureMessage, type AgentSiteRuntime } from "./runtime.js";
 import { callTraceOf } from "./call-trace.js";
-import { procedureChanges, proceduresOf, type ProcedureChange, type ProcedureProgress } from "./procedure-progress.js";
+import { openBlockSessions } from "./blocks/session-registry.js";
 import { markThrown, timeToolRun, type SkillChange, type SpanAttributes, type ToolRunTracer } from "./tool-run.js";
 import {
   isToolInputStart,
@@ -43,7 +43,8 @@ import {
 import { toolMessage } from "./llm/tool-messages.js";
 import { capTranscript, contextEvent, interruptedReply, withAudio, withToolCallRecord } from "./llm/transcript.js";
 import { closeAbandonedStream, llmTimeoutFromEnv, LlmTimeoutError, untilAborted } from "./llm/deadline.js";
-import { serializeLlmInput } from "./llm/serialize-input.js";
+import { LlmTrace } from "./llm/trace.js";
+import { TurnQueue } from "./llm/turn-queue.js";
 import { TurnSpeech } from "./llm/turn-speech.js";
 import {
   END_CALL_TOOL_NAME,
@@ -137,6 +138,10 @@ const HEARD_LINE_GAP_MS = 2000;
 /** `reply`: everything the turn said aloud. */
 type TurnOutcome = { reply: string; error?: AgentTurnError };
 
+/** A tool call that ran, as a turn reports it: whether it succeeded, how long it took, and the
+ * skill it opened or left. */
+type ExecutedCall = { toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number; skill?: SkillChange };
+
 /**
  * Surface-agnostic agent turn loop. Owns the conversation transcript and the
  * running flag, drives the runtime's tools, and notifies subscribers whenever
@@ -153,11 +158,11 @@ export class AgentSession {
   private readonly maxTranscriptMessages: number;
   private readonly spokenStyleSuffix: string | undefined;
   private readonly llmTimeoutMs: number;
-  private readonly maxQueuedTurns: number;
   private readonly traceAttributes: () => SpanAttributes;
   private readonly traceTool: ToolRunTracer;
-  /** The context's procedures as last seen (`procedureChanges`). */
-  private procedures: ReadonlyMap<string, ProcedureProgress> = new Map();
+  /** Every block's part in this conversation (`blocks/session.ts`): told what happens, and
+   * asked for the tool call a block makes on its own. */
+  private blocks: ReturnType<typeof openBlockSessions>;
   /** The active skill as last seen (`skillChange`); no path is the agent level. */
   private skill = { path: "", title: "" };
   private readonly timeZone: string;
@@ -169,13 +174,12 @@ export class AgentSession {
   // Replaced (never mutated in place) on every change so subscribers reading
   // `messages` get a stable reference between notifications.
   private conversation: AgentChatMessage[] = [];
-  private running = false;
+  /** Whose turn it is: one runs at a time, input arriving meanwhile waits. */
+  private readonly turns: TurnQueue;
   /** Cancels the turn in flight (spoken input preempts it); null while idle. */
   private activeTurn: AbortController | null = null;
-  /** Inputs waiting for the running turn to finish, oldest first. Each is
-   * called when the session is handed to it. */
-  private readonly waiting: Array<() => void> = [];
-  private llmCalls: LlmCallRecord[] = [];
+  /** The LLM input of every step. */
+  private readonly llmLog = new LlmTrace(() => this.notify());
   // Fallback ids for mock transports that omit provider tool-call ids.
   private toolCallCounter = 0;
   /** The newest words this session said end in a fixed line (a fallback reply) that the
@@ -196,6 +200,7 @@ export class AgentSession {
 
   constructor(runtime: AgentSiteRuntime, llm: AgentLlmClient, options: AgentSessionOptions = {}) {
     this.runtime = runtime;
+    this.blocks = openBlockSessions(runtime);
     this.llm = llm;
     this.streamLlm = options.streamLlm;
     this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
@@ -204,7 +209,7 @@ export class AgentSession {
     this.traceAttributes = options.traceAttributes ?? (() => ({}));
     this.traceTool = options.traceTool ?? timeToolRun;
     this.llmTimeoutMs = options.llmTimeoutMs ?? llmTimeoutFromEnv();
-    this.maxQueuedTurns = options.maxQueuedTurns ?? DEFAULT_MAX_QUEUED_TURNS;
+    this.turns = new TurnQueue(options.maxQueuedTurns ?? DEFAULT_MAX_QUEUED_TURNS, () => this.notify());
     this.timeZone = options.timeZone ?? DEFAULT_TIME_ZONE;
     this.opening = options.opening;
     if (!isTimeZone(this.timeZone)) {
@@ -220,12 +225,12 @@ export class AgentSession {
   }
 
   get isRunning(): boolean {
-    return this.running;
+    return this.turns.running;
   }
 
   /** Serialized LLM inputs captured on every step. Treat as read-only. */
   get llmTrace(): LlmCallRecord[] {
-    return this.llmCalls;
+    return this.llmLog.records;
   }
 
   /** The action waiting for the caller's yes (`<Tool confirm>`), or null. Treat as read-only. */
@@ -258,14 +263,14 @@ export class AgentSession {
    * reflects the app, not the conversation.
    */
   reset(): void {
-    if (this.running) return;
+    if (this.turns.running) return;
     this.conversation = [];
-    this.llmCalls = [];
+    this.llmLog.clear();
     this.toolCallCounter = 0;
     this.endedOnFallbackLine = false;
     this.pending = null;
     this.lateCutReport = false;
-    this.procedures = new Map();
+    this.blocks = openBlockSessions(this.runtime);
     this.skill = { path: "", title: "" };
     this.notify();
   }
@@ -279,7 +284,7 @@ export class AgentSession {
    * caller's next input answers it; without one, nothing is held.
    */
   restoreTranscript(messages: AgentChatMessage[], pending: HeldCall | null = null): void {
-    if (this.running) return;
+    if (this.turns.running) return;
     this.pending = pending ? { ...pending, heldAt: this.arrivals, heardAt: this.arrivals } : null;
     this.lateCutReport = false;
     this.setMessages([...messages]);
@@ -305,7 +310,7 @@ export class AgentSession {
   /** A line of a call no turn ran for: the speech-to-speech model heard or said it on its own. */
   recordHeard(role: "user" | "assistant", text: string): void {
     const content = text.trim();
-    if (!content || this.running) return;
+    if (!content || this.turns.running) return;
     const at = Date.now();
     const joined = role === "user" ? this.joinedHeardLine(content, at) : null;
     if (joined) {
@@ -327,7 +332,7 @@ export class AgentSession {
 
   recordContextEvent(lines: string[]): void {
     const content = lines.join("\n").trim();
-    if (!content || this.running) return;
+    if (!content || this.turns.running) return;
     this.setMessages([...this.conversation, contextEvent(content)]);
   }
 
@@ -427,13 +432,13 @@ export class AgentSession {
         return;
       }
       if (options.spoken && options.kind !== "synthetic") this.activeTurn?.abort();
-      const admission = await this.waitForTurn(cancel.signal);
+      const admission = await this.turns.enter(cancel.signal);
       if (admission === "busy") {
         yield {
           type: "error",
           error: {
             kind: "busy",
-            message: `${this.maxQueuedTurns} inputs are already waiting for the running turn; this one was not run: ${JSON.stringify(trimmed.slice(0, 80))}`,
+            message: `${this.turns.maxWaiting} inputs are already waiting for the running turn; this one was not run: ${JSON.stringify(trimmed.slice(0, 80))}`,
           },
         };
         yield { type: "done", reply: "" };
@@ -447,59 +452,22 @@ export class AgentSession {
       // The skill the conversation opens in, or one the app routed to since the last turn.
       const routed = this.skillChange();
       if (routed) yield { type: "skill", ...routed };
-      // A procedure already in the context when the conversation opens starts here.
-      for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
+      // What a block has to report before the turn: a procedure already in the context when
+      // the conversation opens starts here.
+      yield* this.blocks.events();
       let outcome: TurnOutcome;
       this.activeTurn = cancel;
       try {
         outcome = yield* this.runLoop(trimmed, options, streaming, cancel, arrival);
       } finally {
         this.activeTurn = null;
-        this.finishTurn();
+        this.turns.leave();
       }
       if (outcome.error) yield { type: "error", error: outcome.error };
       yield { type: "done", reply: outcome.reply };
     } finally {
       signal?.removeEventListener("abort", onCancel);
     }
-  }
-
-  /** Resolves "run" once this input owns the session, "busy" when the queue is
-   * full, "cancelled" when `cancelled` aborts first (it leaves the queue). */
-  private async waitForTurn(cancelled: AbortSignal): Promise<"run" | "busy" | "cancelled"> {
-    if (!this.running) {
-      this.running = true;
-      return "run";
-    }
-    if (this.waiting.length >= this.maxQueuedTurns) return "busy";
-    const admitted = await new Promise<boolean>((resolve) => {
-      const admit = () => {
-        cancelled.removeEventListener("abort", leave);
-        resolve(true);
-      };
-      const leave = () => {
-        const at = this.waiting.indexOf(admit);
-        if (at >= 0) this.waiting.splice(at, 1);
-        resolve(false);
-      };
-      this.waiting.push(admit);
-      cancelled.addEventListener("abort", leave, { once: true });
-    });
-    if (!admitted) return "cancelled";
-    // Cancelled between the hand-over and this continuation: pass it on.
-    if (cancelled.aborted) {
-      this.finishTurn();
-      return "cancelled";
-    }
-    return "run";
-  }
-
-  /** Hand the session to the next waiting input, or go idle. */
-  private finishTurn(): void {
-    const next = this.waiting.shift();
-    if (next) next();
-    else this.running = false;
-    this.notify();
   }
 
   /**
@@ -529,6 +497,7 @@ export class AgentSession {
       yield { type: "error", error: { kind: "failed", message } };
     }
     this.unsaid = options.unsaid === true;
+    this.blocks.turnStarted();
     const newest = this.conversation.at(-1);
     const heardAlready = options.heard && newest?.role === "user" && newest.content.endsWith(text);
     let messages: AgentChatMessage[] = heardAlready
@@ -577,7 +546,7 @@ export class AgentSession {
           ...this.buildRequest(messages, options.spoken === true),
           signal: controller.signal,
         };
-        stepCall = this.recordLlmInput(request);
+        stepCall = this.llmLog.sent(request);
         speech.startStep();
         unrecorded = true;
         const timer = setTimeout(
@@ -605,7 +574,7 @@ export class AgentSession {
             kind: "empty_reply",
             message: "The model answered with no text and no tool call, twice in a row.",
           };
-          this.recordLlmError(stepCall, unanswered.message);
+          this.llmLog.failed(stepCall, unanswered.message);
           break;
         }
         // A step that calls a tool says nothing of its own (see TurnSpeech).
@@ -640,7 +609,7 @@ export class AgentSession {
           yield { type: "tool", ...tool };
           if (skill) yield { type: "skill", ...skill };
         }
-        for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
+        yield* this.blocks.events();
         const closing = outcome.held?.readBack ?? outcome.goodbye;
         if (closing !== undefined) {
           // The turn ends with the held action's question, or the goodbye of the end_call that
@@ -682,10 +651,32 @@ export class AgentSession {
       // KEEP-JUSTIFIED: the caller only gets the fixed apology; the cause goes to
       // the developer log, the error event and the step's trace entry.
       console.error(`[curb] turn ${kind}:`, failure.error);
-      if (stepCall !== null) this.recordLlmError(stepCall, detail);
+      if (stepCall !== null) this.llmLog.failed(stepCall, detail);
       unanswered = { kind, message: detail };
     }
-    if (!unanswered) return { reply: speech.reply };
+    if (!unanswered) {
+      if (settled) this.blocks.turnEnded();
+      return { reply: speech.reply };
+    }
+
+    // The blocks hear of every turn without a reply, a failure, an empty reply or the step limit
+    // alike, and one may act on it: often enough in a row, `<Handoff>` has a person take over
+    // instead of another apology.
+    this.blocks.turnEnded(`${unanswered.kind}: ${unanswered.message}`);
+    const own = await this.runBlockCall(messages);
+    if (own) {
+      const { skill, ...tool } = own.executed;
+      yield { type: "tool", ...tool };
+      if (skill) yield { type: "skill", ...skill };
+      // The block's call is the turn's outcome. The model is not answering, so the caller hears
+      // the fixed line the block has for that, if it has one, in place of the apology.
+      const line = own.unansweredLine;
+      if (line === undefined) return { reply: speech.reply, error: unanswered };
+      const delta = speech.line(line);
+      this.endedOnFallbackLine = true;
+      if (streaming && delta) yield { type: "delta", delta, text: line };
+      return { reply: speech.reply, error: unanswered };
+    }
 
     // The caller hears a fixed line in the agent's language, right after whatever
     // the turn already said. The transcript does not record it: the model never
@@ -810,7 +801,7 @@ export class AgentSession {
     done: boolean;
     /** Tool calls executed this step, with their success — streaming callers
      * yield these; runTurn ignores them. */
-    toolCalls: Array<{ toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number; skill?: SkillChange }>;
+    toolCalls: ExecutedCall[];
     /** The action this step held: the turn ends asking the caller about it. */
     held?: HeldCall;
     /** The goodbye of the end_call this step ran: the turn ends saying it. */
@@ -851,7 +842,7 @@ export class AgentSession {
 
     if (toolCalls.length === 0) return { messages: next, done: true, toolCalls: [] };
 
-    const executed: Array<{ toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number; skill?: SkillChange }> = [];
+    const executed: ExecutedCall[] = [];
     let held: HeldCall | undefined;
     let goodbye: string | undefined;
     for (const { record, published } of planned) {
@@ -879,6 +870,12 @@ export class AgentSession {
       if (ok && toolCall.name === END_CALL_TOOL_NAME) goodbye ??= endCallGoodbye(toolCall.input);
       executed.push({ toolCall, ok, ...(durationMs === undefined ? {} : { durationMs }), ...(skill ? { skill } : {}) });
       next = this.append(next, toolMessage(toolCall, outcome));
+      if (!toolCall.invalid) this.reportToolRun(toolCall.name, outcome);
+    }
+    const own = await this.runBlockCall(next);
+    if (own) {
+      next = own.messages;
+      executed.push(own.executed);
     }
 
     // Ends the turn loop immediately even if the model queued other tool
@@ -917,13 +914,13 @@ export class AgentSession {
   ): AsyncGenerator<AgentTurnStreamEvent, AgentChatMessage[]> {
     const pending = this.pending!;
     const request = confirmationRequest(pending.readBack, words);
-    const call = this.recordLlmInput(request);
+    const call = this.llmLog.sent(request);
     const { verdict, failed } = await checkAnswer(this.llm, request, signal, this.llmTimeoutMs);
     if (failed) {
       // KEEP-JUSTIFIED: an unanswered check neither runs the action nor fails the turn: it
       // counts as unclear (the model asks again); the cause goes to the log and the trace.
       console.error("[curb] the confirmation check failed; the answer counts as unclear:", failed.error);
-      this.recordLlmError(call, describeError(failed.error));
+      this.llmLog.failed(call, describeError(failed.error));
     }
     if (verdict !== "yes") {
       if (verdict === "no") this.pending = null;
@@ -937,10 +934,58 @@ export class AgentSession {
     let next = this.append(messages, { role: "assistant", content: "", at: Date.now(), toolCalls: [toolCall] });
     const { outcome, durationMs, skill } = await this.executeToolCall(toolCall);
     next = this.append(next, toolMessage(toolCall, outcome));
+    if (!toolCall.invalid) this.reportToolRun(toolCall.name, outcome);
     yield { type: "tool", toolCall, ok: outcome.result.ok !== false, ...(durationMs === undefined ? {} : { durationMs }) };
     if (skill) yield { type: "skill", ...skill };
-    for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
+    // The confirmed action may be what a block acts on (the failure that hands the call off),
+    // before the model speaks.
+    const own = await this.runBlockCall(next);
+    if (own) {
+      next = own.messages;
+      const { skill: ownSkill, ...tool } = own.executed;
+      yield { type: "tool", ...tool };
+      if (ownSkill) yield { type: "skill", ...ownSkill };
+    }
+    yield* this.blocks.events();
     return next;
+  }
+
+  /** Tell the blocks that the tool `name` ran (`blocks/session.ts`). The framework's own tools
+   * are not theirs to hear of. */
+  private reportToolRun(name: string, outcome: ToolCallOutcome): void {
+    if (this.runtime.toolDefinition(name)?.scope === "runtime") return;
+    this.blocks.toolRan(name, outcome.result);
+  }
+
+  /** Make the tool call a block has due now (`blocks/session.ts`), on the caller's behalf and
+   * without asking the model, recorded as a call of its own. `unansweredLine` is what the caller
+   * hears after it when the model did not answer the turn. */
+  private async runBlockCall(
+    messages: AgentChatMessage[],
+  ): Promise<{ messages: AgentChatMessage[]; executed: ExecutedCall; unansweredLine?: string } | undefined> {
+    const due = this.blocks.callDue();
+    if (!due) return undefined;
+    const skillPath = this.runtime.toolDefinition(due.name)?.skillPath;
+    const toolCall: AgentToolCallRecord = {
+      id: this.nextToolCallId(),
+      name: due.name,
+      input: due.input,
+      ...(skillPath ? { skillPath } : {}),
+    };
+    let next = this.append(messages, { role: "assistant", content: "", at: Date.now(), toolCalls: [toolCall] });
+    const { outcome, durationMs, skill } = await this.executeToolCall(toolCall);
+    next = this.append(next, toolMessage(toolCall, outcome));
+    const unansweredLine = due.unansweredLine?.(outcome.result);
+    return {
+      messages: next,
+      ...(unansweredLine === undefined ? {} : { unansweredLine }),
+      executed: {
+        toolCall,
+        ok: outcome.result.ok !== false,
+        ...(durationMs === undefined ? {} : { durationMs }),
+        ...(skill ? { skill } : {}),
+      },
+    };
   }
 
   /** Run one recorded tool call. Always yields a result: the call is already
@@ -982,17 +1027,6 @@ export class AgentSession {
   /** The span attributes of this session's spans, for the call that carries it. */
   spanAttributes(): SpanAttributes {
     return this.traceAttributes();
-  }
-
-  /** What moved in the context's procedures since the last look: read at the start of a turn
-   * and after every tool run, the only moments a procedure can have moved. */
-  private procedureChanges(): ProcedureChange[] {
-    const now = proceduresOf(this.runtime.snapshot().context.blocks);
-    const changes = procedureChanges(this.procedures, now);
-    this.procedures = now;
-    const callTrace = callTraceOf(this.runtime.info);
-    for (const change of changes) callTrace?.procedure(change);
-    return changes;
   }
 
   private async runTool(toolCall: AgentToolCallRecord): Promise<ToolCallOutcome> {
@@ -1059,7 +1093,7 @@ export class AgentSession {
     }
     // The cut-off speech ended in a fallback line the transcript does not hold: the last
     // assistant message is an earlier reply, which played in full.
-    if (this.running || this.endedOnFallbackLine) return;
+    if (this.turns.running || this.endedOnFallbackLine) return;
     for (let i = this.conversation.length - 1; i >= 0; i -= 1) {
       const message = this.conversation[i];
       if (message?.role !== "assistant") continue;
@@ -1070,29 +1104,6 @@ export class AgentSession {
       if (cut) this.setMessages(this.conversation.map((entry, at) => (at === i ? cut : entry)));
       return;
     }
-  }
-
-  /** Returns the record's index, for {@link recordLlmError}. */
-  private recordLlmInput(request: AgentRunRequest): number {
-    const index = this.llmCalls.length;
-    this.llmCalls = [
-      ...this.llmCalls,
-      {
-        index,
-        at: new Date().toISOString(),
-        input: serializeLlmInput(request),
-      },
-    ];
-    this.notify();
-    return index;
-  }
-
-  private recordLlmError(index: number, error: string) {
-    const call = this.llmCalls[index];
-    // A reset() during the turn cleared the trace; nothing left to annotate.
-    if (!call) return;
-    this.llmCalls = this.llmCalls.map((entry) => (entry === call ? { ...entry, error } : entry));
-    this.notify();
   }
 
   private notify() {

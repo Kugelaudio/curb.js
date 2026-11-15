@@ -1,9 +1,10 @@
-import { AudioFrame } from "@livekit/rtc-node";
+import { AudioFrame, TrackSource, type Room, type TrackPublishOptions } from "@livekit/rtc-node";
 import { describe, expect, it } from "vitest";
 import {
   RINGBACK_FREQUENCY_HZ,
   TRANSFER_AUDIO_SAMPLE_RATE,
   createTransferAudio,
+  publishTransferTrack,
   ringbackFrames,
   type TransferAudioSink,
 } from "./transfer-audio.js";
@@ -145,5 +146,25 @@ describe("transfer audio", () => {
     await audio.prepare();
     audio.ringback()();
     expect(published()).toBe(1);
+  });
+});
+
+describe("publishTransferTrack", () => {
+  it("publishes as a microphone, so a participant recording of the agent includes it", async () => {
+    // LiveKit's participant egress records a participant's camera and microphone tracks only;
+    // a track published without a source arrives as SOURCE_UNKNOWN and is left out of it.
+    const published: { name: string; options: TrackPublishOptions }[] = [];
+    const room = {
+      localParticipant: {
+        publishTrack: async (track: { name: string }, options: TrackPublishOptions) => {
+          published.push({ name: track.name, options });
+        },
+      },
+    } as unknown as Room;
+    const sink = await publishTransferTrack(room);
+    await sink.close();
+    expect(published).toHaveLength(1);
+    expect(published[0]?.name).toBe("transfer_audio");
+    expect(published[0]?.options.source).toBe(TrackSource.SOURCE_MICROPHONE);
   });
 });

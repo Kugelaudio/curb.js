@@ -1,43 +1,78 @@
 import type { SemanticNode } from "../types.js";
 
 /**
- * Pattern blocks — the framework's opinionated layer above the primitives.
+ * Blocks: the framework's higher-level components, its opinionated layer above the primitives.
  *
- * A block packages one recurring interaction pattern (a step-by-step
- * procedure) so an author does not hand-roll machinery that is easy to get
- * wrong, and so the preview can render the pattern as familiar UI (a stepper)
- * instead of generic tool cards. For the model nothing changes: every block
- * compiles down to the same primitives — content lines and tools — so the LLM
- * contract stays flat and prompt-cache-stable.
+ * A block is a component an author renders like any other (`<Handoff>`, `<TransferCallTool>`,
+ * `<Procedure>`). It is built from the primitives of `components.tsx` (`<Tool>`, `<Text>`, ...)
+ * and from other blocks: `<Handoff>` puts its caller through with the transfer block. For the
+ * model nothing changes: every block comes down to the same primitives, content lines and
+ * tools, so the LLM contract stays flat and prompt-cache-stable.
  *
- * WHEN A BLOCK IS WARRANTED. Only when it owns mechanism the author cannot
- * reasonably write directly. `<Procedure>` qualifies: it tracks the step
- * cursor, derives each step's status, hides locked step bodies from the model,
- * and generates the advance tool. A credential gate did NOT: it was `useState`
- * plus a ternary plus a `<Tool>`, so it was removed in favour of authors
- * writing exactly that. Conditional rendering, local state, and showing a tool
- * only in one branch are all plain React and need no block. Prefer the
- * primitives; reach for a block when the mechanism is genuinely non-trivial.
+ * WHEN A BLOCK IS WARRANTED. Only when it owns mechanism the author cannot reasonably write
+ * directly. `<Procedure>` qualifies: it tracks the step cursor, derives each step's status, hides
+ * locked step bodies from the model, and generates the advance tool. `<Handoff>` qualifies: it
+ * knows the opening hours, dials, offers a callback when nobody is reached, and is called by the
+ * session when a call keeps failing. A credential gate did NOT: it was `useState` plus a ternary
+ * plus a `<Tool>`, so it was removed in favour of authors writing exactly that. Conditional
+ * rendering, local state, and showing a tool only in one branch are all plain React and need no
+ * block. Prefer the primitives; reach for a block when the mechanism is genuinely non-trivial.
  *
- * One block = one folder under `src/blocks/<id>/` with three parts:
+ * ONE BLOCK = ONE FOLDER, `src/blocks/<id>/`, the id in kebab-case. Everything the block owns
+ * is in it. The session, the runtime, the compiler and the primitives name no block
+ * (`blocks.test.ts` holds them to it): they reach a block through the lists described below.
  *
- *   index.tsx     — the authored component. Renders an `agent-block-<id>`
- *                   semantic element; owns its runtime state (hooks) and
- *                   composes primitives (e.g. a <Tool>) as children.
- *   definition.ts — ONE {@link defineBlock} call: the block's id, its
- *                   compiler (semantic node → model-facing lines/tools + a
- *                   JSON payload for the preview) and, when the block hides
- *                   control flow inside its component, its blueprint
- *                   expanders for the branch map. Must stay free of
- *                   React/UI imports — it runs wherever the compiler runs.
- *   preview.tsx   — the block's preview renderer: payload → familiar UI.
+ *   index.tsx     - required. The component(s) authors render, their props, and what a block
+ *                   built on this one imports. Browser-safe: `src/index.ts` exports it.
+ *   <part>.ts     - what the block owns besides its component (`handoff/hours.ts`, the fixed
+ *                   lines in `handoff/lines.ts`). What a voice host runs for the block lives
+ *                   here too, and the host imports it from here (`transfer-call/ended.ts`).
+ *   *.test.ts(x)  - its tests.
  *
- * Registration is two lines total: the definition goes into the list in
- * `registry.ts` (server-safe), the preview is paired with the definition in
- * `preview-registry.tsx` (browser-only — the split exists so server hosts
- * never import UI code). Those lists are the ONLY coupling points: the
- * compiler, the blueprint parser, and the inspector know no individual
- * block, and the block's id/tag/component names appear nowhere else.
+ * A BLOCK WITH A PART IN THE CONVERSATION keeps track of what happens while a conversation runs,
+ * or acts in it on its own: `<Handoff>` counts what fails and has the session call its tool,
+ * `<Procedure>` reports each step the conversation completed. It adds one file:
+ *
+ *   session.ts    - the function that opens the block's part in one conversation
+ *                   (`BlockSession`, in `session.ts` beside this file): what the part hears (a
+ *                   turn started, a tool ran, a turn ended) and what it asks of the session (a
+ *                   tool call of its own, events of the turn). It finds the tools its component
+ *                   rendered by the mark the component gave them (`<agent-tool mark>`, read
+ *                   with `runtime.markedTools`).
+ *
+ * Registering it is one line in `session-registry.ts`, under the folder's name.
+ *
+ * A PATTERN BLOCK also has UI of its own in the preview (a procedure's stepper in place of
+ * generic tool cards). It adds two files, always together:
+ *
+ *   definition.ts - ONE {@link defineBlock} call: the block's id, its compiler (semantic node ->
+ *                   model-facing lines/tools + a JSON payload for the preview) and, when the
+ *                   block hides control flow inside its component, its blueprint expanders for
+ *                   the branch map. Must stay free of React/UI imports: it runs wherever the
+ *                   compiler runs. Its `index.tsx` renders an `agent-block-<id>` semantic
+ *                   element, which owns the runtime state (hooks) and composes primitives (e.g.
+ *                   a <Tool>) as children.
+ *   preview.tsx   - the block's preview renderer: payload -> familiar UI.
+ *
+ * Registering a pattern block is two lines: the definition goes into the list in `registry.ts`
+ * (server-safe), the preview is paired with the definition in `preview-registry.tsx`
+ * (browser-only: the split exists so server hosts never import UI code). Those lists are the
+ * ONLY coupling points: the compiler, the blueprint parser, and the inspector know no
+ * individual block, and the block's id/tag/component names appear nowhere else.
+ *
+ * ADDING A BLOCK:
+ *
+ *   1. Create `src/blocks/<id>/index.tsx` with the component and its tests beside it.
+ *   2. Export the component and its prop types from `src/index.ts`, and add the names to
+ *      `src/public-api.txt`.
+ *   3. Give it a page under `docs/agent-guide/components/`, a row in `components.md` and an
+ *      entry in `website/src/guide.ts`.
+ *   4. Only for a block with a part in the conversation: `session.ts` and its line in
+ *      `session-registry.ts`.
+ *   5. Only for a pattern block: `definition.ts`, `preview.tsx` and the two registry lines.
+ *
+ * `blocks.test.ts`, `api-reference.test.ts` and `public-api.test.ts` fail until each step is
+ * done, so a block cannot be added halfway.
  */
 
 /** The one semantic tag blocks use to mark structured sub-content, rendered by

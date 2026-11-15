@@ -63,7 +63,7 @@ import { ConversationClips } from "./clip-store.js";
 import { CurbLLMStub, CurbVoiceAgent } from "./curb-agent.js";
 import { voiceAgentClass, voiceSessionOptions } from "./pipeline.js";
 import { createProviderSwitch } from "./provider-swap.js";
-import { attachTransferAudio } from "../../../transfer.js";
+import { attachTransferAudio } from "../../../blocks/transfer-call/index.js";
 import { callTraceOf } from "../../../call-trace.js";
 import { traceCall } from "../call-tracing.js";
 import { livekitCallRoom } from "./livekit-call-room.js";
@@ -77,7 +77,7 @@ import {
   isTransferTarget,
   settleTransferEnded,
 } from "./transfer-handoff.js";
-import { decideTransferEnded, moveTrackedTransfer } from "../../../transfer-ended.js";
+import { decideTransferEnded, moveTrackedTransfer } from "../../../blocks/transfer-call/ended.js";
 
 // agents-js asserts its logger exists before any session work; the worker
 // CLI normally does this — we host sessions directly, so do it here.
@@ -288,7 +288,7 @@ async function startVoiceCall(options: VoiceAgentStartOptions): Promise<VoiceSes
   };
   // Handed-off mode: a transfer target is on the call, so the agent neither listens nor
   // speaks until it leaves while the caller stays; then the transfer's onEnded decides.
-  // See transfer-handoff.ts and transfer-ended.ts.
+  // See transfer-handoff.ts and blocks/transfer-call/ended.ts.
   const handoff = createTransferHandoff({
     participants: () => room.participants(),
     pause: () => {

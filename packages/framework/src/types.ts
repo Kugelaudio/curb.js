@@ -89,6 +89,27 @@ export function isToolInputError(error: unknown): error is ToolInputError {
   return error instanceof ToolInputError;
 }
 
+/**
+ * Thrown by a handler when what it depends on is not working: the API did not answer, the
+ * database is down. The model reads the message, as it reads a `ToolInputError`'s, so say what
+ * to do next. The result counts as an error and not as an answer of no (`<Handoff afterErrors>`),
+ * and `cause` goes to the log.
+ */
+export class ToolUnavailableError extends Error {
+  constructor(message: string, options: { cause?: unknown } = {}) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    this.name = "ToolUnavailableError";
+  }
+
+  toToolResult(): ToolResult {
+    return { ok: false, message: this.message };
+  }
+}
+
+export function isToolUnavailableError(error: unknown): error is ToolUnavailableError {
+  return error instanceof ToolUnavailableError;
+}
+
 export type SiteElementProps = {
   children?: ReactNode;
 };
@@ -175,6 +196,12 @@ export type ToolPropsBase = SiteElementProps & {
    * Presentation only: it never reaches the model. */
   icon?: string;
 };
+
+/** What a block marks a tool it renders with, so the block's part in the conversation
+ * (`blocks/session.ts`) finds the tool again among the rendered ones (`runtime.markedTools`): the
+ * block's id, and whatever that block wants to know about the tool. Internal: no authored `<Tool>`
+ * passes it. */
+export type ToolMark = { readonly block: string; readonly [key: string]: unknown };
 
 export type ToolActionProps = ToolPropsBase & {
   onCall: ToolHandler;

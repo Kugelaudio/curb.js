@@ -15,6 +15,7 @@ import {
   SKIP_TURN_TOOL_NAME,
   ToolInputError,
   isToolInputError,
+  isToolUnavailableError,
 } from "./types.js";
 import type {
   AgentContextEntry,
@@ -24,6 +25,7 @@ import type {
   SemanticNode,
   ToolCallOutcome,
   ToolDefinition,
+  ToolMark,
   ToolRegistryEntry,
   ToolResult,
 } from "./types.js";
@@ -97,6 +99,8 @@ export class AgentSiteRuntime {
   private registry = new Map<string, ToolRegistryEntry>();
   /** The rendered tools authored with `confirm`, by tool definition id (see `confirms`). */
   private confirming = new Map<string, SemanticNode>();
+  /** The rendered tools a block marked as its own, by tool name (see `markedTools`). */
+  private marked = new Map<string, ToolMark>();
   private context: CompiledContext | null = null;
   /** Loaded skill paths, least recently used first, ACTIVE skill last. Empty at the agent
    * level: a conversation starts with no skill loaded and opens each one when needed. */
@@ -189,6 +193,12 @@ export class AgentSiteRuntime {
     } catch (caughtError) {
       if (isToolInputError(caughtError)) {
         result = caughtError.toToolResult();
+      } else if (isToolUnavailableError(caughtError)) {
+        // The author's own word that what the tool depends on is down. The model reads their
+        // message; the result is an error like any other throw, and the cause is for the log.
+        console.error(`[curb] tool "${name}" is unavailable:`, caughtError);
+        result = caughtError.toToolResult();
+        markThrown(result, caughtError);
       } else {
         // A handler bug or a failing backend. The model gets a failed result it
         // can recover from; the raw error is for the developer only.
@@ -225,6 +235,12 @@ export class AgentSiteRuntime {
     return typeof submit === "function" ? (submit as FakeableSubmit)(input, fake) : fake(input);
   }
 
+  /** The rendered tools the block `block` marked as its own (`ToolMark`), each with the name it
+   * is called by: how a block's part in the conversation finds its tools (`blocks/session.ts`). */
+  markedTools(block: string): Array<{ name: string; mark: ToolMark }> {
+    return [...this.marked].flatMap(([name, mark]) => (mark.block === block ? [{ name, mark }] : []));
+  }
+
   /** Whether `name` asks the caller before it runs (`<Tool confirm>`). The session then
    * holds the model's call instead of running it; `callTool` itself always runs the tool. */
   confirms(name: string): boolean {
@@ -250,6 +266,10 @@ export class AgentSiteRuntime {
       return { readBack };
     } catch (caughtError) {
       if (isToolInputError(caughtError)) return { result: caughtError.toToolResult() };
+      if (isToolUnavailableError(caughtError)) {
+        console.error(`[curb] confirm of tool "${name}" is unavailable:`, caughtError);
+        return { result: caughtError.toToolResult() };
+      }
       console.error(`[curb] confirm of tool "${name}" threw:`, caughtError);
       return { result: { ok: false, message: unexpectedToolFailureMessage(name) } };
     }
@@ -385,6 +405,7 @@ export class AgentSiteRuntime {
 
     this.registry = registry;
     this.confirming = confirmingTools(this.root.container.root);
+    this.marked = markedTools(this.root.container.root, registry);
     this.installLoadSkillTool(context);
     if (this.settings.s2s()) context.instructions.push(HANDED_OVER_RULE);
     else this.installStaySilentTool(context);
@@ -649,6 +670,22 @@ function confirmingTools(root: SemanticNode | null): Map<string, SemanticNode> {
   };
   if (root) visit(root);
   return forms;
+}
+
+/** The rendered tools a block marked (`ToolMark`), by the name they are called by. */
+function markedTools(root: SemanticNode | null, registry: Map<string, ToolRegistryEntry>): Map<string, ToolMark> {
+  const marks = new Map<string, ToolMark>();
+  const visit = (node: SemanticNode) => {
+    if (node.type === "agent-tool" && node.props.mark) marks.set(String(node.props.id ?? node.id), node.props.mark as ToolMark);
+    for (const child of node.children) visit(child);
+  };
+  if (root) visit(root);
+  const byName = new Map<string, ToolMark>();
+  for (const [name, entry] of registry) {
+    const mark = marks.get(entry.definition.id);
+    if (mark) byName.set(name, mark);
+  }
+  return byName;
 }
 
 /** The rendered `<Tool>` form with node id `id` (its tool definition id); none for other tools. */

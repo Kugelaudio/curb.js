@@ -37,6 +37,7 @@
 . CallHook
 . CallRecord
 . CallView
+. CallbackRequest
 . ClientInfo
 . CompiledContext
 . ContextDocProps
@@ -50,6 +51,10 @@
 . FieldProps
 . GetState
 . GlobalTools
+. Handoff
+. HandoffHours
+. HandoffProps
+. HandoffReason
 . HostContainer
 . HostTimeoutError
 . HostUnavailableError
@@ -70,6 +75,7 @@
 . MessageRefusalCode
 . MessageRefusedError
 . MessageSender
+. OpeningHours
 . PageBlock
 . Procedure
 . ProcedureProps
@@ -105,6 +111,7 @@
 . ToolPropsWithSchema
 . ToolResult
 . ToolSpec
+. ToolUnavailableError
 . TransferCall
 . TransferCallRequest
 . TransferCallTool
@@ -116,6 +123,7 @@
 . UseAgentStore
 . UseMessageWithSchema
 . UseMessageWithoutSchema
+. Weekday
 . ZodObjectSchema
 . compileSite
 . configureMcp
@@ -129,6 +137,7 @@
 . formatAuthoringDiagnostic
 . getMcpManager
 . isToolInputError
+. isToolUnavailableError
 . listPublicMarkdown
 . mergeAuthoringDiagnostics
 . preloadMcpTools

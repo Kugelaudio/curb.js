@@ -8,7 +8,7 @@
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License" src="https://img.shields.io/npm/l/create-curb.js.svg?style=for-the-badge&labelColor=000000"></a>
 </div>
 
-`create-curb.js` creates a Curb voice agent in one command. You need Node.js 22.12 or newer.
+`create-curb.js` creates a Curb voice agent in one command. You need Node.js 22.12 or newer, on Linux or macOS, or on Windows through WSL.
 
 ```bash
 npm create curb.js my-agent
@@ -40,6 +40,22 @@ npm create curb.js my-agent -- --llm anthropic --tts elevenlabs
 | `--tts` | `kugelaudio`, `cartesia`, `elevenlabs`, `openai` |
 
 `npm create curb.js -- --help` lists every option.
+
+## Templates
+
+The project starts as a demo assistant. `--template` starts it closer to what you build:
+
+| Template | Starts as |
+| --- | --- |
+| `default` | Juno, a personal assistant that shows how Curb works |
+| `support` | Mara, customer support: order lookup, returns and shipping policies, tickets |
+| `booking` | Lena, appointment booking: free slots, booking and cancelling, a price list |
+
+```bash
+npm create curb.js my-agent -- --template support
+```
+
+The sample company, orders and calendar are made up: replace them with your own.
 
 ## Previews
 

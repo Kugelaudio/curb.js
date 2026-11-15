@@ -12,7 +12,7 @@ kugelaudio.tts(options?: KugelaudioTtsOptions): TtsDescriptor;
 
 ## `kugelaudio.llm(options?)`
 
-KugelAudio's EU-hosted LLM, in closed alpha.
+KugelAudio's EU-hosted LLM, part of hosted agents.
 
 | Option | Type | Default |
 |---|---|---|

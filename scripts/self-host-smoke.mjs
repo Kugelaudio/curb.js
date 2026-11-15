@@ -21,7 +21,7 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -343,6 +343,10 @@ async function main() {
 
   const manifest = JSON.parse(readFileSync(join(outDir, "curb.bundle.json"), "utf8"));
   if (typeof manifest.entrypoint !== "string") fail("curb.bundle.json names no entrypoint");
+  // A deployed agent carries what runs a call, never the preview UI or the bundler.
+  const NOT_SHIPPED = ["vite", "esbuild", "@vercel/nft", "@xyflow/react", "@base-ui/react", "tailwindcss", "lucide-react", "streamdown"];
+  const shipped = NOT_SHIPPED.filter((name) => existsSync(join(outDir, "node_modules", name)));
+  if (shipped.length > 0) fail(`the built artifact ships ${shipped.join(", ")}, which a running call never loads`);
   if (JSON.stringify(manifest.hooks) !== '["afterCall"]') fail(`the manifest declares hooks ${JSON.stringify(manifest.hooks)}`);
 
   // Port 0: the runner binds a free port and reports the bound one on its ready line.

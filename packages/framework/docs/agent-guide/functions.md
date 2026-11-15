@@ -19,6 +19,8 @@ See [Errors](./functions/errors.md).
 |---|---|
 | `ToolInputError` | A handler refuses its input, with a message for the model |
 | `isToolInputError` | Tests for that error |
+| `ToolUnavailableError` | A handler finds what it depends on not working, with a message for the model |
+| `isToolUnavailableError` | Tests for that error |
 | `AgentAuthoringError` | The agent is authored wrongly, with a code and a fix |
 | `MessageRefusedError` | A message was refused by the app or the host |
 | `HostUnavailableError` | `askHost` found no host connected |

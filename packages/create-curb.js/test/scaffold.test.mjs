@@ -22,7 +22,10 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const bin = fileURLToPath(new URL("../bin/create-curb.js", import.meta.url));
-const template = fileURLToPath(new URL("../templates/default", import.meta.url));
+const templates = fileURLToPath(new URL("../templates", import.meta.url));
+const template = join(templates, "default");
+const BUSINESS_TEMPLATES = { support: "Mara", booking: "Lena" };
+const ALL_TEMPLATES = ["default", ...Object.keys(BUSINESS_TEMPLATES)].map((name) => join(templates, name));
 
 function scaffold(t, flags = []) {
   const root = mkdtempSync(join(tmpdir(), "create-curb.js-test-"));
@@ -298,19 +301,21 @@ test("the template denies @livekit/blingfire's no-op install script", () => {
 // AGENT_PROSE_JSX_TEXT), so the template's prose is one template literal per component.
 test("template prose is written as template literals, never multi-line JSX text", () => {
   const prose = /<(SystemPrompt|Instruction|Text)>\s*\n\s*[^\s{<]/;
-  const offenders = [...files(join(template, "src"))].filter((path) => prose.test(readFileSync(path, "utf8")));
-  assert.deepEqual(offenders.map((path) => relative(template, path)), []);
+  const offenders = ALL_TEMPLATES.flatMap((dir) =>
+    [...files(join(dir, "src"))].filter((path) => prose.test(readFileSync(path, "utf8"))),
+  );
+  assert.deepEqual(offenders.map((path) => relative(templates, path)), []);
 });
 
 // The framework tells the model today's date on every turn, so a date or a clock time in
 // the template would be wrong on every other day.
-test("the template hard-codes no date or clock time", () => {
+test("no template hard-codes a date or clock time", () => {
   const dated =
     /\b(19|20)\d\d\b|\b\d{1,2}:\d\d\b|\b(January|February|March|April|June|July|August|September|October|November|December|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/;
-  const offenders = [...files(join(template, "src")), ...files(join(template, "context"))].filter((path) =>
-    dated.test(readFileSync(path, "utf8")),
+  const offenders = ALL_TEMPLATES.flatMap((dir) =>
+    [...files(join(dir, "src")), ...files(join(dir, "context"))].filter((path) => dated.test(readFileSync(path, "utf8"))),
   );
-  assert.deepEqual(offenders.map((path) => relative(template, path)), []);
+  assert.deepEqual(offenders.map((path) => relative(templates, path)), []);
 });
 
 // A hosted build accepts public npm with package-lock.json only and refuses a project npm
@@ -380,4 +385,74 @@ test("a repo checkout links the sibling framework", (t) => {
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(readJson(join(project, "package.json")).dependencies.curb, /^file:.*packages\/framework$/);
+});
+
+// The business templates lay their own src/agent, context and README over templates/default, so
+// the shared files (AGENTS.md, package.json, tsconfig, .mcp.json) exist once.
+for (const [name, agentName] of Object.entries(BUSINESS_TEMPLATES)) {
+  test(`--template ${name} scaffolds ${agentName} on the KugelAudio defaults, with no trace of Juno`, (t) => {
+    const project = scaffold(t, ["--template", name]);
+    const agent = readFileSync(join(project, "src/agent/agent.tsx"), "utf8");
+    assert.match(agent, new RegExp(`You are ${agentName},`));
+    assert.match(
+      agent,
+      /<Agent llm=\{kugelaudio\.llm\(\)\} stt=\{kugelaudio\.stt\(\{ language: "en" \}\)\} tts=\{kugelaudio\.tts\(\)\}>/,
+    );
+    assert.deepEqual(readJson(join(project, "package.json")).curb.requiredRuntimeSecrets, ["KUGELAUDIO_API_KEY"]);
+    assert.deepEqual([...symlinks(project)], []);
+    assert.ok(!existsSync(join(project, "src/agent/about-you")) && !existsSync(join(project, "context/about-you.md")));
+    for (const path of files(project)) {
+      assert.doesNotMatch(readFileSync(path, "utf8"), /Juno|\{\{[A-Z_]+\}\}/, relative(project, path));
+    }
+    // Every skill the agent links exists as a folder, and its markdown file exists too.
+    for (const [, path] of agent.matchAll(/<Skill path="\/([a-z-]+)"/g)) {
+      const skill = readFileSync(join(project, "src/agent", path, "skill.tsx"), "utf8");
+      for (const [, md] of skill.matchAll(/<Text src="([^"]+)"/g)) assert.ok(existsSync(join(project, "context", md)), md);
+    }
+  });
+}
+
+test("--template with a name no template has is refused, naming the choices", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "create-curb.js-test-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const result = run(root, [join(root, "app"), "--template", "nope"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Invalid --template "nope"\. Choose one of: default, booking, support\./);
+});
+
+test("the default template is untouched: --template default writes the same tree as no flag, and AGENTS.md as shipped", (t) => {
+  const plain = scaffold(t);
+  const named = scaffold(t, ["--template", "default"]);
+  const list = (dir) => [...files(dir)].map((path) => relative(dir, path)).sort();
+  assert.deepEqual(list(named), list(plain));
+  for (const file of list(plain)) {
+    assert.equal(readFileSync(join(named, file), "utf8"), readFileSync(join(plain, file), "utf8"), file);
+  }
+  for (const file of ["AGENTS.md", "CLAUDE.md", "tsconfig.json", ".mcp.json:.mcp.json", "context/about-you.md", "src/agent/about-you/skill.tsx", "src/agent/how-this-works/skill.tsx"]) {
+    const [shipped, written = shipped] = file.split(":");
+    assert.equal(readFileSync(join(plain, written), "utf8"), readFileSync(join(template, shipped), "utf8"), file);
+  }
+  assert.match(readFileSync(join(plain, "AGENTS.md"), "utf8"), /starts as Juno, a demo assistant/);
+});
+
+// The booking agent's numbers: B-1, B-2, cancel B-1, then a new booking must not reuse B-2.
+// Node 22.12 strips types only behind a flag, so the pure module runs in a child process.
+test("booking numbers are never reused after a cancellation", () => {
+  const module = new URL("../templates/booking/src/agent/calendar.ts", import.meta.url).href;
+  const script = `
+    import { addAppointment, removeAppointment } from ${JSON.stringify(module)};
+    const input = { service: "haircut", date: "2030-01-01", time: "09:00", name: "A" };
+    let book = { appointments: [], nextNumber: 1 };
+    const ids = [];
+    const add = () => { const r = addAppointment(book, input); book = r.book; ids.push(r.created.id); };
+    add(); add();
+    book = removeAppointment(book, "B-1").book;
+    add();
+    const ids3 = book.appointments.map((a) => a.id);
+    const gone = removeAppointment(book, "B-2");
+    console.log(JSON.stringify({ ids, ids3, afterCancelB2: gone.book.appointments.map((a) => a.id), removed: gone.removed }));
+  `;
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", "--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { ids: ["B-1", "B-2", "B-3"], ids3: ["B-2", "B-3"], afterCancelB2: ["B-3"], removed: true });
 });

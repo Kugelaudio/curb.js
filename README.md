@@ -40,9 +40,10 @@ knows and what it can do, as React components.
   </picture>
 </p>
 
-> **Rather not host it yourself?** KugelAudio hosting, in closed alpha, includes
+> **Rather not host it yourself?** KugelAudio hosting includes
 > phone numbers, scaling and call logs, and hosted deploys accept a project that
-> installs Curb from npm. [How hosting works](#hosting)
+> installs Curb from npm. Ask hello@kugelaudio.com to switch it on for your organization.
+> [How hosting works](#hosting)
 
 Here is a complete skill, a coffee counter:
 
@@ -97,7 +98,7 @@ Whatever the component renders is what the agent knows and can do right now.
 
 ## Quickstart
 
-You need Node.js 22.12 or newer.
+You need Node.js 22.12 or newer, on Linux or macOS, or on Windows through WSL.
 
 ```bash
 npm create curb.js my-agent
@@ -134,7 +135,8 @@ agent.
 ### Deploy to KugelAudio
 
 KugelAudio builds, verifies and hosts agents, with phone numbers, call logs and
-scaling handled for you. Hosting is in closed alpha, and hosted deploys accept a
+scaling handled for you. Hosting is switched on for your
+organization on request (hello@kugelaudio.com), and hosted deploys accept a
 project that installs Curb from npm, which is what `npm create curb.js` creates:
 
 ```bash

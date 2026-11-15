@@ -4,6 +4,11 @@ All notable changes to Curb. Curb uses semantic versioning. Version numbers can 
 
 Some 1.x releases made breaking changes without a major version. Each one is listed under Breaking.
 
+This file stops at 1.14.1. From 1.15.0 on, each release's notes are on its
+[GitHub Release](https://github.com/Kugelaudio/curb.js/releases) and in the `RELEASE_NOTES.md` of
+the published package, because no workflow can push a commit to `main`. A release that contains a
+breaking change is a major version: the release refuses any other.
+
 ## 1.14.1 (2026-10-29)
 
 ### Fixed

@@ -1,7 +1,7 @@
 import type { Context } from "@opentelemetry/api";
 
 import type { AgentInfoStore } from "./info-store.js";
-import type { ProcedureChange } from "./procedure-progress.js";
+import type { ProcedureChange } from "./blocks/procedure/progress.js";
 import type { SkillChange } from "./tool-run.js";
 
 /**
@@ -11,6 +11,13 @@ import type { SkillChange } from "./tool-run.js";
  * it without being handed it. Nothing here loads OpenTelemetry: outside a voice call there is no
  * trace, and the session and the transfer do nothing with it.
  */
+
+/** A handoff to a person (`<Handoff>`): why, what the person taking over should know, and what
+ * became of it. `outcome` is a transfer's outcome, or `closed` outside the hours; `code` a refusal's. */
+export type HandoffRecord = { reason: string; summary: string; outcome: string; code?: string };
+
+/** A callback the caller asked for when nobody could take the call (`<Handoff>`). */
+export type CallbackRequestRecord = { name: string; phone: string; reason: string; summary: string };
 
 /** One transfer under way, from the request to its end. */
 export type TransferTrace = {
@@ -36,6 +43,11 @@ export type CallTrace = {
   transferHandedOff(): void;
   /** The handed-off transfer is over: the agent took the call back, or it ended the call. */
   transferEnded(how: "resumed" | "ended_call"): void;
+  /** A handoff was decided: a transfer was tried, or nobody was there. Its summary and the
+   * caller's details go to the observer only, never onto a span. */
+  handoff(record: HandoffRecord): void;
+  /** The caller left a callback request. */
+  callbackRequest(record: CallbackRequestRecord): void;
   /** The call could not run as it should, for example its session did not start. Said on the
    * call's span, which still ends with the call. */
   fail(error: unknown): void;
@@ -48,6 +60,10 @@ export type CallTraceObserver = {
   /** A transfer request to `to` got its outcome, `durationMs` after it was asked for. The
    * number goes to the observer only, never onto a span. */
   transfer?(outcome: string, durationMs: number, to: string): void;
+  /** A handoff was decided (`curb.handoff` in the call's record). */
+  handoff?(record: HandoffRecord): void;
+  /** The caller left a callback request (`curb.callback_request` in the call's record). */
+  callbackRequest?(record: CallbackRequestRecord): void;
 };
 
 /** Keyed by the runtime's info store, whose identity is the runtime's. */

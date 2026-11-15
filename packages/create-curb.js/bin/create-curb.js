@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// `npm create curb.js my-agent`: scaffolds a new agent project from templates/default, pinned
+// `npm create curb.js my-agent`: scaffolds a new agent project from templates/default (or the
+// template --template names), pinned
 // to the curb.js release with this package's version, so `npm create curb.js@preview` gives a
 // project on the matching preview. It asks nothing: the project runs on KugelAudio
 // (LLM, speech-to-text, text-to-speech) unless flags pick other providers, and
@@ -12,6 +13,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -42,6 +44,8 @@ Options:
   --stt-model <id>     STT model id (provider default otherwise)
   --tts-model <id>     TTS model id (provider default otherwise)
   --llm-base-url <url> Endpoint for --llm openai-compatible
+  --template <name>    default | support | booking (default default): Juno, a demo
+                       assistant; Mara, customer support; Lena, appointment booking.
   --framework <spec>   Dependency spec for the "curb" package (a version or
                        file:/path). Defaults to the local framework checkout,
                        else the curb.js release that matches this package.
@@ -71,6 +75,7 @@ function fail(message) {
 const args = scaffoldArgs(process.argv.slice(2));
 let targetArg;
 let frameworkSpec;
+let template = "default";
 let skipInstall = false;
 let skipGit = false;
 // Provider/model selections passed as flags.
@@ -84,7 +89,8 @@ for (let index = 0; index < args.length; index += 1) {
     index += 1;
     return value;
   };
-  if (arg === "--framework") frameworkSpec = takeValue("--framework");
+  if (arg === "--template") template = takeValue("--template");
+  else if (arg === "--framework") frameworkSpec = takeValue("--framework");
   else if (arg === "--stt") cli.stt = takeValue("--stt");
   else if (arg === "--llm") cli.llm = takeValue("--llm");
   else if (arg === "--tts") cli.tts = takeValue("--tts");
@@ -109,6 +115,12 @@ const targetDir = resolve(targetArg);
 
 // Package dir of this CLI, used to find bundled templates.
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// templates/default is the whole project; every other template is only the part that differs
+// (src/agent, context and README.md) and is laid over it, so the shared files exist once.
+const templatesDir = join(pkgDir, "templates");
+const DEFAULT_STARTER_SENTENCE = "The project starts as Juno, a demo assistant: replace\nher prompt, skills and tools with the user's agent";
+const TEMPLATES = readdirSync(templatesDir).sort((a, b) => (a === "default" ? -1 : b === "default" ? 1 : a.localeCompare(b)));
+if (!TEMPLATES.includes(template)) fail(`Invalid --template "${template}". Choose one of: ${TEMPLATES.join(", ")}.`);
 // A repo checkout installs the sibling framework package; a published copy, curb.js from npm.
 const localFramework = resolve(pkgDir, "../framework");
 const repoCheckout = existsSync(join(localFramework, "package.json"));
@@ -305,10 +317,18 @@ seedKeysFromEnv();
 const envValues = finalizeEnv();
 
 // -------------------------------------------------------------- copy template
-const templateDir = resolve(dirname(fileURLToPath(import.meta.url)), "../templates/default");
 try {
   mkdirSync(targetDir, { recursive: true });
-  cpSync(templateDir, targetDir, { recursive: true });
+  cpSync(join(templatesDir, "default"), targetDir, { recursive: true });
+  if (template !== "default") {
+    for (const part of ["src/agent", "context"]) rmSync(join(targetDir, part), { recursive: true, force: true });
+    cpSync(join(templatesDir, template), targetDir, { recursive: true });
+    // AGENTS.md is shared; only its sentence about the starting agent depends on the template.
+    const guidePath = join(targetDir, "AGENTS.md");
+    const guide = readFileSync(guidePath, "utf8");
+    if (!guide.includes(DEFAULT_STARTER_SENTENCE)) fail("create-curb.js: templates/default/AGENTS.md lost the sentence this installer rewrites.");
+    writeFileSync(guidePath, guide.replace(DEFAULT_STARTER_SENTENCE, () => "The project starts as a demo agent (README.md names it): replace\nits prompt, skills and tools with the user's agent"));
+  }
 } catch (error) {
   fail(`Cannot create the project in ${targetDir} (${error.code ?? error.message}). Choose a directory you can write to.`);
 }
@@ -354,7 +374,7 @@ const TEMPLATE_AGENT_TAG =
 const agentPath = join(targetDir, "src/agent/agent.tsx");
 const templateAgent = readFileSync(agentPath, "utf8");
 if (!templateAgent.includes(TEMPLATE_PROVIDER_IMPORT) || !templateAgent.includes(TEMPLATE_AGENT_TAG)) {
-  fail("create-curb.js: templates/default/src/agent/agent.tsx no longer has the provider lines this installer rewrites.");
+  fail(`create-curb.js: templates/${template}/src/agent/agent.tsx no longer has the provider lines this installer rewrites.`);
 }
 const providers = providerSource(answers);
 writeFileSync(

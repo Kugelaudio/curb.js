@@ -6,7 +6,8 @@
 //   node scripts/release-version.mjs --channel preview
 //
 // The base is the higher of the stable `v*` tags and npm's `latest` of curb.js. A stable release
-// bumps the base. A preview is `<next minor>-preview.<n>`, with n continuing
+// bumps the base, and a breaking change since the last stable tag (`!` in the title, or a
+// `BREAKING CHANGE:` footer) refuses anything but `major`. A preview is `<next minor>-preview.<n>`, with n continuing
 // from the published `preview` tag and the preview git tags, and starting over at 1 when a
 // stable release moves the base past that line.
 //
@@ -48,8 +49,24 @@ function baseParts({ tags, npmLatest }) {
   return releases.reduce((high, parts) => (compareParts(parts, high) > 0 ? parts : high), [0, 0, 0]);
 }
 
-export function stableVersion({ tags, npmLatest, semver }) {
+/** The subjects of the breaking changes among commit messages: a conventional `type(scope)!:`
+ *  subject, or a `BREAKING CHANGE:` footer. */
+export function breakingSubjects(messages) {
+  return messages
+    .map((message) => message.trim())
+    .filter((message) => /^[a-z]+(\([^)]*\))?!:/.test(message) || /^BREAKING[ -]CHANGE:/m.test(message))
+    .map((message) => message.split("\n", 1)[0]);
+}
+
+export function stableVersion({ tags, npmLatest, semver, messages = [] }) {
   const [major, minor, patch] = baseParts({ tags, npmLatest });
+  const breaking = breakingSubjects(messages);
+  if (breaking.length > 0 && semver !== "major") {
+    throw new Error(
+      `${breaking.length} breaking change(s) since the last release need semver major, not ${semver}:\n` +
+        breaking.map((subject) => `  ${subject}`).join("\n"),
+    );
+  }
   if (semver === "major") return `${major + 1}.0.0`;
   if (semver === "minor") return `${major}.${minor + 1}.0`;
   if (semver === "patch") return `${major}.${minor}.${patch + 1}`;
@@ -87,6 +104,15 @@ export async function npmDistTags(name, { registry = "https://registry.npmjs.org
   return response.json();
 }
 
+/** The messages of the commits since the highest stable tag, the ones the release notes cover. */
+function commitsSinceLastRelease(tags) {
+  const stable = tags.filter((tag) => stableParts(tag.replace(/^v/, "")));
+  const last = stable.sort((a, b) => compareParts(stableParts(b.slice(1)), stableParts(a.slice(1))))[0];
+  const range = last ? [`${last}..HEAD`] : [];
+  const log = execFileSync("git", ["log", "--format=%B%x00", ...range], { encoding: "utf8", maxBuffer: 64 << 20 });
+  return log.split("\0").filter((message) => message.trim());
+}
+
 async function main() {
   const { values } = parseArgs({ options: { channel: { type: "string" }, semver: { type: "string" } } });
   if (values.channel !== "stable" && values.channel !== "preview") {
@@ -97,7 +123,7 @@ async function main() {
   const sources = { tags, npmLatest: distTags.latest };
   const version =
     values.channel === "stable"
-      ? stableVersion({ ...sources, semver: values.semver })
+      ? stableVersion({ ...sources, semver: values.semver, messages: commitsSinceLastRelease(tags) })
       : previewVersion({ ...sources, npmPreview: distTags.preview });
   const distTag = values.channel === "stable" ? "latest" : "preview";
   const result = {
