@@ -7,16 +7,11 @@
   </h1>
   <p><strong>The framework for production voice agents.</strong></p>
   <p>Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships.</p>
-
-<a href="https://kugelaudio.com"><img alt="Made by KugelAudio" src="https://img.shields.io/badge/MADE%20BY%20KugelAudio-000000.svg?style=for-the-badge&labelColor=000000"></a>
-<img alt="Status: pre-release" src="https://img.shields.io/badge/STATUS-PRE--RELEASE-E8590C.svg?style=for-the-badge&labelColor=000000">
-
   <p>
     <a href="#quickstart"><strong>Quickstart</strong></a> ·
-    <a href="#how-an-agent-is-built"><strong>How it works</strong></a> ·
-    <a href="#the-dev-loop"><strong>The dev loop</strong></a> ·
-    <a href="#deploy-to-kugelaudio"><strong>Hosted by KugelAudio</strong></a> ·
-    <a href="#status"><strong>Status</strong></a>
+    <a href="#how-it-works"><strong>How it works</strong></a> ·
+    <a href="#hosting"><strong>Hosting</strong></a> ·
+    <a href="https://curbjs.com/docs/"><strong>Docs</strong></a>
   </p>
 </div>
 
@@ -25,76 +20,69 @@
 curb.js gives you a working voice agent out of the box. You write what it
 knows and what it can do, as React components.
 
-- **Voice is done.** Speech, turn-taking and interruptions are handled for you.
-- **State changes the agent.** Tools and knowledge appear and disappear as
-  your state changes, like UI in a React app.
-- **Bring any model.** Use any speech-to-text, text-to-speech or LLM provider,
-  hosted or self-hosted. Swapping one is a single line.
-- **See every turn.** The dev preview shows exactly what the model saw, every
-  tool call and every audio clip.
+| You write | Curb runs for you |
+| --- | --- |
+| Who the agent is: a system prompt | Speech-to-text, the LLM and text-to-speech, each swappable in one line |
+| What it can do: tools, as functions with typed input | Turn-taking, interruptions and pauses on a live call |
+| What it knows: skills and plain markdown | The model's request on every turn: only the instructions and tools your state allows |
+| Conversations to keep as tests | A preview where you talk to the agent and see what the model saw |
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/how-it-works-dark.svg">
-    <img alt="How curb.js works: the caller talks to curb.js, which handles the voice and turns your React app into the agent's context. Speech-to-text, LLM and text-to-speech are swappable." src=".github/assets/how-it-works-light.svg" width="760">
-  </picture>
-</p>
-
-> **Rather not host it yourself?** KugelAudio hosting includes
-> phone numbers, scaling and call logs, and hosted deploys accept a project that
-> installs Curb from npm. Ask hello@kugelaudio.com to switch it on for your organization.
-> [How hosting works](#hosting)
-
-Here is a complete skill, a coffee counter:
+This is a whole agent, the receptionist of a bike workshop, in `src/agent/agent.tsx`:
 
 ```tsx
 import { useState } from "react";
-import { z } from "zod";
-import { Instruction, Tool } from "curb";
+import { Agent, GlobalTools, Skill, Skills, SystemPrompt, Tool, defineAgent, z } from "curb";
+import { kugelaudio } from "curb/providers";
 
-export default function Counter() {
-  const [order, setOrder] = useState<string[]>([]);
+const SLOTS = ["Tuesday 9:00", "Tuesday 14:30", "Thursday 11:00"] as const;
+
+function App() {
+  const [booked, setBooked] = useState<string>();
 
   return (
-    <>
-      <Instruction>Take the customer's coffee order.</Instruction>
+    <Agent llm={kugelaudio.llm()} stt={kugelaudio.stt({ language: "en" })} tts={kugelaudio.tts()}>
+      <SystemPrompt>{`
+        You are Mia, the receptionist at Parkside Bikes. You book repair appointments by phone.
+        Reply in one or two sentences, because the caller listens.
+      `}</SystemPrompt>
 
-      {order.length === 0 ? "The order is empty." : `Current order: ${order.join(", ")}.`}
+      {booked ? `The caller is booked for ${booked}.` : `Free slots: ${SLOTS.join(", ")}.`}
 
-      <Tool
-        name="add_drink"
-        description="Add a drink to the order."
-        schema={z.object({ drink: z.string() })}
-        onSubmit={({ drink }) => {
-          setOrder([...order, drink]);
-          return { ok: true, message: "Added." };
-        }}
-      />
-
-      {order.length > 0 && (
+      <GlobalTools>
         <Tool
-          name="place_order"
-          description="Send the order to the bar."
-          onSubmit={() => {
-            setOrder([]);
-            return { ok: true, message: "Order placed." };
+          name="book_repair"
+          description="Book a repair appointment in a free slot."
+          schema={z.object({ slot: z.enum(SLOTS), name: z.string() })}
+          onSubmit={({ slot }) => {
+            setBooked(slot);
+            return { ok: true, message: `Booked for ${slot}.` };
           }}
         />
-      )}
-    </>
+        {booked && (
+          <Tool
+            name="cancel_booking"
+            description="Cancel the caller's appointment."
+            onCall={() => {
+              setBooked(undefined);
+              return { ok: true, message: "Cancelled." };
+            }}
+          />
+        )}
+      </GlobalTools>
+
+      <Skills>
+        <Skill path="/prices">Repair prices</Skill>
+      </Skills>
+    </Agent>
   );
 }
+
+export const agent = defineAgent({ app: App });
 ```
 
-Whatever the component renders is what the agent knows and can do right now.
-`place_order` only exists once there is a drink in the order.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/state-changes-dark.svg">
-    <img alt="When the order is empty the agent can only add a drink. Once it has a drink, place_order appears." src=".github/assets/state-changes-light.svg" width="760">
-  </picture>
-</p>
+Whatever `<Agent>` renders is what the model knows and can do right now. `cancel_booking` exists
+only once a slot is booked, so the model cannot call it before. `/prices` is a
+[skill](#how-it-works): the model opens it when the caller asks what a repair costs.
 
 ## Quickstart
 
@@ -117,128 +105,80 @@ The defaults run speech-to-text, the LLM and text-to-speech on KugelAudio, so
 Anthropic, OpenAI, Azure, Deepgram, ElevenLabs, Cartesia or any OpenAI-compatible
 endpoint instead.
 
-`npm run dev` opens the **preview**, where you talk to your agent: type, or
-press **Start call** and speak. The starter agent is **Juno**, a personal
-assistant. Ask her "how does this work?".
+`npm run dev` opens the **preview**, where you talk to your agent: type, or press **Start call**
+and speak. The starter agent is **Juno**, a personal assistant. Ask her "how does this work?",
+then make `src/agent/agent.tsx` your own. To update a project later, run `npm run upgrade` inside it.
 
-To update a project later, run `npm run upgrade` inside it.
+## How it works
 
-## Hosting
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/how-it-works-dark.svg">
+    <img alt="How curb.js works: the caller talks to curb.js, which handles the voice and turns your React app into the agent's context. Speech-to-text, LLM and text-to-speech are swappable." src=".github/assets/how-it-works-light.svg" width="760">
+  </picture>
+</p>
 
-A curb agent runs anywhere Node runs, with your own LiveKit and your own
-provider keys. Set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`,
-then run `npm start` to start the production worker. `npx curb build` packs
-the project into one self-contained directory. See
-[hosting.md](packages/framework/docs/agent-guide/hosting.md) for all the ways to run an
-agent.
+- **Your components are the prompt.** Curb renders them the way React renders UI, and the output
+  is the model's request: instructions, knowledge and tools. When your state changes, the request
+  changes with it, and a tool your code does not render is not in it.
+- **Skills load only when needed.** A skill is one topic in a folder of its own. The model sees
+  its description and opens it when the call gets there, so an agent with 50 skills still sends
+  a small prompt.
+- **Voice is done.** On a call, Curb runs speech-to-text, the LLM and text-to-speech, and handles
+  turn-taking and interruptions. Each provider is a prop on `<Agent>`, hosted or self-hosted.
 
-### Deploy to KugelAudio
-
-KugelAudio builds, verifies and hosts agents, with phone numbers, call logs and
-scaling handled for you. Hosting is switched on for your
-organization on request (hello@kugelaudio.com), and hosted deploys accept a
-project that installs Curb from npm, which is what `npm create curb.js` creates:
-
-```bash
-npx curb login          # sign in once
-npx curb secrets push   # send your .env keys to the hosted agent
-npx curb deploy         # build and go live, prints a playground link
-```
-
-See [deploying.md](packages/framework/docs/agent-guide/deploying.md) for flags and limits.
-
-## Why it works well
-
-- **You always know what the model sees.** The whole context is the output
-  of one render, and the preview shows it for every turn.
-- **Skills load only when needed.** Each skill is one topic, like a page, so
-  even an agent with 50 skills sends a small prompt.
-- **Natural conversation is built in.** Agents wait while a caller thinks,
-  check in after a long pause and know exactly where they were cut off.
-- **You can see why anything happened.** Replay any call, rewind to any turn,
-  and copy a transcript for Claude Code or Cursor to improve your agent.
-
-## How an agent is built
-
-Everything you write lives in `src/agent/`:
-
-```text
-my-agent/
-  src/agent/
-    agent.tsx          # who the agent is: prompt, voice, model, skills
-    counter/skill.tsx  # one skill per topic
-    menu/skill.tsx
-  context/menu.md      # plain markdown the agent can know
-```
-
-**A skill is a component plus a short description** that tells the model when
-to use it:
+The `/prices` skill of the agent above is a description and a component:
 
 ```tsx
+// src/agent/prices/skill.tsx
 import { Instruction, Text, type SkillMeta } from "curb";
 
 export const meta: SkillMeta = {
-  title: "Menu",
-  description: "The Curb Café menu: drinks, sizes, prices.",
+  title: "Repair prices",
+  description: "Use when the caller asks what a repair costs.",
 };
 
-export default function Menu() {
+export default function Prices() {
   return (
     <>
-      <Instruction>Answer menu questions from the menu below.</Instruction>
-      <Text src="menu.md" />
+      <Instruction>Quote prices only from the list below.</Instruction>
+      <Text src="prices.md" />
     </>
   );
 }
 ```
 
-Knowledge is just markdown. Edit `menu.md`, save, and the agent knows the new
-prices.
+`prices.md` is plain markdown in the project's `context/` folder. Edit it, save, and the agent
+quotes the new prices.
 
-**The agent is a few lines in `agent.tsx`:**
+You can try every change before a caller does:
 
-```tsx
-import { Agent, Skill, Skills, SystemPrompt, defineAgent } from "curb";
-import { kugelaudio } from "curb/providers";
+- `npm run dev`: talk to the agent, replay a call with its audio, and see what the model saw on every turn.
+- `npx curb check`: type-checks the project and explains how to fix each mistake.
+- `npx curb say "Do you have a slot on Tuesday?"`: one caller turn in the terminal, with the reply and the tool calls.
+- `npx curb test`: runs whole conversations as tests, with no microphone.
 
-function App() {
-  return (
-    // Providers are props: swap any of them in one line.
-    <Agent llm={kugelaudio.llm()} tts={kugelaudio.tts({ voice: 1072, language: "en" })}>
-      <SystemPrompt>
-        You are Kona, the barista at Curb Café. Be warm and quick, one or
-        two sentences per reply.
-      </SystemPrompt>
-      <Skills>
-        <Skill path="/counter" description="Use for coffee orders.">The counter</Skill>
-        <Skill path="/menu" description="Menu questions: drinks, sizes, prices.">Menu</Skill>
-      </Skills>
-    </Agent>
-  );
-}
+A new project comes with an `AGENTS.md`, so Claude Code or Cursor can run these and improve the
+agent from a real conversation. From there it grows like any React app:
+[shared state](https://curbjs.com/docs/state/), [step-by-step procedures](https://curbjs.com/docs/procedures/),
+[confirmations](https://curbjs.com/docs/confirmations/) and [tools from any MCP server](https://curbjs.com/docs/mcp/).
 
-export const agent = defineAgent({ app: App });
+## Hosting
+
+A Curb agent runs anywhere Node runs, with your own LiveKit and your own provider keys: set
+`LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`, then run `npm start`. `npx curb build`
+packs the project into one self-contained directory. See
+[hosting.md](packages/framework/docs/agent-guide/hosting.md) for all the ways to run an agent.
+
+Or let KugelAudio build and host it, with phone numbers, call logs and scaling handled for you.
+Hosting is switched on for your organization on request (hello@kugelaudio.com):
+
+```bash
+npx curb secrets push   # send your .env keys to the hosted agent
+npx curb deploy         # build and go live, prints a playground link
 ```
 
-From here it grows like any React app:
-
-- **`createAgentStore`**: state shared across skills.
-- **Conditional rendering**: content and tools unlocked only after a check, like an order number.
-- **`<Procedure>`**: a step-by-step workflow the agent follows.
-- **`<Mcp>`**: tools from any MCP server, like Linear or Notion.
-- **`useAgentInfo`**: outside data, like the caller's phone number.
-
-## The dev loop
-
-The preview turns your agent into a UI you can click through: tools become
-forms, a `<Procedure>` a stepper. Anything the
-model can do, you can do by hand.
-
-- **Type or talk** in the same conversation.
-- **Replay calls** with the real audio, interruptions included.
-- **Inspect the context** the model saw on every turn.
-- **Catch mistakes** with `curb check`, which explains how to fix each one.
-- **Copy for a coding agent** to improve your agent from a real conversation.
+See [deploying.md](packages/framework/docs/agent-guide/deploying.md) for flags and limits.
 
 ## Documentation
 
@@ -252,28 +192,11 @@ The docs live on [curbjs.com](https://curbjs.com/docs/):
 - [Testing](https://curbjs.com/docs/testing/): simulate conversations before they reach a caller.
 - [Self-hosting](https://curbjs.com/docs/hosting/): run an agent on your own servers.
 
-## Repository layout
+## Status and contributing
 
-```text
-curb.js/
-  packages/framework/             # the framework (published as "curb.js")
-  packages/create-curb.js/        # the scaffolder (npm create curb.js)
-  examples/insurance-agent/       # a bigger demo: claims, gate, procedure
-  examples/ops-agent/             # an MCP-heavy example
-```
-
-```bash
-npm install     # once, at the repo root
-npm run dev     # the insurance example on http://127.0.0.1:4000
-npm test        # framework test suite
-```
-
-## Status
-
-curb.js is in active development and its APIs may still change. Feedback is very
-welcome.
-
-Built by [KugelAudio](https://kugelaudio.com).
+curb.js is in active development and its APIs may still change. Feedback is very welcome:
+[CONTRIBUTING.md](CONTRIBUTING.md) says where questions, bugs and pull requests go, and how this
+repository is laid out.
 
 ## License
 

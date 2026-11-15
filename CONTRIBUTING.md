@@ -33,6 +33,24 @@ cuts stable releases.
 5. Push the branch to your fork and open a pull request against `main`. Fill in the template, and
    write `Closes #<issue>` in the body when it closes an issue.
 
+## Repository layout
+
+```text
+curb.js/
+  packages/framework/             # the framework (published as "curb.js")
+  packages/create-curb.js/        # the scaffolder (npm create curb.js)
+  examples/insurance-agent/       # a bigger demo: claims, gate, procedure
+  examples/ops-agent/             # an MCP-heavy example
+```
+
+```bash
+npm install     # once, at the repo root
+npm run dev     # the insurance example on http://127.0.0.1:4000
+npm test        # framework test suite
+```
+
+[`AGENTS.md`](AGENTS.md) describes the layout in detail, with every command and test area.
+
 ## What happens to your pull request
 
 - **CI waits for a maintainer.** On a pull request from a fork, a maintainer approves the workflow
