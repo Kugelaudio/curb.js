@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CircleCheckIcon, CopyIcon } from "lucide-react";
+import { ArrowUpRightIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, CircleCheckIcon, CopyIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog.js";
 import { cn } from "@/lib/utils.js";
@@ -37,12 +37,23 @@ const LOGIN_COMMAND = "npx curb login";
 /**
  * A problem as the window shows it. A missing key gets a headline that names the variable its
  * message names first, and the first thing its fix asks for as a line to paste; a fix that
- * asks for nothing to be set (a workspace that issues the key itself) gets no line. Any other
- * problem is headed by its own message.
+ * asks for nothing to be set (a workspace that issues the key itself) gets no line. When the
+ * fix says where to get the key, that page is a link of its own and leaves the paragraph. Any
+ * other problem is headed by its own message.
  */
-export function problemView(problem: Problem): { label: string; headline: string | null; step: ProblemStep | null } {
+export function problemView(problem: Problem): {
+  label: string;
+  headline: string | null;
+  step: ProblemStep | null;
+  /** Where the fix says to get the key, for a missing key whose provider has such a page. */
+  keyPage: string | null;
+  /** The fix as the window's paragraph: without the sentence the link stands for. */
+  fix: string;
+} {
   const label = KIND_LABEL[problem.kind];
-  if (problem.kind !== "missing-key") return { label, headline: null, step: null };
+  if (problem.kind !== "missing-key") {
+    return { label, headline: null, step: null, keyPage: null, fix: problem.diagnostic.fix };
+  }
   const { message, fix } = problem.diagnostic;
   const variable = inlineParts(message.replaceAll("`", "")).find((part) => part.code)?.text ?? null;
   const step: ProblemStep | null = fix.includes(`\`${LOGIN_COMMAND}\``)
@@ -50,7 +61,29 @@ export function problemView(problem: Problem): { label: string; headline: string
     : variable && new RegExp(`\\b[Ss]et ${variable}\\b`).test(fix)
       ? { where: "env", line: `${variable}=` }
       : null;
-  return { label, headline: variable ? `${variable} is not set` : null, step };
+  const keyPage = inlineParts(fix).find((part) => part.href)?.href ?? null;
+  return {
+    label,
+    headline: variable ? `${variable} is not set` : null,
+    step,
+    keyPage,
+    fix: keyPage ? withoutSentenceOf(fix, keyPage) : fix,
+  };
+}
+
+/** `text` without the sentence that holds `url`: the window shows that address as a link of
+ * its own, not inside a paragraph. */
+export function withoutSentenceOf(text: string, url: string): string {
+  const at = text.indexOf(url);
+  if (at < 0) return text;
+  // The sentence starts after the last ". " (or ": ") before the address and ends with the
+  // full stop after it.
+  const start = Math.max(text.lastIndexOf(". ", at), text.lastIndexOf(": ", at));
+  const from = start < 0 ? 0 : start + 2;
+  let to = at + url.length;
+  if (text[to] === ".") to += 1;
+  while (text[to] === " ") to += 1;
+  return (text.slice(0, from) + text.slice(to)).trimEnd();
 }
 
 /** Where the blocking problem the person already closed is kept, for this tab. */
@@ -158,6 +191,7 @@ export function ProblemsDialog({
               }
             />
             <div className="flex items-center justify-end gap-2">
+              <KeyPageLink problem={problem} />
               {count > 1 ? (
                 <CopyButton
                   variant="ghost"
@@ -179,10 +213,27 @@ export function ProblemsDialog({
   );
 }
 
+/** "Get a key", to the page where the provider issues one; nothing when the fix names none. */
+export function KeyPageLink({ problem }: { problem: Problem }) {
+  const { keyPage } = problemView(problem);
+  if (!keyPage) return null;
+  return (
+    <a
+      className="inline-link mr-auto inline-flex items-center gap-1 text-[0.8125rem] font-medium [&_svg]:size-3.5"
+      href={keyPage}
+      target="_blank"
+      rel="noreferrer"
+    >
+      Get a key at {new URL(keyPage).hostname}
+      <ArrowUpRightIcon aria-hidden="true" />
+    </a>
+  );
+}
+
 /** One problem: what kind it is, what is wrong, the line to paste when there is one, the fix,
  * and where in the code it comes from. */
 export function ProblemBody({ problem, pager }: { problem: Problem; pager?: React.ReactNode }) {
-  const { label, headline, step } = problemView(problem);
+  const { label, headline, step, fix } = problemView(problem);
   const { diagnostic } = problem;
   return (
     <div className="flex flex-col gap-3">
@@ -215,7 +266,7 @@ export function ProblemBody({ problem, pager }: { problem: Problem; pager?: Reac
         </div>
       ) : null}
       <p className="m-0 text-[0.8125rem] leading-relaxed text-muted-foreground [text-wrap:pretty]">
-        <InlineText text={diagnostic.fix} />
+        <InlineText text={fix} />
       </p>
       {problem.kind === "missing-key" ? null : (
         <p className="code-font m-0 text-[0.75rem] text-muted-foreground [overflow-wrap:anywhere]">

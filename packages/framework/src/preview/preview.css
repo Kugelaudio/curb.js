@@ -420,6 +420,19 @@ html[data-context-resizing] * {
   overflow-wrap: anywhere;
 }
 
+/* Links are the sphere's blue, the page's one colour, a step darker so text stays readable. */
+.inline-link {
+  color: oklch(0.48 0.17 264);
+  text-decoration: underline;
+  text-decoration-color: oklch(0.48 0.17 264 / 0.35);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+.inline-link:hover {
+  text-decoration-color: currentColor;
+}
+
 /* --- The popup for a problem that stops the agent (missing-keys.tsx) ------------------ */
 
 /* The preview sets everything in Inter, code too. This popup is the exception: it shows what

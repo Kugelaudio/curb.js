@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kugelaudioLlmBaseUrl, kugelaudioSpeechBase } from "./provider-keys.js";
+import { keyPageSentence, kugelaudioLlmBaseUrl, kugelaudioSpeechBase, LLM_KEYS } from "./provider-keys.js";
 
 describe("KugelAudio base URLs", () => {
   it("default to the speech API and the EU LLM ingress", () => {
@@ -21,5 +21,17 @@ describe("KugelAudio base URLs", () => {
 
   it("count an empty value as unset", () => {
     expect(kugelaudioSpeechBase({ KUGELAUDIO_API_BASE: "  " })).toBe("https://api.kugelaudio.com");
+  });
+});
+
+describe("where a missing key comes from", () => {
+  it("names the provider's page for OpenAI and Anthropic", () => {
+    expect(keyPageSentence(LLM_KEYS.openai.key)).toBe("Get a key at https://platform.openai.com/api-keys. ");
+    expect(keyPageSentence(LLM_KEYS.anthropic.key)).toBe("Get a key at https://platform.claude.com/settings/keys. ");
+  });
+
+  it("says nothing for a key with no page: the sign-in, or an endpoint of the project's own", () => {
+    expect(keyPageSentence(LLM_KEYS.kugelaudio.key)).toBe("");
+    expect(keyPageSentence(LLM_KEYS["openai-compatible"].key)).toBe("");
   });
 });

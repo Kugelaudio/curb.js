@@ -16,18 +16,26 @@ export type ProviderVariable = {
   read: (env: Env) => string | undefined;
   /** False when the provider runs without it. */
   required: boolean;
+  /** Where a person creates one: the page a fix for a missing key points at. */
+  page?: string;
 };
 
 /** What one provider reads: its key, and the variables it reads besides. */
 export type ProviderKeys = { key: ProviderVariable; also?: readonly ProviderVariable[] };
 
-const variable = (name: string, required = true): ProviderVariable => ({
+const variable = (name: string, required = true, page?: string): ProviderVariable => ({
   name,
   required,
   read: (env) => env[name]?.trim() || undefined,
+  ...(page ? { page } : {}),
 });
 
-export const OPENAI_API_KEY = variable("OPENAI_API_KEY");
+export const OPENAI_API_KEY = variable("OPENAI_API_KEY", true, "https://platform.openai.com/api-keys");
+
+/** The sentence a fix ends its "set this variable" with: where to get the key, when known. */
+export function keyPageSentence(key: ProviderVariable): string {
+  return key.page ? `Get a key at ${key.page}. ` : "";
+}
 const KUGELAUDIO_API_KEY = variable("KUGELAUDIO_API_KEY");
 
 /** The key an `<Agent s2s>` model connects with: the variable its `apiKeyEnv` names, else
@@ -80,7 +88,7 @@ export function kugelaudioLlmBaseUrl(env: Env): string {
 export const LLM_KEYS: Record<LlmProviderId, ProviderKeys> = {
   kugelaudio: { key: KUGELAUDIO_API_KEY },
   // ai-sdk.ts also finds it in a local secrets file.
-  anthropic: { key: variable("ANTHROPIC_API_KEY") },
+  anthropic: { key: variable("ANTHROPIC_API_KEY", true, "https://platform.claude.com/settings/keys") },
   openai: { key: OPENAI_API_KEY },
   // A local endpoint (Ollama, vLLM) takes no key; a hosted one gets this one, else OPENAI_API_KEY.
   "openai-compatible": {

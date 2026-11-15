@@ -197,8 +197,9 @@ keys) page through them. Each problem says what is wrong and how to fix it, and
 - **Missing key**: the model the agent uses needs a key this process does not
   have, so the agent shows but cannot answer. The window names the variable and
   gives the line to paste: the variable for `.env`, or `npx curb login` for the
-  KugelAudio model. It opens by itself the first time, and **Your agent cannot
-  answer yet** above the conversation opens it again.
+  KugelAudio model. For OpenAI and Anthropic it links to the page that issues
+  the key. It opens by itself the first time, and **Your agent cannot answer
+  yet** above the conversation opens it again.
 - **Error** and **Warning**: the `curb check` output (unreachable skills,
   duplicate tools, missing routing descriptions, oversized skills …), each with
   its location. The same output appears in the server startup log; after a

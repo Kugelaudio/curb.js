@@ -28,4 +28,17 @@ describe("a diagnostic's sentence in the preview", () => {
     expect(inlineParts("A lone ` stays.")).toEqual([{ text: "A lone ` stays.", code: false }]);
     expect(inlineParts("")).toEqual([]);
   });
+
+  it("makes a web address a link, without the full stop that ends its sentence", () => {
+    expect(inlineParts("Get a key at https://platform.openai.com/api-keys. An empty value counts as unset.")).toEqual([
+      { text: "Get a key at ", code: false },
+      { text: "https://platform.openai.com/api-keys", code: false, href: "https://platform.openai.com/api-keys" },
+      { text: ". An empty value counts as unset.", code: false },
+    ]);
+    expect(inlineParts("(see https://example.com/a_b)").map((part) => part.href)).toEqual([
+      undefined,
+      "https://example.com/a_b",
+      undefined,
+    ]);
+  });
 });

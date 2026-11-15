@@ -61,6 +61,8 @@ describe("assertLlmCredential", () => {
     expect(diagnostic.message).toContain('openai("gpt-5")');
     expect(diagnostic.message).toContain("OPENAI_API_KEY");
     expect(diagnostic.fix).toContain("OPENAI_API_KEY");
+    // Where to get one, so the fix does not end at "set it".
+    expect(diagnostic.fix).toContain("Get a key at https://platform.openai.com/api-keys. ");
   });
 
   it("passes when the key is set", () => {
