@@ -25,7 +25,7 @@ import type {
   SemanticNode,
   ToolCallOutcome,
   ToolDefinition,
-  HandoffToolMarker,
+  ToolMark,
   ToolRegistryEntry,
   ToolResult,
 } from "./types.js";
@@ -99,8 +99,8 @@ export class AgentSiteRuntime {
   private registry = new Map<string, ToolRegistryEntry>();
   /** The rendered tools authored with `confirm`, by tool definition id (see `confirms`). */
   private confirming = new Map<string, SemanticNode>();
-  /** The rendered `<Handoff>` tools by tool name (see `handoffTool`). */
-  private handoffs = new Map<string, HandoffToolMarker>();
+  /** The rendered tools a block marked as its own, by tool name (see `markedTools`). */
+  private marked = new Map<string, ToolMark>();
   private context: CompiledContext | null = null;
   /** Loaded skill paths, least recently used first, ACTIVE skill last. Empty at the agent
    * level: a conversation starts with no skill loaded and opens each one when needed. */
@@ -235,20 +235,10 @@ export class AgentSiteRuntime {
     return typeof submit === "function" ? (submit as FakeableSubmit)(input, fake) : fake(input);
   }
 
-  /** How `<Handoff>` marked the tool `name`, when it rendered it. */
-  handoffMarker(name: string): HandoffToolMarker | undefined {
-    return this.handoffs.get(name);
-  }
-
-  /** The `<Handoff>` tool the session calls on its own, and after how many errors or failed
-   * attempts in a row (null: never for that one), when one that does is rendered now. */
-  handoffTool(): { name: string; afterErrors: number | null; afterFailedAttempts: number | null } | undefined {
-    for (const [name, marker] of this.handoffs) {
-      if (marker.kind !== "handoff") continue;
-      const { afterErrors, afterFailedAttempts } = marker;
-      if (afterErrors !== null || afterFailedAttempts !== null) return { name, afterErrors, afterFailedAttempts };
-    }
-    return undefined;
+  /** The rendered tools the block `block` marked as its own (`ToolMark`), each with the name it
+   * is called by: how a block's part in the conversation finds its tools (`blocks/session.ts`). */
+  markedTools(block: string): Array<{ name: string; mark: ToolMark }> {
+    return [...this.marked].flatMap(([name, mark]) => (mark.block === block ? [{ name, mark }] : []));
   }
 
   /** Whether `name` asks the caller before it runs (`<Tool confirm>`). The session then
@@ -415,7 +405,7 @@ export class AgentSiteRuntime {
 
     this.registry = registry;
     this.confirming = confirmingTools(this.root.container.root);
-    this.handoffs = handoffTools(this.root.container.root, registry);
+    this.marked = markedTools(this.root.container.root, registry);
     this.installLoadSkillTool(context);
     if (this.settings.s2s()) context.instructions.push(HANDED_OVER_RULE);
     else this.installStaySilentTool(context);
@@ -682,18 +672,18 @@ function confirmingTools(root: SemanticNode | null): Map<string, SemanticNode> {
   return forms;
 }
 
-/** The rendered `<Handoff>` tools by the name they are called by. */
-function handoffTools(root: SemanticNode | null, registry: Map<string, ToolRegistryEntry>): Map<string, HandoffToolMarker> {
-  const markers = new Map<string, HandoffToolMarker>();
+/** The rendered tools a block marked (`ToolMark`), by the name they are called by. */
+function markedTools(root: SemanticNode | null, registry: Map<string, ToolRegistryEntry>): Map<string, ToolMark> {
+  const marks = new Map<string, ToolMark>();
   const visit = (node: SemanticNode) => {
-    if (node.type === "agent-tool" && node.props.handoff) markers.set(String(node.props.id ?? node.id), node.props.handoff as HandoffToolMarker);
+    if (node.type === "agent-tool" && node.props.mark) marks.set(String(node.props.id ?? node.id), node.props.mark as ToolMark);
     for (const child of node.children) visit(child);
   };
   if (root) visit(root);
-  const byName = new Map<string, HandoffToolMarker>();
+  const byName = new Map<string, ToolMark>();
   for (const [name, entry] of registry) {
-    const marker = markers.get(entry.definition.id);
-    if (marker) byName.set(name, marker);
+    const mark = marks.get(entry.definition.id);
+    if (mark) byName.set(name, mark);
   }
   return byName;
 }

@@ -167,10 +167,12 @@ edit a frozen project to make it pass.
 - **A higher-level component is a block.** A component built from the primitives of
   `src/components.tsx` or from other blocks, with logic of its own, gets a folder
   `src/blocks/<id>/`: `index.tsx` for the component, its helpers and tests beside it, and
-  `definition.ts` + `preview.tsx` only when the preview draws it as UI of its own. Logic the
-  session or a voice host runs for it lives in that folder too (`handoff/trigger.ts`). The
-  recipe and the steps to add one are at the top of `src/blocks/types.ts`; `blocks.test.ts`
-  fails on a block that is added halfway.
+  `definition.ts` + `preview.tsx` only when the preview draws it as UI of its own. A block that
+  follows the conversation or acts in it on its own (`<Handoff>` counts what fails and has its
+  tool called) adds `session.ts`, the `BlockSession` of `src/blocks/session.ts`, and one line in
+  `src/blocks/session-registry.ts`: `agent-session.ts`, `runtime.ts` and the compiler name no
+  block. The recipe and the steps to add one are at the top of `src/blocks/types.ts`;
+  `blocks.test.ts` fails on a block that is added halfway.
 - **New diagnostics** get a code in `AUTHORING_DIAGNOSTIC_CODES`, a row in
   `docs/agent-guide/diagnostics.md`, and a test.
 - **Published dependencies are exact versions.** `curb.js` and `create-curb.js` pin every

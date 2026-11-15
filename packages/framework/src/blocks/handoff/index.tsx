@@ -14,17 +14,18 @@ import {
   type TransferOutcome,
 } from "../transfer-call/index.js";
 import type { TransferEndedOption } from "../transfer-call/ended.js";
+import { HANDOFF_BLOCK, type HandoffToolMark } from "./trigger.js";
 import { ToolInputError, type ToolResult } from "../../types.js";
 
 /**
  * `<Handoff>`: one way for an agent to hand its caller to a person.
  *
  * The model calls the handoff tool when the caller asks for a person or it cannot help, with a
- * reason and a summary for whoever takes over. The session calls it on its own
- * (`agent-session.ts`, `trigger.ts`): with the reason `agent_failure` after `afterErrors`
- * tool calls threw in a row or as many turns got no reply in a row, and, when the author sets
- * `afterFailedAttempts`, with the reason `agent_stuck` after that many tool calls in a row
- * answered no. Within the hours the caller is put through to `to` (`../transfer-call/`);
+ * reason and a summary for whoever takes over. The session calls it on its own, for the block's
+ * part in the conversation (`session.ts`, `trigger.ts`): with the reason `agent_failure` after
+ * `afterErrors` tool calls threw in a row or as many turns got no reply in a row, and, when the
+ * author sets `afterFailedAttempts`, with the reason `agent_stuck` after that many tool calls in
+ * a row answered no. Within the hours the caller is put through to `to` (`../transfer-call/`);
  * outside them, or when nobody answers, the agent offers a callback and records the request. Each
  * handoff is `curb.handoff` in the call's record, each callback request `curb.callback_request`
  * (`call-trace.ts`).
@@ -150,7 +151,7 @@ export function Handoff({
     }
     const outcome = await transfer({ ...request, announce });
     report({ reason, summary, outcome: outcome.outcome, ...(outcome.code ? { code: outcome.code } : {}) });
-    // The outcome rides along, so the session knows whether a person took the call (`handedOver`).
+    // The outcome rides along, so `session.ts` knows whether a person took the call (`handedOver`).
     if (outcome.outcome === "answered") return { ...transferToolResult(outcome), data: { outcome: outcome.outcome } };
     setOpen({ reason, summary });
     return { ...offerCallback(unreached(outcome)), data: { outcome: outcome.outcome } };
@@ -189,15 +190,20 @@ export function Handoff({
     };
   };
 
+  // How the block's part in the conversation knows these tools again (`session.ts`).
+  const handoffMark: HandoffToolMark = {
+    block: HANDOFF_BLOCK,
+    kind: "handoff",
+    afterErrors: afterErrors === false ? null : afterErrors,
+    afterFailedAttempts: afterFailedAttempts === false ? null : afterFailedAttempts,
+  };
+  const callbackMark: HandoffToolMark = { block: HANDOFF_BLOCK, kind: "callback" };
+
   return (
     <>
       <agent-tool
         name={name}
-        handoff={{
-          kind: "handoff",
-          afterErrors: afterErrors === false ? null : afterErrors,
-          afterFailedAttempts: afterFailedAttempts === false ? null : afterFailedAttempts,
-        }}
+        mark={handoffMark}
         description={
           "Hand the caller to a person. Call it when the caller asks to speak to a person (reason caller_requested), " +
           "or when you cannot help them: they keep repeating themselves, you cannot answer, or what they need is " +
@@ -228,7 +234,7 @@ export function Handoff({
       {open === null ? null : (
         <agent-tool
           name={callbackName}
-          handoff={{ kind: "callback" }}
+          mark={callbackMark}
           description="Record the caller's callback request, once they gave their name and agreed on the number to call back on."
           inputSchema={{
             type: "object",
