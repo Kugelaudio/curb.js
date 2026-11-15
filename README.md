@@ -15,19 +15,13 @@
   </p>
 </div>
 
----
-
 curb.js gives you a working voice agent out of the box. You write what it
 knows and what it can do, as React components.
 
-| You write | Curb runs for you |
-| --- | --- |
-| Who the agent is: a system prompt | Speech-to-text, the LLM and text-to-speech, each swappable in one line |
-| What it can do: tools, as functions with typed input | Turn-taking, interruptions and pauses on a live call |
-| What it knows: skills and plain markdown | The model's request on every turn: only the instructions and tools your state allows |
-| Conversations to keep as tests | A preview where you talk to the agent and see what the model saw |
+**You write** the system prompt, the tools and the knowledge. **Curb runs** the call:
+speech-to-text, the LLM and text-to-speech, turn-taking and interruptions.
 
-This is a whole agent, the receptionist of a bike workshop, in `src/agent/agent.tsx`:
+A receptionist for a bike workshop, in `src/agent/agent.tsx`:
 
 ```tsx
 import { useState } from "react";
@@ -38,13 +32,14 @@ function App() {
   const [booked, setBooked] = useState<string>();
 
   return (
-    <Agent llm={kugelaudio.llm()} stt={kugelaudio.stt({ language: "en" })} tts={kugelaudio.tts()}>
+    <Agent llm={kugelaudio.llm()} stt={kugelaudio.stt()} tts={kugelaudio.tts()}>
       <SystemPrompt>{`
-        You are Mia, the receptionist at Parkside Bikes. You book repair appointments by phone.
+        You are Mia, the receptionist at Parkside Bikes.
+        You book repair appointments by phone.
         Reply in one or two sentences, because the caller listens.
       `}</SystemPrompt>
 
-      {booked ? `The caller is booked for ${booked}.` : "Free slots: Tuesday 9:00, Thursday 11:00."}
+      {booked ? `Booked: ${booked}.` : "Free slots: Tuesday 9:00, Thursday 11:00."}
 
       <GlobalTools>
         <Tool
@@ -82,6 +77,9 @@ Whatever `<Agent>` renders is what the model knows and can do right now. `cancel
 only once a slot is booked, so the model cannot call it before. `/prices` is a
 [skill](#how-it-works): the model opens it when the caller asks what a repair costs.
 
+Run the agent on your own servers, or let KugelAudio host it with phone numbers and call logs:
+see [Hosting](#hosting).
+
 ## Quickstart
 
 You need Node.js 22.12 or newer, on Linux or macOS, or on Windows through WSL.
@@ -93,19 +91,19 @@ npx curb login         # sign in once in the browser
 npm run dev            # open http://127.0.0.1:4000
 ```
 
-> **The package is `curb.js`, not `curb`.** `curb` on npm is an unrelated templating
-> package, so `npm i curb` installs the wrong thing. Start with `npm create curb.js`
-> rather than `npm i curb.js`: the project depends on the framework through an alias,
-> `"curb": "npm:curb.js@<version>"`, and your code imports from `"curb"`.
+`npm run dev` opens the **preview**, where you talk to your agent: type, or press **Start call**
+and speak. The starter agent is **Juno**, a personal assistant. Ask her "how does this work?",
+then make `src/agent/agent.tsx` your own.
 
 The defaults run speech-to-text, the LLM and text-to-speech on KugelAudio, so
 `curb login` is all the setup you need. Flags to `npm create curb.js` pick
 Anthropic, OpenAI, Azure, Deepgram, ElevenLabs, Cartesia or any OpenAI-compatible
 endpoint instead.
 
-`npm run dev` opens the **preview**, where you talk to your agent: type, or press **Start call**
-and speak. The starter agent is **Juno**, a personal assistant. Ask her "how does this work?",
-then make `src/agent/agent.tsx` your own. To update a project later, run `npm run upgrade` inside it.
+> **The package is `curb.js`, not `curb`.** `curb` on npm is an unrelated templating
+> package, so `npm i curb` installs the wrong thing. Start with `npm create curb.js`
+> rather than `npm i curb.js`: the project depends on the framework through an alias,
+> `"curb": "npm:curb.js@<version>"`, and your code imports from `"curb"`.
 
 ## How it works
 
@@ -122,8 +120,8 @@ then make `src/agent/agent.tsx` your own. To update a project later, run `npm ru
 - **Skills load only when needed.** A skill is one topic in a folder of its own. The model sees
   its description and opens it when the call gets there, so an agent with 50 skills still sends
   a small prompt.
-- **Voice is done.** On a call, Curb runs speech-to-text, the LLM and text-to-speech, and handles
-  turn-taking and interruptions. Each provider is a prop on `<Agent>`, hosted or self-hosted.
+- **Every provider is a prop.** Speech-to-text, the LLM and text-to-speech are set on `<Agent>`,
+  hosted or self-hosted. Swapping one is a single line.
 
 The `/prices` skill of the agent above is a description and a component:
 
@@ -149,17 +147,19 @@ export default function Prices() {
 `prices.md` is plain markdown in the project's `context/` folder. Edit it, save, and the agent
 quotes the new prices.
 
-You can try every change before a caller does:
+From there an agent grows like any React app:
+[shared state](https://curbjs.com/docs/state/), [step-by-step procedures](https://curbjs.com/docs/procedures/),
+[confirmations](https://curbjs.com/docs/confirmations/) and [tools from any MCP server](https://curbjs.com/docs/mcp/).
+
+## Test before it ships
 
 - `npm run dev`: talk to the agent, replay a call with its audio, and see what the model saw on every turn.
 - `npx curb check`: type-checks the project and explains how to fix each mistake.
 - `npx curb say "Do you have a slot on Tuesday?"`: one caller turn in the terminal, with the reply and the tool calls.
 - `npx curb test`: runs whole conversations as tests, with no microphone.
 
-A new project comes with an `AGENTS.md`, so Claude Code or Cursor can run these and improve the
-agent from a real conversation. From there it grows like any React app:
-[shared state](https://curbjs.com/docs/state/), [step-by-step procedures](https://curbjs.com/docs/procedures/),
-[confirmations](https://curbjs.com/docs/confirmations/) and [tools from any MCP server](https://curbjs.com/docs/mcp/).
+A new project comes with an `AGENTS.md`, so Claude Code or Cursor can run these commands and
+improve the agent from a real conversation.
 
 ## Hosting
 
