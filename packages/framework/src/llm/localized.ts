@@ -21,6 +21,8 @@ type Wording = {
   turnFailed: string;
   /** The turn used all its LLM steps with tool calls still pending. */
   stepLimit: string;
+  /** Said before the framework hands the call to a person on its own (`<Handoff>`). */
+  handoff: string;
   /** The date line, from the formatted parts. */
   dateLine: (today: string, time: string, timeZone: string, nextDays: string) => string;
 };
@@ -29,48 +31,57 @@ const WORDING: Record<AgentLanguage, Wording> = {
   en: {
     turnFailed: "Sorry, something went wrong on my side. Could you say that again?",
     stepLimit: "I had to pause before finishing that. If you want me to continue, just say so.",
+    handoff: "I am sorry, something is not working on my side. One moment, I am connecting you to a colleague.",
     dateLine: (today, time, zone, days) => `Today is ${today}, ${time} (${zone}). The next days: ${days}`,
   },
   de: {
     turnFailed: "Entschuldigung, bei mir ist etwas schiefgelaufen. Können Sie das bitte noch einmal sagen?",
     stepLimit: "Ich musste kurz unterbrechen, bevor ich fertig war. Wenn ich weitermachen soll, sagen Sie es einfach.",
+    handoff: "Entschuldigung, bei mir funktioniert gerade etwas nicht. Einen Moment, ich verbinde Sie mit einem Kollegen.",
     dateLine: (today, time, zone, days) => `Heute ist ${today}, ${time} Uhr (${zone}). Die nächsten Tage: ${days}`,
   },
   fr: {
     turnFailed: "Pardon, un problème est survenu de mon côté. Pouvez-vous répéter, s'il vous plaît ?",
     stepLimit: "J'ai dû faire une pause avant de terminer. Si je dois continuer, dites-le-moi simplement.",
+    handoff: "Pardon, quelque chose ne fonctionne pas de mon côté. Un instant, je vous mets en relation avec un collègue.",
     dateLine: (today, time, zone, days) =>
       `Nous sommes le ${today}, il est ${time} (${zone}). Les prochains jours : ${days}`,
   },
   it: {
     turnFailed: "Mi scusi, qualcosa non ha funzionato da parte mia. Può ripetere, per favore?",
     stepLimit: "Ho dovuto fare una pausa prima di finire. Se devo continuare, me lo dica pure.",
+    handoff: "Mi scusi, qualcosa non funziona da parte mia. Un momento, la metto in contatto con un collega.",
     dateLine: (today, time, zone, days) => `Oggi è ${today}, ore ${time} (${zone}). I prossimi giorni: ${days}`,
   },
   es: {
     turnFailed: "Perdón, algo ha fallado por mi parte. ¿Podría repetirlo, por favor?",
     stepLimit: "Tuve que hacer una pausa antes de terminar. Si quiere que continúe, solo dígamelo.",
+    handoff: "Perdón, algo no funciona por mi parte. Un momento, le paso con un compañero.",
     dateLine: (today, time, zone, days) => `Hoy es ${today}, ${time} (${zone}). Los próximos días: ${days}`,
   },
   pt: {
     turnFailed: "Desculpe, ocorreu um erro da minha parte. Pode repetir, por favor?",
     stepLimit: "Precisei fazer uma pausa antes de terminar. Se quiser que eu continue, é só dizer.",
+    handoff: "Desculpe, algo não está a funcionar da minha parte. Um momento, vou passá-lo a um colega.",
     dateLine: (today, time, zone, days) => `Hoje é ${today}, ${time} (${zone}). Os próximos dias: ${days}`,
   },
   nl: {
     turnFailed: "Sorry, er ging aan mijn kant iets mis. Kunt u dat nog eens zeggen?",
     stepLimit: "Ik moest even stoppen voordat ik klaar was. Als ik verder moet gaan, zeg het gerust.",
+    handoff: "Sorry, er werkt aan mijn kant iets niet. Een moment, ik verbind u door met een collega.",
     dateLine: (today, time, zone, days) =>
       `Vandaag is het ${today}, ${time} uur (${zone}). De komende dagen: ${days}`,
   },
   pl: {
     turnFailed: "Przepraszam, coś poszło nie tak po mojej stronie. Czy mogę prosić o powtórzenie?",
     stepLimit: "Muszę tu przerwać, zanim skończę. Jeśli mam kontynuować, proszę po prostu powiedzieć.",
+    handoff: "Przepraszam, coś nie działa po mojej stronie. Chwileczkę, łączę z kolegą.",
     dateLine: (today, time, zone, days) => `Dziś jest ${today}, godz. ${time} (${zone}). Najbliższe dni: ${days}`,
   },
   ro: {
     turnFailed: "Îmi pare rău, ceva nu a funcționat din partea mea. Puteți repeta, vă rog?",
     stepLimit: "A trebuit să fac o pauză înainte să termin. Dacă vreți să continui, spuneți-mi.",
+    handoff: "Îmi pare rău, ceva nu funcționează din partea mea. Un moment, vă fac legătura cu un coleg.",
     dateLine: (today, time, zone, days) => `Astăzi este ${today}, ora ${time} (${zone}). Următoarele zile: ${days}`,
   },
 };
@@ -94,6 +105,12 @@ export function agentLanguage(settings: {
 export function fallbackReplies(language: AgentLanguage): { turnFailed: string; stepLimit: string } {
   const { turnFailed, stepLimit } = WORDING[language];
   return { turnFailed, stepLimit };
+}
+
+/** What the caller hears before the framework hands the call to a person on its own, in
+ * `language`. */
+export function handoffAnnouncement(language: AgentLanguage): string {
+  return WORDING[language].handoff;
 }
 
 /** Whether `name` is a time zone `Intl` knows (an IANA name such as "Europe/Berlin"). */

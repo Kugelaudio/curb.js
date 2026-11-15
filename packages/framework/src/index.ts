@@ -88,6 +88,9 @@ export type {
   UseMessageWithSchema,
   UseMessageWithoutSchema,
 } from "./messages.js";
+export { Handoff } from "./handoff.js";
+export type { CallbackRequest, HandoffProps, HandoffReason } from "./handoff.js";
+export type { HandoffHours, OpeningHours, Weekday } from "./handoff-hours.js";
 export { TransferCallTool, useTransferCall } from "./transfer.js";
 export type { TransferCall, TransferCallRequest, TransferCallToolProps, TransferOutcome } from "./transfer.js";
 export type { TransferEnded, TransferEndedDecision, TransferEndedOption } from "./transfer-ended.js";

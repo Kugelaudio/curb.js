@@ -15,6 +15,7 @@ import type {
   SkillsProps,
   SystemPromptProps,
   TextProps,
+  HandoffToolMarker,
   ToolActionProps,
   ToolProps,
   ToolPropsWithFields,
@@ -45,7 +46,7 @@ declare module "react" {
       "agent-skill": SkillElementProps;
       "agent-form": ToolPropsWithFields & ToolConfirmProps<Record<string, unknown>>;
       "agent-field": FieldProps;
-      "agent-tool": ToolActionProps;
+      "agent-tool": ToolActionProps & { handoff?: HandoffToolMarker };
       "agent-error": ErrorMessageProps;
     }
   }

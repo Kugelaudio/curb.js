@@ -18,6 +18,7 @@ Everything an agent renders, imported from `curb`.
 | [`Step`](./components/step.md) | One step of a `Procedure` |
 | [`Mcp`](./components/mcp.md) | Tools from an MCP server |
 | [`TransferCallTool`](./components/transfer-call-tool.md) | A ready tool that puts the caller through to a number |
+| [`Handoff`](./components/handoff.md) | Hands the caller to a person, or takes a callback request when nobody is there |
 
 ## Next steps
 

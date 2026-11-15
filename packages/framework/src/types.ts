@@ -176,6 +176,12 @@ export type ToolPropsBase = SiteElementProps & {
   icon?: string;
 };
 
+/** What `<Handoff>` marks its tools with, so the session knows them (`runtime.handoffTool`):
+ * the handoff itself, which the session calls after `afterFailures` failures in a row (null:
+ * never), and the callback request it offers when nobody could take the call. Neither counts as
+ * a failing tool. Internal: no authored `<Tool>` passes it. */
+export type HandoffToolMarker = { kind: "handoff"; afterFailures: number | null } | { kind: "callback" };
+
 export type ToolActionProps = ToolPropsBase & {
   onCall: ToolHandler;
   /** Optional pass-through JSON Schema (used by MCP tools). Authored `<Tool>`s

@@ -292,15 +292,21 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Whether `value` reads as a phone number: digits with an optional leading +, spaces and
+ * the usual separators. */
+export function isPhoneNumber(value: string): boolean {
+  return /^\+?[\d\s()./-]+$/.test(value) && /\d/.test(value);
+}
+
 /** The `call.transfer` payload, or a TypeError naming what is wrong with the request. */
-function transferPayload(request: TransferCallRequest): { to: string; ringTimeoutSeconds?: number } {
+export function transferPayload(request: TransferCallRequest): { to: string; ringTimeoutSeconds?: number } {
   if (!isRecord(request)) {
     throw new TypeError(
       'transfer() takes { to, ringTimeoutSeconds?, announce?, onEnded? }, for example transfer({ to: "+493012345678" }).',
     );
   }
   const to = typeof request.to === "string" ? request.to.trim() : "";
-  if (!/^\+?[\d\s()./-]+$/.test(to) || !/\d/.test(to)) {
+  if (!isPhoneNumber(to)) {
     throw new TypeError(
       `transfer() needs "to" as a phone number in international format, for example "+493012345678"; got ${JSON.stringify(request.to)}.`,
     );

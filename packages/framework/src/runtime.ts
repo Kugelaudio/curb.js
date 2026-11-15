@@ -24,6 +24,7 @@ import type {
   SemanticNode,
   ToolCallOutcome,
   ToolDefinition,
+  HandoffToolMarker,
   ToolRegistryEntry,
   ToolResult,
 } from "./types.js";
@@ -97,6 +98,8 @@ export class AgentSiteRuntime {
   private registry = new Map<string, ToolRegistryEntry>();
   /** The rendered tools authored with `confirm`, by tool definition id (see `confirms`). */
   private confirming = new Map<string, SemanticNode>();
+  /** The rendered `<Handoff>` tools by tool name (see `handoffTool`). */
+  private handoffs = new Map<string, HandoffToolMarker>();
   private context: CompiledContext | null = null;
   /** Loaded skill paths, least recently used first, ACTIVE skill last. Empty at the agent
    * level: a conversation starts with no skill loaded and opens each one when needed. */
@@ -223,6 +226,20 @@ export class AgentSiteRuntime {
     const id = this.registry.get(name)?.definition.id;
     const submit = id === undefined ? undefined : toolForm(this.root.container.root, id)?.props.onSubmit;
     return typeof submit === "function" ? (submit as FakeableSubmit)(input, fake) : fake(input);
+  }
+
+  /** How `<Handoff>` marked the tool `name`, when it rendered it. */
+  handoffMarker(name: string): HandoffToolMarker | undefined {
+    return this.handoffs.get(name);
+  }
+
+  /** The `<Handoff>` tool the session calls on its own after `afterFailures` failures in a row,
+   * when one is rendered now. */
+  handoffTool(): { name: string; afterFailures: number } | undefined {
+    for (const [name, marker] of this.handoffs) {
+      if (marker.kind === "handoff" && marker.afterFailures !== null) return { name, afterFailures: marker.afterFailures };
+    }
+    return undefined;
   }
 
   /** Whether `name` asks the caller before it runs (`<Tool confirm>`). The session then
@@ -385,6 +402,7 @@ export class AgentSiteRuntime {
 
     this.registry = registry;
     this.confirming = confirmingTools(this.root.container.root);
+    this.handoffs = handoffTools(this.root.container.root, registry);
     this.installLoadSkillTool(context);
     if (this.settings.s2s()) context.instructions.push(HANDED_OVER_RULE);
     else this.installStaySilentTool(context);
@@ -649,6 +667,22 @@ function confirmingTools(root: SemanticNode | null): Map<string, SemanticNode> {
   };
   if (root) visit(root);
   return forms;
+}
+
+/** The rendered `<Handoff>` tools by the name they are called by. */
+function handoffTools(root: SemanticNode | null, registry: Map<string, ToolRegistryEntry>): Map<string, HandoffToolMarker> {
+  const markers = new Map<string, HandoffToolMarker>();
+  const visit = (node: SemanticNode) => {
+    if (node.type === "agent-tool" && node.props.handoff) markers.set(String(node.props.id ?? node.id), node.props.handoff as HandoffToolMarker);
+    for (const child of node.children) visit(child);
+  };
+  if (root) visit(root);
+  const byName = new Map<string, HandoffToolMarker>();
+  for (const [name, entry] of registry) {
+    const marker = markers.get(entry.definition.id);
+    if (marker) byName.set(name, marker);
+  }
+  return byName;
 }
 
 /** The rendered `<Tool>` form with node id `id` (its tool definition id); none for other tools. */
