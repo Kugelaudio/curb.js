@@ -13,6 +13,20 @@ export function reloadNotice(reload: DemoClientState["reload"]): string | null {
     : "Your saved changes apply after this reply.";
 }
 
+/** The preview before the agent is on the page: Curb's mark, and what the page waits for. */
+export function PreviewLoading({ connected }: { connected: boolean }) {
+  return (
+    <main className="grid h-screen place-items-center">
+      <div className="flex flex-col items-center gap-5 pb-[8vh]" role="status">
+        <CurbLogo size={48} waiting />
+        <p className="m-0 text-sm">
+          <span className="agent-thinking">{connected ? "Loading the agent…" : "Connecting to the agent server…"}</span>
+        </p>
+      </div>
+    </main>
+  );
+}
+
 /**
  * The preview while the agent cannot run: its modules did not load, it does not render, or a
  * conversation could not start. The page shows nothing older than the files on disk, only

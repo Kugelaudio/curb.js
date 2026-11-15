@@ -53,9 +53,28 @@
   }
 }
 
+/* --- Curb's mark while the page waits (curb-logo.tsx) --------------------------------- */
+
+.curb-logo-slash {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+[data-waiting] > .curb-logo-slash {
+  animation: curb-logo-waiting 1.5s ease-in-out infinite;
+}
+
+@keyframes curb-logo-waiting {
+  50% {
+    opacity: 0.3;
+    transform: scale(0.82);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-sphere[data-live="speaking"],
-  .agent-thinking {
+  .agent-thinking,
+  [data-waiting] > .curb-logo-slash {
     animation: none;
   }
   .agent-thinking {

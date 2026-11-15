@@ -8,7 +8,7 @@ import { preloadPublicMarkdown } from "../public-context.js";
 import type { ToolDefinition } from "../types.js";
 import { AgentGraphDialog } from "./agent-graph.js";
 import { agentOutline } from "./agent-outline.js";
-import { AgentSphere, agentName } from "./agent-sphere.js";
+import { agentName } from "./agent-sphere.js";
 import { skillPage, skillPageStatus, useNewSinceLastMessage } from "./agent-view.js";
 import { ContextColumn, ContextColumnLayout } from "./context-column.js";
 import { useContextColumn } from "./context-column-state.js";
@@ -32,7 +32,7 @@ import { ConversationHeader } from "./conversation-header.js";
 import { ConversationPlayer, type ConversationReplayState } from "./conversation-player.js";
 import { ConversationThread } from "./conversation-thread.js";
 import { lastCallOf } from "./conversation-turns.js";
-import { AgentUnavailable, reloadNotice } from "./dev-reload.js";
+import { AgentUnavailable, PreviewLoading, reloadNotice } from "./dev-reload.js";
 import { resolveIcon } from "./icon.js";
 import { InstructionsDialog } from "./instructions-dialog.js";
 import { callForReply, dateLineOf } from "./model-input.js";
@@ -261,14 +261,7 @@ function App() {
   if (state.unavailable) return <AgentUnavailable {...state.unavailable} />;
 
   if (!context || !activeAgent || !outline) {
-    return (
-      <main className="grid h-screen place-items-center">
-        <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground" role="status">
-          <AgentSphere size={44} />
-          {state.connected ? "Loading your agent…" : "Connecting to the agent server…"}
-        </div>
-      </main>
-    );
+    return <PreviewLoading connected={state.connected} />;
   }
 
   const treeInput: ContextTreeInput = {
