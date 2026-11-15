@@ -2,8 +2,8 @@
 
 Goals work with any host that reports them. `curb build` writes goals and experiments into the
 bundle (`curb.bundle.json`), and the host reports per call which goals it reached and which variant
-it had. On KugelAudio, the results appear in the dashboard; hosting there is open to every organization
-that signs up at kugelaudio.com/voice-agents.
+it had. On KugelAudio, the results appear in the dashboard; hosting there is switched on for an
+organization on request.
 
 A goal says what counts as a successful call, for example "the caller booked a slot". An
 experiment splits calls between variants of your agent, for example a formal and a casual

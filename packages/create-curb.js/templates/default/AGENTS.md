@@ -161,10 +161,8 @@ names the version in the dashboard, which otherwise shows `Version N`.
 
 Not signed in? Do not stop there: run `npx curb login --no-open` in the background, give
 the user the link it prints to open in their browser on this machine, and go on once it
-prints `Signed in as`. Hosted agents are open: an organization that signs up at
-kugelaudio.com/voice-agents has them, with a free starter plan, so a user who has not signed
-up there yet does that first. On `CURB_HOSTED_AGENTS_NOT_ENABLED` (an organization that
-signed up another way) the user asks hello@kugelaudio.com, and `curb dev` and `curb say` keep working meanwhile. A dry run
+prints `Signed in as`. Hosted agents are switched on for an organization on
+request: on `CURB_HOSTED_AGENTS_NOT_ENABLED` the user asks hello@kugelaudio.com, and `curb dev` and `curb say` keep working meanwhile. A dry run
 is `npx curb deploy --no-activate` (or `npx curb build`, which uploads nothing).
 
 Run `npx curb check` before deploying. `.env*`, `node_modules/`, `.git/`, `.curb/` and

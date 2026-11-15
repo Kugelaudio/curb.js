@@ -223,7 +223,7 @@ describe("resolveTarget", () => {
       body: { error: "Hosted agents are not enabled for your organization yet.", error_code: "agents_not_enabled", details: { code: "agents_not_enabled" } },
     });
     await expect(resolveTarget({ client, root, prompter: null, log })).rejects.toThrow(
-      /^\[CURB_HOSTED_AGENTS_NOT_ENABLED\] .*kugelaudio\.com\/voice-agents.*\nFix: Ask hello@kugelaudio\.com .*`npx curb dev`/s,
+      /^\[CURB_HOSTED_AGENTS_NOT_ENABLED\] .*on request.*\nFix: Ask hello@kugelaudio\.com .*`npx curb dev`/s,
     );
     expect(platformCalls()).toHaveLength(0);
     expect(readLink(root)).toBeNull();
