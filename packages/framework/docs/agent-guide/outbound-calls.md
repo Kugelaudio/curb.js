@@ -2,7 +2,7 @@
 
 Your backend can ask a hosted agent to call someone, with what you already know about the call. Placing
 the call goes through the [KugelAudio outbound calls API](https://docs.kugelaudio.com/hosted-agents/outbound-calls),
-which is part of hosted agents, in closed alpha. This page covers the agent's side.
+which is part of hosted agents. This page covers the agent's side.
 
 ## Read what you sent
 

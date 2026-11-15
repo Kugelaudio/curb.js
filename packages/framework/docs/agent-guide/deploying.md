@@ -7,7 +7,9 @@ Curb runs anywhere Node runs. You have two ways to put an agent live:
 | KugelAudio | `npx curb deploy`, with no servers of your own | This page |
 | Your own servers | `curb start` or a built artifact | [Self-hosting](./hosting.md) |
 
-Hosting on KugelAudio is in closed alpha and switched on per organization. Phone numbers, GitHub
+Hosting on KugelAudio is switched on for an organization on request
+(hello@kugelaudio.com); the starter plan's limits are in the
+[KugelAudio docs](https://docs.kugelaudio.com/hosted-agents/plans-and-usage). Phone numbers, GitHub
 deploys and how a hosted agent runs are in the
 [KugelAudio docs](https://docs.kugelaudio.com/hosted-agents/quickstart).
 

@@ -125,8 +125,8 @@ export function isHostedAgentsNotEnabled(error: CloudError): boolean {
 export function hostedAgentsNotEnabledMessage(answered: string): string {
   return formatCliRefusal(
     CLI_REFUSAL_CODES.hostedAgentsNotEnabled,
-    "Hosted agents are not switched on for your KugelAudio organization. They are in a closed alpha, " +
-      `switched on per organization (${answered}).`,
+    "Hosted agents are not switched on for your KugelAudio organization. They are switched on for an organization on " +
+      `request (${answered}).`,
     "Ask hello@kugelaudio.com to switch them on for your organization, then run the command again. " +
       'Until then the agent runs on this machine as before: `npx curb dev` opens the preview, `npx curb say "<what a caller says>"` runs one turn.',
   );
