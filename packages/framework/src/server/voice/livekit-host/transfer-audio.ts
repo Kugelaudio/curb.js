@@ -3,7 +3,8 @@
  * agent's announcement, played to its end before anything is dialed, then a ringback tone
  * until the outcome is known.
  *
- * Both play on an audio track of their own, published by the agent beside its voice. The
+ * Both play on an audio track of their own, published by the agent beside its voice as a second
+ * microphone, so a participant recording of the agent carries them (`publishTransferTrack`). The
  * agent's voice cannot carry them: the transfer tool runs inside the agent's turn, and LiveKit
  * plays one speech at a time, so a line queued with `session.say` would wait for the very turn
  * that waits for it.
@@ -21,6 +22,7 @@ import {
   AudioSource,
   LocalAudioTrack,
   TrackPublishOptions,
+  TrackSource,
   type Room,
 } from "@livekit/rtc-node";
 import type { tts } from "@livekit/agents";
@@ -167,7 +169,13 @@ export async function publishTransferTrack(room: Room): Promise<TransferAudioSin
   const participant = room.localParticipant;
   if (!participant) throw new Error("the agent is not in the room, so the transfer audio track cannot be published");
   const source = new AudioSource(TRANSFER_AUDIO_SAMPLE_RATE, 1);
-  await participant.publishTrack(LocalAudioTrack.createAudioTrack(TRACK_NAME, source), new TrackPublishOptions());
+  // A microphone, like the agent's voice: LiveKit's participant egress records a participant's
+  // camera and microphone tracks and mixes their audio, so a recording of the agent then holds
+  // the announcement and ringback too. Published without a source, it would be left out.
+  await participant.publishTrack(
+    LocalAudioTrack.createAudioTrack(TRACK_NAME, source),
+    new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }),
+  );
   return source;
 }
 
