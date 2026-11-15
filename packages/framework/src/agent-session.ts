@@ -37,10 +37,13 @@ import {
   dateLine,
   DEFAULT_TIME_ZONE,
   fallbackReplies,
+  handoffAnnouncement,
+  handoffUnreachedLine,
   isTimeZone,
   type AgentLanguage,
 } from "./llm/localized.js";
 import { toolMessage } from "./llm/tool-messages.js";
+import { FailureStreaks, handedOver, handoffCall } from "./handoff-trigger.js";
 import { capTranscript, contextEvent, interruptedReply, withAudio, withToolCallRecord } from "./llm/transcript.js";
 import { closeAbandonedStream, llmTimeoutFromEnv, LlmTimeoutError, untilAborted } from "./llm/deadline.js";
 import { serializeLlmInput } from "./llm/serialize-input.js";
@@ -50,6 +53,7 @@ import {
   SKIP_TURN_TOOL_NAME,
   type ToolCallOutcome,
   type ToolDefinition,
+  type ToolResult,
 } from "./types.js";
 import { END_CALL_VOICE_STYLE } from "./voice-style.js";
 import { continuesHeardLine, joinHeardLine } from "./heard-line.js";
@@ -193,6 +197,10 @@ export class AgentSession {
   /** The caller spoke over a read-back before the host reported it: the host's cut report
    * for it is still to come, and it is about a reply the conversation moved past. */
   private lateCutReport = false;
+  /** The failures in a row that hand the call to a person (`<Handoff afterFailures>`). */
+  private readonly failures = new FailureStreaks();
+  /** The running turn already handed the call off on its own: at most once a turn. */
+  private handedOffThisTurn = false;
 
   constructor(runtime: AgentSiteRuntime, llm: AgentLlmClient, options: AgentSessionOptions = {}) {
     this.runtime = runtime;
@@ -529,6 +537,7 @@ export class AgentSession {
       yield { type: "error", error: { kind: "failed", message } };
     }
     this.unsaid = options.unsaid === true;
+    this.handedOffThisTurn = false;
     const newest = this.conversation.at(-1);
     const heardAlready = options.heard && newest?.role === "user" && newest.content.endsWith(text);
     let messages: AgentChatMessage[] = heardAlready
@@ -685,7 +694,29 @@ export class AgentSession {
       if (stepCall !== null) this.recordLlmError(stepCall, detail);
       unanswered = { kind, message: detail };
     }
-    if (!unanswered) return { reply: speech.reply };
+    if (!unanswered) {
+      if (settled) this.failures.turnEnded();
+      return { reply: speech.reply };
+    }
+
+    // Every turn without a reply counts, a failure, an empty reply or the step limit alike, except
+    // one that already handed off: the handoff was its outcome. Often enough in a row, a person
+    // takes over instead of another apology.
+    if (!this.handedOffThisTurn) this.failures.turnEnded(`${unanswered.kind}: ${unanswered.message}`);
+    const handoff = await this.handOffIfDue(messages);
+    if (handoff) {
+      const { skill, ...tool } = handoff.executed;
+      yield { type: "tool", ...tool };
+      if (skill) yield { type: "skill", ...skill };
+      // A person took the call: the agent says nothing more. Nobody did: the model is not
+      // answering, so the caller hears the callback offer in a fixed line rather than silence.
+      if (handedOver(handoff.result)) return { reply: speech.reply, error: unanswered };
+      const offer = handoffUnreachedLine(this.language());
+      const delta = speech.line(offer);
+      this.endedOnFallbackLine = true;
+      if (streaming && delta) yield { type: "delta", delta, text: offer };
+      return { reply: speech.reply, error: unanswered };
+    }
 
     // The caller hears a fixed line in the agent's language, right after whatever
     // the turn already said. The transcript does not record it: the model never
@@ -879,6 +910,12 @@ export class AgentSession {
       if (ok && toolCall.name === END_CALL_TOOL_NAME) goodbye ??= endCallGoodbye(toolCall.input);
       executed.push({ toolCall, ok, ...(durationMs === undefined ? {} : { durationMs }), ...(skill ? { skill } : {}) });
       next = this.append(next, toolMessage(toolCall, outcome));
+      if (!toolCall.invalid) this.countToolRun(toolCall.name, outcome);
+    }
+    const handoff = await this.handOffIfDue(next);
+    if (handoff) {
+      next = handoff.messages;
+      executed.push(handoff.executed);
     }
 
     // Ends the turn loop immediately even if the model queued other tool
@@ -937,10 +974,67 @@ export class AgentSession {
     let next = this.append(messages, { role: "assistant", content: "", at: Date.now(), toolCalls: [toolCall] });
     const { outcome, durationMs, skill } = await this.executeToolCall(toolCall);
     next = this.append(next, toolMessage(toolCall, outcome));
+    if (!toolCall.invalid) this.countToolRun(toolCall.name, outcome);
     yield { type: "tool", toolCall, ok: outcome.result.ok !== false, ...(durationMs === undefined ? {} : { durationMs }) };
     if (skill) yield { type: "skill", ...skill };
+    // The confirmed action may be the failure that hands the call off, before the model speaks.
+    const handoff = await this.handOffIfDue(next);
+    if (handoff) {
+      next = handoff.messages;
+      const { skill: handoffSkill, ...tool } = handoff.executed;
+      yield { type: "tool", ...tool };
+      if (handoffSkill) yield { type: "skill", ...handoffSkill };
+    }
     for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
     return next;
+  }
+
+  /** Count a call of `name` that ran toward the failures that hand the call off. Framework tools
+   * and `<Handoff>`'s own do not count. */
+  private countToolRun(name: string, outcome: ToolCallOutcome): void {
+    if (this.runtime.toolDefinition(name)?.scope === "runtime" || this.runtime.handoffMarker(name)) return;
+    this.failures.toolRan(name, outcome.result);
+  }
+
+  /** When a `<Handoff>` is rendered and its failures in a row are reached, call its tool on the
+   * caller's behalf, recorded as a call of its own: the model is not asked, as it may be what
+   * fails. It speaks a fixed line in the agent's language before the transfer. */
+  private async handOffIfDue(messages: AgentChatMessage[]): Promise<
+    | {
+        messages: AgentChatMessage[];
+        executed: { toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number; skill?: SkillChange };
+        result: ToolResult;
+      }
+    | undefined
+  > {
+    if (this.handedOffThisTurn) return undefined;
+    const tool = this.runtime.handoffTool();
+    const summary = tool ? this.failures.due(tool.afterFailures) : undefined;
+    if (!tool || summary === undefined) return undefined;
+    // One attempt a turn across every path that checks, and both streaks start again: a second
+    // dial to the same number in the same turn would only ring the same person twice.
+    this.handedOffThisTurn = true;
+    this.failures.reset();
+    const toolCall = handoffCall(
+      this.nextToolCallId(),
+      tool.name,
+      summary,
+      handoffAnnouncement(this.language()),
+      this.runtime.toolDefinition(tool.name)?.skillPath,
+    );
+    let next = this.append(messages, { role: "assistant", content: "", at: Date.now(), toolCalls: [toolCall] });
+    const { outcome, durationMs, skill } = await this.executeToolCall(toolCall);
+    next = this.append(next, toolMessage(toolCall, outcome));
+    return {
+      messages: next,
+      result: outcome.result,
+      executed: {
+        toolCall,
+        ok: outcome.result.ok !== false,
+        ...(durationMs === undefined ? {} : { durationMs }),
+        ...(skill ? { skill } : {}),
+      },
+    };
   }
 
   /** Run one recorded tool call. Always yields a result: the call is already

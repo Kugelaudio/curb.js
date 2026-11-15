@@ -1,47 +1,80 @@
 # Human handoff
 
-Put the caller through to a person, and have a way out when nobody answers.
+Hand the caller to a person when they ask for one or when the agent cannot help, and take a
+callback request when nobody is there.
 
-Project: `examples/human-handoff`. Put the caller through to a person, and have a way out when
-nobody answers.
+Project: `examples/human-handoff`.
 
 ```tsx
-import { Agent, GlobalTools, SystemPrompt, Tool, TransferCallTool, z } from "curb";
+import { Agent, GlobalTools, Handoff, SystemPrompt } from "curb";
 
 <Agent>
-  <SystemPrompt>
-    When the caller asks for a person, call transfer_call straight away.
-    When the transfer fails, tell them nobody could be reached and offer a callback.
-  </SystemPrompt>
+  <SystemPrompt>You book and move appointments for the service desk.</SystemPrompt>
   <GlobalTools>
-    <TransferCallTool to="+493012345678" ringTimeoutSeconds={25} />
-    <Tool
-      name="request_callback"
-      description="Ask the support desk to call the caller back."
-      schema={z.object({ phone: z.string().describe("The number to call back on.") })}
-      success="The callback is recorded."
-      onSubmit={(input) => {
-        // Send it where someone reads it: your own API here, or send.toHost (below).
-        return { ok: true, data: input };
+    <Handoff
+      to="+493012345678"
+      hours={{ timeZone: "Europe/Berlin", open: { "mon-fri": "08:00-17:00", sat: "09:00-12:00" } }}
+      onCallbackRequest={async (request) => {
+        // { name, phone, reason, summary }: send it where someone reads it, your ticket system here.
+        await fetch("https://tickets.example.com/callbacks", { method: "POST", body: JSON.stringify(request) });
       }}
     />
   </GlobalTools>
 </Agent>
 ```
 
-The model passes one sentence as `announce`, which the caller hears before anything is
-dialed. They then hear a ringback tone. The model reads the outcome in plain words. When the
-person leaves and the caller is still there, the agent takes the call back. A mailbox that picks
-up counts as answered, so switch it off on the target number.
+`<Handoff>` gives the model a `handoff` tool, and takes over itself when things go wrong:
+
+| When | `reason` | Who decides |
+|---|---|---|
+| The caller asks for a person ("Ich möchte mit einem Menschen sprechen") | `caller_requested` | the model |
+| The agent cannot help: the caller keeps repeating themselves, it cannot answer, or what they need is not something it can do | `agent_stuck` | the model |
+| 3 tool calls failed in a row, or 3 turns in a row ended without a reply (`afterFailures`) | `agent_failure` | the framework, without asking the model |
+
+The model passes a `summary` for the person taking over (who the caller is, what they want,
+what was already collected) and one `announce` sentence in the caller's language. When the
+framework hands off on its own, the caller hears a fixed line in the agent's language instead
+("Entschuldigung, bei mir funktioniert gerade etwas nicht. Einen Moment, ich verbinde Sie mit
+einem Kollegen."). When that handoff reaches nobody after turns without a reply, the model may
+still be down, so the caller hears the callback offer as a fixed line too ("Ich konnte gerade
+niemanden erreichen. Nennen Sie mir bitte Ihren Namen und die Nummer, unter der wir Sie
+zurückrufen können.").
+
+What happens next:
+
+- **Within `hours`** the caller hears the announcement, then a ringback while `to` rings, and the
+  person takes over, as with [`<TransferCallTool>`](#transfer-from-your-own-code). A mailbox that
+  picks up counts as answered, so switch it off on the target number.
+- **Outside `hours`**, when nobody answers, the line is busy, or the call cannot be put through
+  (a browser call, the preview), nobody is dialed or the dial ends, and the model is told to offer a
+  callback. A `request_callback` tool appears: the model asks for the caller's name and the
+  number to call back on (on a phone call, the number they call from is the default) and
+  records it. `onCallbackRequest` gets `{ name, phone, reason, summary }`.
+- `hours` may be a function instead, sync or async, for holidays or a shared calendar:
+  `hours={async (now) => !(await isHoliday(now)) && isWeekday(now)}`. One that throws counts as
+  closed, so the caller is offered a callback, and the error is logged.
+
+**The call's record.** On a hosted call each handoff is a `curb.handoff` event with `reason`,
+`summary`, `outcome` (`answered`, `no_answer`, `busy`, `failed`, `refused`, or `closed` outside
+the hours) and, for a refusal, `code`. Each callback request is a `curb.callback_request` event
+with `name`, `phone`, `reason` and `summary`. A traced call ([Tracing](./tracing.md)) gets a
+`handoff` event on its span with the reason and the outcome only.
+
+**Tools that count.** Only your own tools count toward `afterFailures`: a tool result with
+`ok: false`, a handler that throws, or a `ToolInputError`. A tool call that works starts the count
+again; `read_skill`, `skip_turn`, `end_call` and the handoff's own tools count for neither. A call
+the caller confirmed (`<Tool confirm>`) counts when it runs. A turn without a reply is one where
+the model failed or timed out, answered nothing twice, or used all its steps; a turn that ends in
+a reply starts the turn count again. `afterFailures={false}` leaves it to the model.
+
+**Testing.** Under `curb say` and `curb test` no host answers, so a handoff within the hours ends
+as a callback offer: that tests the fallback. Pass `hours={() => false}` to test the closed path.
+To test a call that is put through, fake the `handoff` tool.
 
 A transfer needs a host that dials: KugelAudio does on a hosted phone call, with the conditions in
 [Outbound calls and forwarding](https://docs.kugelaudio.com/hosted-agents/outbound-calls), and your
 own host can ([Host protocol](./host-protocol.md#transfer-on-your-own-host)). In `curb dev` and on a browser
-call it is refused.
-
-Under `curb say` and `curb test` no host answers, so a real transfer ends as `refused` and your
-fallback runs: leave the tool unfaked to test that. To test the path where someone picks up, fake
-it. A fake replaces the tool's handler, so anything the handler would have set stays unset.
+call it is refused, and `<Handoff>` offers a callback.
 
 ## Transfer from your own code
 

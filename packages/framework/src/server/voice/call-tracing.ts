@@ -24,6 +24,9 @@ export async function traceCall<Options extends Pick<VoiceSessionStartOptions, "
       // apart. That number is the author's own; it stays off the spans.
       transfer: (outcome, durationMs, to) =>
         options.reporter?.event("transfer", { outcome, ...(to ? { to } : {}) }, durationMs),
+      // The person taking over reads why the call came to them and what was already collected.
+      handoff: (record) => options.reporter?.event("handoff", record),
+      callbackRequest: (record) => options.reporter?.event("callback_request", record),
     },
   );
   attachCallTrace(bundle.runtime.info, callTrace);

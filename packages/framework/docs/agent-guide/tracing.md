@@ -26,7 +26,9 @@ does for each job: there the call's span is a child of that span.
 
 Moments are events on the span they happen in: `step_completed` on a procedure (with
 `curb.procedure.step` and `curb.procedure.step_title`), `handed_off` on a transfer when its
-target is on the line. A tool run that changes the active skill also says so on its own span,
+target is on the line, and on the call's span `handoff` (with `curb.handoff.reason` and
+`curb.handoff.outcome`) and `callback_request` (with `curb.handoff.reason`) from
+[`<Handoff>`](./human-handoff.md), never its summary or the caller's details. A tool run that changes the active skill also says so on its own span,
 as `curb.skill.entered` or `curb.skill.exited`.
 
 A span that failed has an error status and an `error.type`:

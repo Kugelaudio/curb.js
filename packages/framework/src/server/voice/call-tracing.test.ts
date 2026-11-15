@@ -52,6 +52,34 @@ describe("a traced call", () => {
     expect(durationMs).toBeGreaterThanOrEqual(0);
   });
 
+  it("writes each handoff and callback request in the call's record, and only why on the span", async () => {
+    const call = bundle();
+    const event = vi.fn();
+    const reporter = { turn: vi.fn(), event, finish: vi.fn(async () => {}), undelivered: 0 };
+    let closed = () => {};
+    await traceCall({ bundle: call, reporter, onClosed: () => {} }, async (options) => {
+      closed = options.onClosed!;
+      return handle();
+    });
+
+    const handoff = { reason: "caller_requested", summary: "Anna Schmidt wants a person.", outcome: "closed" };
+    const callback = { name: "Anna Schmidt", phone: "+491701234567", reason: "caller_requested", summary: "Anna Schmidt wants a person." };
+    callTraceOf(call.runtime.info)!.handoff(handoff);
+    callTraceOf(call.runtime.info)!.callbackRequest(callback);
+    closed();
+
+    expect(event.mock.calls).toEqual([
+      ["handoff", handoff],
+      ["callback_request", callback],
+    ]);
+    const [root] = exporter.getFinishedSpans();
+    expect(root!.events.map((span) => [span.name, span.attributes])).toEqual([
+      ["handoff", { "curb.handoff.reason": "caller_requested", "curb.handoff.outcome": "closed" }],
+      ["callback_request", { "curb.handoff.reason": "caller_requested" }],
+    ]);
+    expect(JSON.stringify(root!.events)).not.toContain("Anna");
+  });
+
   it("spans the session from before it starts until it has closed", async () => {
     const call = bundle();
     call.runtime.updateInfo({ "call.direction": "inbound" });
