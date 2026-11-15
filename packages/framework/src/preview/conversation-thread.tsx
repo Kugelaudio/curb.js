@@ -238,10 +238,17 @@ function visibleTurns(
   });
 }
 
+/** A reply's type, and the height of one line of it. */
+const REPLY_TEXT = "text-[15px] leading-[1.65]";
+const REPLY_LINE_HEIGHT = "h-[calc(15px*1.65)]";
+
 function AgentTurn({ children }: { children: ReactNode }) {
   return (
     <div className="group/turn grid max-w-[680px] grid-cols-[28px_minmax(0,1fr)] gap-x-3.5">
-      <AgentSphere size={26} className="mt-px" />
+      {/* As tall as the reply's first line, so the sphere centres on its words. */}
+      <span className={`flex items-center justify-center ${REPLY_LINE_HEIGHT}`}>
+        <AgentSphere size={26} />
+      </span>
       <div className="relative flex min-w-0 flex-col gap-2.5">{children}</div>
     </div>
   );
@@ -258,7 +265,7 @@ function ReplyText({ message, playback }: { message: AgentAssistantMessage; play
     : replyInk(message.content, playback);
   if (ink) {
     return (
-      <p className="m-0 text-[15px] leading-[1.65] [text-wrap:pretty]">
+      <p className={`m-0 ${REPLY_TEXT} [text-wrap:pretty]`}>
         {ink.spoken}
         {ink.spoken && ink.unspoken ? " " : null}
         {ink.unspoken ? (
@@ -270,7 +277,7 @@ function ReplyText({ message, playback }: { message: AgentAssistantMessage; play
     );
   }
   return (
-    <div className="markdown-message text-[15px] leading-[1.65]">
+    <div className={`markdown-message ${REPLY_TEXT}`}>
       <Streamdown>{message.content}</Streamdown>
     </div>
   );
@@ -283,13 +290,13 @@ function ReplyText({ message, playback }: { message: AgentAssistantMessage; play
 function TurnInProgress({ text, muted }: { text: string | null; muted: boolean }) {
   if (text === null) {
     return (
-      <p className="m-0 text-[15px] leading-[1.65]" role="status">
+      <p className={`m-0 ${REPLY_TEXT}`} role="status">
         <span className="agent-thinking">Thinking</span>
       </p>
     );
   }
   return (
-    <div className={`markdown-message text-[15px] leading-[1.65]${muted ? " text-muted-foreground" : ""}`}>
+    <div className={`markdown-message ${REPLY_TEXT}${muted ? " text-muted-foreground" : ""}`}>
       <Streamdown>{text}</Streamdown>
     </div>
   );
