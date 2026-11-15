@@ -25,6 +25,9 @@ knows and what it can do, as React components.
 | What it knows: skills and plain markdown | The model's request on every turn: only the instructions and tools your state allows |
 | Conversations to keep as tests | A preview where you talk to the agent and see what the model saw |
 
+Run the agent on your own servers, or let KugelAudio host it with phone numbers and call logs:
+see [Hosting](#hosting).
+
 A receptionist for a bike workshop, in `src/agent/agent.tsx`:
 
 ```tsx
@@ -78,9 +81,6 @@ export const agent = defineAgent({ app: App });
 Whatever `<Agent>` renders is what the model knows and can do right now. `cancel_booking` exists
 only once a slot is booked, so the model cannot call it before. `/prices` is a
 [skill](#how-it-works): the model opens it when the caller asks what a repair costs.
-
-Run the agent on your own servers, or let KugelAudio host it with phone numbers and call logs:
-see [Hosting](#hosting).
 
 ## Quickstart
 
