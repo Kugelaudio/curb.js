@@ -7,7 +7,6 @@ import {
   isAppLayerPath,
   mergeDependencyLayerFiles,
   readDependencyLayerDescriptor,
-  traceFilesOnlyFromBundleCopy,
 } from "./layers.js";
 
 /**
@@ -49,60 +48,6 @@ describe("the app path set (L2)", () => {
     const workspace = { entryHome: "packages/framework", projectHome: "examples/agent" };
     expect(isAppLayerPath("examples/agent/mcp.servers.json", workspace)).toBe(true);
     expect(isAppLayerPath("mcp.servers.json", workspace)).toBe(false);
-  });
-});
-
-describe("traceFilesOnlyFromBundleCopy", () => {
-  const reason = (...parents: string[]) => ({
-    type: [parents.length === 0 ? "initial" : "dependency"],
-    ignored: false,
-    parents: new Set(parents),
-  });
-  const seed = "../tmp/curb-trace-x/worker.mjs";
-
-  it("names files reachable only from the bundle copy, and not shared or external-seeded ones", () => {
-    const reasons = new Map([
-      [seed, reason()],
-      ["node_modules/@livekit/agents/dist/index.js", reason()],
-      ["node_modules/commander/index.js", reason("node_modules/@livekit/agents/dist/index.js")],
-      ["node_modules/shared/index.js", reason(seed, "node_modules/commander/index.js")],
-      ["node_modules/leak/index.js", reason(seed)],
-      ["node_modules/leak/sub.js", reason("node_modules/leak/index.js")],
-    ]);
-    const fileList = new Set(reasons.keys());
-    expect(
-      traceFilesOnlyFromBundleCopy(reasons, fileList, (file) => file.startsWith("../tmp/curb-trace-x/")),
-    ).toEqual(["node_modules/leak/index.js", "node_modules/leak/sub.js"]);
-  });
-
-  it("is empty when the bundle copy resolves nothing", () => {
-    const reasons = new Map([
-      [seed, reason()],
-      ["node_modules/@livekit/agents/dist/index.js", reason()],
-    ]);
-    expect(
-      traceFilesOnlyFromBundleCopy(reasons, new Set(reasons.keys()), (file) => file === seed),
-    ).toEqual([]);
-  });
-
-  it("keeps an explicit external seed when the bundle also imports that same file", () => {
-    const external = "node_modules/@livekit/agents-plugin-silero/dist/index.js";
-    const model = "node_modules/@livekit/agents-plugin-silero/dist/silero_vad.onnx";
-    const reasons = new Map([
-      [seed, reason()],
-      // nft can retain only dependency here even though the same path was explicitly
-      // seeded; the caller knows its seed list and must not infer it from this reason.
-      [external, reason(seed)],
-      [model, reason(external)],
-    ]);
-    expect(
-      traceFilesOnlyFromBundleCopy(
-        reasons,
-        new Set(reasons.keys()),
-        (file) => file === seed,
-        (file) => file.startsWith("node_modules/@livekit/agents-plugin-silero/"),
-      ),
-    ).toEqual([]);
   });
 });
 

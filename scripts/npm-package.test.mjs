@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -245,7 +245,7 @@ test("refuses a tarball that would lose its npm page, and leaves nothing behind"
 });
 
 const SHIPPED = {
-  "packages/framework": ["LICENSE", "NOTICE", "README.md", "THIRD_PARTY_NOTICES.md", "bin", "docs", "index.html", "package.json", "src"],
+  "packages/framework": ["LICENSE", "NOTICE", "README.md", "THIRD_PARTY_NOTICES.md", "bin", "dist", "docs", "package.json"],
   "packages/create-curb.js": ["LICENSE", "NOTICE", "README.md", "bin", "package.json", "templates"],
 };
 
@@ -268,6 +268,13 @@ for (const directory of PACKAGES) {
       assert.equal(manifest.repository.directory, directory);
       assert.equal(manifest.license, "Apache-2.0");
       assert.equal("private" in manifest, false);
+      // The framework ships compiled: every export it publishes is a file in the tarball's dist/.
+      const targets = Object.values(manifest.exports ?? {}).flatMap((target) => (typeof target === "string" ? [target] : Object.values(target)));
+      for (const target of targets) assert.ok(existsSync(join(packed, target)), `${target} is exported but not packed`);
+      if (directory === "packages/framework") {
+        assert.ok(targets.filter((target) => target !== "./package.json").every((target) => target.startsWith("./dist/")));
+        assert.equal("publishConfig" in manifest, false);
+      }
     });
   }
 }

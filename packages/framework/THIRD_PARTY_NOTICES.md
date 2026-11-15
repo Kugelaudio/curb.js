@@ -1,7 +1,9 @@
 # Third-party notices
 
 curb.js is licensed under the Apache License 2.0 (see `LICENSE`). It includes
-the following third-party material, each under its own license.
+the following third-party material, each under its own license. The compiled
+files under `dist/` in the npm package also include the packages listed, with
+their license texts, in `dist/THIRD_PARTY_LICENSES.md`.
 
 ## Silero VAD model
 

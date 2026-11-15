@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { createAnthropic, type AnthropicProviderOptions } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -14,6 +13,7 @@ import {
   type TextStreamPart,
   type ToolSet,
 } from "ai";
+import { COMPILED, packageRoot } from "../layout.js";
 import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES, type AuthoringDiagnostic } from "../authoring.js";
 import type { AgentRunRequest, AgentRunResponse, AgentStreamPart } from "./types.js";
 import { normalizeLlmPunctuation } from "./punctuation.js";
@@ -23,7 +23,8 @@ import { resolveLlmProvider, type LlmProviderConfig } from "./provider.js";
 import { quietSdkWarnings } from "./sdk-warnings.js";
 import { serializeLlmInput } from "./serialize-input.js";
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+/** The curb.js checkout, whose env files hold a key while working on the framework itself; none when installed. */
+const REPO_ROOT = COMPILED ? null : resolve(packageRoot, "../..");
 
 export type AiSdkAgentOptions = {
   /** The conversation's effective llm, read per turn (`runtime.settings.current().llm`). */
@@ -309,6 +310,7 @@ function getAnthropicApiKey(): string {
 }
 
 function readLocalEnvFiles(): string | null {
+  if (REPO_ROOT === null) return null;
   const candidates = [
     resolve(REPO_ROOT, "framework/.env.local"),
     resolve(REPO_ROOT, "framework/.env"),

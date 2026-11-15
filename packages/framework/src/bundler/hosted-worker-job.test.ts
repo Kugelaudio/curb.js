@@ -56,22 +56,21 @@ describe("the hosted worker job", () => {
     await expect(agent.entry({})).rejects.toThrow(/no STT key/);
   });
 
-  const frameworkSrc = join("/framework", "src");
+  const hostedRuntime = join("/framework", "src", "bundler", "hosted-runtime.ts");
   const entry = (projectName?: string) =>
     workerEntrySource({
       contextRegistryPath: "/build/context-registry.mjs",
       registryPath: "/build/agent-registry.mjs",
-      frameworkSrc,
+      hostedRuntime,
       livekitAgentsEntry: "/framework/node_modules/@livekit/agents/dist/index.js",
       ...(projectName === undefined ? {} : { projectName }),
     });
 
-  it("imports the job and the name rule from the framework's worker modules", () => {
+  it("imports the job and the name rule from the framework's hosted runtime module", () => {
     const source = entry("concierge");
-    const workerModule = join(frameworkSrc, "server", "voice", "livekit-host", "worker.ts");
-    const nameModule = join(frameworkSrc, "server", "voice", "worker-name.ts");
-    expect(source).toContain(`import { runVoiceWorkerJob } from ${JSON.stringify(workerModule)};`);
-    expect(source).toContain(`import { voiceWorkerAgentName } from ${JSON.stringify(nameModule)};`);
+    const runtimeImport = source.split("\n").find((line) => line.endsWith(` from ${JSON.stringify(hostedRuntime)};`));
+    expect(runtimeImport).toMatch(/\brunVoiceWorkerJob\b/);
+    expect(runtimeImport).toMatch(/\bvoiceWorkerAgentName\b/);
     expect(source.endsWith(HOSTED_WORKER_JOB_SOURCE)).toBe(true);
   });
 

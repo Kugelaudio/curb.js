@@ -15,8 +15,8 @@ import type { BundleExternal } from "./externals.js";
  * `curb.bundle.json`, `assets/**` and the emitted entry. Everything else -- the
  * externals copied whole, the traced runtime files, the mirrored versions -- is the
  * DEPENDENCY layer, and it is a function of the install alone, not of the agent: the trace
- * is seeded from an isolated copy of the bundle that cannot resolve node_modules, plus the
- * externals from the framework's location (see the trace comments in index.ts).
+ * is seeded only from the externals at the framework's location, never from the bundle
+ * (see the trace comments in index.ts).
  *
  * That independence is what lets a builder cache the dependency layer. `--emit-layers`
  * records the split and the set of files esbuild needs to rebuild the app layer (the BUILD
@@ -317,48 +317,6 @@ export async function writeLayerRecords(
   const dependencyFiles = { format: LAYER_FORMAT, files: records.dependencyFiles };
   await writeFile(join(dir, DEPENDENCY_FILES_FILENAME), `${JSON.stringify(dependencyFiles)}\n`, "utf8");
   await writeFile(join(dir, BUILD_INPUTS_FILENAME), `${JSON.stringify(records.buildInputs)}\n`, "utf8");
-}
-
-/**
- * Trace files reachable ONLY through the isolated bundle copy.
- *
- * The dependency layer may be reused for different agent code only if agent code cannot
- * add to it. The bundle copy is the one trace seed that carries agent code, so any file
- * the tracer reached from it and from no other seed would be missing from a reused layer.
- * `reasons` is nft's provenance map, keyed like `fileList`.
- */
-export function traceFilesOnlyFromBundleCopy(
-  reasons: ReadonlyMap<string, { parents: ReadonlySet<string>; type?: readonly string[] }>,
-  fileList: Iterable<string>,
-  isBundleCopy: (file: string) => boolean,
-  isExternalOwned: (file: string) => boolean = () => false,
-): string[] {
-  const children = new Map<string, string[]>();
-  const roots: string[] = [];
-  for (const [file, reason] of reasons) {
-    // nft retains all reasons for a file. An explicit external seed that the bundled app
-    // also imports therefore has a parent AND the `initial` reason; parent-count alone
-    // misclassifies its complete closure as agent-only (Juno's Silero seed is exactly this).
-    if (reason.parents.size === 0 || reason.type?.includes("initial") || isExternalOwned(file)) {
-      if (!isBundleCopy(file)) roots.push(file);
-    }
-    for (const parent of reason.parents) {
-      const siblings = children.get(parent);
-      if (siblings) siblings.push(file);
-      else children.set(parent, [file]);
-    }
-  }
-
-  const reached = new Set(roots);
-  const queue = [...roots];
-  while (queue.length > 0) {
-    for (const child of children.get(queue.pop() as string) ?? []) {
-      if (reached.has(child)) continue;
-      reached.add(child);
-      queue.push(child);
-    }
-  }
-  return [...fileList].filter((file) => !isBundleCopy(file) && !reached.has(file)).sort(compareBytes);
 }
 
 /** Lowercase hex SHA-256 of each file, in order. */

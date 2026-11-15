@@ -27,10 +27,7 @@ export const NATIVE_PACKAGES = [
  * cannot see and so never bundles. They ship as traced dependency files, seeded from the
  * framework's location: that is where the generated entry resolves them from at runtime.
  *
- * The isolated bundle copy must not be what reaches them. Where it cannot resolve them
- * they are silently missing from the artifact; where it can (a builder whose TMPDIR sits
- * inside the workspace) `--emit-layers` refuses, because a file only the bundle copy
- * reaches looks like agent code in the dependency layer.
+ * The bundle is never traced, so nothing but this list puts them in the artifact.
  */
 export const RUNTIME_REQUIRED_PACKAGES = [
   // @ai-sdk/provider-utils builds its download fetch with
@@ -54,8 +51,7 @@ export const DEV_ONLY_PACKAGES = ["vite", "tsx", "esbuild", "@vercel/nft"];
  * fails for every fresh install. External, the import stays a runtime import that nothing
  * calls. esbuild matches subpaths too (`@modelcontextprotocol/client/stdio`). Like
  * `DEV_ONLY_PACKAGES`, these are never in `manifest.externals`: the artifact never
- * resolves them, and the tracer's failure to find them is a known-benign warning
- * (`unused-optional-peer` in `warnings.ts`).
+ * resolves them.
  */
 export const UNUSED_OPTIONAL_PEERS = ["@modelcontextprotocol/client"];
 

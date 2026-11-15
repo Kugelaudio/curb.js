@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { packageRoot } from "../layout.js";
 import type { ExperimentDeclaration } from "../experiments.js";
 import type { GoalDeclaration } from "../goals.js";
 import type { HookName } from "../hooks.js";
@@ -213,7 +213,7 @@ export const DECLARATIONS_TIMEOUT_MS = 30_000;
 
 /** The CLI shim the build runs from: the child goes through it, so tsx and the project's spanning
  * tsconfig are set up exactly as for `curb check`. */
-const CURB_BIN = fileURLToPath(new URL("../../bin/curb.js", import.meta.url));
+const CURB_BIN = join(packageRoot, "bin", "curb.js");
 
 /** More output than this from the child is dropped; the report line comes early. */
 const MAX_CHILD_OUTPUT_CHARS = 1_000_000;

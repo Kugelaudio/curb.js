@@ -110,9 +110,8 @@ describe("curb build --emit-layers", () => {
   });
 
   it("ships undici, which the bundled AI SDK requires by name at runtime, in the dependency layer", () => {
-    // The AI SDK loads undici through a runtime createRequire esbuild cannot bundle. Only an
-    // external seed puts it in the dependency layer: the isolated bundle copy cannot resolve
-    // it, and where it can (a builder TMPDIR inside the workspace) the layer check refuses.
+    // The AI SDK loads undici through a runtime createRequire esbuild cannot bundle, and the
+    // bundle is never traced: only its external seed puts it in the dependency layer.
     const dependencyFiles = JSON.parse(
       readFileSync(join(outRoot, "layers", "dependency-files.json"), "utf8"),
     ) as { files: string[] };
