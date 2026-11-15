@@ -7,8 +7,9 @@
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License" src="https://img.shields.io/npm/l/curb.js.svg?style=for-the-badge&labelColor=000000"></a>
 </div>
 
-curb.js gives you a working voice agent out of the box. You write what it
-knows and what it can do, as React components.
+## A working voice agent out of the box
+
+You write what the agent knows and what it can do, as React components. Curb runs the call.
 
 | You write | Curb runs for you |
 | --- | --- |
