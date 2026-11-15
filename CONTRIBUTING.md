@@ -84,7 +84,9 @@ To cut a stable release:
 
 1. Open **Actions > publish > Run workflow** on `main`, or run
    `gh workflow run publish.yml --ref main -f channel=stable -f semver=minor -f dry_run=true`.
-2. Pick the `stable` channel and a `semver`: `patch`, `minor` or `major`.
+2. Pick the `stable` channel and a `semver`: `patch`, `minor` or `major`. If any commit since the
+   last stable tag is breaking (`!` in its title, or a `BREAKING CHANGE:` footer), the run refuses
+   anything but `major`.
 3. With `dry_run` on, the run does everything except publish, tag and release. Its summary shows
    the release notes.
 4. Run it again with `dry_run` off. It tags `v<version>`, publishes `curb.js`, `create-curb.js` and
@@ -109,7 +111,8 @@ failed:
 - **`installed`:** the version is out and cannot be taken back, so the fix is a new release.
 
 The version comes from the tags and npm, so nothing in the repository is bumped.
-The notes come from the commit subjects since the last stable tag (`cliff.toml`).
+The notes come from the commit subjects since the last stable tag (`cliff.toml`). They are the
+release's section of the changelog: the GitHub Release body and `RELEASE_NOTES.md` in the package.
 
 ## Security
 
