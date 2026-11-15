@@ -163,6 +163,7 @@ function App() {
     if (next.overlay?.kind === "skill") client.inspectSkill(next.overlay.path);
   };
   const closeOverlay = () => navigate({ overlay: null });
+  const openProblems = () => navigate({ overlay: { kind: "diagnostics" } });
   const openSkill = (path: string) => navigate({ overlay: { kind: "skill", path } });
 
   // The URL opens its view once the agent's skills are known; until then a skill URL cannot
@@ -316,7 +317,8 @@ function App() {
   const refused = refusedPageInfoNotice(pageInfo.refused);
   if (refused) notices.push({ key: "page-info", tone: "error", text: refused });
   if (callState.error) notices.push({ key: "call", tone: "error", text: callState.error });
-  else if (micWarning && !callLive) notices.push({ key: "microphone", tone: "neutral", text: micWarning });
+  // Not while a key is missing: no call can start, so the microphone is not what is in the way.
+  else if (micWarning && !callLive && !blocked) notices.push({ key: "microphone", tone: "neutral", text: micWarning });
   // A test run's failure belongs to the Try dialog while it is open.
   if (state.lastError && state.lastError !== dismissedError && !(tryOpen && state.lastError.scope === "tool")) {
     const error = state.lastError;
@@ -409,7 +411,7 @@ function App() {
                 )
               }
             />
-            {blocked ? <CannotAnswerPill onOpen={() => navigate({ overlay: { kind: "diagnostics" } })} /> : null}
+            {blocked ? <CannotAnswerPill onOpen={openProblems} /> : null}
             <div className={recordings.length > 0 ? "px-6" : undefined}>
               <ConversationPlayer
                 recordings={recordings}
@@ -425,7 +427,8 @@ function App() {
               playback={callLive ? callState.replyPlayback : REPLY_IDLE}
               callerSpeech={callState.callerSpeech}
               replay={replay}
-              agentName={agentName(activeAgent.id)}
+              agentName={agentName(activeAgent.id, activeAgent.name)}
+              blocked={blocked}
               suggestedPrompts={blocked ? [] : outline.suggestedPrompts}
               onPrompt={send}
               skillLabel={labelOf}
@@ -507,7 +510,7 @@ function App() {
         skillMetadata={outline.skillMetadata}
         interactivePaths={outline.interactivePaths}
         gatedPaths={outline.gatedPaths}
-        agentLabel={agentName(activeAgent.id)}
+        agentLabel={agentName(activeAgent.id, activeAgent.name)}
         onOpenSkill={openSkill}
         onOpenAgent={() => navigate({ overlay: { kind: "instructions" } })}
       />

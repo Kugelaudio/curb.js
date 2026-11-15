@@ -122,7 +122,7 @@ export function Composer({
             aria-label="Message"
             disabled={blocked}
             placeholder={
-              blocked ? "Set the key above to talk to your agent" : call.live ? "Type to your agent during the call…" : placeholder
+              blocked ? "Add the missing key to start talking" : call.live ? "Type to your agent during the call…" : placeholder
             }
             className="max-h-40 min-h-0 flex-1 resize-none self-center border-0 bg-transparent py-[5px] text-[15px] leading-6 outline-none placeholder:text-muted-foreground"
             onChange={(event) => onChange(event.currentTarget.value)}

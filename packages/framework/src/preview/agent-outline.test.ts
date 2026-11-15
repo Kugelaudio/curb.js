@@ -7,6 +7,13 @@ describe("the preview's outline of the agent", () => {
   // What the server sends in the agents frame: it crosses the WebSocket as JSON.
   const described = previewAgent(insuranceAgent);
 
+  it("carries the project's name for a project's single agent, which the page calls it by", () => {
+    expect(insuranceAgent.id).toBe("agent");
+    expect(previewAgent(insuranceAgent, "insurance-agent").name).toBe("insurance-agent");
+    expect("name" in previewAgent(insuranceAgent)).toBe(false);
+    expect("name" in previewAgent({ ...insuranceAgent, id: "support" }, "insurance-agent")).toBe(false);
+  });
+
   it("is plain data: it arrives unchanged through JSON", () => {
     expect(JSON.parse(JSON.stringify(described))).toEqual(described);
     expect(described.skills.map((skill) => skill.path)).toEqual(insuranceAgent.routes.map((route) => route.path));

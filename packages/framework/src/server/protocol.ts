@@ -23,6 +23,9 @@ export type ErrorScope = "llm" | "tool" | "protocol" | "mcp" | "voice";
  */
 export type PreviewAgent = {
   id: string;
+  /** The project's package name, on a project's single agent (`src/agent/`), whose id names
+   * nothing: the page calls the agent by it. Absent when the project has no package name. */
+  name?: string;
   /** The agent module (`src/agent/agent.tsx`) as text. */
   source: string;
   /** `defineAgent({ preview })`: the empty chat's prompt chips and placeholder. */

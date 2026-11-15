@@ -5,7 +5,10 @@ import type { AgentChatMessage } from "../llm/types.js";
 import { ConversationThread } from "./conversation-thread.js";
 import { applyCallerSegment, type CallerSpeech } from "./voice/caller-transcript.js";
 
-function thread(messages: AgentChatMessage[], options: { callerSpeech?: CallerSpeech; running?: boolean } = {}) {
+function thread(
+  messages: AgentChatMessage[],
+  options: { callerSpeech?: CallerSpeech; running?: boolean; blocked?: boolean } = {},
+) {
   return renderToStaticMarkup(
     <ConversationThread
       messages={messages}
@@ -16,6 +19,7 @@ function thread(messages: AgentChatMessage[], options: { callerSpeech?: CallerSp
       callerSpeech={options.callerSpeech ?? []}
       replay={{ active: false, timeMs: 0, windows: [] }}
       agentName="Agent"
+      blocked={options.blocked}
       suggestedPrompts={[]}
       onPrompt={() => undefined}
       skillLabel={(path) => path}
@@ -58,5 +62,14 @@ describe("ConversationThread in a call", () => {
     // Hidden, not taken out of the flow: the conversation keeps its height.
     expect(running).toMatch(/class="[^"]*\binvisible\b[^"]*"/);
     expect(running).not.toMatch(/class="[^"]*\babsolute top-full\b[^"]*"[^>]*>\s*<button[^>]*aria-label="Play/);
+  });
+});
+
+describe("ConversationThread before its first message", () => {
+  it("invites a message, and says the agent needs a key instead while it cannot answer", () => {
+    expect(thread([])).toContain("Start a call or type a message.");
+    const blocked = thread([], { blocked: true });
+    expect(blocked).toContain("It needs a key before it can answer.");
+    expect(blocked).not.toContain("Start a call");
   });
 });
