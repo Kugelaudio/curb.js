@@ -13,6 +13,8 @@ import {
 } from "./connection.js";
 import type { AgentSession } from "../agent-session.js";
 import { conversationState } from "./conversation-restore.js";
+import { resolveProjectRoot } from "../project.node.js";
+import { readProjectPackageName } from "./voice/worker-name.js";
 import {
   continueRecordedConversation,
   describeConversationStore,
@@ -364,6 +366,18 @@ async function buildPreviewAgentBundle(
   return { id, runtime, session, missingLlmKey };
 }
 
+/** The project's package name, which the preview calls a single agent by; undefined when the
+ * project has none. */
+function previewProjectName(): string | undefined {
+  try {
+    return readProjectPackageName(resolveProjectRoot());
+  } catch {
+    // KEEP-JUSTIFIED: a package.json that does not parse stops npm long before it matters
+    // here; the preview then names the agent "Your agent", as it does without a name.
+    return undefined;
+  }
+}
+
 /**
  * Set by `curb dev`'s child process (`cli/dev-child.ts`): the server runs behind the
  * supervisor that owns the preview's port, which restarts it when the project's files
@@ -445,7 +459,8 @@ export async function createAgentServer(options: { dev?: DevServerLink } = {}): 
   const discovered = await ensureHostPrerequisites({ quiet: dev?.quiet ?? false });
   // What the preview page shows of each agent, as data. The page never imports the agent's
   // modules: they run here, under Node, where a skill may import node:crypto.
-  const previews = new Map(discovered.map((agent) => [agent.id, previewAgent(agent)]));
+  const projectName = previewProjectName();
+  const previews = new Map(discovered.map((agent) => [agent.id, previewAgent(agent, projectName)]));
   const previewOf = (id: string): PreviewAgent => {
     const preview = previews.get(id);
     if (!preview) throw new Error(`Unknown agent "${id}". Available: ${[...previews.keys()].join(", ")}.`);

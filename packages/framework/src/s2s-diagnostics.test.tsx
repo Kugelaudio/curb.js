@@ -37,6 +37,9 @@ describe("<Agent s2s> diagnostics", () => {
     expect(s2sCredentialDiagnostic(live, { OPENAI_API_KEY: "k" })?.message).toContain("OTHER_API_KEY");
     expect(s2sCredentialDiagnostic(live, { OTHER_API_KEY: "k" })).toBeNull();
     expect(s2sCredentialDiagnostic(live, { OTHER_API_KEY: "  " })?.fix).toContain("OTHER_API_KEY");
+    // A variable of the project's own has no page to get it from; OpenAI's has.
+    expect(s2sCredentialDiagnostic(live, {})?.fix).not.toContain("https://");
+    expect(s2sCredentialDiagnostic(openai.realtime(), {})?.fix).toContain("https://platform.openai.com/api-keys");
   });
 
   it("refuses an apiKeyEnv that names no variable, such as a pasted key", () => {

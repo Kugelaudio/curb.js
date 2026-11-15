@@ -1,6 +1,5 @@
-import { KeyRoundIcon } from "lucide-react";
 import type { AuthoringDiagnostic } from "../authoring.js";
-import { AgentSphere } from "./agent-sphere.js";
+import { CurbLogo } from "./curb-logo.js";
 import { DiagnosticsList } from "./diagnostics-dialog.js";
 import type { DemoClientState } from "./ws-client.js";
 
@@ -14,6 +13,20 @@ export function reloadNotice(reload: DemoClientState["reload"]): string | null {
     : "Your saved changes apply after this reply.";
 }
 
+/** The preview before the agent is on the page: Curb's mark, and what the page waits for. */
+export function PreviewLoading({ connected }: { connected: boolean }) {
+  return (
+    <main className="grid h-screen place-items-center">
+      <div className="flex flex-col items-center gap-5 pb-[8vh]" role="status">
+        <CurbLogo size={48} />
+        <p className="m-0 text-sm">
+          <span className="agent-thinking">{connected ? "Loading the agent…" : "Connecting to the agent server…"}</span>
+        </p>
+      </div>
+    </main>
+  );
+}
+
 /**
  * The preview while the agent cannot run: its modules did not load, it does not render, or a
  * conversation could not start. The page shows nothing older than the files on disk, only
@@ -23,7 +36,7 @@ export function AgentUnavailable({ message, diagnostics }: { message: string; di
   return (
     <div className="grid h-screen grid-rows-[60px_minmax(0,1fr)] overflow-hidden">
       <header className="flex items-center gap-3 border-b border-border/70 bg-card px-6">
-        <AgentSphere size={28} />
+        <CurbLogo size={26} className="shrink-0" />
         <span className="text-[0.8125rem] text-muted-foreground">Local preview</span>
       </header>
       <main className="overflow-y-auto">
@@ -35,26 +48,5 @@ export function AgentUnavailable({ message, diagnostics }: { message: string; di
         </section>
       </main>
     </div>
-  );
-}
-
-/**
- * Over the conversation while the agent needs a key `curb dev` does not have: the preview
- * still shows the agent, since its context (prompt, skills, tools) renders from source and
- * needs no model, and this says which key to set where. Saving .env reloads the agent.
- */
-export function MissingKeysBanner({ diagnostics }: { diagnostics: readonly AuthoringDiagnostic[] }) {
-  return (
-    <section className="mx-6 mt-4 flex flex-col gap-3" role="alert" aria-labelledby="missing-keys-title">
-      <h2 id="missing-keys-title" className="m-0 flex items-center gap-2 text-[15px] font-semibold">
-        <KeyRoundIcon className="size-4 text-destructive" aria-hidden="true" />
-        Your agent cannot answer yet
-      </h2>
-      <p className="m-0 text-sm text-muted-foreground">
-        What it is built from shows under Context. To talk to it, set the key below; the preview reloads when you save
-        .env.
-      </p>
-      <DiagnosticsList diagnostics={diagnostics} />
-    </section>
   );
 }

@@ -34,6 +34,7 @@ export function ConversationThread({
   callerSpeech,
   replay,
   agentName,
+  blocked = false,
   suggestedPrompts,
   onPrompt,
   skillLabel,
@@ -55,6 +56,8 @@ export function ConversationThread({
   /** A call replay in progress shows the transcript up to its position. */
   replay: ConversationReplayState;
   agentName: string;
+  /** The agent cannot answer (a key it needs is not set; the pill above says how to fix it). */
+  blocked?: boolean;
   suggestedPrompts: readonly string[];
   onPrompt: (text: string) => void;
   skillLabel: (path: string) => string;
@@ -91,7 +94,7 @@ export function ConversationThread({
     <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-[200px]">
       <div ref={contentRef}>
         {empty ? (
-          <EmptyConversation agentName={agentName} prompts={suggestedPrompts} onPrompt={onPrompt} />
+          <EmptyConversation agentName={agentName} prompts={suggestedPrompts} onPrompt={onPrompt} blocked={blocked} />
         ) : (
           <div className="mx-auto flex max-w-[720px] flex-col gap-3.5">
             {turns.map((turn) =>
@@ -235,10 +238,17 @@ function visibleTurns(
   });
 }
 
+/** A reply's type, and the height of one line of it. */
+const REPLY_TEXT = "text-[15px] leading-[1.65]";
+const REPLY_LINE_HEIGHT = "h-[calc(15px*1.65)]";
+
 function AgentTurn({ children }: { children: ReactNode }) {
   return (
     <div className="group/turn grid max-w-[680px] grid-cols-[28px_minmax(0,1fr)] gap-x-3.5">
-      <AgentSphere size={26} className="mt-px" />
+      {/* As tall as the reply's first line, so the sphere centres on its words. */}
+      <span className={`flex items-center justify-center ${REPLY_LINE_HEIGHT}`}>
+        <AgentSphere size={26} />
+      </span>
       <div className="relative flex min-w-0 flex-col gap-2.5">{children}</div>
     </div>
   );
@@ -255,7 +265,7 @@ function ReplyText({ message, playback }: { message: AgentAssistantMessage; play
     : replyInk(message.content, playback);
   if (ink) {
     return (
-      <p className="m-0 text-[15px] leading-[1.65] [text-wrap:pretty]">
+      <p className={`m-0 ${REPLY_TEXT} [text-wrap:pretty]`}>
         {ink.spoken}
         {ink.spoken && ink.unspoken ? " " : null}
         {ink.unspoken ? (
@@ -267,7 +277,7 @@ function ReplyText({ message, playback }: { message: AgentAssistantMessage; play
     );
   }
   return (
-    <div className="markdown-message text-[15px] leading-[1.65]">
+    <div className={`markdown-message ${REPLY_TEXT}`}>
       <Streamdown>{message.content}</Streamdown>
     </div>
   );
@@ -280,33 +290,37 @@ function ReplyText({ message, playback }: { message: AgentAssistantMessage; play
 function TurnInProgress({ text, muted }: { text: string | null; muted: boolean }) {
   if (text === null) {
     return (
-      <p className="m-0 text-[15px] leading-[1.65]" role="status">
+      <p className={`m-0 ${REPLY_TEXT}`} role="status">
         <span className="agent-thinking">Thinking</span>
       </p>
     );
   }
   return (
-    <div className={`markdown-message text-[15px] leading-[1.65]${muted ? " text-muted-foreground" : ""}`}>
+    <div className={`markdown-message ${REPLY_TEXT}${muted ? " text-muted-foreground" : ""}`}>
       <Streamdown>{text}</Streamdown>
     </div>
   );
 }
 
+/** The conversation before its first message: the agent, and how to start. While the agent
+ * cannot answer it says so, and its sphere is greyed, instead of inviting a message. */
 function EmptyConversation({
   agentName,
   prompts,
   onPrompt,
+  blocked,
 }: {
   agentName: string;
   prompts: readonly string[];
   onPrompt: (text: string) => void;
+  blocked: boolean;
 }) {
   return (
     <div className="flex flex-col items-center pt-[72px] text-center">
-      <AgentSphere size={88} />
+      <AgentSphere size={88} className={blocked ? "opacity-45 saturate-0" : undefined} />
       <h2 className="mt-[22px] mb-1.5 text-[22px] font-semibold tracking-[-0.015em]">{agentName}</h2>
       <p className="m-0 max-w-[420px] text-[15px] text-muted-foreground [text-wrap:balance]">
-        Start a call or type a message to talk to your agent.
+        {blocked ? "It needs a key before it can answer." : "Start a call or type a message."}
       </p>
       {prompts.length > 0 ? (
         <div className="mt-7 flex max-w-[640px] flex-wrap justify-center gap-2">

@@ -8,9 +8,9 @@ import { preloadPublicMarkdown } from "../public-context.js";
 import type { ToolDefinition } from "../types.js";
 import { AgentGraphDialog } from "./agent-graph.js";
 import { agentOutline } from "./agent-outline.js";
-import { AgentSphere, agentName } from "./agent-sphere.js";
+import { agentName } from "./agent-sphere.js";
 import { skillPage, skillPageStatus, useNewSinceLastMessage } from "./agent-view.js";
-import { ContextColumn } from "./context-column.js";
+import { ContextColumn, ContextColumnLayout } from "./context-column.js";
 import { useContextColumn } from "./context-column-state.js";
 import {
   alwaysAvailableTools,
@@ -32,14 +32,22 @@ import { ConversationHeader } from "./conversation-header.js";
 import { ConversationPlayer, type ConversationReplayState } from "./conversation-player.js";
 import { ConversationThread } from "./conversation-thread.js";
 import { lastCallOf } from "./conversation-turns.js";
-import { AgentUnavailable, MissingKeysBanner, reloadNotice } from "./dev-reload.js";
-import { DiagnosticsDialog } from "./diagnostics-dialog.js";
+import { AgentUnavailable, PreviewLoading, reloadNotice } from "./dev-reload.js";
 import { resolveIcon } from "./icon.js";
 import { InstructionsDialog } from "./instructions-dialog.js";
 import { callForReply, dateLineOf } from "./model-input.js";
 import { ModelInputDialog } from "./model-input-dialog.js";
 import { pageInfoFromQuery, refusedPageInfoNotice } from "./page-info.js";
 import { pageBase, pathForRoute, routeForView, routeFromPath, viewForRoute, type PreviewView } from "./preview-route.js";
+import {
+  blockingSignature,
+  CannotAnswerPill,
+  opensByItself,
+  previewProblems,
+  ProblemsDialog,
+  readProblemsSeen,
+  writeProblemsSeen,
+} from "./problems.js";
 import { lockReasons } from "./skill-lock.js";
 import { SkillSheet } from "./skill-sheet.js";
 import { TopBar } from "./top-bar.js";
@@ -155,6 +163,7 @@ function App() {
     if (next.overlay?.kind === "skill") client.inspectSkill(next.overlay.path);
   };
   const closeOverlay = () => navigate({ overlay: null });
+  const openProblems = () => navigate({ overlay: { kind: "diagnostics" } });
   const openSkill = (path: string) => navigate({ overlay: { kind: "skill", path } });
 
   // The URL opens its view once the agent's skills are known; until then a skill URL cannot
@@ -228,6 +237,16 @@ function App() {
   // The agent shows but cannot answer: a key it needs is not set (`curb dev` says which).
   const missingKeys = missingKeysOf(state);
   const blocked = missingKeys.length > 0;
+  // The window of problems opens by itself for one that stops the agent, once per problem:
+  // closing it is remembered, and it never replaces something the URL or the person opened.
+  const blocking = blockingSignature(missingKeys);
+  useEffect(() => {
+    if (opensByItself(blocking, readProblemsSeen()) && viewRef.current.overlay === null) {
+      navigate({ overlay: { kind: "diagnostics" } }, "replace");
+    }
+    // `navigate` only reads the client and the URL, which outlive every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocking]);
   const send = useCallback(
     (text: string) => {
       if (!text.trim() || holdsMessages || blocked) return;
@@ -242,14 +261,7 @@ function App() {
   if (state.unavailable) return <AgentUnavailable {...state.unavailable} />;
 
   if (!context || !activeAgent || !outline) {
-    return (
-      <main className="grid h-screen place-items-center">
-        <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground" role="status">
-          <AgentSphere size={44} />
-          {state.connected ? "Loading your agent…" : "Connecting to the agent server…"}
-        </div>
-      </main>
-    );
+    return <PreviewLoading connected={state.connected} />;
   }
 
   const treeInput: ContextTreeInput = {
@@ -298,7 +310,8 @@ function App() {
   const refused = refusedPageInfoNotice(pageInfo.refused);
   if (refused) notices.push({ key: "page-info", tone: "error", text: refused });
   if (callState.error) notices.push({ key: "call", tone: "error", text: callState.error });
-  else if (micWarning && !callLive) notices.push({ key: "microphone", tone: "neutral", text: micWarning });
+  // Not while a key is missing: no call can start, so the microphone is not what is in the way.
+  else if (micWarning && !callLive && !blocked) notices.push({ key: "microphone", tone: "neutral", text: micWarning });
   // A test run's failure belongs to the Try dialog while it is open.
   if (state.lastError && state.lastError !== dismissedError && !(tryOpen && state.lastError.scope === "tool")) {
     const error = state.lastError;
@@ -322,6 +335,7 @@ function App() {
     // Asks for the microphone once, so the menu names the inputs instead of numbering them.
     onMicrophoneMenuOpen: () => void voiceClient.refreshMicrophones({ requestPermission: true }).catch(() => undefined),
   };
+  const problems = previewProblems(missingKeys, context.diagnostics);
   const recordings = voiceClient.getRecordings(state.activeConversation);
   const summary = instructionsSummary(context.systemPrompt ?? "");
 
@@ -335,16 +349,34 @@ function App() {
             client.selectAgent(id);
             navigate({ overlay: null }, "replace");
           }}
-          diagnostics={context.diagnostics}
+          problems={problems.length}
           onOpenDiagnostics={() => navigate({ overlay: { kind: "diagnostics" } })}
           contextOpen={contextColumn.open}
           onToggleContext={contextColumn.toggle}
         />
-        <div
-          className={
-            contextColumn.open
-              ? "grid min-h-0 grid-cols-[minmax(0,1fr)_clamp(440px,36.667vw,616px)]"
-              : "grid min-h-0 grid-cols-[minmax(0,1fr)]"
+        <ContextColumnLayout
+          column={contextColumn}
+          aside={
+            <ContextColumn
+              connected={state.connected}
+              onOpenGraph={skills.length > 0 ? () => navigate({ overlay: { kind: "graph" } }) : undefined}
+            >
+              <ContextTreeView
+                instructions={{ ...summary, isNew: changes?.instructions ?? false, empty: !context.systemPrompt?.trim() }}
+                tools={alwaysAvailableTools(treeInput)}
+                mcp={mcpGroups(state.mcpServers, context)}
+                skills={skills}
+                initiallyOpen={initiallyExpanded(skills)}
+                liveSkillPath={context.path}
+                builtIn={builtInAbilities(context)}
+                onOpenInstructions={() => navigate({ overlay: { kind: "instructions" } })}
+                onOpenSkill={openSkill}
+                onTry={tryTreeTool}
+                onMcpConnect={(id) => client.mcpConnect(id)}
+                onMcpDisconnect={(id) => client.mcpDisconnect(id)}
+                onMcpRemove={(id) => client.mcpRemove(id)}
+              />
+            </ContextColumn>
           }
         >
           <section className="relative flex min-h-0 flex-col" aria-label="Conversation">
@@ -372,7 +404,7 @@ function App() {
                 )
               }
             />
-            {blocked ? <MissingKeysBanner diagnostics={missingKeys} /> : null}
+            {blocked ? <CannotAnswerPill onOpen={openProblems} /> : null}
             <div className={recordings.length > 0 ? "px-6" : undefined}>
               <ConversationPlayer
                 recordings={recordings}
@@ -388,7 +420,8 @@ function App() {
               playback={callLive ? callState.replyPlayback : REPLY_IDLE}
               callerSpeech={callState.callerSpeech}
               replay={replay}
-              agentName={agentName(activeAgent.id)}
+              agentName={agentName(activeAgent.id, activeAgent.name)}
+              blocked={blocked}
               suggestedPrompts={blocked ? [] : outline.suggestedPrompts}
               onPrompt={send}
               skillLabel={labelOf}
@@ -417,31 +450,10 @@ function App() {
               notices={notices}
               call={call}
               blocked={blocked}
+              onShowProblems={openProblems}
             />
           </section>
-          {contextColumn.open ? (
-            <ContextColumn
-              connected={state.connected}
-              onOpenGraph={skills.length > 0 ? () => navigate({ overlay: { kind: "graph" } }) : undefined}
-            >
-              <ContextTreeView
-                instructions={{ ...summary, isNew: changes?.instructions ?? false, empty: !context.systemPrompt?.trim() }}
-                tools={alwaysAvailableTools(treeInput)}
-                mcp={mcpGroups(state.mcpServers, context)}
-                skills={skills}
-                initiallyOpen={initiallyExpanded(skills)}
-                liveSkillPath={context.path}
-                builtIn={builtInAbilities(context)}
-                onOpenInstructions={() => navigate({ overlay: { kind: "instructions" } })}
-                onOpenSkill={openSkill}
-                onTry={tryTreeTool}
-                onMcpConnect={(id) => client.mcpConnect(id)}
-                onMcpDisconnect={(id) => client.mcpDisconnect(id)}
-                onMcpRemove={(id) => client.mcpRemove(id)}
-              />
-            </ContextColumn>
-          ) : null}
-        </div>
+        </ContextColumnLayout>
       </div>
 
       <SkillSheet
@@ -492,7 +504,7 @@ function App() {
         skillMetadata={outline.skillMetadata}
         interactivePaths={outline.interactivePaths}
         gatedPaths={outline.gatedPaths}
-        agentLabel={agentName(activeAgent.id)}
+        agentLabel={agentName(activeAgent.id, activeAgent.name)}
         onOpenSkill={openSkill}
         onOpenAgent={() => navigate({ overlay: { kind: "instructions" } })}
       />
@@ -504,10 +516,14 @@ function App() {
         dateLine={dateLineOf(state.llmTrace.at(-1))}
         isNew={changes?.instructions ?? false}
       />
-      <DiagnosticsDialog
+      <ProblemsDialog
         open={view.overlay?.kind === "diagnostics"}
-        onOpenChange={(open) => (open ? undefined : closeOverlay())}
-        diagnostics={context.diagnostics}
+        onOpenChange={(open) => {
+          if (open) return;
+          if (blocking) writeProblemsSeen(blocking);
+          closeOverlay();
+        }}
+        problems={problems}
       />
       <TryToolDialog
         open={tryOpen}

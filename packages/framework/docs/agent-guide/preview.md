@@ -49,9 +49,18 @@ keys in `.env`. The terminal prints one line per reload, naming the file:
 ## The page
 
 The conversation is on the left and **Agent context** on the right, under a top
-bar that names the agent (a picker when the project has several) and shows what
-`curb check` finds: **No problems**, or how many problems there are, which opens
-them (see [Problems](#problems)).
+bar with a link to Curb's repository, a picker of the agents when the project
+has several, and whether the agent has problems: **No problems**, or how many
+there are, which opens them (see [Problems](#problems)). The conversation calls
+the agent by the project's package name.
+
+The border between the two is the handle of **Agent context**: drag it to
+resize the column, double-click it for the default width, and drag it to the
+window's edge to hide the column. The button at the right of the top bar and
+`Cmd+\` (`Ctrl+\` on Windows and Linux) hide and show it too; a hidden column
+comes back by dragging or clicking the window's right edge. The width and
+whether it shows are remembered in the browser. In a narrow window the column
+starts hidden and lies over the conversation when opened.
 
 Nothing in the preview edits the agent; the code under `src/agent/` does, and
 **Copy for coding agent** (see below) hands your coding agent a real
@@ -147,8 +156,9 @@ call** hangs up. Keep typing and the conversation continues. While a call is
 live, typed messages run through the voice pipeline too, so the agent speaks
 its answer.
 
-The title in the conversation header opens recent preview conversations, and
-**New conversation** starts one. A new conversation gets a fresh runtime and
+**History** in the conversation header (it shows the conversation's first
+message once there is one) opens recent preview conversations, and **New
+conversation** beside it starts one. A new conversation gets a fresh runtime and
 session; selecting an earlier one restores its transcript and agent state (the
 skills it had open, its store data) without running any of its tools again, so
 you can continue it.
@@ -181,11 +191,21 @@ runtime; you never write those yourself, and typed turns never see them.
 
 ## Problems
 
-The `curb check` output (unreachable skills, duplicate tools, missing routing
-descriptions, oversized skills …) lives in the preview: the top bar says how
-many problems there are and opens them, each with a location, a concrete fix
-and a copy button for your coding agent. The same output appears in the server
-startup log; after a reload the terminal line counts the errors instead.
+Everything wrong with the agent shows in one window, one problem at a time: the
+top bar says how many there are and opens it, and the arrows (or the arrow
+keys) page through them. Each problem says what is wrong and how to fix it, and
+**Copy for your coding agent** copies it whole, with its location and code.
+
+- **Missing key**: the model the agent uses needs a key this process does not
+  have, so the agent shows but cannot answer. The window names the variable and
+  gives the line to paste: the variable for `.env`, or `npx curb login` for the
+  KugelAudio model. For OpenAI and Anthropic it links to the page that issues
+  the key. It opens by itself the first time, and **Your agent cannot answer
+  yet** above the conversation, or **Start call**, opens it again.
+- **Error** and **Warning**: the `curb check` output (unreachable skills,
+  duplicate tools, missing routing descriptions, oversized skills …), each with
+  its location. The same output appears in the server startup log; after a
+  reload the terminal line counts the errors instead.
 
 ## Copy for coding agent
 

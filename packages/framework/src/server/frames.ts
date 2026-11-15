@@ -22,10 +22,11 @@ export function contextFrame(runtime: AgentSiteRuntime): Extract<ServerMessage, 
 }
 
 /** A discovered agent as the preview shows it: its text and plain data, never a module. */
-export function previewAgent(agent: DiscoveredAgent): PreviewAgent {
+export function previewAgent(agent: DiscoveredAgent, projectName?: string): PreviewAgent {
   const experiments = experimentDeclarations(agent.definition.experiments);
   return {
     id: agent.id,
+    ...(agent.id === "agent" && projectName ? { name: projectName } : {}),
     source: agent.source,
     preview: agent.definition.preview ?? {},
     skills: agent.routes.map((route) => ({

@@ -6,7 +6,7 @@
  */
 
 import { AUTHORING_DIAGNOSTIC_CODES, AgentAuthoringError, type AuthoringDiagnostic } from "./authoring.js";
-import { s2sKey, type Env } from "./provider-keys.js";
+import { keyPageSentence, s2sKey, type Env } from "./provider-keys.js";
 import type { S2sDescriptor } from "./providers.js";
 import { providerPropsFromTree } from "./session-settings.js";
 import type { SemanticNode } from "./types.js";
@@ -20,7 +20,7 @@ export function s2sCredentialDiagnostic(descriptor: S2sDescriptor, env: Env): Au
     severity: "error",
     message: `The agent's s2s is ${descriptor.provider}, which needs ${key.name}, and this process does not have it. No session can start without it.`,
     location: { source: "src/agent/agent.tsx", component: "Agent" },
-    fix: `Set ${key.name} in the project's .env (see .env.example). An empty value counts as unset.`,
+    fix: `Set ${key.name} in the project's .env (see .env.example). ${keyPageSentence(key)}An empty value counts as unset.`,
   };
 }
 

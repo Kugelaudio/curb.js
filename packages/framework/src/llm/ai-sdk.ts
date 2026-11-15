@@ -17,7 +17,7 @@ import { COMPILED, packageRoot } from "../layout.js";
 import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES, type AuthoringDiagnostic } from "../authoring.js";
 import type { AgentRunRequest, AgentRunResponse, AgentStreamPart } from "./types.js";
 import { normalizeLlmPunctuation } from "./punctuation.js";
-import { hostKeyPendingFix, LLM_KEYS, PLATFORM_PROVIDED } from "../provider-keys.js";
+import { hostKeyPendingFix, keyPageSentence, LLM_KEYS, PLATFORM_PROVIDED } from "../provider-keys.js";
 import type { LlmDescriptor } from "../providers.js";
 import { resolveLlmProvider, type LlmProviderConfig } from "./provider.js";
 import { quietSdkWarnings } from "./sdk-warnings.js";
@@ -264,6 +264,7 @@ export function llmCredentialDiagnostic(descriptor: LlmDescriptor): AuthoringDia
           "there is no key to copy. Or set KUGELAUDIO_API_KEY (an API key from the dashboard). A hosted agent gets it from the platform."
         : `Set ${variable} in ${projectDir ? `${projectDir}/.env` : "the project's .env"} (see .env.example): ` +
           "`curb dev` reloads when you save it, and every other command reads it when it starts. " +
+          keyPageSentence(LLM_KEYS[descriptor.provider].key) +
           (PLATFORM_PROVIDED.has(variable)
             ? "A hosted agent gets it from the platform. "
             : "A hosted agent gets it from `npx curb secrets push`. ") +

@@ -24,10 +24,12 @@ export function AgentSphere({
 }
 
 /** The agent's name as the page shows it. A project's single agent lives in `src/agent/`
- * and has the id "agent", which names nothing, so it is "Your agent"; agents of a
- * multi-agent host are named after their folder. */
-export function agentName(id: string): string {
-  if (id === "agent") return "Your agent";
-  const words = id.replace(/[-_]/g, " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
+ * and has the id "agent", which names nothing, so it is called by its project's package name
+ * ("insurance-agent" reads "Insurance agent"), or "Your agent" when the project has none;
+ * agents of a multi-agent host are named after their folder. */
+export function agentName(id: string, projectName?: string): string {
+  if (id === "agent" && !projectName) return "Your agent";
+  // An npm scope (`@acme/support`) is whose it is, not what it is called.
+  const words = (id === "agent" ? projectName! : id).replace(/^@[^/]+\//, "").replace(/[-_.]/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "Your agent";
 }
