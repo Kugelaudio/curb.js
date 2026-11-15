@@ -7,16 +7,71 @@
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License" src="https://img.shields.io/npm/l/curb.js.svg?style=for-the-badge&labelColor=000000"></a>
 </div>
 
-curb.js gives you a working voice agent out of the box. You write what it
-knows and what it can do, as React components.
+## A working voice agent out of the box
 
-- **Voice is done.** Speech, turn-taking and interruptions are handled for you.
-- **State changes the agent.** Tools and knowledge appear and disappear as
-  your state changes, like UI in a React app.
-- **Bring any model.** Use any speech-to-text, text-to-speech or LLM provider,
-  hosted or self-hosted. Swapping one is a single line.
-- **See every turn.** The dev preview shows exactly what the model saw, every
-  tool call and every audio clip.
+You write what the agent knows and what it can do, as React components. Curb runs the call.
+
+| You write | Curb runs for you |
+| --- | --- |
+| Who the agent is: a system prompt | Speech-to-text, the LLM and text-to-speech, each swappable in one line |
+| What it can do: tools, as functions with typed input | Turn-taking, interruptions and pauses on a live call |
+| What it knows: skills and plain markdown | The model's request on every turn: only the instructions and tools your state allows |
+| Conversations to keep as tests | A preview where you talk to the agent and see what the model saw |
+
+A receptionist for a bike workshop, in `src/agent/agent.tsx`:
+
+```tsx
+import { useState } from "react";
+import { Agent, GlobalTools, Skill, Skills, SystemPrompt, Tool, defineAgent, z } from "curb";
+import { kugelaudio } from "curb/providers";
+
+function App() {
+  const [booked, setBooked] = useState<string>();
+
+  return (
+    <Agent llm={kugelaudio.llm()} stt={kugelaudio.stt()} tts={kugelaudio.tts()}>
+      <SystemPrompt>
+        You are Mia, the receptionist at Parkside Bikes. Keep your replies short.
+      </SystemPrompt>
+
+      {booked ? `Booked: ${booked}.` : "Free slots: Tuesday 9:00, Thursday 11:00."}
+
+      <GlobalTools>
+        <Tool
+          name="book_repair"
+          description="Book a repair appointment in a free slot."
+          schema={z.object({ slot: z.string() })}
+          onSubmit={({ slot }) => {
+            setBooked(slot);
+            return { ok: true, message: `Booked for ${slot}.` };
+          }}
+        />
+        {booked && (
+          <Tool
+            name="cancel_booking"
+            description="Cancel the caller's appointment."
+            onCall={() => {
+              setBooked(undefined);
+              return { ok: true, message: "Cancelled." };
+            }}
+          />
+        )}
+      </GlobalTools>
+
+      <Skills>
+        <Skill path="/prices">Repair prices</Skill>
+      </Skills>
+    </Agent>
+  );
+}
+
+export const agent = defineAgent({ app: App });
+```
+
+Whatever `<Agent>` renders is what the model knows and can do right now. `cancel_booking` exists
+only once a slot is booked, so the model cannot call it before. `/prices` is a
+[skill](https://curbjs.com/docs/agents-and-skills/): the model opens it when the caller asks what a
+repair costs.
 
 ## Quickstart
 
@@ -38,50 +93,6 @@ The defaults run speech-to-text, the LLM and text-to-speech on KugelAudio, so
 `curb login` is all the setup you need. Flags to `npm create curb.js` pick
 Anthropic, OpenAI, Azure, Deepgram, ElevenLabs, Cartesia or any OpenAI-compatible
 endpoint instead.
-
-Here is a complete skill, a coffee counter:
-
-```tsx
-import { useState } from "react";
-import { z } from "zod";
-import { Instruction, Tool } from "curb";
-
-export default function Counter() {
-  const [order, setOrder] = useState<string[]>([]);
-
-  return (
-    <>
-      <Instruction>Take the customer's coffee order.</Instruction>
-
-      {order.length === 0 ? "The order is empty." : `Current order: ${order.join(", ")}.`}
-
-      <Tool
-        name="add_drink"
-        description="Add a drink to the order."
-        schema={z.object({ drink: z.string() })}
-        onSubmit={({ drink }) => {
-          setOrder([...order, drink]);
-          return { ok: true, message: "Added." };
-        }}
-      />
-
-      {order.length > 0 && (
-        <Tool
-          name="place_order"
-          description="Send the order to the bar."
-          onSubmit={() => {
-            setOrder([]);
-            return { ok: true, message: "Order placed." };
-          }}
-        />
-      )}
-    </>
-  );
-}
-```
-
-Whatever the component renders is what the agent knows and can do right now.
-`place_order` only exists once there is a drink in the order.
 
 ## Documentation
 
