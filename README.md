@@ -81,7 +81,8 @@ export const agent = defineAgent({ app: App });
 
 Whatever `<Agent>` renders is what the model knows and can do right now. `cancel_booking` exists
 only once a slot is booked, so the model cannot call it before. `/prices` is a
-[skill](#how-it-works): the model opens it when the caller asks what a repair costs.
+[skill](https://curbjs.com/docs/agents-and-skills/): the model opens it when the caller asks what a
+repair costs.
 
 ## Quickstart
 
