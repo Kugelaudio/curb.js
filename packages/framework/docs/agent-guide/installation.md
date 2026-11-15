@@ -24,6 +24,23 @@ To try the newest preview instead of the stable version:
 npm create curb.js@preview .
 ```
 
+## Start from a business template
+
+The project starts as Juno, a demo assistant. `--template` starts it closer to what you build:
+
+```bash
+npm create curb.js my-agent -- --template support
+```
+
+| Template | Starts as |
+| --- | --- |
+| `default` | Juno, a personal assistant that shows how Curb works |
+| `support` | Mara, customer support: order lookup, returns and shipping policies, tickets |
+| `booking` | Lena, appointment booking: free slots, booking and cancelling, a price list |
+
+The sample company, orders and calendar are made up: replace them with your own. An unknown name
+fails and lists the templates.
+
 An existing project moves to a preview with `npx curb upgrade --preview` ([Upgrading](./upgrading.md)).
 
 ## Sign in

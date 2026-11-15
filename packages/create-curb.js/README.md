@@ -41,6 +41,22 @@ npm create curb.js my-agent -- --llm anthropic --tts elevenlabs
 
 `npm create curb.js -- --help` lists every option.
 
+## Templates
+
+The project starts as a demo assistant. `--template` starts it closer to what you build:
+
+| Template | Starts as |
+| --- | --- |
+| `default` | Juno, a personal assistant that shows how Curb works |
+| `support` | Mara, customer support: order lookup, returns and shipping policies, tickets |
+| `booking` | Lena, appointment booking: free slots, booking and cancelling, a price list |
+
+```bash
+npm create curb.js my-agent -- --template support
+```
+
+The sample company, orders and calendar are made up: replace them with your own.
+
 ## Previews
 
 To try the newest preview, create the project with `npm create curb.js@preview my-agent`.
