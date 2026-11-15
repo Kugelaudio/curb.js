@@ -12,6 +12,8 @@
  *   dist/types/       the declarations, one per source module.
  *   dist/preview/     the `curb dev` page, already built: no Vite, Tailwind or UI library is
  *                     installed with a project.
+ *   dist/hosted/      the host protocol as JSON Schema with its fixtures, for hosts written in
+ *                     other languages (docs/agent-guide/host-protocol.md).
  *   dist/THIRD_PARTY_LICENSES.md  the license of every package bundled into dist/.
  *
  * A checkout keeps running the TypeScript source through tsx (`bin/curb.js`); `src/layout.ts`
@@ -21,7 +23,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { builtinModules, createRequire } from "node:module";
 import { dirname, join, relative, sep } from "node:path";
@@ -152,6 +154,11 @@ await viteBuild({
   plugins: (previewConfig.plugins ?? []).filter((plugin) => (plugin as { name?: string }).name !== "framework:context-index"),
   build: { outDir: join(dist, "preview"), emptyOutDir: true, rollupOptions: { shimMissingExports: true } },
 });
+
+// 4b. The host protocol a host in another language implements: the schema and its fixtures.
+for (const name of ["protocol.schema.json", "protocol-fixtures"]) {
+  cpSync(join(root, "src", "hosted", name), join(dist, "hosted", name), { recursive: true });
+}
 
 // 5. The licenses of what was bundled.
 writeFileSync(join(dist, "THIRD_PARTY_LICENSES.md"), licenseNotice([node.metafile, client.metafile]));

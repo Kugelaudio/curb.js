@@ -12,7 +12,8 @@ Curb owns this protocol; nothing in it is specific to any one host. The Zod sche
 `src/hosted/protocol.ts` are the source. `src/hosted/protocol.schema.json` is the same
 contract as one JSON Schema 2020-12 document (every type under `$defs`) for hosts written
 in other languages, and `src/hosted/protocol-fixtures/{valid,invalid}/<Type>.<case>.json`
-are examples every implementation must accept or refuse.
+are examples every implementation must accept or refuse. The npm package carries both as
+`dist/hosted/protocol.schema.json` and `dist/hosted/protocol-fixtures/`.
 
 ## Runner environment
 
