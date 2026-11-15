@@ -1,10 +1,8 @@
-/** Curb's mark: the page's own sign, where the agent's sphere would say "the agent". While
- * the page waits for something, its orange stroke breathes. */
-export function CurbLogo({ size, waiting, className }: { size: number; waiting?: boolean; className?: string }) {
+/** Curb's mark: the page's own sign, where the agent's sphere would say "the agent". */
+export function CurbLogo({ size, className }: { size: number; className?: string }) {
   return (
     <svg
       className={className}
-      data-waiting={waiting ? "" : undefined}
       width={size}
       height={size}
       viewBox="0 0 48 48"
@@ -16,7 +14,7 @@ export function CurbLogo({ size, waiting, className }: { size: number; waiting?:
       aria-label="Curb"
     >
       <path d="M13 11 3.5 24 13 37M23.2 17.5 20.2 30.5M43.5 15.5 39.6 32.5" stroke="currentColor" />
-      <path className="curb-logo-slash" d="M35.2 6 27 42" stroke="#FF6728" />
+      <path d="M35.2 6 27 42" stroke="#FF6728" />
     </svg>
   );
 }

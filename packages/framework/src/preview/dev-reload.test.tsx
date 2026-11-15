@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { PreviewLoading } from "./dev-reload.js";
 
 describe("the preview before the agent is on the page", () => {
-  it("shows Curb's mark, waiting, and says it is connecting", () => {
+  it("shows Curb's mark, and says it is connecting", () => {
     const html = renderToStaticMarkup(<PreviewLoading connected={false} />);
     expect(html).toContain('role="status"');
-    expect(html).toMatch(/<svg[^>]*data-waiting=""[^>]*aria-label="Curb"/);
+    expect(html).toMatch(/<svg[^>]*aria-label="Curb"/);
     expect(html).toContain("Connecting to the agent server…");
   });
 

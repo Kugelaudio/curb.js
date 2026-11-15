@@ -18,7 +18,7 @@ export function PreviewLoading({ connected }: { connected: boolean }) {
   return (
     <main className="grid h-screen place-items-center">
       <div className="flex flex-col items-center gap-5 pb-[8vh]" role="status">
-        <CurbLogo size={48} waiting />
+        <CurbLogo size={48} />
         <p className="m-0 text-sm">
           <span className="agent-thinking">{connected ? "Loading the agent…" : "Connecting to the agent server…"}</span>
         </p>
