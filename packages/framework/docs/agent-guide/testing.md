@@ -179,10 +179,10 @@ Ihr Schaden ist gemeldet.
 ```
 
 The result is `{"ok":true,"message":"Done."}` unless you give one as JSON after
-`=`, for example to see how the agent handles a failure:
+`=`, for example to see how the agent handles an answer of no:
 
 ```bash
-npx curb say --fake 'create_claim={"ok":false,"message":"The claims system is down."}' "Ja, passt so."
+npx curb say --fake 'create_claim={"ok":false,"message":"That policy has expired. Tell the caller."}' "Ja, passt so."
 ```
 
 The rest of the call is as without the fake: the tool checks the input as it
@@ -320,6 +320,18 @@ export default scenario({
   },
   expect: ({ called }) => [called("create_claim", { policy: "KV-123" })],
 });
+```
+
+A fake that returns `ok: false` is an answer of no. To play an outage, which
+[`<Handoff>`](./human-handoff.md) counts as an error, give a function that throws
+[`ToolUnavailableError`](./functions/errors.md#toolunavailableerror):
+
+```ts
+fakes: {
+  create_claim: () => {
+    throw new ToolUnavailableError("The claims system is not answering. Offer a callback.");
+  },
+},
 ```
 
 A fake replaces only `onSubmit`, and the transcript marks its calls
