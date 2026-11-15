@@ -434,3 +434,25 @@ test("the default template is untouched: --template default writes the same tree
   }
   assert.match(readFileSync(join(plain, "AGENTS.md"), "utf8"), /starts as Juno, a demo assistant/);
 });
+
+// The booking agent's numbers: B-1, B-2, cancel B-1, then a new booking must not reuse B-2.
+// Node 22.12 strips types only behind a flag, so the pure module runs in a child process.
+test("booking numbers are never reused after a cancellation", () => {
+  const module = new URL("../templates/booking/src/agent/calendar.ts", import.meta.url).href;
+  const script = `
+    import { addAppointment, removeAppointment } from ${JSON.stringify(module)};
+    const input = { service: "haircut", date: "2030-01-01", time: "09:00", name: "A" };
+    let book = { appointments: [], nextNumber: 1 };
+    const ids = [];
+    const add = () => { const r = addAppointment(book, input); book = r.book; ids.push(r.created.id); };
+    add(); add();
+    book = removeAppointment(book, "B-1").book;
+    add();
+    const ids3 = book.appointments.map((a) => a.id);
+    const gone = removeAppointment(book, "B-2");
+    console.log(JSON.stringify({ ids, ids3, afterCancelB2: gone.book.appointments.map((a) => a.id), removed: gone.removed }));
+  `;
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", "--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { ids: ["B-1", "B-2", "B-3"], ids3: ["B-2", "B-3"], afterCancelB2: ["B-3"], removed: true });
+});

@@ -11,6 +11,7 @@ import {
   z,
 } from "curb";
 import { kugelaudio } from "curb/providers";
+import { type Appointment, addAppointment, removeAppointment } from "./calendar.js";
 
 /**
  * Lena, the booking agent of Birch Street Studio, a made-up hair and beauty studio. This file is
@@ -19,8 +20,6 @@ import { kugelaudio } from "curb/providers";
  * and the in-memory calendar with your own booking system; the shape (system prompt, skills
  * index, tools, store) stays.
  */
-
-export type Appointment = { id: string; service: string; date: string; time: string; name: string };
 
 /** Opening hours as plain numbers; the calendar is generated from today's date at runtime. */
 const FIRST_HOUR = 9;
@@ -38,19 +37,21 @@ const isOpenDay = (date: string) => {
 
 export const useCalendar = createAgentStore<{
   appointments: Appointment[];
-  book: (appointment: Omit<Appointment, "id">) => Appointment;
+  nextNumber: number;
+  add: (appointment: Omit<Appointment, "id">) => Appointment;
   cancel: (id: string) => boolean;
 }>("lena", (set, get) => ({
   appointments: [],
-  book: (appointment) => {
-    const created = { ...appointment, id: `B-${get().appointments.length + 1}` };
-    set((state) => ({ appointments: [...state.appointments, created] }));
+  nextNumber: 1,
+  add: (appointment) => {
+    const { book, created } = addAppointment({ appointments: get().appointments, nextNumber: get().nextNumber }, appointment);
+    set({ appointments: book.appointments, nextNumber: book.nextNumber });
     return created;
   },
   cancel: (id) => {
-    const exists = get().appointments.some((a) => a.id === id);
-    set((state) => ({ appointments: state.appointments.filter((a) => a.id !== id) }));
-    return exists;
+    const { book, removed } = removeAppointment({ appointments: get().appointments, nextNumber: get().nextNumber }, id);
+    set({ appointments: book.appointments });
+    return removed;
   },
 }));
 
@@ -76,7 +77,7 @@ const cancelSchema = z.object({
  */
 function Calendar() {
   const appointments = useCalendar((s) => s.appointments);
-  const book = useCalendar((s) => s.book);
+  const add = useCalendar((s) => s.add);
   const cancel = useCalendar((s) => s.cancel);
 
   return (
@@ -113,7 +114,7 @@ function Calendar() {
             if (appointments.some((a) => a.date === input.date && a.time === input.time)) {
               return { ok: false, message: "That slot is taken. Offer another slot from list_free_slots." };
             }
-            const created = book(input);
+            const created = add(input);
             return { ok: true, message: `Booked as ${created.id}. Read the day, time and booking number back to the caller.` };
           }}
         />
