@@ -7,6 +7,7 @@ import { AgentSession, type AgentLlmClient } from "./agent-session.js";
 import type { AgentRunResponse, AgentTurnStreamEvent } from "./llm/types.js";
 import { createInsuranceDemoRuntime } from "./test-fixtures/insurance-runtime.js";
 import { traceToolRun } from "./tool-span.js";
+import { ToolUnavailableError } from "./types.js";
 
 /**
  * A project that sets up an OpenTelemetry SDK sees every tool run as a span, nested under whatever
@@ -156,6 +157,33 @@ describe("tool spans", () => {
     expect(span!.events.map((event) => [event.name, event.attributes])).toEqual([["exception", { "exception.type": "TypeError" }]]);
     expect(span!.status.code).toBe(2); // SpanStatusCode.ERROR
     expect(JSON.stringify([span!.attributes, span!.events, span!.status])).not.toContain("Jane");
+  });
+
+  it("names an outage the handler reported, and gives the model the author's message", async () => {
+    const runtime = createInsuranceDemoRuntime();
+    runtime.fakeTools({
+      read_skill: async () => {
+        throw new ToolUnavailableError("The policy system is not answering. Offer to call back later.", { cause: new Error("ECONNREFUSED") });
+      },
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    let tools: Awaited<ReturnType<typeof turnEvents>>;
+    try {
+      tools = await turnEvents(
+        [{ text: "", toolCalls: [{ name: "read_skill", input: { skill: "/property-damage" } }] }, { text: "Sorry.", toolCalls: [] }],
+        {},
+        runtime,
+      );
+      expect(logged).toHaveBeenCalledWith('[curb] tool "read_skill" is unavailable:', expect.objectContaining({ cause: expect.any(Error) }));
+    } finally {
+      logged.mockRestore();
+    }
+
+    expect(runtime.snapshot().context.toolErrors.read_skill).toBe("The policy system is not answering. Offer to call back later.");
+    expect(tools.some((event) => event.type === "tool" && !event.ok)).toBe(true);
+    const [span] = exporter.getFinishedSpans();
+    expect(span!.attributes).toMatchObject({ "curb.tool.ok": false, "error.type": "ToolUnavailableError" });
+    expect(span!.events.map((event) => [event.name, event.attributes])).toEqual([["exception", { "exception.type": "ToolUnavailableError" }]]);
   });
 
   it("times a tool run and makes no span in a session that was handed no tracer", async () => {

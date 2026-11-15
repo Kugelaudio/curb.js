@@ -29,13 +29,15 @@ import { Agent, GlobalTools, Handoff, SystemPrompt } from "curb";
 |---|---|---|
 | The caller asks for a person ("Ich möchte mit einem Menschen sprechen") | `caller_requested` | the model |
 | The agent cannot help: the caller keeps repeating themselves, it cannot answer, or what they need is not something it can do | `agent_stuck` | the model |
-| 3 tool calls failed in a row, or 3 turns in a row ended without a reply (`afterFailures`) | `agent_failure` | the framework, without asking the model |
+| Something is not working: 3 tool calls in a row threw, or 3 turns in a row ended without a reply (`afterErrors`) | `agent_failure` | the framework, without asking the model |
+| Nothing is broken, but 3 tool calls in a row answered no, when you set `afterFailedAttempts={3}` | `agent_stuck` | the framework, without asking the model |
 
 The model passes a `summary` for the person taking over (who the caller is, what they want,
 what was already collected) and one `announce` sentence in the caller's language. When the
-framework hands off on its own, the caller hears a fixed line in the agent's language instead
-("Entschuldigung, bei mir funktioniert gerade etwas nicht. Einen Moment, ich verbinde Sie mit
-einem Kollegen."). When that handoff reaches nobody after turns without a reply, the model may
+framework hands off on its own, the caller hears a fixed line in the agent's language instead:
+after errors "Entschuldigung, bei mir funktioniert gerade etwas nicht. Einen Moment, ich verbinde
+Sie mit einem Kollegen.", and after failed attempts one that claims no fault, "Entschuldigung, ich
+komme hier leider nicht weiter. Einen Moment, ich verbinde Sie mit einem Kollegen." When a handoff reaches nobody after turns without a reply, the model may
 still be down, so the caller hears the callback offer as a fixed line too ("Ich konnte gerade
 niemanden erreichen. Nennen Sie mir bitte Ihren Namen und die Nummer, unter der wir Sie
 zurückrufen können.").
@@ -60,12 +62,31 @@ the hours) and, for a refusal, `code`. Each callback request is a `curb.callback
 with `name`, `phone`, `reason` and `summary`. A traced call ([Tracing](./tracing.md)) gets a
 `handoff` event on its span with the reason and the outcome only.
 
-**Tools that count.** Only your own tools count toward `afterFailures`: a tool result with
-`ok: false`, a handler that throws, or a `ToolInputError`. A tool call that works starts the count
-again; `read_skill`, `skip_turn`, `end_call` and the handoff's own tools count for neither. A call
-the caller confirmed (`<Tool confirm>`) counts when it runs. A turn without a reply is one where
-the model failed or timed out, answered nothing twice, or used all its steps; a turn that ends in
-a reply starts the turn count again. `afterFailures={false}` leaves it to the model.
+**What counts.** A tool call of yours that fails is one of two things, and each has its own count:
+
+| The tool | Counts toward | Example |
+|---|---|---|
+| threw [`ToolUnavailableError`](./functions/errors.md#toolunavailableerror), or any error but a `ToolInputError` | `afterErrors` | The order system does not answer; a bug in the handler; an MCP server that cannot be reached |
+| answered `ok: false`, or threw `ToolInputError` | `afterFailedAttempts` | "That slot is taken", "No order 123" |
+
+So a caller who asks for three slots that are taken is not handed off, and is never told that
+something is not working: the model offers another slot. Throw `ToolUnavailableError` where a tool
+finds its system down, so that an outage counts as one
+([Calling your own API from a tool](./tools.md#calling-your-own-api-from-a-tool)).
+
+A tool call that works starts both counts again. `read_skill`, `skip_turn`, `end_call` and the
+handoff's own tools count for neither. A call the caller confirmed (`<Tool confirm>`) counts when
+it runs. A turn without a reply is one where the model failed or timed out, answered nothing
+twice, or used all its steps; a turn that ends in a reply starts the turn count again.
+`afterErrors={false}` leaves it to the model.
+
+**Hand off after failed attempts.** With `afterFailedAttempts` unset, the model decides when it
+is stuck, and you can tell it when in the system prompt ("If three slots in a row are taken, hand
+the caller to a colleague"). Set it when that must not depend on the model:
+
+```tsx
+<Handoff to="+493012345678" afterFailedAttempts={3} />
+```
 
 **Testing.** Under `curb say` and `curb test` no host answers, so a handoff within the hours ends
 as a callback offer: that tests the fallback. Pass `hours={() => false}` to test the closed path.

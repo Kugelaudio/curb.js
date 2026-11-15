@@ -81,9 +81,10 @@ so say what to do next.
   authoring error; a date is `z.iso.date()` or `z.iso.datetime()`.
 - `onSubmit` returns a `ToolResult`: `{ ok: boolean, message?, data? }`.
   Schema validation failures are generated automatically from the Zod
-  messages; for handler-level failures return `{ ok: false, message }` or
-  throw `ToolInputError`. Rendered `<ErrorMessage>` content becomes new
-  context the model reads on its next step. Any other exception is logged on
+  messages; for an answer of no ("That slot is taken") return `{ ok: false, message }`, for
+  input the caller must fix throw `ToolInputError`, and when the system behind the tool is
+  not working throw [`ToolUnavailableError`](./functions/errors.md#toolunavailableerror).
+  Rendered `<ErrorMessage>` content becomes new context the model reads on its next step. Any other exception is logged on
   the server, and the model gets `{ ok: false }` with a generic "internal
   error" message instead of the raw error, so write `ToolInputError`
   messages for anything the model can fix.
@@ -144,15 +145,13 @@ const UNREACHABLE = "The order system is not answering. Tell the caller and offe
     try {
       response = await orderApi(`orders/${encodeURIComponent(order)}`);
     } catch (error) {
-      console.error("look_up_order: no answer from the order API", error);
-      return { ok: false, message: UNREACHABLE };
+      throw new ToolUnavailableError(UNREACHABLE, { cause: error });
     }
     if (response.status === 404) {
       throw new ToolInputError(`There is no order ${order}. Ask the caller to read the number again.`);
     }
     if (!response.ok) {
-      console.error(`look_up_order: the order API answered ${response.status}`);
-      return { ok: false, message: UNREACHABLE };
+      throw new ToolUnavailableError(UNREACHABLE, { cause: new Error(`the order API answered ${response.status}`) });
     }
     return { ok: true, data: await response.json() };
   }}
@@ -166,11 +165,13 @@ const UNREACHABLE = "The order system is not answering. Tell the caller and offe
   is `https://shop.example.com/orders/7`, without `/api`.
 - Give every request a timeout (`AbortSignal.timeout`): while a tool waits, the
   caller hears silence.
-- Turn a failed request into `{ ok: false, message }` the model can say to the
-  caller, and log the real error with `console.error`. An empty `catch {}`
-  hides why calls fail.
+- Turn a failed request into a `ToolUnavailableError` with a message the model can say to
+  the caller, and pass the real error as its `cause`, which Curb logs. An empty `catch {}`
+  hides why calls fail. [`<Handoff>`](./human-handoff.md) hands the caller to a person after
+  three of these in a row.
 - Throw `ToolInputError` for input the caller must fix, such as an order number
-  that does not exist.
+  that does not exist, and return `{ ok: false, message }` for an answer of no, such as an
+  order that cannot be cancelled any more. Neither is an error: the model carries on.
 
 ## Call an HTTPS API with a secret
 
@@ -207,7 +208,7 @@ to your application rather than to a person.
 3. Read the variables in the tool, each time it runs:
 
    ```tsx
-   import { defineTool, z } from "curb";
+   import { ToolUnavailableError, defineTool, z } from "curb";
 
    // An app-only token from the calendar's sign-in server (OAuth client credentials).
    async function calendarToken(): Promise<string> {
@@ -240,7 +241,7 @@ to your application rather than to a person.
        const response = await fetch(`https://calendar.example.com/v1/free-slots?date=${date}`, {
          headers: { Authorization: `Bearer ${await calendarToken()}` },
        });
-       if (!response.ok) return { ok: false, message: "The calendar is not answering. Offer to call back later." };
+       if (!response.ok) throw new ToolUnavailableError("The calendar is not answering. Offer to call back later.");
        const { slots } = (await response.json()) as { slots: string[] };
        return { ok: true, data: { slots } };
      },

@@ -35,8 +35,8 @@ A span that failed has an error status and an `error.type`:
 
 | What failed | `error.type` | Also on the span |
 | --- | --- | --- |
-| A tool answered `ok: false` | `tool_error` | |
-| A tool's handler threw | the error's class, such as `TypeError` | an `exception` event with `exception.type`, without the message |
+| A tool answered `ok: false` or threw `ToolInputError` | `tool_error` | |
+| A tool's handler threw | the error's class, such as `TypeError`, or `ToolUnavailableError` for an outage the handler reported | an `exception` event with `exception.type`, without the message |
 | A transfer's dial failed | `transfer_failed` | |
 | The call's session could not start | the error's class | an `exception` event with `exception.type`, without the message |
 
