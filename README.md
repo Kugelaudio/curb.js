@@ -37,11 +37,9 @@ function App() {
 
   return (
     <Agent llm={kugelaudio.llm()} stt={kugelaudio.stt()} tts={kugelaudio.tts()}>
-      <SystemPrompt>{`
-        You are Mia, the receptionist at Parkside Bikes.
-        You book repair appointments by phone.
-        Reply in one or two sentences, because the caller listens.
-      `}</SystemPrompt>
+      <SystemPrompt>
+        You are Mia, the receptionist at Parkside Bikes. Keep your replies short.
+      </SystemPrompt>
 
       {booked ? `Booked: ${booked}.` : "Free slots: Tuesday 9:00, Thursday 11:00."}
 
