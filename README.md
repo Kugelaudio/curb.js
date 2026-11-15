@@ -25,9 +25,9 @@ knows and what it can do, as React components.
 | What it knows: skills and plain markdown | The model's request on every turn: only the instructions and tools your state allows |
 | Conversations to keep as tests | A preview where you talk to the agent and see what the model saw |
 
-**Want it hosted?** KugelAudio runs Curb agents with phone numbers, call logs and scaling. Start at
-[kugelaudio.com](https://kugelaudio.com) or write to [hello@kugelaudio.com](mailto:hello@kugelaudio.com).
-[Hosting](#hosting) shows how it works, and how to run an agent on your own servers.
+**Want it hosted?** KugelAudio runs Curb agents with phone numbers, call logs and scaling. Write to
+[hello@kugelaudio.com](mailto:hello@kugelaudio.com). [Hosting](#hosting) shows how it works, and
+how to run an agent on your own servers.
 
 A receptionist for a bike workshop, in `src/agent/agent.tsx`:
 
