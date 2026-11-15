@@ -19,7 +19,9 @@ import type { SemanticNode } from "../types.js";
  * block. Prefer the primitives; reach for a block when the mechanism is genuinely non-trivial.
  *
  * ONE BLOCK = ONE FOLDER, `src/blocks/<id>/`, the id in kebab-case. Everything the block owns
- * is in it, and nothing of it is anywhere else:
+ * is in it. Where the core has to act for a block (the session calls `handoff/trigger.ts`, the
+ * runtime finds the handoff tool by its marker), the core names that block: keep such a place to
+ * the call itself, with the logic in the block's folder.
  *
  *   index.tsx     - required. The component(s) authors render, their props, and what a block
  *                   built on this one imports. Browser-safe: `src/index.ts` exports it.
