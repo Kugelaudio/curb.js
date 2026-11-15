@@ -89,6 +89,27 @@ export function isToolInputError(error: unknown): error is ToolInputError {
   return error instanceof ToolInputError;
 }
 
+/**
+ * Thrown by a handler when what it depends on is not working: the API did not answer, the
+ * database is down. The model reads the message, as it reads a `ToolInputError`'s, so say what
+ * to do next. The result counts as an error and not as an answer of no (`<Handoff afterErrors>`),
+ * and `cause` goes to the log.
+ */
+export class ToolUnavailableError extends Error {
+  constructor(message: string, options: { cause?: unknown } = {}) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    this.name = "ToolUnavailableError";
+  }
+
+  toToolResult(): ToolResult {
+    return { ok: false, message: this.message };
+  }
+}
+
+export function isToolUnavailableError(error: unknown): error is ToolUnavailableError {
+  return error instanceof ToolUnavailableError;
+}
+
 export type SiteElementProps = {
   children?: ReactNode;
 };
@@ -177,10 +198,13 @@ export type ToolPropsBase = SiteElementProps & {
 };
 
 /** What `<Handoff>` marks its tools with, so the session knows them (`runtime.handoffTool`):
- * the handoff itself, which the session calls after `afterFailures` failures in a row (null:
- * never), and the callback request it offers when nobody could take the call. Neither counts as
- * a failing tool. Internal: no authored `<Tool>` passes it. */
-export type HandoffToolMarker = { kind: "handoff"; afterFailures: number | null } | { kind: "callback" };
+ * the handoff itself, which the session calls after `afterErrors` errors in a row or
+ * `afterFailedAttempts` answers of no in a row (null: never), and the callback request it offers
+ * when nobody could take the call. Neither counts as a failing tool. Internal: no authored
+ * `<Tool>` passes it. */
+export type HandoffToolMarker =
+  | { kind: "handoff"; afterErrors: number | null; afterFailedAttempts: number | null }
+  | { kind: "callback" };
 
 export type ToolActionProps = ToolPropsBase & {
   onCall: ToolHandler;

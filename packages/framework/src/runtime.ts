@@ -15,6 +15,7 @@ import {
   SKIP_TURN_TOOL_NAME,
   ToolInputError,
   isToolInputError,
+  isToolUnavailableError,
 } from "./types.js";
 import type {
   AgentContextEntry,
@@ -192,6 +193,12 @@ export class AgentSiteRuntime {
     } catch (caughtError) {
       if (isToolInputError(caughtError)) {
         result = caughtError.toToolResult();
+      } else if (isToolUnavailableError(caughtError)) {
+        // The author's own word that what the tool depends on is down. The model reads their
+        // message; the result is an error like any other throw, and the cause is for the log.
+        console.error(`[curb] tool "${name}" is unavailable:`, caughtError);
+        result = caughtError.toToolResult();
+        markThrown(result, caughtError);
       } else {
         // A handler bug or a failing backend. The model gets a failed result it
         // can recover from; the raw error is for the developer only.
@@ -233,11 +240,13 @@ export class AgentSiteRuntime {
     return this.handoffs.get(name);
   }
 
-  /** The `<Handoff>` tool the session calls on its own after `afterFailures` failures in a row,
-   * when one is rendered now. */
-  handoffTool(): { name: string; afterFailures: number } | undefined {
+  /** The `<Handoff>` tool the session calls on its own, and after how many errors or failed
+   * attempts in a row (null: never for that one), when one that does is rendered now. */
+  handoffTool(): { name: string; afterErrors: number | null; afterFailedAttempts: number | null } | undefined {
     for (const [name, marker] of this.handoffs) {
-      if (marker.kind === "handoff" && marker.afterFailures !== null) return { name, afterFailures: marker.afterFailures };
+      if (marker.kind !== "handoff") continue;
+      const { afterErrors, afterFailedAttempts } = marker;
+      if (afterErrors !== null || afterFailedAttempts !== null) return { name, afterErrors, afterFailedAttempts };
     }
     return undefined;
   }
@@ -267,6 +276,10 @@ export class AgentSiteRuntime {
       return { readBack };
     } catch (caughtError) {
       if (isToolInputError(caughtError)) return { result: caughtError.toToolResult() };
+      if (isToolUnavailableError(caughtError)) {
+        console.error(`[curb] confirm of tool "${name}" is unavailable:`, caughtError);
+        return { result: caughtError.toToolResult() };
+      }
       console.error(`[curb] confirm of tool "${name}" threw:`, caughtError);
       return { result: { ok: false, message: unexpectedToolFailureMessage(name) } };
     }

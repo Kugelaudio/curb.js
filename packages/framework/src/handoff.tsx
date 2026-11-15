@@ -20,9 +20,11 @@ import { ToolInputError, type ToolResult } from "./types.js";
  * `<Handoff>`: one way for an agent to hand its caller to a person.
  *
  * The model calls the handoff tool when the caller asks for a person or it cannot help, with a
- * reason and a summary for whoever takes over. The session calls it on its own, with the reason
- * `agent_failure`, after `afterFailures` tool calls failed in a row or as many turns failed in a
- * row (`agent-session.ts`). Within the hours the caller is put through to `to` (`transfer.tsx`);
+ * reason and a summary for whoever takes over. The session calls it on its own
+ * (`agent-session.ts`, `handoff-trigger.ts`): with the reason `agent_failure` after `afterErrors`
+ * tool calls threw in a row or as many turns got no reply in a row, and, when the author sets
+ * `afterFailedAttempts`, with the reason `agent_stuck` after that many tool calls in a row
+ * answered no. Within the hours the caller is put through to `to` (`transfer.tsx`);
  * outside them, or when nobody answers, the agent offers a callback and records the request. Each
  * handoff is `curb.handoff` in the call's record, each callback request `curb.callback_request`
  * (`call-trace.ts`).
@@ -30,16 +32,17 @@ import { ToolInputError, type ToolResult } from "./types.js";
  * Browser-safe: no Node imports, because `src/index.ts` exports it.
  */
 
-/** Why a call is handed to a person. The model gives the first two; the framework the third. */
+/** Why a call is handed to a person. The model gives the first two; the framework gives the
+ * third when something is not working, and the second after `afterFailedAttempts`. */
 export const HANDOFF_REASONS = ["caller_requested", "agent_stuck", "agent_failure"] as const;
 export type HandoffReason = (typeof HANDOFF_REASONS)[number];
 
 /** The reason the framework gives when it hands off on its own. */
 export const AGENT_FAILURE_REASON: HandoffReason = "agent_failure";
 
-/** How many failures in a row hand the call off when `afterFailures` is not set. */
-export const DEFAULT_HANDOFF_AFTER_FAILURES = 3;
-const MAX_AFTER_FAILURES = 10;
+/** How many errors in a row hand the call off when `afterErrors` is not set. */
+export const DEFAULT_HANDOFF_AFTER_ERRORS = 3;
+const MAX_IN_A_ROW = 10;
 
 /** A callback the caller asked for when nobody could take the call. */
 export interface CallbackRequest {
@@ -59,8 +62,16 @@ export interface HandoffProps {
   /** When someone is there to take the call: opening hours in a time zone, or a function of
    * the time. Outside them the agent takes a callback request instead. Default: always. */
   hours?: HandoffHours;
-  /** Hand off on its own after this many tool calls failed in a row, or this many turns got no
-   * reply in a row (1 to 10), or never with `false`. Default 3. */
+  /** Hand off on its own when something is not working: after this many tool calls in a row
+   * threw (a `ToolUnavailableError`, or any error but a `ToolInputError`), or this many turns in a
+   * row got no reply (1 to 10), or never with `false`. Default 3. */
+  afterErrors?: number | false;
+  /** Hand off on its own when the agent gets nowhere though nothing is broken: after this many
+   * tool calls in a row answered `ok: false` ("That slot is taken", "No order 123") or threw a
+   * `ToolInputError` (1 to 10). Default `false`: the model decides. */
+  afterFailedAttempts?: number | false;
+  /** @deprecated Use `afterErrors`, which this sets when `afterErrors` is not given. A tool
+   * result with `ok: false` no longer counts toward it; see `afterFailedAttempts`. */
   afterFailures?: number | false;
   /** How long the person's phone rings, 10 to 60 seconds. Default 30. */
   ringTimeoutSeconds?: number;
@@ -90,7 +101,9 @@ export interface HandoffProps {
 export function Handoff({
   to,
   hours,
-  afterFailures = DEFAULT_HANDOFF_AFTER_FAILURES,
+  afterFailures,
+  afterErrors = afterFailures ?? DEFAULT_HANDOFF_AFTER_ERRORS,
+  afterFailedAttempts = false,
   ringTimeoutSeconds,
   onEnded,
   onCallbackRequest,
@@ -108,7 +121,7 @@ export function Handoff({
     ...(ringTimeoutSeconds === undefined ? {} : { ringTimeoutSeconds }),
     ...(onEnded === undefined ? {} : { onEnded }),
   };
-  checkProps(request, hours, afterFailures);
+  checkProps(request, hours, { afterErrors, afterFailedAttempts });
   const ring = request.ringTimeoutSeconds ?? DEFAULT_TRANSFER_RING_TIMEOUT_SECONDS;
 
   const report = (record: HandoffRecord) => callTraceOf(info)?.handoff(record);
@@ -183,7 +196,11 @@ export function Handoff({
     <>
       <agent-tool
         name={name}
-        handoff={{ kind: "handoff", afterFailures: afterFailures === false ? null : afterFailures }}
+        handoff={{
+          kind: "handoff",
+          afterErrors: afterErrors === false ? null : afterErrors,
+          afterFailedAttempts: afterFailedAttempts === false ? null : afterFailedAttempts,
+        }}
         description={
           "Hand the caller to a person. Call it when the caller asks to speak to a person (reason caller_requested), " +
           "or when you cannot help them: they keep repeating themselves, you cannot answer, or what they need is " +
@@ -252,12 +269,14 @@ function unreached(outcome: TransferOutcome): string {
 }
 
 /** A wrong prop is the author's to fix, before the model can ever call the tool. */
-function checkProps(request: TransferCallRequest, hours: HandoffHours | undefined, afterFailures: number | false): void {
+function checkProps(request: TransferCallRequest, hours: HandoffHours | undefined, inARow: Record<string, number | false>): void {
   try {
     transferPayload(request);
     checkHandoffHours(hours);
-    if (afterFailures !== false && (!Number.isInteger(afterFailures) || afterFailures < 1 || afterFailures > MAX_AFTER_FAILURES)) {
-      throw new TypeError(`afterFailures needs a whole number from 1 to ${MAX_AFTER_FAILURES}, or false; got ${JSON.stringify(afterFailures)}.`);
+    for (const [prop, value] of Object.entries(inARow)) {
+      if (value !== false && (!Number.isInteger(value) || value < 1 || value > MAX_IN_A_ROW)) {
+        throw new TypeError(`${prop} needs a whole number from 1 to ${MAX_IN_A_ROW}, or false; got ${JSON.stringify(value)}.`);
+      }
     }
   } catch (error) {
     if (!(error instanceof TypeError)) throw error;
@@ -268,7 +287,7 @@ function checkProps(request: TransferCallRequest, hours: HandoffHours | undefine
       location: { component: "Handoff" },
       fix:
         'Pass to="+493012345678" (international format), hours={{ timeZone: "Europe/Berlin", open: { "mon-fri": "08:00-17:00" } }} ' +
-        "or a function of the time, afterFailures from 1 to 10 or false, and ringTimeoutSeconds from 10 to 60.",
+        "or a function of the time, afterErrors and afterFailedAttempts from 1 to 10 or false, and ringTimeoutSeconds from 10 to 60.",
     });
   }
 }

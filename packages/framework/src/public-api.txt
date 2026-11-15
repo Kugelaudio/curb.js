@@ -111,6 +111,7 @@
 . ToolPropsWithSchema
 . ToolResult
 . ToolSpec
+. ToolUnavailableError
 . TransferCall
 . TransferCallRequest
 . TransferCallTool
@@ -136,6 +137,7 @@
 . formatAuthoringDiagnostic
 . getMcpManager
 . isToolInputError
+. isToolUnavailableError
 . listPublicMarkdown
 . mergeAuthoringDiagnostics
 . preloadMcpTools

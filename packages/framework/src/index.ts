@@ -112,7 +112,7 @@ export type { AgentRouterApi } from "./route-context.js";
 export type { AgentRoute, SkillMeta } from "./routing.js";
 export { z } from "zod";
 export { zodSchemaToFields, validateSchemaInput } from "./form-schema.js";
-export { ToolInputError, isToolInputError } from "./types.js";
+export { ToolInputError, ToolUnavailableError, isToolInputError, isToolUnavailableError } from "./types.js";
 export type { ZodObjectSchema } from "./form-schema.js";
 export type { AgentChatMessage, AgentRunRequest, AgentRunResponse, AgentToolCall } from "./llm/types.js";
 // TYPE ONLY, and it has to stay that way: the implementation module is Node-only

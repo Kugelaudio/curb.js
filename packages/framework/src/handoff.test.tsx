@@ -2,7 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSession, type AgentLlmClient } from "./agent-session.js";
 import { attachCallTrace, type CallbackRequestRecord, type CallTrace, type HandoffRecord } from "./call-trace.js";
 import { isWithinHours, parseOpeningHours, type HandoffHours, type OpeningHours } from "./handoff-hours.js";
-import { Agent, AgentAuthoringError, AgentSiteRuntime, GlobalTools, Handoff, Tool, type CallbackRequest, type HandoffProps } from "./index.js";
+import {
+  Agent,
+  AgentAuthoringError,
+  AgentSiteRuntime,
+  GlobalTools,
+  Handoff,
+  Tool,
+  ToolInputError,
+  ToolUnavailableError,
+  type CallbackRequest,
+  type HandoffProps,
+} from "./index.js";
 import { fallbackReplies, handoffAnnouncement, handoffUnreachedLine } from "./llm/localized.js";
 import { isConfirmationRequest } from "./llm/confirmation.js";
 import { z } from "./index.js";
@@ -21,7 +32,8 @@ const CLOSED: HandoffHours = () => false;
 const ANNOUNCE = "Einen Moment, ich verbinde Sie mit einem Kollegen.";
 
 /**
- * A runtime with `<Handoff>` and a failing `lookup` tool, on a phone call (unless `phone` is
+ * A runtime with `<Handoff>`, a `lookup` tool whose service is down, a `crash` tool with a bug, a
+ * `book` tool that answers no and a `find` tool that refuses its input, on a phone call (unless `phone` is
  * false) whose host answers `call.transfer` and then reports `outcome` for it. Its trace records
  * every handoff and callback request.
  */
@@ -43,7 +55,28 @@ function call(
           onCallbackRequest={(request) => void callbacks.push(request)}
           {...options.props}
         />
-        <Tool name="lookup" description="Look the order up." onCall={() => ({ ok: false, message: "The order service is down." })} />
+        <Tool
+          name="lookup"
+          description="Look the order up."
+          onCall={() => {
+            throw new ToolUnavailableError("The order service is down.");
+          }}
+        />
+        <Tool
+          name="crash"
+          description="Look the invoice up."
+          onCall={() => {
+            throw new TypeError("invoice is undefined");
+          }}
+        />
+        <Tool name="book" description="Book a slot." onCall={() => ({ ok: false, message: "That slot is taken." })} />
+        <Tool
+          name="find"
+          description="Find a customer."
+          onCall={() => {
+            throw new ToolInputError("No customer has that number.");
+          }}
+        />
         <Tool name="greet" description="Say hello." onCall={() => ({ ok: true })} />
       </GlobalTools>
     </Agent>,
@@ -176,6 +209,9 @@ describe("<Handoff>", () => {
       { hours: { timeZone: "Mars/Olympus", open: {} } },
       { hours: { timeZone: "Europe/Berlin", open: { "mon-fri": "17:00-08:00" } } },
       { afterFailures: 0 },
+      { afterErrors: 0 },
+      { afterErrors: 2.5 },
+      { afterFailedAttempts: 11 },
     ] as Array<Partial<HandoffProps>>) {
       expect(() => call({ props })).toThrow(AgentAuthoringError);
     }
@@ -218,7 +254,12 @@ describe("the session hands off on its own", () => {
     });
     return new AgentSession(runtime, llm);
   }
-  const lookup = (id: string) => ({ text: "", toolCalls: [{ id, name: "lookup", input: {} }] });
+  const toolCall = (name: string) => (id: string) => ({ text: "", toolCalls: [{ id, name, input: {} }] });
+  const lookup = toolCall("lookup");
+  const crash = toolCall("crash");
+  const book = toolCall("book");
+  const find = toolCall("find");
+  const greet = toolCall("greet");
 
   async function turn(target: AgentSession, input: string) {
     const events: AgentTurnStreamEvent[] = [];
@@ -226,7 +267,7 @@ describe("the session hands off on its own", () => {
     return events;
   }
 
-  it("after three failed tool calls in a row, with the reason agent_failure and its line in the agent's language", async () => {
+  it("after three tool calls in a row reported an outage, with the reason agent_failure and its line in the agent's language", async () => {
     const { runtime, sent, handoffs } = call({ german: true });
     const target = session(runtime, [lookup("c1"), lookup("c2"), lookup("c3")]);
     const events = await turn(target, "Wo ist meine Bestellung?");
@@ -241,7 +282,63 @@ describe("the session hands off on its own", () => {
     expect(events.some((event) => event.type === "tool" && event.toolCall.name === "handoff")).toBe(true);
   });
 
-  it("counts failures across turns", async () => {
+  it("counts a handler that threw anything but a ToolInputError as an error", async () => {
+    const { runtime, handoffs } = call();
+    const target = session(runtime, [crash("c1"), lookup("c2"), crash("c3")]);
+    await turn(target, "Where is my invoice?");
+    expect(handoffs).toEqual([expect.objectContaining({ reason: "agent_failure", summary: expect.stringContaining("(crash, lookup)") })]);
+  });
+
+  it("never because tools answered no, unless afterFailedAttempts is set", async () => {
+    // "That slot is taken" and a refused input are answers, not faults: the model carries on.
+    const { runtime, sent, handoffs } = call();
+    const target = session(runtime, [book("b1"), book("b2"), find("f1"), book("b3"), find("f2"), book("b4")]);
+    await turn(target, "Any slot on Tuesday?");
+    expect(sent).toHaveLength(0);
+    expect(handoffs).toHaveLength(0);
+  });
+
+  it("an answer of no neither counts as an error nor ends the errors in a row", async () => {
+    const { runtime, handoffs } = call();
+    const target = session(runtime, [lookup("c1"), book("b1"), lookup("c2"), find("f1"), lookup("c3")]);
+    await turn(target, "Where is my order?");
+    expect(handoffs).toEqual([expect.objectContaining({ reason: "agent_failure", summary: expect.stringContaining("(lookup)") })]);
+  });
+
+  it("with afterFailedAttempts, after that many answers of no in a row, as agent_stuck and with a line that claims no fault", async () => {
+    const { runtime, sent, handoffs } = call({ german: true, props: { afterFailedAttempts: 3 } });
+    const target = session(runtime, [book("b1"), find("f1"), book("b2")]);
+    await turn(target, "Dienstag um zehn?");
+    expect(sent).toHaveLength(1);
+    expect(handoffs).toHaveLength(1);
+    expect(handoffs[0]).toMatchObject({ reason: "agent_stuck", outcome: "answered" });
+    expect(handoffs[0]!.summary).toContain("3 attempts in a row did not work (book, find)");
+    expect(handoffs[0]!.summary).toContain("That slot is taken.");
+    const handoffCall = target.messages.flatMap((message) => (message.role === "assistant" ? (message.toolCalls ?? []) : []))
+      .find((made) => made.name === "handoff");
+    expect(handoffCall?.input).toMatchObject({ reason: "agent_stuck", announce: handoffAnnouncement("de", "agent_stuck") });
+    expect(handoffAnnouncement("de", "agent_stuck")).not.toBe(handoffAnnouncement("de"));
+  });
+
+  it("starts the failed attempts again after a tool that works, and counts them apart from errors", async () => {
+    const { runtime, handoffs } = call({ props: { afterFailedAttempts: 3 } });
+    const sorry = { text: "Sorry.", toolCalls: [] };
+    const target = session(runtime, [book("b1"), book("b2"), greet("g"), book("b3"), lookup("c1"), lookup("c2"), book("b4"), sorry, book("b5")]);
+    // Two attempts, a success, two more and two errors between them: neither limit is reached.
+    await turn(target, "one");
+    expect(handoffs).toHaveLength(0);
+    await turn(target, "two");
+    expect(handoffs).toEqual([expect.objectContaining({ reason: "agent_stuck" })]);
+  });
+
+  it("with afterErrors false and afterFailedAttempts set, only failed attempts hand off", async () => {
+    const { runtime, handoffs } = call({ props: { afterErrors: false, afterFailedAttempts: 2 } });
+    const target = session(runtime, [lookup("c1"), lookup("c2"), lookup("c3"), book("b1"), book("b2")]);
+    await turn(target, "Where is my order?");
+    expect(handoffs).toEqual([expect.objectContaining({ reason: "agent_stuck" })]);
+  });
+
+  it("counts errors across turns", async () => {
     const { runtime, handoffs } = call();
     const sorry = { text: "Sorry, let me try again.", toolCalls: [] };
     const target = session(runtime, [lookup("c1"), sorry, lookup("c2"), sorry, lookup("c3")]);
@@ -254,9 +351,8 @@ describe("the session hands off on its own", () => {
 
   it("starts the count again after a tool that works, and leaves framework tools out", async () => {
     const { runtime, handoffs } = call();
-    const greet = { text: "", toolCalls: [{ id: "g", name: "greet", input: {} }] };
     const skip = { text: "", toolCalls: [{ id: "s", name: "skip_turn", input: {} }] };
-    const target = session(runtime, [lookup("c1"), lookup("c2"), greet, lookup("c3"), lookup("c4"), { text: "Sorry.", toolCalls: [] }]);
+    const target = session(runtime, [lookup("c1"), lookup("c2"), greet("g"), lookup("c3"), lookup("c4"), { text: "Sorry.", toolCalls: [] }]);
     await turn(target, "one");
     expect(handoffs).toHaveLength(0);
     // skip_turn neither fails nor works: the third failure after it hands off.
@@ -268,11 +364,25 @@ describe("the session hands off on its own", () => {
     expect(other.handoffs).toHaveLength(1);
   });
 
-  it("never with afterFailures false", async () => {
-    const { runtime, handoffs } = call({ props: { afterFailures: false } });
+  it("never with afterErrors false", async () => {
+    const { runtime, handoffs } = call({ props: { afterErrors: false } });
     const target = session(runtime, [lookup("c1"), lookup("c2"), lookup("c3"), lookup("c4")]);
     await turn(target, "Where is my order?");
     expect(handoffs).toHaveLength(0);
+  });
+
+  it("still reads afterFailures, the old name of afterErrors, unless afterErrors is given", async () => {
+    const old = call({ props: { afterFailures: false } });
+    await turn(session(old.runtime, [lookup("c1"), lookup("c2"), lookup("c3"), lookup("c4")]), "Where is my order?");
+    expect(old.handoffs).toHaveLength(0);
+
+    const lower = call({ props: { afterFailures: 2 } });
+    await turn(session(lower.runtime, [lookup("c1"), lookup("c2")]), "Where is my order?");
+    expect(lower.handoffs).toHaveLength(1);
+
+    const both = call({ props: { afterFailures: 1, afterErrors: 3 } });
+    await turn(session(both.runtime, [lookup("c1"), lookup("c2")]), "Where is my order?");
+    expect(both.handoffs).toHaveLength(0);
   });
 
   it("after three turns in a row got no reply, offering a callback in place of the apology when nobody is there", async () => {
@@ -312,7 +422,6 @@ describe("the session hands off on its own", () => {
 
     // One step a turn, spent on a tool that works: every turn ends at the step limit.
     const limited = call();
-    const greet = (id: string) => ({ text: "", toolCalls: [{ id, name: "greet", input: {} }] });
     let calls = 0;
     const busy = new AgentSession(limited.runtime, async () => greet(`g${++calls}`), { maxSteps: 1 });
     for (const input of ["one", "two", "three"]) await turn(busy, input);
@@ -322,16 +431,16 @@ describe("the session hands off on its own", () => {
   it("dials once in a turn where the tool and the turn thresholds are reached together", async () => {
     // One step a turn, spent on a failing tool: the tool streak and the step-limit turns mature in
     // the same turn, and nobody answers.
-    for (const afterFailures of [3, 1]) {
-      const { runtime, sent, handoffs } = call({ outcome: "no_answer", props: { afterFailures } });
+    for (const afterErrors of [3, 1]) {
+      const { runtime, sent, handoffs } = call({ outcome: "no_answer", props: { afterErrors } });
       let calls = 0;
       const target = new AgentSession(runtime, async () => lookup(`c${++calls}`), { maxSteps: 1 });
-      for (let turnNumber = 1; turnNumber <= afterFailures; turnNumber += 1) await turn(target, `turn ${turnNumber}`);
+      for (let turnNumber = 1; turnNumber <= afterErrors; turnNumber += 1) await turn(target, `turn ${turnNumber}`);
       expect(sent.filter((message) => message.name === "call.transfer")).toHaveLength(1);
       expect(handoffs).toHaveLength(1);
       // The turn that handed off is not counted again: the next one starts from nothing.
       await turn(target, "after");
-      expect(handoffs).toHaveLength(afterFailures === 1 ? 2 : 1);
+      expect(handoffs).toHaveLength(afterErrors === 1 ? 2 : 1);
     }
   });
 
@@ -340,13 +449,21 @@ describe("the session hands off on its own", () => {
       <Agent>
         <GlobalTools>
           <Handoff to="+493012345678" hours={OPEN} />
-          <Tool name="lookup" description="Look the order up." onCall={() => ({ ok: false, message: "The order service is down." })} />
+          <Tool
+            name="lookup"
+            description="Look the order up."
+            onCall={() => {
+              throw new ToolUnavailableError("The order service is down.");
+            }}
+          />
           <Tool
             name="refund"
             description="Refund the order."
             schema={z.object({ amount: z.number() })}
             confirm={(input) => `Refund ${input.amount} euros?`}
-            onSubmit={() => ({ ok: false, message: "The refund service is down." })}
+            onSubmit={() => {
+              throw new ToolUnavailableError("The refund service is down.");
+            }}
           />
         </GlobalTools>
       </Agent>,

@@ -197,7 +197,7 @@ export class AgentSession {
   /** The caller spoke over a read-back before the host reported it: the host's cut report
    * for it is still to come, and it is about a reply the conversation moved past. */
   private lateCutReport = false;
-  /** The failures in a row that hand the call to a person (`<Handoff afterFailures>`). */
+  /** The errors and the failed attempts in a row that hand the call to a person (`<Handoff>`). */
   private readonly failures = new FailureStreaks();
   /** The running turn already handed the call off on its own: at most once a turn. */
   private handedOffThisTurn = false;
@@ -989,16 +989,17 @@ export class AgentSession {
     return next;
   }
 
-  /** Count a call of `name` that ran toward the failures that hand the call off. Framework tools
-   * and `<Handoff>`'s own do not count. */
+  /** Count a call of `name` that ran toward the errors and the failed attempts that hand the call
+   * off. Framework tools and `<Handoff>`'s own do not count. */
   private countToolRun(name: string, outcome: ToolCallOutcome): void {
     if (this.runtime.toolDefinition(name)?.scope === "runtime" || this.runtime.handoffMarker(name)) return;
     this.failures.toolRan(name, outcome.result);
   }
 
-  /** When a `<Handoff>` is rendered and its failures in a row are reached, call its tool on the
-   * caller's behalf, recorded as a call of its own: the model is not asked, as it may be what
-   * fails. It speaks a fixed line in the agent's language before the transfer. */
+  /** When a `<Handoff>` is rendered and one of its limits is reached (errors in a row, or failed
+   * attempts in a row), call its tool on the caller's behalf, recorded as a call of its own: the
+   * model is not asked, as it may be what fails. It speaks a fixed line in the agent's language
+   * before the transfer, one that claims a fault only when there is one. */
   private async handOffIfDue(messages: AgentChatMessage[]): Promise<
     | {
         messages: AgentChatMessage[];
@@ -1009,8 +1010,8 @@ export class AgentSession {
   > {
     if (this.handedOffThisTurn) return undefined;
     const tool = this.runtime.handoffTool();
-    const summary = tool ? this.failures.due(tool.afterFailures) : undefined;
-    if (!tool || summary === undefined) return undefined;
+    const due = tool ? this.failures.due(tool) : undefined;
+    if (!tool || due === undefined) return undefined;
     // One attempt a turn across every path that checks, and both streaks start again: a second
     // dial to the same number in the same turn would only ring the same person twice.
     this.handedOffThisTurn = true;
@@ -1018,8 +1019,8 @@ export class AgentSession {
     const toolCall = handoffCall(
       this.nextToolCallId(),
       tool.name,
-      summary,
-      handoffAnnouncement(this.language()),
+      due,
+      handoffAnnouncement(this.language(), due.reason),
       this.runtime.toolDefinition(tool.name)?.skillPath,
     );
     let next = this.append(messages, { role: "assistant", content: "", at: Date.now(), toolCalls: [toolCall] });

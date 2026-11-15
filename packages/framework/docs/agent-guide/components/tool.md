@@ -37,7 +37,9 @@ Then one of three ways to take input:
 | `tryWith` | object | What the preview's Try form opens with. Never reaches the model |
 | `confirm` | `(input) => string` | The question that holds the tool until the caller says yes. Only with `onSubmit` ([Confirmations](../confirmations.md)) |
 
-A handler can refuse its input with [`ToolInputError`](../functions/errors.md#toolinputerror).
+A handler can refuse its input with [`ToolInputError`](../functions/errors.md#toolinputerror), and
+report that the system behind it is not working with
+[`ToolUnavailableError`](../functions/errors.md#toolunavailableerror).
 
 ## Example
 
