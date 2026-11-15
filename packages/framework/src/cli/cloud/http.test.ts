@@ -58,7 +58,7 @@ describe("cloudError", () => {
     expect(isHostedAgentsNotEnabled(error)).toBe(true);
     expect(error.message).toBe(
       "[CURB_HOSTED_AGENTS_NOT_ENABLED] Hosted agents are not switched on for your KugelAudio organization. " +
-        `They are in a closed alpha, switched on per organization (${answered}).\n` +
+        `Organizations that sign up at kugelaudio.com/voice-agents get them (${answered}).\n` +
         "Fix: Ask hello@kugelaudio.com to switch them on for your organization, then run the command again. " +
         'Until then the agent runs on this machine as before: `npx curb dev` opens the preview, `npx curb say "<what a caller says>"` runs one turn.',
     );

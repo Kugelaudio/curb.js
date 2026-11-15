@@ -38,7 +38,7 @@ its speech, so an agent on KugelAudio needs no other key; a hosted agent gets th
 KugelAudio. Thinking is off on KugelAudio's side, so the agent never speaks its reasoning, and
 nothing beyond the conversation and the tools is sent. It is served at `KUGELAUDIO_API_BASE`
 (default `https://api.eu.kugelaudio.com`) plus `/v1`. An organization gets it with hosted
-agents, in closed alpha; until then its turns answer 403 `LLM_NOT_ENABLED`.
+agents; without them its turns answer 403 `LLM_NOT_ENABLED`.
 
 To run your own model, see [Your own LLM](./custom-llm.md). For one model that both hears and speaks, see [Speech-to-speech models](./speech-to-speech.md).
 
