@@ -1,6 +1,6 @@
 import { endCallGoodbye, unexpectedToolFailureMessage, type AgentSiteRuntime } from "./runtime.js";
 import { callTraceOf } from "./call-trace.js";
-import { procedureChanges, proceduresOf, type ProcedureChange, type ProcedureProgress } from "./procedure-progress.js";
+import { procedureChanges, proceduresOf, type ProcedureChange, type ProcedureProgress } from "./blocks/procedure/progress.js";
 import { markThrown, timeToolRun, type SkillChange, type SpanAttributes, type ToolRunTracer } from "./tool-run.js";
 import {
   isToolInputStart,
@@ -43,7 +43,7 @@ import {
   type AgentLanguage,
 } from "./llm/localized.js";
 import { toolMessage } from "./llm/tool-messages.js";
-import { FailureStreaks, handedOver, handoffCall } from "./handoff-trigger.js";
+import { FailureStreaks, handedOver, handoffCall } from "./blocks/handoff/trigger.js";
 import { capTranscript, contextEvent, interruptedReply, withAudio, withToolCallRecord } from "./llm/transcript.js";
 import { closeAbandonedStream, llmTimeoutFromEnv, LlmTimeoutError, untilAborted } from "./llm/deadline.js";
 import { serializeLlmInput } from "./llm/serialize-input.js";

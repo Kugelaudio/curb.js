@@ -1,7 +1,7 @@
 import type { Context } from "@opentelemetry/api";
 
 import type { AgentInfoStore } from "./info-store.js";
-import type { ProcedureChange } from "./procedure-progress.js";
+import type { ProcedureChange } from "./blocks/procedure/progress.js";
 import type { SkillChange } from "./tool-run.js";
 
 /**

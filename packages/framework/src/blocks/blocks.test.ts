@@ -1,6 +1,46 @@
+import { existsSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import * as curb from "../index.js";
 import { blockPreviewIds, getBlockPreview } from "./preview-registry.js";
 import { blockDefinitions, getBlockBlueprint, getBlockCompiler } from "./registry.js";
+
+const here = fileURLToPath(new URL("./", import.meta.url));
+/** Every block: a folder under `src/blocks/`. */
+const folders = readdirSync(here, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name);
+
+/**
+ * Conformance test for the block folder recipe (see blocks/types.ts): a new block is a folder
+ * with an `index.tsx` whose components `curb` exports. Fails the moment a block is added
+ * halfway: a folder nobody can import, or a component that is not public.
+ */
+describe("block folders", () => {
+  it("there are blocks, each in a kebab-case folder with an index.tsx", () => {
+    expect(folders).toEqual(expect.arrayContaining(["handoff", "procedure", "transfer-call"]));
+    for (const folder of folders) {
+      expect(folder).toMatch(/^[a-z][a-z0-9-]*$/);
+      expect(existsSync(`${here}${folder}/index.tsx`), `src/blocks/${folder}/ has no index.tsx`).toBe(true);
+    }
+  });
+
+  it.each(folders)("%s exports at least one component, and curb exports every one of them", async (folder) => {
+    const block = (await import(`./${folder}/index.tsx`)) as Record<string, unknown>;
+    const components = Object.keys(block).filter((name) => /^[A-Z][a-z]/.test(name) && typeof block[name] === "function");
+    expect(components.length, `src/blocks/${folder}/index.tsx exports no component`).toBeGreaterThan(0);
+    for (const name of components) {
+      expect((curb as Record<string, unknown>)[name], `src/index.ts does not export <${name}>`).toBe(block[name]);
+    }
+  });
+
+  it("a definition and a preview come together, and every definition is registered under its folder's name", () => {
+    const withDefinition = folders.filter((folder) => existsSync(`${here}${folder}/definition.ts`));
+    const withPreview = folders.filter((folder) => existsSync(`${here}${folder}/preview.tsx`));
+    expect(withPreview).toEqual(withDefinition);
+    expect(blockDefinitions.map((block) => block.id).sort()).toEqual(withDefinition.sort());
+  });
+});
 
 /**
  * Conformance test for the pattern-block contract: every registered block

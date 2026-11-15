@@ -1,6 +1,6 @@
-import type { AgentToolCallRecord } from "./llm/types.js";
-import { thrownClass } from "./tool-run.js";
-import type { ToolResult } from "./types.js";
+import type { AgentToolCallRecord } from "../../llm/types.js";
+import { thrownClass } from "../../tool-run.js";
+import type { ToolResult } from "../../types.js";
 
 /** Why the session hands a call off on its own: something is not working (`agent_failure`), or
  * the agent keeps getting an answer of no (`agent_stuck`). */

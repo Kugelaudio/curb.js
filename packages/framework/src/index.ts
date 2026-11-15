@@ -88,12 +88,12 @@ export type {
   UseMessageWithSchema,
   UseMessageWithoutSchema,
 } from "./messages.js";
-export { Handoff } from "./handoff.js";
-export type { CallbackRequest, HandoffProps, HandoffReason } from "./handoff.js";
-export type { HandoffHours, OpeningHours, Weekday } from "./handoff-hours.js";
-export { TransferCallTool, useTransferCall } from "./transfer.js";
-export type { TransferCall, TransferCallRequest, TransferCallToolProps, TransferOutcome } from "./transfer.js";
-export type { TransferEnded, TransferEndedDecision, TransferEndedOption } from "./transfer-ended.js";
+export { Handoff } from "./blocks/handoff/index.js";
+export type { CallbackRequest, HandoffProps, HandoffReason } from "./blocks/handoff/index.js";
+export type { HandoffHours, OpeningHours, Weekday } from "./blocks/handoff/hours.js";
+export { TransferCallTool, useTransferCall } from "./blocks/transfer-call/index.js";
+export type { TransferCall, TransferCallRequest, TransferCallToolProps, TransferOutcome } from "./blocks/transfer-call/index.js";
+export type { TransferEnded, TransferEndedDecision, TransferEndedOption } from "./blocks/transfer-call/ended.js";
 export type { GetState, SetState, StoreInitializer, UseAgentStore } from "./agent-state.js";
 export { listPublicMarkdown, preloadPublicMarkdown, resolvePublicMarkdown } from "./public-context.js";
 export { AgentSiteRuntime } from "./runtime.js";

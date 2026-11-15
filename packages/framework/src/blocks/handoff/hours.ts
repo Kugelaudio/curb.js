@@ -7,7 +7,7 @@
  * Browser-safe: plain data and `Intl` only.
  */
 
-import { isTimeZone } from "./llm/localized.js";
+import { isTimeZone } from "../../llm/localized.js";
 
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 

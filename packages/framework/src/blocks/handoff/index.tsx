@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { AUTHORING_DIAGNOSTIC_CODES, AgentAuthoringError } from "./authoring.js";
-import { callTraceOf, type HandoffRecord } from "./call-trace.js";
-import { checkHandoffHours, isWithinHours, type HandoffHours } from "./handoff-hours.js";
-import { useAgentInfoStore } from "./info-context.js";
+import { AUTHORING_DIAGNOSTIC_CODES, AgentAuthoringError } from "../../authoring.js";
+import { callTraceOf, type HandoffRecord } from "../../call-trace.js";
+import { checkHandoffHours, isWithinHours, type HandoffHours } from "./hours.js";
+import { useAgentInfoStore } from "../../info-context.js";
 import {
   DEFAULT_TRANSFER_RING_TIMEOUT_SECONDS,
   isPhoneNumber,
@@ -12,19 +12,19 @@ import {
   useTransferCall,
   type TransferCallRequest,
   type TransferOutcome,
-} from "./transfer.js";
-import type { TransferEndedOption } from "./transfer-ended.js";
-import { ToolInputError, type ToolResult } from "./types.js";
+} from "../transfer-call/index.js";
+import type { TransferEndedOption } from "../transfer-call/ended.js";
+import { ToolInputError, type ToolResult } from "../../types.js";
 
 /**
  * `<Handoff>`: one way for an agent to hand its caller to a person.
  *
  * The model calls the handoff tool when the caller asks for a person or it cannot help, with a
  * reason and a summary for whoever takes over. The session calls it on its own
- * (`agent-session.ts`, `handoff-trigger.ts`): with the reason `agent_failure` after `afterErrors`
+ * (`agent-session.ts`, `trigger.ts`): with the reason `agent_failure` after `afterErrors`
  * tool calls threw in a row or as many turns got no reply in a row, and, when the author sets
  * `afterFailedAttempts`, with the reason `agent_stuck` after that many tool calls in a row
- * answered no. Within the hours the caller is put through to `to` (`transfer.tsx`);
+ * answered no. Within the hours the caller is put through to `to` (`../transfer-call/`);
  * outside them, or when nobody answers, the agent offers a callback and records the request. Each
  * handoff is `curb.handoff` in the call's record, each callback request `curb.callback_request`
  * (`call-trace.ts`).
@@ -36,9 +36,6 @@ import { ToolInputError, type ToolResult } from "./types.js";
  * third when something is not working, and the second after `afterFailedAttempts`. */
 export const HANDOFF_REASONS = ["caller_requested", "agent_stuck", "agent_failure"] as const;
 export type HandoffReason = (typeof HANDOFF_REASONS)[number];
-
-/** The reason the framework gives when it hands off on its own. */
-export const AGENT_FAILURE_REASON: HandoffReason = "agent_failure";
 
 /** How many errors in a row hand the call off when `afterErrors` is not set. */
 export const DEFAULT_HANDOFF_AFTER_ERRORS = 3;
