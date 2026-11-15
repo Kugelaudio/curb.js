@@ -1,8 +1,9 @@
 import { CircleAlertIcon, CircleCheckIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select.js";
-import { AgentSphere, agentName } from "./agent-sphere.js";
+import { agentName } from "./agent-sphere.js";
 import { contextShortcutLabel } from "./context-column-state.js";
+import { CurbLogo } from "./curb-logo.js";
 
 /** The page's top bar: whose preview this is, and whether the agent has problems. */
 export function TopBar({
@@ -26,7 +27,7 @@ export function TopBar({
 }) {
   return (
     <header className="flex h-[60px] items-center gap-3 border-b border-border/70 bg-card px-6">
-      <AgentSphere size={28} />
+      <CurbLogo size={26} className="shrink-0" />
       {agents.length > 1 ? (
         <Select
           value={activeAgentId}

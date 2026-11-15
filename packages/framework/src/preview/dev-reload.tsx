@@ -1,5 +1,5 @@
 import type { AuthoringDiagnostic } from "../authoring.js";
-import { AgentSphere } from "./agent-sphere.js";
+import { CurbLogo } from "./curb-logo.js";
 import { DiagnosticsList } from "./diagnostics-dialog.js";
 import type { DemoClientState } from "./ws-client.js";
 
@@ -22,7 +22,7 @@ export function AgentUnavailable({ message, diagnostics }: { message: string; di
   return (
     <div className="grid h-screen grid-rows-[60px_minmax(0,1fr)] overflow-hidden">
       <header className="flex items-center gap-3 border-b border-border/70 bg-card px-6">
-        <AgentSphere size={28} />
+        <CurbLogo size={26} className="shrink-0" />
         <span className="text-[0.8125rem] text-muted-foreground">Local preview</span>
       </header>
       <main className="overflow-y-auto">
