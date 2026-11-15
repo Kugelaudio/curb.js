@@ -48,6 +48,16 @@ if (!process.env.TSX_TSCONFIG_PATH) {
   }
 }
 
+// dist/ ships a source map beside each file, and Node reads maps only for files it loads after
+// they are turned on: so here, before dist/ loads, and through NODE_OPTIONS for the processes the
+// CLI starts (the `curb dev` child, the voice worker), so a stack trace names src/ lines.
+if (!fromSource) {
+  process.setSourceMapsEnabled(true);
+  if (!/(^|\s)--enable-source-maps(\s|$)/.test(process.env.NODE_OPTIONS ?? "")) {
+    process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ""} --enable-source-maps`.trim();
+  }
+}
+
 // Dynamic imports so TSX_TSCONFIG_PATH is set before tsx reads it.
 const { register } = await import("tsx/esm/api");
 register();

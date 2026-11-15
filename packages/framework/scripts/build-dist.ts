@@ -97,6 +97,9 @@ const node = await esbuild.build({
   // node-pre-gyp lists its nw.js page among its modules; the bundle carries it as text.
   loader: { ".html": "text" },
   metafile: true,
+  // Each file's map carries the TypeScript it came from, so a stack trace names src/ lines
+  // once Node reads maps (`bin/curb.js` turns that on before it loads dist/).
+  sourcemap: true,
   logLevel: "warning",
   legalComments: "none",
   define: { "process.env.CURB_COMPILED": JSON.stringify("1") },
@@ -127,6 +130,7 @@ const client = await esbuild.build({
   jsx: "automatic",
   external: installed,
   metafile: true,
+  sourcemap: true,
   logLevel: "warning",
   legalComments: "none",
 });
@@ -151,6 +155,16 @@ await viteBuild({
 
 // 5. The licenses of what was bundled.
 writeFileSync(join(dist, "THIRD_PARTY_LICENSES.md"), licenseNotice([node.metafile, client.metafile]));
+
+// 5b. The maps name a bundled package by its path in this checkout (`../../../node_modules/x`),
+// which points outside an installed package; name it as the package's own copy instead.
+for (const output of [...Object.keys(node.metafile.outputs), ...Object.keys(client.metafile.outputs)]) {
+  if (!output.endsWith(".map")) continue;
+  const path = join(root, output);
+  const map = JSON.parse(readFileSync(path, "utf8")) as { sources: string[] };
+  map.sources = map.sources.map((source) => source.replace(/^(?:\.\.\/)+node_modules\//, "../node_modules/"));
+  writeFileSync(path, JSON.stringify(map));
+}
 
 // 6. No runtime require of an installed package is left for `curb build` to miss.
 const requiredAtRunTime = Object.keys(node.metafile.outputs)
