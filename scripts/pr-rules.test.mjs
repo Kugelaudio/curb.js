@@ -205,12 +205,13 @@ test("Dependabot's group suffix does not count toward the title length", () => {
   assert.match(titleErrors(GROUPED_TITLE, "someone").at(-1), /^title-subject: /);
   assert.match(titleErrors(GROUPED_TITLE, "someone")[0], /^title-length: the title is 122 /);
   const long = "chore(deps): Bump ".padEnd(MAX_TITLE_LENGTH + 1, "a");
-  assert.match(titleErrors(`${long} in the minor-and-patch group across 1 directory`, DEPENDABOT_LOGIN)[0], /^title-length: the title is 101 /);
+  const grouped = `${long} in the minor-and-patch group across 1 directory`;
+  assert.match(titleErrors(grouped, DEPENDABOT_LOGIN)[0], /^title-length: the title is 101 /);
   assert.match(titleErrors(`${GROUPED_TITLE}.`, DEPENDABOT_LOGIN)[0], /^title-length: /);
 });
 
 test("a person's title over the limit still fails, whatever it ends with", () => {
-  const person = "chore(deps): bump @astrojs/markdown-remark from 7.3.5 to 7.3.6 in /website in the minor-and-patch group across 1 directory";
+  const person = GROUPED_TITLE.replace("Bump", "bump");
   assert.match(titleErrors(person, "someone")[0], /^title-length: the title is 122 /);
   assert.match(titleErrors("fix: ".padEnd(MAX_TITLE_LENGTH + 1, "a"), "someone")[0], /^title-length: /);
 });
