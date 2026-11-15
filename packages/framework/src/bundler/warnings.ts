@@ -11,15 +11,12 @@
  * reason, never a blanket filter: a new kind of failure stays loud.
  */
 
-import { NATIVE_PACKAGES, RUNTIME_REQUIRED_PACKAGES, UNUSED_OPTIONAL_PEERS } from "./externals.js";
 
 export type WarningClass =
   | "platform-variant"
   | "sharp-build-probe"
   | "unparseable-text"
   | "optional-accelerator"
-  | "declared-external"
-  | "unused-optional-peer"
   | "unclassified";
 
 export type ClassifiedWarning = {
@@ -57,24 +54,8 @@ export function classifyWarning(text: string): WarningClass {
   if (UNPARSEABLE.test(text)) return "unparseable-text";
   if (OPTIONAL_ACCELERATORS.includes(dependency)) return "optional-accelerator";
   if (SHARP_BUILD_PROBE.test(dependency)) return "sharp-build-probe";
-  // Before the platform check, because these names carry no platform token and the
-  // reason they are benign is specific: the build already seeded the package from the
-  // framework, so only the isolated bundle copy fails to reach it.
-  if (NATIVE_PACKAGES.includes(dependency) || RUNTIME_REQUIRED_PACKAGES.includes(dependency)) {
-    return "declared-external";
-  }
-  if (isUnusedOptionalPeer(dependency)) return "unused-optional-peer";
   if (PLATFORM_TOKEN.test(dependency)) return "platform-variant";
   return "unclassified";
-}
-
-/**
- * An `UNUSED_OPTIONAL_PEERS` package or one of its subpaths (`@modelcontextprotocol/client/stdio`).
- * The bundle keeps the dependency's lazy `import()` of it as an external, so the tracer looks
- * for it and cannot find it: it is not installed, and nothing Curb runs calls that import.
- */
-function isUnusedOptionalPeer(dependency: string): boolean {
-  return UNUSED_OPTIONAL_PEERS.some((name) => dependency === name || dependency.startsWith(`${name}/`));
 }
 
 export type WarningSummary = {
@@ -89,8 +70,6 @@ export function summarizeWarnings(warnings: string[]): WarningSummary {
     "sharp-build-probe": 0,
     "unparseable-text": 0,
     "optional-accelerator": 0,
-    "declared-external": 0,
-    "unused-optional-peer": 0,
     unclassified: 0,
   };
   const unclassified: string[] = [];
@@ -110,9 +89,4 @@ export const CLASS_EXPLANATION: Record<Exclude<WarningClass, "unclassified">, st
   "sharp-build-probe": "sharp build-only path; packaged prebuilds do not load it at runtime",
   "unparseable-text": "licence or notice file the tracer tried to parse as JavaScript",
   "optional-accelerator": "optional native speedup; ws falls back to pure JavaScript",
-  "declared-external":
-    "declared external or runtime-required package, traced separately from the framework " +
-    "(the isolated trace seed cannot resolve it, deliberately)",
-  "unused-optional-peer":
-    "optional peer of a bundled dependency that Curb never installs or calls (left external)",
 };

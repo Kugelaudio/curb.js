@@ -1,7 +1,6 @@
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { createRequire } from "node:module";
 import * as esbuild from "esbuild";
@@ -53,7 +52,6 @@ import {
   mergeDependencyLayerFiles,
   type AppLayerLayout,
   readDependencyLayerDescriptor,
-  traceFilesOnlyFromBundleCopy,
   writeLayerRecords,
 } from "./layers.js";
 import { findLayerEscape, unresolvedImportEscape } from "./layer-escape.js";
@@ -436,7 +434,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
 
   // A dependency-layer build has its dependency tree already: the descriptor names it.
   if (!options.skipTrace && !descriptor) {
-    // 4. Trace the BUNDLED JavaScript, not the source.
+    // 4. Trace what the bundle leaves to runtime: the externals, never the bundle itself.
     //
     // `base` must contain the dependencies, not just the project. npm hoists shared
     // packages to the workspace root, so a project inside a workspace has few or no
@@ -509,34 +507,19 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     // Whole-copy and trace are complementary here, not alternatives: the copy
     // guarantees a complete package (the tracer skipped package.json), the trace
     // guarantees its dependency closure.
-    // The bundle is traced from an ISOLATED COPY, not where it was written.
     //
-    // The tracer resolves a seed's imports by walking UP from it, so a bundle written
-    // inside a checkout resolves that checkout's node_modules and drags packages into the
-    // artifact that the same bundle written to /tmp never sees -- an in-place build of the
-    // insurance example shipped the repository root's commander@7, which is precisely the
-    // version dependency-mirror.ts exists to keep away from @livekit/agents. Two builds of
-    // one revision differing only in --out then produced different trees and different
-    // treeDigests, and artifact identity stopped being a function of the revision.
-    //
-    // The same isolation argument verify.ts makes about STARTING an artifact inside the
-    // repository applies to tracing one. The bundle's own externals are seeded below from
-    // the framework's location, deliberately, so nothing is lost by denying the seed an
-    // ancestry it must not have had.
-    const traceHome = await mkdtemp(join(tmpdir(), "curb-trace-"));
-    const traceSeed = join(traceHome, "worker.mjs");
-    await cp(outFile, traceSeed);
-    // Resolved, because the OS temp directory is a symlink on macOS and the tracer
-    // reports real paths: comparing against the unresolved name would fail to recognise
-    // the seed's own files and copy the bundle into itself under a /private/... path.
-    const traceHomeReal = await realpath(traceHome);
-
-    const seeds = [traceSeed];
-    const externalOwnedRoots: string[] = [];
+    // The bundle itself is NOT a trace seed. esbuild already resolved everything it imports,
+    // and the metafile is the source of truth for that, the way Next.js keeps its compiled
+    // server chunks out of nft. What the bundle leaves to runtime is exactly the externals
+    // below, seeded from the framework's location. Parsing the bundle as well cost most of
+    // the build (tens of seconds for a framework-sized file on one CPU) and added nothing:
+    // from an isolated copy it resolves no package, and from its real place it would resolve
+    // the checkout's node_modules instead of the framework's. Leaving it out also keeps the
+    // dependency layer a function of the install alone, since no seed carries agent code.
+    const seeds: string[] = [];
     for (const name of NATIVE_PACKAGES) {
       const packageRoot = resolvePackageRoot(name, frameworkDir);
       if (!packageRoot) continue;
-      externalOwnedRoots.push(relative(base, packageRoot).split(sep).join("/"));
       const require = createRequire(join(frameworkDir, "index.js"));
       try {
         seeds.push(require.resolve(name));
@@ -555,61 +538,13 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
             `  Run npm install, then build again.`,
         );
       }
-      externalOwnedRoots.push(relative(base, packageRoot).split(sep).join("/"));
       seeds.push(createRequire(join(frameworkDir, "index.js")).resolve(name));
     }
     // Loaded here, not at the top of the module: a --dependency-layer build never traces and
     // must not pay to load the tracer either (layer contract L1).
     const { nodeFileTrace } = await import("@vercel/nft");
-    let traced;
-    try {
-      // mcp.servers.json is the agent's configuration, not a runtime dependency. The tracer
-      // reached it through the framework's `join(process.cwd(), "mcp.servers.json")`, which
-      // put agent content in the dependency layer; the assets stage below copies it instead.
-      const mcpServersTraceKey = relative(base, join(projectRoot, MCP_SERVERS_FILENAME));
-      traced = await nodeFileTrace(seeds, { base, ignore: (path) => path === mcpServersTraceKey });
-    } finally {
-      await rm(traceHome, { recursive: true, force: true });
-    }
-    timer.mark("trace", "@vercel/nft over the bundle and the external seeds");
-
-    if (emitLayersDir) {
-      // The bundle copy is the one seed that carries agent code. A file only it reaches
-      // would make the dependency layer a function of the agent, and a reused layer would
-      // be missing it. Checked before the copy, so the refusal costs nothing more.
-      const isBundleCopy = (file: string): boolean => {
-        const absolute = join(base, file);
-        return absolute.startsWith(traceHome + sep) || absolute.startsWith(traceHomeReal + sep);
-      };
-      // nft may merge an explicit seed's reason with the bundle's import reason and retain
-      // only the latter. Keep the caller-owned seed set explicit instead of trying to
-      // reconstruct it from that lossy provenance map.
-      const externalSeeds = new Set(
-        seeds.slice(1).map((file) => relative(base, file).split(sep).join("/")),
-      );
-      const isExternalOwned = (file: string): boolean => {
-        if (externalSeeds.has(file)) return true;
-        for (const root of externalOwnedRoots) {
-          if (!file.startsWith(root + "/")) continue;
-          const withinPackage = file.slice(root.length + 1);
-          if (!withinPackage.split("/").includes("node_modules")) return true;
-        }
-        return false;
-      };
-      const fromBundle = traceFilesOnlyFromBundleCopy(
-        traced.reasons,
-        traced.fileList,
-        isBundleCopy,
-        isExternalOwned,
-      );
-      if (fromBundle.length > 0) {
-        throw new Error(
-          `curb build --emit-layers: the isolated bundle copy contributed ${fromBundle.length} ` +
-            `trace file(s) no external seed reaches: ${fromBundle.slice(0, 5).join(", ")}.\n` +
-            `  The dependency layer must not depend on agent code, so no layer records were written.`,
-        );
-      }
-    }
+    const traced = await nodeFileTrace(seeds, { base });
+    timer.mark("trace", "@vercel/nft over the external seeds");
 
     // Traced files land at the artifact ROOT, preserving their node_modules/... path,
     // so Node's ordinary upward resolution from entry/worker.mjs finds them at
@@ -620,14 +555,6 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     for (const file of traced.fileList) {
       // Traced paths are relative to `base`, not to the project.
       const absolute = join(base, file);
-      // The bundle traces itself, through the isolated copy above; it is already in place.
-      if (
-        absolute === outFile ||
-        absolute.startsWith(traceHome + sep) ||
-        absolute.startsWith(traceHomeReal + sep)
-      ) {
-        continue;
-      }
       // Anything already inside the artifact is a file this build just placed there:
       // the externals are copied whole BEFORE the trace, and the tracer resolves the
       // bundle's imports against them rather than against their source location. Copying

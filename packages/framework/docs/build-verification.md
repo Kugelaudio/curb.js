@@ -353,8 +353,8 @@ hosted build). Everything else is the
 versions, and Silero's ONNX model. The model is copied beside the generated entries because
 the bundled Silero JavaScript resolves it relative to `import.meta.url`; it is still
 dependency content rather than app content. The dependency layer depends on the install
-alone, because the trace is seeded from an isolated copy of the bundle that cannot resolve
-`node_modules`. A builder can therefore reuse it across revisions whose lockfile has not
+alone, because the trace is seeded only from the externals, never from the bundle: esbuild
+already resolved everything the bundle imports. A builder can therefore reuse it across revisions whose lockfile has not
 changed.
 
 ### `curb build --emit-layers <dir>`
@@ -377,12 +377,9 @@ generated files as `{importer, specifier, kind, resolved}`. `recordedExternals` 
 bare specifiers esbuild left external. Node builtins are in neither: nothing in
 `node_modules` can change one.
 
-The build fails (exit 1, never 75) and writes no records when either layer could leak into
-the other:
-
-- the isolated bundle copy reached a trace file that no external seed reaches, which would
-  make the dependency layer a function of agent code;
-- a dependency stage wrote an entry, `assets/`, `mcp.servers.json` or the manifest.
+The build fails (exit 1, never 75) and writes no records when a dependency stage wrote an
+entry, `assets/`, `mcp.servers.json` or the manifest, which would let the dependency layer
+leak into the app layer.
 
 `--emit-layers` cannot be combined with `--no-trace` or `--dependency-layer`.
 
