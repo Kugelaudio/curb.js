@@ -25,8 +25,8 @@ export function conversationTime(startedAt: number, now = new Date()): string {
 /**
  * Above the conversation: its history (the picker names the conversation on screen and
  * restores earlier ones), the button that starts a new one right beside it, and the hand-off
- * to a coding agent, which is how the agent gets changed. An empty conversation is the new
- * one already, so it shows no button for it.
+ * to a coding agent, which is how the agent gets changed. The button shows above an empty
+ * conversation too: it is how a person learns where a new one starts.
  */
 export function ConversationHeader({
   conversations,
@@ -102,12 +102,10 @@ export function ConversationHeader({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      {hasMessages ? (
-        <Button variant="ghost" size="sm" disabled={running} onClick={onNew}>
-          <SquarePenIcon aria-hidden="true" />
-          New conversation
-        </Button>
-      ) : null}
+      <Button variant="ghost" size="sm" disabled={running} onClick={onNew}>
+        <SquarePenIcon aria-hidden="true" />
+        New conversation
+      </Button>
       <span className="flex-1" />
       {hasMessages ? <CopyForCodingAgent onCopy={onCopyForCodingAgent} /> : null}
     </div>

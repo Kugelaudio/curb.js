@@ -21,12 +21,14 @@ function header(conversations: readonly ConversationSummary[], activeId: string,
 }
 
 describe("the conversation header", () => {
-  it("offers history, and nothing else, above a conversation nobody has said anything in", () => {
-    const html = header([{ id: "a", agentId: null, startedAt, title: "New conversation", messageCount: 0 }], "a");
+  it("offers history and New conversation above a conversation nobody has said anything in", () => {
+    const html = header([{ id: "a", agentId: null, startedAt, title: "Untitled", messageCount: 0 }], "a");
     expect(html).toContain('aria-label="Conversation history"');
     expect(html).toContain(">History<");
-    // The empty conversation is the new one already.
-    expect(html).not.toContain("New conversation");
+    // Always there, so a person sees where a new one starts before they need it.
+    expect(html).toContain("New conversation");
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>).)*New conversation/s);
+    // Nothing to hand to a coding agent yet.
     expect(html).not.toContain("Copy for coding agent");
   });
 
