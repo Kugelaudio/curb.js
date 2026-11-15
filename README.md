@@ -34,8 +34,6 @@ import { useState } from "react";
 import { Agent, GlobalTools, Skill, Skills, SystemPrompt, Tool, defineAgent, z } from "curb";
 import { kugelaudio } from "curb/providers";
 
-const SLOTS = ["Tuesday 9:00", "Tuesday 14:30", "Thursday 11:00"] as const;
-
 function App() {
   const [booked, setBooked] = useState<string>();
 
@@ -46,13 +44,13 @@ function App() {
         Reply in one or two sentences, because the caller listens.
       `}</SystemPrompt>
 
-      {booked ? `The caller is booked for ${booked}.` : `Free slots: ${SLOTS.join(", ")}.`}
+      {booked ? `The caller is booked for ${booked}.` : "Free slots: Tuesday 9:00, Thursday 11:00."}
 
       <GlobalTools>
         <Tool
           name="book_repair"
           description="Book a repair appointment in a free slot."
-          schema={z.object({ slot: z.enum(SLOTS), name: z.string() })}
+          schema={z.object({ slot: z.string() })}
           onSubmit={({ slot }) => {
             setBooked(slot);
             return { ok: true, message: `Booked for ${slot}.` };
