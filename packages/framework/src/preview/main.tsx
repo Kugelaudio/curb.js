@@ -450,6 +450,7 @@ function App() {
               notices={notices}
               call={call}
               blocked={blocked}
+              onShowProblems={openProblems}
             />
           </section>
         </ContextColumnLayout>

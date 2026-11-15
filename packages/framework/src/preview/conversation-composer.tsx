@@ -54,6 +54,12 @@ export type ComposerCall = {
   onMicrophoneMenuOpen: () => void;
 };
 
+/** What Start call does: while the agent cannot answer, it shows why instead of starting a
+ * call that would fail. */
+export function startCallClick(blocked: boolean, onStart: () => void, onShowProblems: () => void): () => void {
+  return blocked ? onShowProblems : onStart;
+}
+
 /**
  * One row: the field with its send button, and beside it the call, named on its button.
  * In a call the field stays for typing, and the call's own controls (mute, the microphone,
@@ -69,6 +75,7 @@ export function Composer({
   notices,
   call,
   blocked,
+  onShowProblems,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -78,8 +85,10 @@ export function Composer({
   notices: readonly ComposerNotice[];
   call: ComposerCall;
   /** The agent cannot answer (a key it needs is not set; the page says which): nothing can be
-   * typed or sent, and no call started. */
+   * typed or sent, and Start call opens the problems instead of a call. */
   blocked: boolean;
+  /** Opens the window that says what stops the agent and how to fix it. */
+  onShowProblems: () => void;
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [multiline, setMultiline] = useState(false);
@@ -155,8 +164,8 @@ export function Composer({
             <Button
               size="xl"
               className="shadow-[0_6px_20px_-10px_rgb(0_0_0/0.3)]"
-              disabled={blocked || call.connecting}
-              onClick={call.onStart}
+              disabled={call.connecting}
+              onClick={startCallClick(blocked, call.onStart, onShowProblems)}
             >
               {call.connecting ? (
                 <LoaderIcon className="animate-spin" aria-hidden="true" />

@@ -201,7 +201,7 @@ keys) page through them. Each problem says what is wrong and how to fix it, and
   gives the line to paste: the variable for `.env`, or `npx curb login` for the
   KugelAudio model. For OpenAI and Anthropic it links to the page that issues
   the key. It opens by itself the first time, and **Your agent cannot answer
-  yet** above the conversation opens it again.
+  yet** above the conversation, or **Start call**, opens it again.
 - **Error** and **Warning**: the `curb check` output (unreachable skills,
   duplicate tools, missing routing descriptions, oversized skills …), each with
   its location. The same output appears in the server startup log; after a
