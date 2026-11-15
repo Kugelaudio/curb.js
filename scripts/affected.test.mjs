@@ -121,11 +121,11 @@ const gateJob = testYml.slice(testYml.indexOf("\n  gate:\n"));
 /** Runs gate's own script, the way a GitHub step does, with these job results. */
 function gate(results) {
   const script = /run: \|\n((?:          .*\n)+)/.exec(gateJob)[1];
-  return spawnSync("bash", ["-e", "-c", script], { env: { ...process.env, ...results } }).status;
+  return spawnSync("bash", ["-e", "-c", script], { env: { ...process.env, MACOS: "success", WINDOWS: "success", ...results } }).status;
 }
 
 test("gate reports on every run, and waits for every job", () => {
-  assert.match(gateJob, /needs: \[affected, test, package, website\]/);
+  assert.match(gateJob, /needs: \[affected, test, test-macos, test-windows, package, website\]/);
   assert.match(gateJob, /if: always\(\)/);
   assert.match(gateJob, /PACKAGE: \$\{\{ needs\.package\.result \}\}/);
   assert.match(gateJob, /WEBSITE: \$\{\{ needs\.website\.result \}\}/);
@@ -142,6 +142,16 @@ test("gate fails when the website suite fails, and when it is cancelled", () => 
 test("gate fails when the package job fails, and when it is cancelled", () => {
   for (const PACKAGE of ["failure", "cancelled"]) {
     assert.equal(gate({ AFFECTED: "success", TEST: "success", PACKAGE, WEBSITE: "success" }), 1, `package ${PACKAGE}`);
+  }
+});
+
+test("gate fails when the macOS or Windows suite fails, and when it is cancelled", () => {
+  assert.match(gateJob, /MACOS: \$\{\{ needs\.test-macos\.result \}\}/);
+  assert.match(gateJob, /WINDOWS: \$\{\{ needs\.test-windows\.result \}\}/);
+  for (const result of ["failure", "cancelled"]) {
+    for (const key of ["MACOS", "WINDOWS"]) {
+      assert.equal(gate({ AFFECTED: "success", TEST: "success", PACKAGE: "success", WEBSITE: "success", [key]: result }), 1, `${key} ${result}`);
+    }
   }
 });
 

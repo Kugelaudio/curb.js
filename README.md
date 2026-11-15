@@ -98,7 +98,7 @@ Whatever the component renders is what the agent knows and can do right now.
 
 ## Quickstart
 
-You need Node.js 22.12 or newer.
+You need Node.js 22.12 or newer, on Linux, macOS or Windows.
 
 ```bash
 npm create curb.js my-agent

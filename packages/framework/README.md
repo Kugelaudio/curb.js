@@ -20,7 +20,7 @@ knows and what it can do, as React components.
 
 ## Quickstart
 
-You need Node.js 22.12 or newer.
+You need Node.js 22.12 or newer, on Linux, macOS or Windows.
 
 ```bash
 npm create curb.js my-agent
