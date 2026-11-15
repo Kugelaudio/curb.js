@@ -18,8 +18,12 @@
 curb.js gives you a working voice agent out of the box. You write what it
 knows and what it can do, as React components.
 
-**You write** the system prompt, the tools and the knowledge. **Curb runs** the call:
-speech-to-text, the LLM and text-to-speech, turn-taking and interruptions.
+| You write | Curb runs for you |
+| --- | --- |
+| Who the agent is: a system prompt | Speech-to-text, the LLM and text-to-speech, each swappable in one line |
+| What it can do: tools, as functions with typed input | Turn-taking, interruptions and pauses on a live call |
+| What it knows: skills and plain markdown | The model's request on every turn: only the instructions and tools your state allows |
+| Conversations to keep as tests | A preview where you talk to the agent and see what the model saw |
 
 A receptionist for a bike workshop, in `src/agent/agent.tsx`:
 
