@@ -8,7 +8,7 @@
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License" src="https://img.shields.io/npm/l/create-curb.js.svg?style=for-the-badge&labelColor=000000"></a>
 </div>
 
-`create-curb.js` creates a Curb voice agent in one command. You need Node.js 22.12 or newer.
+`create-curb.js` creates a Curb voice agent in one command. You need Node.js 22.12 or newer, on Linux or macOS, or on Windows through WSL.
 
 ```bash
 npm create curb.js my-agent
