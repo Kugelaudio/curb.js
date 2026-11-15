@@ -1,11 +1,13 @@
 import { CircleAlertIcon, CircleCheckIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react";
-import { Button } from "@/components/ui/button.js";
+import { Button, buttonVariants } from "@/components/ui/button.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select.js";
+import { cn } from "@/lib/utils.js";
 import { agentName } from "./agent-sphere.js";
 import { contextShortcutLabel } from "./context-column-state.js";
-import { CurbLogo } from "./curb-logo.js";
+import { CURB_REPOSITORY, CurbLogo, GitHubMark } from "./curb-logo.js";
 
-/** The page's top bar: whose preview this is, and whether the agent has problems. */
+/** The page's top bar: Curb's name and where its code lives, the agent picker when a project
+ * has several, and whether the agent has problems. */
 export function TopBar({
   agents,
   activeAgentId,
@@ -28,6 +30,17 @@ export function TopBar({
   return (
     <header className="flex h-[60px] items-center gap-3 border-b border-border/70 bg-card px-6">
       <CurbLogo size={26} className="shrink-0" />
+      <h1 className="m-0 text-base font-semibold tracking-[-0.01em]">Curb.js</h1>
+      <a
+        className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "-mx-1.5 text-muted-foreground hover:text-foreground")}
+        href={CURB_REPOSITORY}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Curb.js on GitHub"
+        title="Curb.js on GitHub"
+      >
+        <GitHubMark />
+      </a>
       {agents.length > 1 ? (
         <Select
           value={activeAgentId}
@@ -37,7 +50,7 @@ export function TopBar({
         >
           <SelectTrigger
             aria-label="Agent"
-            className="-ml-2 h-9 border-transparent bg-transparent pr-2 pl-2 text-base font-semibold tracking-[-0.01em] hover:bg-accent"
+            className="h-9 border-transparent bg-transparent pr-2 pl-2 text-sm font-medium hover:bg-accent"
           >
             <SelectValue>{(id: string) => agentName(id)}</SelectValue>
           </SelectTrigger>
@@ -49,9 +62,7 @@ export function TopBar({
             ))}
           </SelectContent>
         </Select>
-      ) : (
-        <h1 className="m-0 text-base font-semibold tracking-[-0.01em]">{agentName(activeAgentId)}</h1>
-      )}
+      ) : null}
       <span className="text-[0.8125rem] text-muted-foreground">Local preview</span>
       <span className="flex-1" />
       <ChecksStatus count={problems} onOpen={onOpenDiagnostics} />
