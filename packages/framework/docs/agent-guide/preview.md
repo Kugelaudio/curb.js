@@ -53,6 +53,14 @@ bar that names the agent (a picker when the project has several) and says
 whether it has problems: **No problems**, or how many there are, which opens
 them (see [Problems](#problems)).
 
+The border between the two is the handle of **Agent context**: drag it to
+resize the column, double-click it for the default width, and drag it to the
+window's edge to hide the column. The button at the right of the top bar and
+`Cmd+\` (`Ctrl+\` on Windows and Linux) hide and show it too; a hidden column
+comes back by dragging or clicking the window's right edge. The width and
+whether it shows are remembered in the browser. In a narrow window the column
+starts hidden and lies over the conversation when opened.
+
 Nothing in the preview edits the agent; the code under `src/agent/` does, and
 **Copy for coding agent** (see below) hands your coding agent a real
 conversation to work from.
