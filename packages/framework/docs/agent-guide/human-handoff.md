@@ -29,13 +29,16 @@ import { Agent, GlobalTools, Handoff, SystemPrompt } from "curb";
 |---|---|---|
 | The caller asks for a person ("Ich möchte mit einem Menschen sprechen") | `caller_requested` | the model |
 | The agent cannot help: the caller keeps repeating themselves, it cannot answer, or what they need is not something it can do | `agent_stuck` | the model |
-| 3 tool calls failed in a row, or 3 turns in a row got no reply from the model (`afterFailures`) | `agent_failure` | the framework, without asking the model |
+| 3 tool calls failed in a row, or 3 turns in a row ended without a reply (`afterFailures`) | `agent_failure` | the framework, without asking the model |
 
 The model passes a `summary` for the person taking over (who the caller is, what they want,
 what was already collected) and one `announce` sentence in the caller's language. When the
 framework hands off on its own, the caller hears a fixed line in the agent's language instead
 ("Entschuldigung, bei mir funktioniert gerade etwas nicht. Einen Moment, ich verbinde Sie mit
-einem Kollegen.").
+einem Kollegen."). When that handoff reaches nobody after turns without a reply, the model may
+still be down, so the caller hears the callback offer as a fixed line too ("Ich konnte gerade
+niemanden erreichen. Nennen Sie mir bitte Ihren Namen und die Nummer, unter der wir Sie
+zurückrufen können.").
 
 What happens next:
 
@@ -59,8 +62,10 @@ with `name`, `phone`, `reason` and `summary`. A traced call ([Tracing](./tracing
 
 **Tools that count.** Only your own tools count toward `afterFailures`: a tool result with
 `ok: false`, a handler that throws, or a `ToolInputError`. A tool call that works starts the count
-again; `read_skill`, `skip_turn`, `end_call` and the handoff's own tools count for neither. A turn
-that ends in a reply starts the turn count again. `afterFailures={false}` leaves it to the model.
+again; `read_skill`, `skip_turn`, `end_call` and the handoff's own tools count for neither. A call
+the caller confirmed (`<Tool confirm>`) counts when it runs. A turn without a reply is one where
+the model failed or timed out, answered nothing twice, or used all its steps; a turn that ends in
+a reply starts the turn count again. `afterFailures={false}` leaves it to the model.
 
 **Testing.** Under `curb say` and `curb test` no host answers, so a handoff within the hours ends
 as a callback offer: that tests the fallback. Pass `hours={() => false}` to test the closed path.

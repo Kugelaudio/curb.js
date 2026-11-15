@@ -20,7 +20,8 @@ export class FailureStreaks {
     else this.tools = [];
   }
 
-  /** A turn ended: in a reply, or with `failure` (the provider failed or timed out). */
+  /** A turn ended: in a reply, or without one, `failure` saying why (the provider failed or timed
+   * out, the model answered nothing, or the turn used all its steps). */
   turnEnded(failure?: string): void {
     if (failure === undefined) this.turns = [];
     else this.turns.push(failure);
@@ -53,6 +54,13 @@ export function handoffCall(
   skillPath: string | undefined,
 ): AgentToolCallRecord {
   return { id, name, input: { reason: "agent_failure", summary, announce }, ...(skillPath ? { skillPath } : {}) };
+}
+
+/** Whether a handoff tool's `result` says a person took the call (`<Handoff>` puts the outcome
+ * in its `data`). */
+export function handedOver(result: ToolResult): boolean {
+  const data = result.data;
+  return typeof data === "object" && data !== null && (data as { outcome?: unknown }).outcome === "answered";
 }
 
 /** A summary short enough for a call record and a person to read at a glance. */

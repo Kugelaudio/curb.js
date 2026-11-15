@@ -3,7 +3,9 @@ import { AgentSession, type AgentLlmClient } from "./agent-session.js";
 import { attachCallTrace, type CallbackRequestRecord, type CallTrace, type HandoffRecord } from "./call-trace.js";
 import { isWithinHours, parseOpeningHours, type HandoffHours, type OpeningHours } from "./handoff-hours.js";
 import { Agent, AgentAuthoringError, AgentSiteRuntime, GlobalTools, Handoff, Tool, type CallbackRequest, type HandoffProps } from "./index.js";
-import { fallbackReplies, handoffAnnouncement } from "./llm/localized.js";
+import { fallbackReplies, handoffAnnouncement, handoffUnreachedLine } from "./llm/localized.js";
+import { isConfirmationRequest } from "./llm/confirmation.js";
+import { z } from "./index.js";
 import type { AgentRunResponse, AgentTurnStreamEvent } from "./llm/types.js";
 import type { OutgoingHostMessage } from "./messages.js";
 import { kugelaudio } from "./providers.js";
@@ -47,6 +49,15 @@ function call(
     </Agent>,
   );
   if (options.phone !== false) runtime.updateInfo({ "caller.identity": "sip_caller-1", "caller.phoneNumber": "+491701234567" });
+  const { sent, handoffs, requests } = attachFakes(runtime, options.outcome);
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const tools = () => runtime.snapshot().context.tools.map((tool) => tool.name);
+  return { runtime, sent, handoffs, requests, callbacks, errors, tools };
+}
+
+/** A host that accepts `call.transfer` and reports `outcome` for it, and a trace recording every
+ * handoff and callback request, attached to `runtime`. */
+function attachFakes(runtime: AgentSiteRuntime, outcome: "answered" | "no_answer" | "busy" = "answered") {
   const sent: OutgoingHostMessage[] = [];
   runtime.messages.connectHost((message) => {
     sent.push(message);
@@ -56,7 +67,7 @@ function call(
         void runtime.messages.deliver("host", {
           id: "res-1",
           key: CALL_TRANSFER_RESULT_MESSAGE,
-          payload: { transferId: "t-1", outcome: options.outcome ?? "answered" },
+          payload: { transferId: "t-1", outcome },
         }),
       );
     });
@@ -73,9 +84,7 @@ function call(
     procedure: () => {},
   } as unknown as CallTrace;
   attachCallTrace(runtime.info, trace);
-  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-  const tools = () => runtime.snapshot().context.tools.map((tool) => tool.name);
-  return { runtime, sent, handoffs, requests, callbacks, errors, tools };
+  return { sent, handoffs, requests };
 }
 
 describe("<Handoff>", () => {
@@ -266,7 +275,7 @@ describe("the session hands off on its own", () => {
     expect(handoffs).toHaveLength(0);
   });
 
-  it("after three turns in a row got no reply, in place of the apology", async () => {
+  it("after three turns in a row got no reply, offering a callback in place of the apology when nobody is there", async () => {
     const { runtime, handoffs } = call({ props: { hours: CLOSED } });
     const down = new Error("provider unavailable");
     const target = session(runtime, [down, down, down]);
@@ -274,9 +283,66 @@ describe("the session hands off on its own", () => {
       (await turn(target, input)).flatMap((event) => (event.type === "delta" ? [event.delta] : [])).join("");
     expect(await heard("one")).toContain(fallbackReplies("en").turnFailed);
     expect(await heard("two")).toContain(fallbackReplies("en").turnFailed);
-    expect(await heard("three")).not.toContain(fallbackReplies("en").turnFailed);
+    const third = await heard("three");
+    expect(third).not.toContain(fallbackReplies("en").turnFailed);
+    // Never silence: nobody took the call and the model is down, so the callback offer is said.
+    expect(third).toContain(handoffUnreachedLine("en"));
     expect(handoffs).toEqual([
       expect.objectContaining({ reason: "agent_failure", outcome: "closed", summary: expect.stringContaining("provider unavailable") }),
     ]);
+  });
+
+  it("says nothing more after failed turns when a person took the call", async () => {
+    const { runtime, handoffs } = call();
+    const down = new Error("provider unavailable");
+    const target = session(runtime, [down, down, down]);
+    await turn(target, "one");
+    await turn(target, "two");
+    const third = (await turn(target, "three")).flatMap((event) => (event.type === "delta" ? [event.delta] : [])).join("");
+    expect(handoffs).toEqual([expect.objectContaining({ reason: "agent_failure", outcome: "answered" })]);
+    expect(third).toBe("");
+  });
+
+  it("counts an empty reply and the step limit as turns without a reply", async () => {
+    const empty = { text: "", toolCalls: [] };
+    const blank = call();
+    const silent = session(blank.runtime, [empty, empty, empty, empty, empty, empty]);
+    for (const input of ["one", "two", "three"]) await turn(silent, input);
+    expect(blank.handoffs).toEqual([expect.objectContaining({ reason: "agent_failure", summary: expect.stringContaining("empty_reply") })]);
+
+    // One step a turn, spent on a tool that works: every turn ends at the step limit.
+    const limited = call();
+    const greet = (id: string) => ({ text: "", toolCalls: [{ id, name: "greet", input: {} }] });
+    let calls = 0;
+    const busy = new AgentSession(limited.runtime, async () => greet(`g${++calls}`), { maxSteps: 1 });
+    for (const input of ["one", "two", "three"]) await turn(busy, input);
+    expect(limited.handoffs).toEqual([expect.objectContaining({ reason: "agent_failure", summary: expect.stringContaining("step_limit") })]);
+  });
+
+  it("hands off when the caller's yes runs the third failing call, before the model speaks again", async () => {
+    const refunds = new AgentSiteRuntime(
+      <Agent>
+        <GlobalTools>
+          <Handoff to="+493012345678" hours={OPEN} />
+          <Tool name="lookup" description="Look the order up." onCall={() => ({ ok: false, message: "The order service is down." })} />
+          <Tool
+            name="refund"
+            description="Refund the order."
+            schema={z.object({ amount: z.number() })}
+            confirm={(input) => `Refund ${input.amount} euros?`}
+            onSubmit={() => ({ ok: false, message: "The refund service is down." })}
+          />
+        </GlobalTools>
+      </Agent>,
+    );
+    const { handoffs } = attachFakes(refunds);
+    const steps: AgentRunResponse[] = [lookup("c1"), lookup("c2"), { text: "", toolCalls: [{ id: "r", name: "refund", input: { amount: 20 } }] }, { text: "Sorry about that.", toolCalls: [] }];
+    let step = 0;
+    const llm: AgentLlmClient = async (request) => (isConfirmationRequest(request) ? { text: "yes", toolCalls: [] } : (steps[step++] ?? { text: "ok", toolCalls: [] }));
+    const target = new AgentSession(refunds, llm);
+    await turn(target, "Refund my order please.");
+    expect(handoffs).toHaveLength(0);
+    await turn(target, "Yes.");
+    expect(handoffs).toEqual([expect.objectContaining({ reason: "agent_failure", summary: expect.stringContaining("refund") })]);
   });
 });

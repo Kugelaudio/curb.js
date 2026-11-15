@@ -38,11 +38,12 @@ import {
   DEFAULT_TIME_ZONE,
   fallbackReplies,
   handoffAnnouncement,
+  handoffUnreachedLine,
   isTimeZone,
   type AgentLanguage,
 } from "./llm/localized.js";
 import { toolMessage } from "./llm/tool-messages.js";
-import { FailureStreaks, handoffCall } from "./handoff-trigger.js";
+import { FailureStreaks, handedOver, handoffCall } from "./handoff-trigger.js";
 import { capTranscript, contextEvent, interruptedReply, withAudio, withToolCallRecord } from "./llm/transcript.js";
 import { closeAbandonedStream, llmTimeoutFromEnv, LlmTimeoutError, untilAborted } from "./llm/deadline.js";
 import { serializeLlmInput } from "./llm/serialize-input.js";
@@ -52,6 +53,7 @@ import {
   SKIP_TURN_TOOL_NAME,
   type ToolCallOutcome,
   type ToolDefinition,
+  type ToolResult,
 } from "./types.js";
 import { END_CALL_VOICE_STYLE } from "./voice-style.js";
 import { continuesHeardLine, joinHeardLine } from "./heard-line.js";
@@ -688,19 +690,29 @@ export class AgentSession {
       console.error(`[curb] turn ${kind}:`, failure.error);
       if (stepCall !== null) this.recordLlmError(stepCall, detail);
       unanswered = { kind, message: detail };
-      this.failures.turnEnded(`${kind}: ${detail}`);
-      // Failed often enough in a row: a person takes over instead of another apology.
-      const handoff = await this.handOffIfDue(messages);
-      if (handoff) {
-        const { skill, ...tool } = handoff.executed;
-        yield { type: "tool", ...tool };
-        if (skill) yield { type: "skill", ...skill };
-        return { reply: speech.reply, error: unanswered };
-      }
-    } else if (settled) {
-      this.failures.turnEnded();
     }
-    if (!unanswered) return { reply: speech.reply };
+    if (!unanswered) {
+      if (settled) this.failures.turnEnded();
+      return { reply: speech.reply };
+    }
+
+    // Every turn without a reply counts, a failure, an empty reply or the step limit alike. Often
+    // enough in a row, a person takes over instead of another apology.
+    this.failures.turnEnded(`${unanswered.kind}: ${unanswered.message}`);
+    const handoff = await this.handOffIfDue(messages);
+    if (handoff) {
+      const { skill, ...tool } = handoff.executed;
+      yield { type: "tool", ...tool };
+      if (skill) yield { type: "skill", ...skill };
+      // A person took the call: the agent says nothing more. Nobody did: the model is not
+      // answering, so the caller hears the callback offer in a fixed line rather than silence.
+      if (handedOver(handoff.result)) return { reply: speech.reply, error: unanswered };
+      const offer = handoffUnreachedLine(this.language());
+      const delta = speech.line(offer);
+      this.endedOnFallbackLine = true;
+      if (streaming && delta) yield { type: "delta", delta, text: offer };
+      return { reply: speech.reply, error: unanswered };
+    }
 
     // The caller hears a fixed line in the agent's language, right after whatever
     // the turn already said. The transcript does not record it: the model never
@@ -961,6 +973,14 @@ export class AgentSession {
     if (!toolCall.invalid) this.countToolRun(toolCall.name, outcome);
     yield { type: "tool", toolCall, ok: outcome.result.ok !== false, ...(durationMs === undefined ? {} : { durationMs }) };
     if (skill) yield { type: "skill", ...skill };
+    // The confirmed action may be the failure that hands the call off, before the model speaks.
+    const handoff = await this.handOffIfDue(next);
+    if (handoff) {
+      next = handoff.messages;
+      const { skill: handoffSkill, ...tool } = handoff.executed;
+      yield { type: "tool", ...tool };
+      if (handoffSkill) yield { type: "skill", ...handoffSkill };
+    }
     for (const change of this.procedureChanges()) yield { type: "procedure", ...change };
     return next;
   }
@@ -979,6 +999,7 @@ export class AgentSession {
     | {
         messages: AgentChatMessage[];
         executed: { toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number; skill?: SkillChange };
+        result: ToolResult;
       }
     | undefined
   > {
@@ -997,6 +1018,7 @@ export class AgentSession {
     next = this.append(next, toolMessage(toolCall, outcome));
     return {
       messages: next,
+      result: outcome.result,
       executed: {
         toolCall,
         ok: outcome.result.ok !== false,

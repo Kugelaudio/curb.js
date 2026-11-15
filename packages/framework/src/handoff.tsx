@@ -136,13 +136,14 @@ export function Handoff({
     if (!staffed) {
       report({ reason, summary, outcome: "closed" });
       setOpen({ reason, summary });
-      return offerCallback("Nobody is there to take the call right now (outside the hours).");
+      return { ...offerCallback("Nobody is there to take the call right now (outside the hours)."), data: { outcome: "closed" } };
     }
     const outcome = await transfer({ ...request, announce });
     report({ reason, summary, outcome: outcome.outcome, ...(outcome.code ? { code: outcome.code } : {}) });
-    if (outcome.outcome === "answered") return transferToolResult(outcome);
+    // The outcome rides along, so the session knows whether a person took the call (`handedOver`).
+    if (outcome.outcome === "answered") return { ...transferToolResult(outcome), data: { outcome: outcome.outcome } };
     setOpen({ reason, summary });
-    return offerCallback(unreached(outcome));
+    return { ...offerCallback(unreached(outcome)), data: { outcome: outcome.outcome } };
   };
 
   const offerCallback = (why: string): ToolResult => {
