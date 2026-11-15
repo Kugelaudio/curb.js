@@ -8,7 +8,8 @@ npm run upgrade
 
 This runs `curb upgrade`, which points the project's `curb` dependency at the latest version on npm
 and reinstalls. The guide in `node_modules/curb/docs/agent-guide/` updates with it, so a coding agent
-always reads the docs of the version it builds on. If the install fails, `package.json` is restored
+always reads the docs of the version it builds on. When the new version needs a newer React than
+the project allows, `react` and `react-dom` are raised with it. If the install fails, `package.json` is restored
 and nothing changes.
 
 To see whether a newer version exists without changing anything:

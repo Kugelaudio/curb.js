@@ -8,7 +8,9 @@ import {
   fetchNpmVersion,
   isFileSpec,
   isNpmSpec,
+  lowestVersion,
   notifyIfUpdateAvailable,
+  raisePeerFloors,
   resolveUpgrade,
   rewriteCurbDep,
   runUpgrade,
@@ -127,6 +129,59 @@ describe("rewriteCurbDep", () => {
 
   it("throws when there is no curb dependency to rewrite", () => {
     expect(() => rewriteCurbDep(JSON.stringify({ dependencies: {} }), spec)).toThrow(/no "curb" dependency/);
+  });
+});
+
+describe("lowestVersion", () => {
+  it("reads the lowest version of a single-comparator range", () => {
+    expect(lowestVersion("19.2.7")).toBe("19.2.7");
+    expect(lowestVersion("^19.2.7")).toBe("19.2.7");
+    expect(lowestVersion("~19.2")).toBe("19.2.0");
+    expect(lowestVersion(">=19.3.0")).toBe("19.3.0");
+    expect(lowestVersion("^19.3.0-rc.1")).toBe("19.3.0-rc.1");
+  });
+
+  it("gives up on anything else", () => {
+    for (const range of ["latest", "*", "19.x", "^18 || ^19", ">=19 <20", "npm:react@19.2.7", "file:../react"]) {
+      expect(lowestVersion(range)).toBeNull();
+    }
+  });
+});
+
+describe("raisePeerFloors", () => {
+  const peers = { react: "^19.3.0", "react-dom": "^19.3.0", "livekit-client": "^2.23.0" };
+
+  it("raises react and react-dom pinned below the new floor, and names each change", () => {
+    const text = pkgText.replace('"react": "^19.2.7"', '"react": "19.2.7"').replace('"react-dom": "^19.2.7"', '"react-dom": "~19.2.7"');
+    const { text: next, raised } = raisePeerFloors(text, peers);
+    expect(raised).toEqual([
+      { name: "react", from: "19.2.7", to: "^19.3.0" },
+      { name: "react-dom", from: "~19.2.7", to: "^19.3.0" },
+    ]);
+    const pkg = JSON.parse(next);
+    expect(pkg.dependencies).toEqual({ curb: "npm:curb.js@0.1.0", react: "^19.3.0", "react-dom": "^19.3.0" });
+    expect(Object.keys(pkg)).toEqual(["name", "private", "type", "scripts", "dependencies"]);
+    expect(next.endsWith("}\n")).toBe(true);
+  });
+
+  it("raises a caret range whose lowest version is below the floor, since npm keeps the locked one", () => {
+    expect(raisePeerFloors(pkgText, peers).raised.map(({ name }) => name)).toEqual(["react", "react-dom"]);
+  });
+
+  it("leaves a project already at or above the floor byte for byte as it was", () => {
+    const text = pkgText.replaceAll("^19.2.7", "^19.3.1");
+    expect(raisePeerFloors(text, peers)).toEqual({ text, raised: [] });
+  });
+
+  it("raises devDependencies too, and never curb itself or a dependency curb does not name", () => {
+    const text = JSON.stringify({ dependencies: { curb: "npm:curb.js@0.1.0", zod: "^3.0.0" }, devDependencies: { "livekit-client": "^2.0.0" } });
+    const { raised } = raisePeerFloors(text, { ...peers, curb: "^99.0.0" });
+    expect(raised).toEqual([{ name: "livekit-client", from: "^2.0.0", to: "^2.23.0" }]);
+  });
+
+  it("leaves tags, URLs and aliases as the project wrote them", () => {
+    const text = JSON.stringify({ dependencies: { react: "latest", "react-dom": "npm:react-dom@19.2.7" } });
+    expect(raisePeerFloors(text, peers)).toEqual({ text, raised: [] });
   });
 });
 
@@ -249,6 +304,53 @@ describe("where a project's upgrade reads from", () => {
     writeFileSync(join(dir, "package.json"), "{bad");
     await expect(runUpgrade(["--check"], dir)).rejects.toThrow(`${join(dir, "package.json")} is not valid JSON`);
     expect(asked).toEqual([]);
+  });
+
+  it("raises React to the floor of the version it installs, says so, and installs once", async () => {
+    const manifest = "https://registry.npmjs.org/curb.js/999.0.0";
+    const { dir, asked, logged } = project("npm:curb.js@1.0.0", {
+      [distTags]: { latest: newest },
+      [manifest]: { name: "curb.js", version: newest, peerDependencies: { react: "^19.3.0", "react-dom": "^19.3.0" } },
+    });
+    const pkgPath = join(dir, "package.json");
+    writeFileSync(pkgPath, JSON.stringify({ dependencies: { curb: "npm:curb.js@1.0.0", react: "19.2.7", "react-dom": "^19.3.1" } }));
+    const installed: unknown[] = [];
+    await runUpgrade([], dir, () => {
+      installed.push(JSON.parse(readFileSync(pkgPath, "utf8")).dependencies);
+      return { ok: true };
+    });
+    expect(asked).toEqual([distTags, manifest]);
+    expect(installed).toEqual([{ curb: `npm:curb.js@${newest}`, react: "^19.3.0", "react-dom": "^19.3.1" }]);
+    const out = logged.join("\n");
+    expect(out).toContain(`curb v${newest} needs react ^19.3.0: raising react from 19.2.7 to ^19.3.0.`);
+    expect(out).toContain("react is now ^19.3.0.");
+    expect(out).not.toContain("react-dom is now");
+  });
+
+  it("restores package.json, React included, when the install fails", async () => {
+    const manifest = "https://registry.npmjs.org/curb.js/999.0.0";
+    const { dir } = project("npm:curb.js@1.0.0", {
+      [distTags]: { latest: newest },
+      [manifest]: { peerDependencies: { react: "^19.3.0" } },
+    });
+    const pkgPath = join(dir, "package.json");
+    const before = JSON.stringify({ dependencies: { curb: "npm:curb.js@1.0.0", react: "19.2.7" } });
+    writeFileSync(pkgPath, before);
+    await expect(runUpgrade([], dir, () => ({ ok: false, cause: "exit code 1" }))).rejects.toThrow(
+      /npm install failed \(exit code 1\); package.json was restored/,
+    );
+    expect(readFileSync(pkgPath, "utf8")).toBe(before);
+  });
+
+  it("stops before changing anything when npm has no manifest for the version", async () => {
+    const { dir } = project("npm:curb.js@1.0.0", { [distTags]: { latest: newest } });
+    const before = readFileSync(join(dir, "package.json"), "utf8");
+    let installs = 0;
+    await expect(runUpgrade([], dir, () => (installs++, { ok: true }))).rejects.toThrow(
+      "npm returned HTTP 404 for https://registry.npmjs.org/curb.js/999.0.0.",
+    );
+    expect(installs).toBe(0);
+    expect(readFileSync(join(dir, "package.json"), "utf8")).toBe(before);
   });
 
   it("names the channel when npm has no such dist-tag", async () => {
