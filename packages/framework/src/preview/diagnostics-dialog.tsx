@@ -1,47 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckIcon, CircleAlertIcon, CircleCheckIcon, CircleXIcon, CopyIcon } from "lucide-react";
+import { CheckIcon, CircleAlertIcon, CircleXIcon, CopyIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog.js";
 import { formatAuthoringDiagnostic, formatAuthoringLocation, type AuthoringDiagnostic } from "../authoring.js";
+import { InlineText } from "./inline-code.js";
 
-/**
- * What `curb check` finds in the agent's code, each with where it is and the concrete fix:
- * written for a person scanning it and for a coding agent pasting it, the same text the
- * server log carries.
- */
-export function DiagnosticsDialog({
-  open,
-  onOpenChange,
-  diagnostics,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  diagnostics: readonly AuthoringDiagnostic[];
-}) {
-  const count = diagnostics.length;
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[640px]">
-        <DialogHeader>
-          <DialogTitle>{count === 0 ? "No problems" : `${count} ${count === 1 ? "problem" : "problems"}`}</DialogTitle>
-          <DialogDescription>
-            What <code>curb check</code> finds in your agent's code, with the fix for each. The server log has the same.
-          </DialogDescription>
-        </DialogHeader>
-        {count === 0 ? (
-          <p className="m-0 flex items-center gap-2 text-sm text-muted-foreground">
-            <CircleCheckIcon className="size-4 text-success" aria-hidden="true" />
-            Your agent's code has no authoring problems.
-          </p>
-        ) : (
-          <DiagnosticsList diagnostics={diagnostics} />
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** The problems, each with where it is, its fix and a copy button, and "Copy all" under them. */
+/** The problems of an agent that is not running, listed on the page that says so: each with
+ * where it is, its fix and a copy button, and "Copy all" under them. A running agent's
+ * problems show one at a time in the window of problems.tsx. */
 export function DiagnosticsList({ diagnostics }: { diagnostics: readonly AuthoringDiagnostic[] }) {
   const [copied, setCopied] = useState<{ target: string; ok: boolean } | null>(null);
   const reset = useRef<number | undefined>(undefined);
@@ -77,13 +42,15 @@ export function DiagnosticsList({ diagnostics }: { diagnostics: readonly Authori
               <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-destructive" aria-label="Warning" />
             )}
             <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-              <p className="m-0 font-medium">{diagnostic.message}</p>
+              <p className="m-0 font-medium">
+                <InlineText text={diagnostic.message} />
+              </p>
               <p className="m-0 text-[0.8125rem] text-muted-foreground">
                 {formatAuthoringLocation(diagnostic.location) || "Agent context"} · {diagnostic.code}
               </p>
               <p className="m-0 text-[0.8125rem]">
                 <span className="text-muted-foreground">Fix: </span>
-                {diagnostic.fix}
+                <InlineText text={diagnostic.fix} />
               </p>
             </div>
             <Button

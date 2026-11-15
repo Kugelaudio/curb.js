@@ -1,4 +1,3 @@
-import { KeyRoundIcon } from "lucide-react";
 import type { AuthoringDiagnostic } from "../authoring.js";
 import { AgentSphere } from "./agent-sphere.js";
 import { DiagnosticsList } from "./diagnostics-dialog.js";
@@ -35,26 +34,5 @@ export function AgentUnavailable({ message, diagnostics }: { message: string; di
         </section>
       </main>
     </div>
-  );
-}
-
-/**
- * Over the conversation while the agent needs a key `curb dev` does not have: the preview
- * still shows the agent, since its context (prompt, skills, tools) renders from source and
- * needs no model, and this says which key to set where. Saving .env reloads the agent.
- */
-export function MissingKeysBanner({ diagnostics }: { diagnostics: readonly AuthoringDiagnostic[] }) {
-  return (
-    <section className="mx-6 mt-4 flex flex-col gap-3" role="alert" aria-labelledby="missing-keys-title">
-      <h2 id="missing-keys-title" className="m-0 flex items-center gap-2 text-[15px] font-semibold">
-        <KeyRoundIcon className="size-4 text-destructive" aria-hidden="true" />
-        Your agent cannot answer yet
-      </h2>
-      <p className="m-0 text-sm text-muted-foreground">
-        What it is built from shows under Context. To talk to it, set the key below; the preview reloads when you save
-        .env.
-      </p>
-      <DiagnosticsList diagnostics={diagnostics} />
-    </section>
   );
 }

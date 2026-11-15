@@ -32,14 +32,22 @@ import { ConversationHeader } from "./conversation-header.js";
 import { ConversationPlayer, type ConversationReplayState } from "./conversation-player.js";
 import { ConversationThread } from "./conversation-thread.js";
 import { lastCallOf } from "./conversation-turns.js";
-import { AgentUnavailable, MissingKeysBanner, reloadNotice } from "./dev-reload.js";
-import { DiagnosticsDialog } from "./diagnostics-dialog.js";
+import { AgentUnavailable, reloadNotice } from "./dev-reload.js";
 import { resolveIcon } from "./icon.js";
 import { InstructionsDialog } from "./instructions-dialog.js";
 import { callForReply, dateLineOf } from "./model-input.js";
 import { ModelInputDialog } from "./model-input-dialog.js";
 import { pageInfoFromQuery, refusedPageInfoNotice } from "./page-info.js";
 import { pageBase, pathForRoute, routeForView, routeFromPath, viewForRoute, type PreviewView } from "./preview-route.js";
+import {
+  blockingSignature,
+  CannotAnswerPill,
+  opensByItself,
+  previewProblems,
+  ProblemsDialog,
+  readProblemsSeen,
+  writeProblemsSeen,
+} from "./problems.js";
 import { lockReasons } from "./skill-lock.js";
 import { SkillSheet } from "./skill-sheet.js";
 import { TopBar } from "./top-bar.js";
@@ -228,6 +236,16 @@ function App() {
   // The agent shows but cannot answer: a key it needs is not set (`curb dev` says which).
   const missingKeys = missingKeysOf(state);
   const blocked = missingKeys.length > 0;
+  // The window of problems opens by itself for one that stops the agent, once per problem:
+  // closing it is remembered, and it never replaces something the URL or the person opened.
+  const blocking = blockingSignature(missingKeys);
+  useEffect(() => {
+    if (opensByItself(blocking, readProblemsSeen()) && viewRef.current.overlay === null) {
+      navigate({ overlay: { kind: "diagnostics" } }, "replace");
+    }
+    // `navigate` only reads the client and the URL, which outlive every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocking]);
   const send = useCallback(
     (text: string) => {
       if (!text.trim() || holdsMessages || blocked) return;
@@ -322,6 +340,7 @@ function App() {
     // Asks for the microphone once, so the menu names the inputs instead of numbering them.
     onMicrophoneMenuOpen: () => void voiceClient.refreshMicrophones({ requestPermission: true }).catch(() => undefined),
   };
+  const problems = previewProblems(missingKeys, context.diagnostics);
   const recordings = voiceClient.getRecordings(state.activeConversation);
   const summary = instructionsSummary(context.systemPrompt ?? "");
 
@@ -335,7 +354,7 @@ function App() {
             client.selectAgent(id);
             navigate({ overlay: null }, "replace");
           }}
-          diagnostics={context.diagnostics}
+          problems={problems.length}
           onOpenDiagnostics={() => navigate({ overlay: { kind: "diagnostics" } })}
           contextOpen={contextColumn.open}
           onToggleContext={contextColumn.toggle}
@@ -390,7 +409,7 @@ function App() {
                 )
               }
             />
-            {blocked ? <MissingKeysBanner diagnostics={missingKeys} /> : null}
+            {blocked ? <CannotAnswerPill onOpen={() => navigate({ overlay: { kind: "diagnostics" } })} /> : null}
             <div className={recordings.length > 0 ? "px-6" : undefined}>
               <ConversationPlayer
                 recordings={recordings}
@@ -500,10 +519,14 @@ function App() {
         dateLine={dateLineOf(state.llmTrace.at(-1))}
         isNew={changes?.instructions ?? false}
       />
-      <DiagnosticsDialog
+      <ProblemsDialog
         open={view.overlay?.kind === "diagnostics"}
-        onOpenChange={(open) => (open ? undefined : closeOverlay())}
-        diagnostics={context.diagnostics}
+        onOpenChange={(open) => {
+          if (open) return;
+          if (blocking) writeProblemsSeen(blocking);
+          closeOverlay();
+        }}
+        problems={problems}
       />
       <TryToolDialog
         open={tryOpen}

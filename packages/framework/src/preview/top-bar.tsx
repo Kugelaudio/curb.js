@@ -1,16 +1,15 @@
 import { CircleAlertIcon, CircleCheckIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select.js";
-import type { AuthoringDiagnostic } from "../authoring.js";
 import { AgentSphere, agentName } from "./agent-sphere.js";
 import { contextShortcutLabel } from "./context-column-state.js";
 
-/** The page's top bar: whose preview this is, and whether `curb check` finds problems. */
+/** The page's top bar: whose preview this is, and whether the agent has problems. */
 export function TopBar({
   agents,
   activeAgentId,
   onSelectAgent,
-  diagnostics,
+  problems,
   onOpenDiagnostics,
   contextOpen,
   onToggleContext,
@@ -18,7 +17,8 @@ export function TopBar({
   agents: readonly string[];
   activeAgentId: string;
   onSelectAgent: (id: string) => void;
-  diagnostics: readonly AuthoringDiagnostic[];
+  /** How many problems the agent has: what stops it, and what `curb check` finds. */
+  problems: number;
   onOpenDiagnostics: () => void;
   /** The Context column shows; it hides to give a narrow window to the conversation. */
   contextOpen: boolean;
@@ -53,7 +53,7 @@ export function TopBar({
       )}
       <span className="text-[0.8125rem] text-muted-foreground">Local preview</span>
       <span className="flex-1" />
-      <ChecksStatus diagnostics={diagnostics} onOpen={onOpenDiagnostics} />
+      <ChecksStatus count={problems} onOpen={onOpenDiagnostics} />
       <Button
         variant="ghost"
         size="icon"
@@ -69,15 +69,8 @@ export function TopBar({
   );
 }
 
-/** "No problems", or how many `curb check` finds, which opens them. */
-function ChecksStatus({
-  diagnostics,
-  onOpen,
-}: {
-  diagnostics: readonly AuthoringDiagnostic[];
-  onOpen: () => void;
-}) {
-  const count = diagnostics.length;
+/** "No problems", or how many there are, which opens them. */
+function ChecksStatus({ count, onOpen }: { count: number; onOpen: () => void }) {
   return (
     <Button
       variant="ghost"

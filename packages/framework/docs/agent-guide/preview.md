@@ -49,8 +49,8 @@ keys in `.env`. The terminal prints one line per reload, naming the file:
 ## The page
 
 The conversation is on the left and **Agent context** on the right, under a top
-bar that names the agent (a picker when the project has several) and shows what
-`curb check` finds: **No problems**, or how many problems there are, which opens
+bar that names the agent (a picker when the project has several) and says
+whether it has problems: **No problems**, or how many there are, which opens
 them (see [Problems](#problems)).
 
 Nothing in the preview edits the agent; the code under `src/agent/` does, and
@@ -181,11 +181,20 @@ runtime; you never write those yourself, and typed turns never see them.
 
 ## Problems
 
-The `curb check` output (unreachable skills, duplicate tools, missing routing
-descriptions, oversized skills …) lives in the preview: the top bar says how
-many problems there are and opens them, each with a location, a concrete fix
-and a copy button for your coding agent. The same output appears in the server
-startup log; after a reload the terminal line counts the errors instead.
+Everything wrong with the agent shows in one window, one problem at a time: the
+top bar says how many there are and opens it, and the arrows (or the arrow
+keys) page through them. Each problem says what is wrong and how to fix it, and
+**Copy for your coding agent** copies it whole, with its location and code.
+
+- **Missing key**: the model the agent uses needs a key this process does not
+  have, so the agent shows but cannot answer. The window names the variable and
+  gives the line to paste: the variable for `.env`, or `npx curb login` for the
+  KugelAudio model. It opens by itself the first time, and **Your agent cannot
+  answer yet** above the conversation opens it again.
+- **Error** and **Warning**: the `curb check` output (unreachable skills,
+  duplicate tools, missing routing descriptions, oversized skills …), each with
+  its location. The same output appears in the server startup log; after a
+  reload the terminal line counts the errors instead.
 
 ## Copy for coding agent
 

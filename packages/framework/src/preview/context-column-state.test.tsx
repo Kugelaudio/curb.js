@@ -39,7 +39,7 @@ describe("the Context column", () => {
           agents={["support"]}
           activeAgentId="support"
           onSelectAgent={() => undefined}
-          diagnostics={[]}
+          problems={0}
           onOpenDiagnostics={() => undefined}
           contextOpen={contextOpen}
           onToggleContext={() => undefined}
