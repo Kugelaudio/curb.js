@@ -1,17 +1,17 @@
 import { useMemo } from "react";
-import { AUTHORING_DIAGNOSTIC_CODES, AgentAuthoringError } from "./authoring.js";
-import { callTraceOf, type CallTrace } from "./call-trace.js";
-import type { AgentInfo, AgentInfoStore } from "./info-store.js";
-import { useAgentInfoStore } from "./info-context.js";
-import { HostTimeoutError, HostUnavailableError, useAppMessages, type AppMessages } from "./messages.js";
+import { AUTHORING_DIAGNOSTIC_CODES, AgentAuthoringError } from "../../authoring.js";
+import { callTraceOf, type CallTrace } from "../../call-trace.js";
+import type { AgentInfo, AgentInfoStore } from "../../info-store.js";
+import { useAgentInfoStore } from "../../info-context.js";
+import { HostTimeoutError, HostUnavailableError, useAppMessages, type AppMessages } from "../../messages.js";
 import {
   checkTransferEndedOption,
   trackTransfer,
   untrackTransfer,
   type TrackedTransfer,
   type TransferEndedOption,
-} from "./transfer-ended.js";
-import { ToolInputError, type ToolResult } from "./types.js";
+} from "./ended.js";
+import { ToolInputError, type ToolResult } from "../../types.js";
 
 /**
  * Call transfer: put the caller of a hosted phone call through to another number.
@@ -25,7 +25,7 @@ import { ToolInputError, type ToolResult } from "./types.js";
  * follows once the target answered, did not, or the dial failed. Once the target is in the
  * room the voice host hands the call off (the agent stops listening and speaking) and takes
  * it back when the target leaves while the caller stays (`livekit-host/transfer-handoff.ts`),
- * or does what the request's `onEnded` decides instead (`transfer-ended.ts`).
+ * or does what the request's `onEnded` decides instead (`ended.ts`).
  *
  * What the caller hears meanwhile comes from the voice host ({@link TransferAudio}, attached
  * per call by `livekit-host/host.ts`): the request's `announce`, played to its end before
@@ -120,7 +120,7 @@ export interface TransferDeps {
   trace?: () => CallTrace | undefined;
   error?: (line: string) => void;
   /** Where an accepted transfer is tracked until it ends unanswered, so the voice host applies
-   * the request's `onEnded` once its target leaves (`transfer-ended.ts`). */
+   * the request's `onEnded` once its target leaves (`ended.ts`). */
   tracking?: {
     track: (transfer: TrackedTransfer) => void;
     untrack: (transferId: string) => void;

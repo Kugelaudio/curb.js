@@ -10,7 +10,7 @@
  * Extracted from `startLivekitVoiceAgent` so the rule is testable without a LiveKit room.
  */
 
-import type { TransferEndedDecision } from "../../../transfer-ended.js";
+import type { TransferEndedDecision } from "../../../blocks/transfer-call/ended.js";
 import { isCaller, type CallParticipant } from "./call-opening.js";
 
 /** The LiveKit identity of a transfer target starts with this (`sip_` + its caller ID). */
@@ -103,7 +103,7 @@ export type TransferEndedEffects = {
   error: (message: string) => void;
 };
 
-/** Carry out what the transfer's `onEnded` decided once its target left (`transfer-ended.ts`). */
+/** Carry out what the transfer's `onEnded` decided once its target left (`blocks/transfer-call/ended.ts`). */
 export async function applyTransferEnded(decision: TransferEndedDecision, effects: TransferEndedEffects): Promise<void> {
   if (effects.stale()) {
     effects.log(`the transfer's onEnded decided ${decision.action} after the call moved on: nothing to do`);

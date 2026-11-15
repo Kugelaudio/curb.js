@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { procedureChanges, proceduresOf } from "./procedure-progress.js";
-import type { PageBlock } from "./types.js";
+import { procedureChanges, proceduresOf } from "./progress.js";
+import type { PageBlock } from "../../types.js";
 
 function procedure(title: string, statuses: Array<"completed" | "current" | "locked">): PageBlock {
   return {

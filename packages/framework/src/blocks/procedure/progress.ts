@@ -1,5 +1,5 @@
-import type { ProcedurePayload } from "./blocks/procedure/definition.js";
-import type { PageBlock } from "./types.js";
+import type { ProcedurePayload } from "./definition.js";
+import type { PageBlock } from "../../types.js";
 
 /**
  * How far each `<Procedure>` in the compiled context is, and what changed between two looks at

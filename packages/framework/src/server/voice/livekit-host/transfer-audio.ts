@@ -1,5 +1,5 @@
 /**
- * What the caller of a phone call hears while it is transferred (`../../../transfer.tsx`): the
+ * What the caller of a phone call hears while it is transferred (`blocks/transfer-call/`): the
  * agent's announcement, played to its end before anything is dialed, then a ringback tone
  * until the outcome is known.
  *
@@ -26,7 +26,7 @@ import {
   type Room,
 } from "@livekit/rtc-node";
 import type { tts } from "@livekit/agents";
-import type { TransferAudio } from "../../../transfer.js";
+import type { TransferAudio } from "../../../blocks/transfer-call/index.js";
 
 export const TRANSFER_AUDIO_SAMPLE_RATE = 48_000;
 /** The European ringback: 425 Hz, 1 s on, 4 s off (ITU-T E.180 / ETSI ES 201 970). */

@@ -1,6 +1,6 @@
 import { ParticipantKind } from "@livekit/rtc-node";
 import { describe, expect, it, vi } from "vitest";
-import type { TransferEndedDecision } from "../../../transfer-ended.js";
+import type { TransferEndedDecision } from "../../../blocks/transfer-call/ended.js";
 import {
   TRANSFER_ENDED_PROMPT,
   TRANSFER_GOODBYE_TIMEOUT_MS,

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentSession, type AgentLlmClient } from "./agent-session.js";
-import { attachCallTrace, type CallbackRequestRecord, type CallTrace, type HandoffRecord } from "./call-trace.js";
-import { isWithinHours, parseOpeningHours, type HandoffHours, type OpeningHours } from "./handoff-hours.js";
+import { AgentSession, type AgentLlmClient } from "../../agent-session.js";
+import { attachCallTrace, type CallbackRequestRecord, type CallTrace, type HandoffRecord } from "../../call-trace.js";
+import { isWithinHours, parseOpeningHours, type HandoffHours, type OpeningHours } from "./hours.js";
 import {
   Agent,
   AgentAuthoringError,
@@ -13,14 +13,14 @@ import {
   ToolUnavailableError,
   type CallbackRequest,
   type HandoffProps,
-} from "./index.js";
-import { fallbackReplies, handoffAnnouncement, handoffUnreachedLine } from "./llm/localized.js";
-import { isConfirmationRequest } from "./llm/confirmation.js";
-import { z } from "./index.js";
-import type { AgentRunResponse, AgentTurnStreamEvent } from "./llm/types.js";
-import type { OutgoingHostMessage } from "./messages.js";
-import { kugelaudio } from "./providers.js";
-import { CALL_TRANSFER_RESULT_MESSAGE } from "./transfer.js";
+} from "../../index.js";
+import { fallbackReplies, handoffAnnouncement, handoffUnreachedLine } from "../../llm/localized.js";
+import { isConfirmationRequest } from "../../llm/confirmation.js";
+import { z } from "../../index.js";
+import type { AgentRunResponse, AgentTurnStreamEvent } from "../../llm/types.js";
+import type { OutgoingHostMessage } from "../../messages.js";
+import { kugelaudio } from "../../providers.js";
+import { CALL_TRANSFER_RESULT_MESSAGE } from "../transfer-call/index.js";
 
 afterEach(() => {
   vi.useRealTimers();
