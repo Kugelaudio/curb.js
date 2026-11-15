@@ -199,6 +199,8 @@ export class AgentSession {
   private lateCutReport = false;
   /** The failures in a row that hand the call to a person (`<Handoff afterFailures>`). */
   private readonly failures = new FailureStreaks();
+  /** The running turn already handed the call off on its own: at most once a turn. */
+  private handedOffThisTurn = false;
 
   constructor(runtime: AgentSiteRuntime, llm: AgentLlmClient, options: AgentSessionOptions = {}) {
     this.runtime = runtime;
@@ -535,6 +537,7 @@ export class AgentSession {
       yield { type: "error", error: { kind: "failed", message } };
     }
     this.unsaid = options.unsaid === true;
+    this.handedOffThisTurn = false;
     const newest = this.conversation.at(-1);
     const heardAlready = options.heard && newest?.role === "user" && newest.content.endsWith(text);
     let messages: AgentChatMessage[] = heardAlready
@@ -696,9 +699,10 @@ export class AgentSession {
       return { reply: speech.reply };
     }
 
-    // Every turn without a reply counts, a failure, an empty reply or the step limit alike. Often
-    // enough in a row, a person takes over instead of another apology.
-    this.failures.turnEnded(`${unanswered.kind}: ${unanswered.message}`);
+    // Every turn without a reply counts, a failure, an empty reply or the step limit alike, except
+    // one that already handed off: the handoff was its outcome. Often enough in a row, a person
+    // takes over instead of another apology.
+    if (!this.handedOffThisTurn) this.failures.turnEnded(`${unanswered.kind}: ${unanswered.message}`);
     const handoff = await this.handOffIfDue(messages);
     if (handoff) {
       const { skill, ...tool } = handoff.executed;
@@ -1003,9 +1007,14 @@ export class AgentSession {
       }
     | undefined
   > {
+    if (this.handedOffThisTurn) return undefined;
     const tool = this.runtime.handoffTool();
     const summary = tool ? this.failures.due(tool.afterFailures) : undefined;
     if (!tool || summary === undefined) return undefined;
+    // One attempt a turn across every path that checks, and both streaks start again: a second
+    // dial to the same number in the same turn would only ring the same person twice.
+    this.handedOffThisTurn = true;
+    this.failures.reset();
     const toolCall = handoffCall(
       this.nextToolCallId(),
       tool.name,

@@ -27,6 +27,12 @@ export class FailureStreaks {
     else this.turns.push(failure);
   }
 
+  /** A handoff ran: whatever led to it is handled, so both streaks start again. */
+  reset(): void {
+    this.tools = [];
+    this.turns = [];
+  }
+
   /** The summary for the person taking over once `afterFailures` is reached; the streak that
    * reached it starts again. Undefined while it is not reached. */
   due(afterFailures: number): string | undefined {

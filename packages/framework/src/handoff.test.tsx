@@ -319,6 +319,22 @@ describe("the session hands off on its own", () => {
     expect(limited.handoffs).toEqual([expect.objectContaining({ reason: "agent_failure", summary: expect.stringContaining("step_limit") })]);
   });
 
+  it("dials once in a turn where the tool and the turn thresholds are reached together", async () => {
+    // One step a turn, spent on a failing tool: the tool streak and the step-limit turns mature in
+    // the same turn, and nobody answers.
+    for (const afterFailures of [3, 1]) {
+      const { runtime, sent, handoffs } = call({ outcome: "no_answer", props: { afterFailures } });
+      let calls = 0;
+      const target = new AgentSession(runtime, async () => lookup(`c${++calls}`), { maxSteps: 1 });
+      for (let turnNumber = 1; turnNumber <= afterFailures; turnNumber += 1) await turn(target, `turn ${turnNumber}`);
+      expect(sent.filter((message) => message.name === "call.transfer")).toHaveLength(1);
+      expect(handoffs).toHaveLength(1);
+      // The turn that handed off is not counted again: the next one starts from nothing.
+      await turn(target, "after");
+      expect(handoffs).toHaveLength(afterFailures === 1 ? 2 : 1);
+    }
+  });
+
   it("hands off when the caller's yes runs the third failing call, before the model speaks again", async () => {
     const refunds = new AgentSiteRuntime(
       <Agent>
