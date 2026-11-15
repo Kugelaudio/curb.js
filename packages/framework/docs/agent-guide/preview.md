@@ -49,9 +49,10 @@ keys in `.env`. The terminal prints one line per reload, naming the file:
 ## The page
 
 The conversation is on the left and **Agent context** on the right, under a top
-bar that names the agent (a picker when the project has several) and says
-whether it has problems: **No problems**, or how many there are, which opens
-them (see [Problems](#problems)).
+bar with a link to Curb's repository, a picker of the agents when the project
+has several, and whether the agent has problems: **No problems**, or how many
+there are, which opens them (see [Problems](#problems)). The conversation calls
+the agent by the project's package name.
 
 The border between the two is the handle of **Agent context**: drag it to
 resize the column, double-click it for the default width, and drag it to the
@@ -155,8 +156,9 @@ call** hangs up. Keep typing and the conversation continues. While a call is
 live, typed messages run through the voice pipeline too, so the agent speaks
 its answer.
 
-The title in the conversation header opens recent preview conversations, and
-**New conversation** starts one. A new conversation gets a fresh runtime and
+**History** in the conversation header (it shows the conversation's first
+message once there is one) opens recent preview conversations, and **New
+conversation** beside it starts one. A new conversation gets a fresh runtime and
 session; selecting an earlier one restores its transcript and agent state (the
 skills it had open, its store data) without running any of its tools again, so
 you can continue it.
