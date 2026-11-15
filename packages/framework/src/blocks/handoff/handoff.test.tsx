@@ -14,7 +14,8 @@ import {
   type CallbackRequest,
   type HandoffProps,
 } from "../../index.js";
-import { fallbackReplies, handoffAnnouncement, handoffUnreachedLine } from "../../llm/localized.js";
+import { fallbackReplies } from "../../llm/localized.js";
+import { handoffAnnouncement, handoffUnreachedLine } from "./lines.js";
 import { isConfirmationRequest } from "../../llm/confirmation.js";
 import { z } from "../../index.js";
 import type { AgentRunResponse, AgentTurnStreamEvent } from "../../llm/types.js";
@@ -342,6 +343,20 @@ describe("the session hands off on its own", () => {
     const { runtime, handoffs } = call();
     const sorry = { text: "Sorry, let me try again.", toolCalls: [] };
     const target = session(runtime, [lookup("c1"), sorry, lookup("c2"), sorry, lookup("c3")]);
+    await turn(target, "one");
+    await turn(target, "two");
+    expect(handoffs).toHaveLength(0);
+    await turn(target, "three");
+    expect(handoffs).toHaveLength(1);
+  });
+
+  it("starts every count again with a new conversation", async () => {
+    const { runtime, handoffs } = call();
+    const sorry = { text: "Sorry, let me try again.", toolCalls: [] };
+    const target = session(runtime, [lookup("c1"), sorry, lookup("c2"), sorry, lookup("c3"), sorry, lookup("c4"), sorry, lookup("c5")]);
+    await turn(target, "one");
+    await turn(target, "two");
+    target.reset();
     await turn(target, "one");
     await turn(target, "two");
     expect(handoffs).toHaveLength(0);

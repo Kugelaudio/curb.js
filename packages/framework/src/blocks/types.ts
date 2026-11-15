@@ -19,16 +19,28 @@ import type { SemanticNode } from "../types.js";
  * block. Prefer the primitives; reach for a block when the mechanism is genuinely non-trivial.
  *
  * ONE BLOCK = ONE FOLDER, `src/blocks/<id>/`, the id in kebab-case. Everything the block owns
- * is in it. Where the core has to act for a block (the session calls `handoff/trigger.ts`, the
- * runtime finds the handoff tool by its marker), the core names that block: keep such a place to
- * the call itself, with the logic in the block's folder.
+ * is in it. The session, the runtime, the compiler and the primitives name no block
+ * (`blocks.test.ts` holds them to it): they reach a block through the lists described below.
  *
  *   index.tsx     - required. The component(s) authors render, their props, and what a block
  *                   built on this one imports. Browser-safe: `src/index.ts` exports it.
- *   <part>.ts     - what the block owns besides its component (`handoff/hours.ts`). Logic the
- *                   session or a voice host runs for the block lives here too, and they import
- *                   it from here (`handoff/trigger.ts`, `procedure/progress.ts`, `transfer-call/ended.ts`).
+ *   <part>.ts     - what the block owns besides its component (`handoff/hours.ts`, the fixed
+ *                   lines in `handoff/lines.ts`). What a voice host runs for the block lives
+ *                   here too, and the host imports it from here (`transfer-call/ended.ts`).
  *   *.test.ts(x)  - its tests.
+ *
+ * A BLOCK WITH A PART IN THE CONVERSATION keeps track of what happens while a conversation runs,
+ * or acts in it on its own: `<Handoff>` counts what fails and has the session call its tool,
+ * `<Procedure>` reports each step the conversation completed. It adds one file:
+ *
+ *   session.ts    - the function that opens the block's part in one conversation
+ *                   (`BlockSession`, in `session.ts` beside this file): what the part hears (a
+ *                   turn started, a tool ran, a turn ended) and what it asks of the session (a
+ *                   tool call of its own, events of the turn). It finds the tools its component
+ *                   rendered by the mark the component gave them (`<agent-tool mark>`, read
+ *                   with `runtime.markedTools`).
+ *
+ * Registering it is one line in `session-registry.ts`, under the folder's name.
  *
  * A PATTERN BLOCK also has UI of its own in the preview (a procedure's stepper in place of
  * generic tool cards). It adds two files, always together:
@@ -55,7 +67,9 @@ import type { SemanticNode } from "../types.js";
  *      `src/public-api.txt`.
  *   3. Give it a page under `docs/agent-guide/components/`, a row in `components.md` and an
  *      entry in `website/src/guide.ts`.
- *   4. Only for a pattern block: `definition.ts`, `preview.tsx` and the two registry lines.
+ *   4. Only for a block with a part in the conversation: `session.ts` and its line in
+ *      `session-registry.ts`.
+ *   5. Only for a pattern block: `definition.ts`, `preview.tsx` and the two registry lines.
  *
  * `blocks.test.ts`, `api-reference.test.ts` and `public-api.test.ts` fail until each step is
  * done, so a block cannot be added halfway.

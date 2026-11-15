@@ -1,10 +1,20 @@
-import type { AgentToolCallRecord } from "../../llm/types.js";
 import { thrownClass } from "../../tool-run.js";
 import type { ToolResult } from "../../types.js";
 
 /** Why the session hands a call off on its own: something is not working (`agent_failure`), or
  * the agent keeps getting an answer of no (`agent_stuck`). */
 export type OwnHandoff = { reason: "agent_failure" | "agent_stuck"; summary: string };
+
+/** After how many in a row `<Handoff>` hands off on its own; null: never for that one. */
+export type HandoffLimits = { afterErrors: number | null; afterFailedAttempts: number | null };
+
+/** The id `<Handoff>` marks its tools with (`ToolMark`). */
+export const HANDOFF_BLOCK = "handoff";
+
+/** How `<Handoff>` marks its tools, so its part in the conversation (`session.ts`) knows them:
+ * the handoff itself, with the limits it was rendered with, and the callback request it offers
+ * when nobody could take the call. */
+export type HandoffToolMark = { block: typeof HANDOFF_BLOCK } & (({ kind: "handoff" } & HandoffLimits) | { kind: "callback" });
 
 type FailedCall = { name: string; message: string };
 
@@ -21,9 +31,9 @@ type FailedCall = { name: string; message: string };
  *
  * A tool call that succeeds ends both tool counts; a turn that ends in a reply ends the turn
  * count. Framework tools (read_skill, skip_turn, end_call) and `<Handoff>`'s own tools count for
- * none: the session does not report them here.
+ * none: they are not reported here.
  *
- * Pure: the session reports what happened and asks whether a handoff is due.
+ * Pure: `session.ts` reports what happened and asks whether a handoff is due.
  */
 export class FailureStreaks {
   private errors: FailedCall[] = [];
@@ -60,7 +70,7 @@ export class FailureStreaks {
   /** The reason and the summary for the person taking over once a limit is reached (null: that
    * limit is off); the count that reached it starts again. Undefined while none is reached.
    * Something not working is said before an answer of no. */
-  due(limits: { afterErrors: number | null; afterFailedAttempts: number | null }): OwnHandoff | undefined {
+  due(limits: HandoffLimits): OwnHandoff | undefined {
     const { afterErrors, afterFailedAttempts } = limits;
     if (afterErrors !== null && this.errors.length >= afterErrors) {
       const summary = `${afterErrors} tool calls failed in a row (${names(this.errors)}).${lastSaid(this.errors)}`;
@@ -86,24 +96,6 @@ const names = (calls: FailedCall[]) => [...new Set(calls.map((call) => call.name
 function lastSaid(calls: FailedCall[]): string {
   const last = calls.at(-1)!.message;
   return last ? ` The last one said: ${last}` : "";
-}
-
-/** The call of the handoff tool `name` the session makes on its own. */
-export function handoffCall(
-  id: string,
-  name: string,
-  handoff: OwnHandoff,
-  announce: string,
-  skillPath: string | undefined,
-): AgentToolCallRecord {
-  return { id, name, input: { ...handoff, announce }, ...(skillPath ? { skillPath } : {}) };
-}
-
-/** Whether a handoff tool's `result` says a person took the call (`<Handoff>` puts the outcome
- * in its `data`). */
-export function handedOver(result: ToolResult): boolean {
-  const data = result.data;
-  return typeof data === "object" && data !== null && (data as { outcome?: unknown }).outcome === "answered";
 }
 
 /** A summary short enough for a call record and a person to read at a glance. */

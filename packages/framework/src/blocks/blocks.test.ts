@@ -1,9 +1,11 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import * as curb from "../index.js";
 import { blockPreviewIds, getBlockPreview } from "./preview-registry.js";
 import { blockDefinitions, getBlockBlueprint, getBlockCompiler } from "./registry.js";
+import { joinBlockSessions, type BlockCall } from "./session.js";
+import { blockSessions } from "./session-registry.js";
 
 const here = fileURLToPath(new URL("./", import.meta.url));
 /** Every block: a folder under `src/blocks/`. */
@@ -48,6 +50,47 @@ describe("block folders", () => {
  * moment a new block is wired up halfway — e.g. a definition without a
  * preview, or an id that drifted between the two registries.
  */
+/**
+ * A block's part in the conversation (see blocks/session.ts): `session.ts` in its folder, one
+ * line in the registry, and nothing in the core.
+ */
+describe("block sessions", () => {
+  it("every session.ts is registered under its folder's name, and nothing else is", () => {
+    const withSession = folders.filter((folder) => existsSync(`${here}${folder}/session.ts`));
+    expect(Object.keys(blockSessions).sort()).toEqual(withSession.sort());
+  });
+
+  it("the session, the runtime, the compiler and the primitives name no block", () => {
+    for (const file of ["agent-session.ts", "runtime.ts", "compiler.ts", "components.tsx"]) {
+      const source = readFileSync(`${here}../${file}`, "utf8");
+      const named = folders.filter((folder) => source.includes(`blocks/${folder}/`));
+      expect(named, `src/${file} imports from a block's folder; go through a registry in src/blocks/`).toEqual([]);
+    }
+  });
+
+  it("joined parts all hear what happens, the first with a call due makes it, and events keep the order of the parts", () => {
+    const heard: string[] = [];
+    const call = (name: string): BlockCall => ({ name, input: {} });
+    const joined = joinBlockSessions([
+      { toolRan: (name) => void heard.push(`a:${name}`), events: () => [{ type: "done", reply: "a" }] },
+      {},
+      { toolRan: (name) => void heard.push(`c:${name}`), turnEnded: (failure) => void heard.push(`c:ended:${failure}`), callDue: () => call("first") },
+      { callDue: () => call("second"), events: () => [{ type: "done", reply: "d" }] },
+    ]);
+
+    joined.turnStarted();
+    joined.toolRan("book", { ok: true });
+    joined.turnEnded("failed: no reply");
+
+    expect(heard).toEqual(["a:book", "c:book", "c:ended:failed: no reply"]);
+    expect(joined.callDue()?.name).toBe("first");
+    expect(joined.events()).toEqual([
+      { type: "done", reply: "a" },
+      { type: "done", reply: "d" },
+    ]);
+  });
+});
+
 describe("block registry conformance", () => {
   it("ids are unique and kebab-case; tags derive from the id", () => {
     const ids = blockDefinitions.map((block) => block.id);
