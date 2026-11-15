@@ -10,7 +10,7 @@ import { AgentGraphDialog } from "./agent-graph.js";
 import { agentOutline } from "./agent-outline.js";
 import { AgentSphere, agentName } from "./agent-sphere.js";
 import { skillPage, skillPageStatus, useNewSinceLastMessage } from "./agent-view.js";
-import { ContextColumn } from "./context-column.js";
+import { ContextColumn, ContextColumnLayout } from "./context-column.js";
 import { useContextColumn } from "./context-column-state.js";
 import {
   alwaysAvailableTools,
@@ -340,11 +340,29 @@ function App() {
           contextOpen={contextColumn.open}
           onToggleContext={contextColumn.toggle}
         />
-        <div
-          className={
-            contextColumn.open
-              ? "grid min-h-0 grid-cols-[minmax(0,1fr)_clamp(440px,36.667vw,616px)]"
-              : "grid min-h-0 grid-cols-[minmax(0,1fr)]"
+        <ContextColumnLayout
+          column={contextColumn}
+          aside={
+            <ContextColumn
+              connected={state.connected}
+              onOpenGraph={skills.length > 0 ? () => navigate({ overlay: { kind: "graph" } }) : undefined}
+            >
+              <ContextTreeView
+                instructions={{ ...summary, isNew: changes?.instructions ?? false, empty: !context.systemPrompt?.trim() }}
+                tools={alwaysAvailableTools(treeInput)}
+                mcp={mcpGroups(state.mcpServers, context)}
+                skills={skills}
+                initiallyOpen={initiallyExpanded(skills)}
+                liveSkillPath={context.path}
+                builtIn={builtInAbilities(context)}
+                onOpenInstructions={() => navigate({ overlay: { kind: "instructions" } })}
+                onOpenSkill={openSkill}
+                onTry={tryTreeTool}
+                onMcpConnect={(id) => client.mcpConnect(id)}
+                onMcpDisconnect={(id) => client.mcpDisconnect(id)}
+                onMcpRemove={(id) => client.mcpRemove(id)}
+              />
+            </ContextColumn>
           }
         >
           <section className="relative flex min-h-0 flex-col" aria-label="Conversation">
@@ -419,29 +437,7 @@ function App() {
               blocked={blocked}
             />
           </section>
-          {contextColumn.open ? (
-            <ContextColumn
-              connected={state.connected}
-              onOpenGraph={skills.length > 0 ? () => navigate({ overlay: { kind: "graph" } }) : undefined}
-            >
-              <ContextTreeView
-                instructions={{ ...summary, isNew: changes?.instructions ?? false, empty: !context.systemPrompt?.trim() }}
-                tools={alwaysAvailableTools(treeInput)}
-                mcp={mcpGroups(state.mcpServers, context)}
-                skills={skills}
-                initiallyOpen={initiallyExpanded(skills)}
-                liveSkillPath={context.path}
-                builtIn={builtInAbilities(context)}
-                onOpenInstructions={() => navigate({ overlay: { kind: "instructions" } })}
-                onOpenSkill={openSkill}
-                onTry={tryTreeTool}
-                onMcpConnect={(id) => client.mcpConnect(id)}
-                onMcpDisconnect={(id) => client.mcpDisconnect(id)}
-                onMcpRemove={(id) => client.mcpRemove(id)}
-              />
-            </ContextColumn>
-          ) : null}
-        </div>
+        </ContextColumnLayout>
       </div>
 
       <SkillSheet

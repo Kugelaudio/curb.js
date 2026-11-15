@@ -314,3 +314,97 @@
 .agent-graph .react-flow__attribution {
   background: transparent;
 }
+
+/* --- The Context column beside the conversation (context-column.tsx) ------------------ */
+
+/* The column's size lives in CSS variables that a drag writes directly, so resizing never
+   renders React. The ease plays when the column opens or closes, never while dragging. */
+.context-layout {
+  grid-template-columns: minmax(0, 1fr) var(--context-track, 0px);
+}
+
+.context-layout[data-animated] {
+  transition: grid-template-columns 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.context-layout-panel {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  z-index: 20;
+  width: var(--context-width, 0px);
+}
+
+.context-layout[data-animated] .context-layout-panel {
+  transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.context-layout[data-animated] .context-edge {
+  transition: right 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.context-layout[data-open="false"] .context-layout-panel {
+  transform: translateX(100%);
+}
+
+/* A narrow window: the open column lies over the conversation. */
+.context-layout[data-overlay][data-open="true"] .context-layout-panel {
+  box-shadow: -12px 0 32px -12px color-mix(in oklab, var(--foreground) 22%, transparent);
+}
+
+/* The column's border is the handle: a hit area a few pixels wider than the line, centred
+   on it, that highlights the line a moment after the pointer arrives. */
+.context-edge {
+  position: absolute;
+  inset-block: 0;
+  right: calc(var(--context-edge, 0px) - 4px);
+  z-index: 30;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.context-edge::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 3px;
+  width: 3px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+/* Hidden: the line sits at the window's edge, inside it. */
+.context-layout[data-open="false"] .context-edge::after {
+  left: 1px;
+}
+
+.context-edge:hover::after,
+.context-edge[data-dragging]::after {
+  background: color-mix(in oklab, var(--ring) 55%, transparent);
+  transition-delay: 150ms;
+}
+
+.context-edge[data-dragging]::after {
+  transition-delay: 0ms;
+}
+
+.context-edge:focus-visible::after {
+  background: var(--ring);
+  transition-delay: 0ms;
+}
+
+html[data-context-resizing],
+html[data-context-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-layout[data-animated],
+  .context-layout[data-animated] .context-layout-panel,
+  .context-layout[data-animated] .context-edge {
+    transition: none;
+  }
+}

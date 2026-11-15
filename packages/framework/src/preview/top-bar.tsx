@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select.js";
 import type { AuthoringDiagnostic } from "../authoring.js";
 import { AgentSphere, agentName } from "./agent-sphere.js";
+import { contextShortcutLabel } from "./context-column-state.js";
 
 /** The page's top bar: whose preview this is, and whether `curb check` finds problems. */
 export function TopBar({
@@ -58,7 +59,8 @@ export function TopBar({
         size="icon"
         aria-label={contextOpen ? "Hide context" : "Show context"}
         aria-pressed={contextOpen}
-        title={contextOpen ? "Hide context" : "Show context"}
+        aria-keyshortcuts={"Meta+\\ Control+\\"}
+        title={`${contextOpen ? "Hide context" : "Show context"} (${contextShortcutLabel()})`}
         onClick={onToggleContext}
       >
         {contextOpen ? <PanelRightCloseIcon aria-hidden="true" /> : <PanelRightOpenIcon aria-hidden="true" />}
