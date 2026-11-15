@@ -1,4 +1,4 @@
-import { fileURLToPath } from "node:url";
+import { frameworkModule } from "./layout.js";
 import { resolveProjectRoot } from "./project.node.js";
 import { readProjectPackageName, voiceWorkerAgentName } from "./server/voice/worker-name.js";
 
@@ -9,9 +9,7 @@ export type VoiceWorkerConfig = {
 };
 
 /** The framework's own worker module (`server/voice/livekit-host/worker.ts`). */
-const FRAMEWORK_WORKER_ENTRY = fileURLToPath(
-  new URL("./server/voice/livekit-host/worker.ts", import.meta.url),
-);
+const FRAMEWORK_WORKER_ENTRY = frameworkModule("voice-worker");
 
 /**
  * What `curb start` registers with LiveKit: the framework's worker, under `CURB_AGENT_NAME`,

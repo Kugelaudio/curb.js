@@ -44,10 +44,21 @@ export function npmNames(manifest) {
 /** A package's manifest as npm publishes it. */
 export function npmManifest(manifest, version, name = npmNames(manifest)[0]) {
   if (!npmNames(manifest).includes(name)) throw new Error(`${manifest.name} is not published as ${name}`);
-  const { private: _private, ...published } = manifest;
+  const { private: _private, publishConfig, ...published } = manifest;
   // Under a second name the command follows, so `npm i create-curb` installs `create-curb`.
   const bin = name === npmNames(manifest)[0] ? {} : { bin: { [name]: published.bin[manifest.name] } };
-  return { ...published, ...bin, name, version };
+  // A checkout resolves the framework's TypeScript source; npm receives the compiled dist/
+  // (`packages/framework/scripts/build-dist.ts`), which `publishConfig.exports` names, as pnpm
+  // reads it. npm itself keeps the rest of `publishConfig`.
+  const { exports: publishedExports, ...npmConfig } = publishConfig ?? {};
+  return {
+    ...published,
+    ...(publishedExports ? { exports: publishedExports } : {}),
+    ...(Object.keys(npmConfig).length > 0 ? { publishConfig: npmConfig } : {}),
+    ...bin,
+    name,
+    version,
+  };
 }
 
 /** Every link and image in a README, code blocks aside. */
@@ -103,12 +114,19 @@ function unpack(tarball) {
   return join(directory, "package");
 }
 
-export function npmPack(cwd) {
+/** Packs `cwd`; `ignoreScripts` skips `prepack`, for a tree that was packed (and built) already. */
+export function npmPack(cwd, { ignoreScripts = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "curb-npm-pack-"));
-  const packed = execFileSync("npm", ["pack", "--silent", "--pack-destination", directory], {
+  const flags = ignoreScripts ? ["--ignore-scripts"] : [];
+  // The tarball's name is the last line: a `prepack` script prints its own output first.
+  const packed = execFileSync("npm", ["pack", "--silent", ...flags, "--pack-destination", directory], {
     cwd,
     encoding: "utf8",
-  }).trim();
+    stdio: ["ignore", "pipe", "inherit"],
+  })
+    .trim()
+    .split("\n")
+    .at(-1);
   return join(directory, packed);
 }
 
@@ -126,7 +144,7 @@ export function stampTarball(tarball, outDir, { version, notes, name }) {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   // Packed aside, so a tarball this script refuses is never left where publish reads it.
-  const result = npmPack(source);
+  const result = npmPack(source, { ignoreScripts: true });
   const packed = unpack(result);
   const after = fileHashes(packed);
   const changed = unexpectedDifferences(before, after);

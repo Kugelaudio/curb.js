@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// The framework ships TypeScript source (no build step yet); tsx compiles it
-// on the fly. tsx applies its tsconfig only to files the config includes, so
-// this shim points TSX_TSCONFIG_PATH at a generated config spanning both the
-// framework source and the project's src/ — otherwise JSX in either tree
-// would fall back to the classic transform and crash with "React is not
-// defined". When the package grows a dist build, the shim switches to
-// importing the compiled CLI and the generated config only needs the
-// project's files.
+// Installed from npm, the framework is compiled JavaScript in dist/ (scripts/build-dist.ts) and
+// this shim runs dist/cli.js. In a checkout it is TypeScript in src/, which tsx compiles on the
+// fly. Either way a project's own agent is TypeScript, so tsx is registered for it.
+//
+// tsx applies its tsconfig only to files the config includes, so this shim points
+// TSX_TSCONFIG_PATH at a generated config spanning the project's src/ and, in a checkout, the
+// framework source: otherwise JSX outside the config would fall back to the classic transform
+// and crash with "React is not defined".
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,8 @@ import { exitOnUnsupportedNode } from "./node-version.js";
 exitOnUnsupportedNode(new URL("../package.json", import.meta.url));
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// npm receives dist/ and no src/ (`files` in package.json); a checkout has src/.
+const fromSource = existsSync(join(packageRoot, "src", "cli", "main.ts"));
 
 if (!process.env.TSX_TSCONFIG_PATH) {
   const projectRoot = process.cwd();
@@ -26,7 +28,7 @@ if (!process.env.TSX_TSCONFIG_PATH) {
       {
         compilerOptions: { jsx: "react-jsx" },
         include: [
-          toPosix(join(relative(generatedDir, packageRoot), "src/**/*")),
+          ...(fromSource ? [toPosix(join(relative(generatedDir, packageRoot), "src/**/*"))] : []),
           "../src/**/*",
         ],
       },
@@ -49,4 +51,4 @@ if (!process.env.TSX_TSCONFIG_PATH) {
 // Dynamic imports so TSX_TSCONFIG_PATH is set before tsx reads it.
 const { register } = await import("tsx/esm/api");
 register();
-await import("../src/cli/main.ts");
+await import(fromSource ? "../src/cli/main.ts" : "../dist/cli.js");

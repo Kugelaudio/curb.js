@@ -1,10 +1,10 @@
 import { fork, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { formatAuthoringDiagnostic } from "../authoring.js";
+import { builtPreviewDir, COMPILED, frameworkModule } from "../layout.js";
 import { isAgentHttpPath } from "../server/agent-http-paths.js";
 import { printBootBanner } from "../server/banner.js";
 import { VITE_HMR_PATH } from "../server/hmr-path.js";
@@ -18,6 +18,7 @@ import { AgentForwarder } from "./dev-proxy.js";
 import { AgentServerSupervisor, type AgentProcess } from "./dev-supervisor.js";
 import { watchProject } from "./dev-watch.js";
 import { openBrowser } from "./open-browser.js";
+import { builtPreview } from "./preview-static.js";
 import { notifyIfUpdateAvailable } from "./upgrade.js";
 
 /**
@@ -69,7 +70,7 @@ export async function runDev(options: { projectRoot: string; baseEnv: NodeJS.Pro
       socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nBad request.\n");
       return;
     }
-    if (url.pathname === VITE_HMR_PATH) return; // Vite's own listener
+    if (!COMPILED && url.pathname === VITE_HMR_PATH) return; // Vite's own listener
     // Check here too: the forwarder can answer with diagnostics while no child is running.
     if (!isAllowedOrigin(request.headers.origin, allowedOriginHosts)) {
       socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nForbidden.\n");
@@ -77,10 +78,7 @@ export async function runDev(options: { projectRoot: string; baseEnv: NodeJS.Pro
     }
     forwarder.upgrade(request, socket, head);
   });
-  const { createServer: createViteServer } = await import("vite");
-  const { createPreviewConfig } = await import("../vite/preview-config.js");
-  const vite = await createViteServer(createPreviewConfig({ projectRoot, attachTo: httpServer }));
-  preview = vite.middlewares;
+  preview = await previewHandler(projectRoot, httpServer);
 
   const port = await listenWithPortWalk(httpServer, plan);
   const url = `http://${plan.host}:${port}`;
@@ -117,9 +115,24 @@ export async function runDev(options: { projectRoot: string; baseEnv: NodeJS.Pro
   }
 }
 
+/**
+ * The preview page: built into `dist/` when installed from npm, served by Vite (with HMR on
+ * its own path of this server) from the source in a checkout (`layout.ts`).
+ */
+async function previewHandler(
+  projectRoot: string,
+  httpServer: Server,
+): Promise<(req: IncomingMessage, res: ServerResponse) => void> {
+  if (COMPILED) return builtPreview({ previewDir: builtPreviewDir, projectRoot });
+  const { createServer: createViteServer } = await import("vite");
+  const { createPreviewConfig } = await import("../vite/preview-config.js");
+  const vite = await createViteServer(createPreviewConfig({ projectRoot, attachTo: httpServer }));
+  return vite.middlewares;
+}
+
 /** The agent server, in a child process that loads TypeScript the way this one does. */
 function spawnAgentServer(options: DevChildOptions, env: NodeJS.ProcessEnv): AgentProcess {
-  const child = fork(fileURLToPath(new URL("./dev-child.ts", import.meta.url)), [JSON.stringify(options)], {
+  const child = fork(frameworkModule("dev-child"), [JSON.stringify(options)], {
     env,
     // The bin shim registers tsx in-process; the child gets it as a loader. An inspector
     // flag would make the child fight this process for the inspector's port.

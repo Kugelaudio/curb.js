@@ -3,7 +3,7 @@ import { join, relative } from "node:path";
 import type { Plugin } from "vite";
 import { resolveContextDir } from "../project.node.js";
 
-function listContextMarkdownFiles(contextDir: string): string[] {
+export function listContextMarkdownFiles(contextDir: string): string[] {
   const results: string[] = [];
 
   function walk(directory: string): void {

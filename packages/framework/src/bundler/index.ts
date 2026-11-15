@@ -3,11 +3,11 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import * as esbuild from "esbuild";
 import { generateAgentModulesCode } from "./agent-modules.js";
 import { curbVersion } from "../version.js";
+import { frameworkModule, moduleDir } from "../layout.js";
 import { describeExternals, externalPackages, NATIVE_PACKAGES, RUNTIME_REQUIRED_PACKAGES } from "./externals.js";
 import {
   copyPackageForTarget,
@@ -267,11 +267,12 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
   // "curb/orchestration" from the project. A workspace-linked project has no local
   // node_modules/curb (npm hoists it), and a CDN-installed one does — resolution would
   // have to handle both, while this file always knows its own path.
-  const frameworkSrc = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const orchestration = join(frameworkSrc, "orchestration.ts");
-  if (!existsSync(orchestration)) {
+  // `src/` in a checkout, `dist/` installed from npm (`layout.ts`).
+  const frameworkDir = moduleDir;
+  const hostedRuntime = frameworkModule("hosted-runtime");
+  if (!existsSync(hostedRuntime)) {
     throw new Error(
-      `curb build: cannot find the framework's orchestration entry at ${orchestration}.\n` +
+      `curb build: cannot find the framework's hosted runtime module at ${hostedRuntime}.\n` +
         `  This means the framework layout moved; the build cannot continue without it.`,
     );
   }
@@ -282,7 +283,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
   const contextRegistryPath = join(generatedDir, "context-registry.mjs");
   await writeFile(
     contextRegistryPath,
-    generateContextRegistryCode(projectRoot, join(frameworkSrc, "public-context.ts")),
+    generateContextRegistryCode(projectRoot, hostedRuntime),
     "utf8",
   );
 
@@ -290,13 +291,13 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
   // installs can legitimately hold a different hoisted version beside the project and
   // the version selected for `curb` in its own node_modules; the hosted bundle must use
   // the latter, just like imports from the framework's source do.
-  const livekitAgentsEntry = createRequire(join(frameworkSrc, "index.js")).resolve(
+  const livekitAgentsEntry = createRequire(join(frameworkDir, "index.js")).resolve(
     "@livekit/agents",
   );
   const workerSource = workerEntrySource({
     contextRegistryPath,
     registryPath,
-    frameworkSrc,
+    hostedRuntime,
     livekitAgentsEntry,
     // Baked in: the artifact has no package.json of the project's to read at run time, and
     // its worker mode must register under the name `curb start` uses.
@@ -324,7 +325,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
   // packages/framework/node_modules -> packages/node_modules -> node_modules: the
   // framework's own deps AND everything hoisted to the root.
   const traceBase = outermostDependencyRoot(projectRoot);
-  const frameworkRoot = resolvePackageRoot("curb", frameworkSrc) ?? dirname(frameworkSrc);
+  const frameworkRoot = resolvePackageRoot("curb", frameworkDir) ?? dirname(frameworkDir);
   const entryHome = relative(traceBase, frameworkRoot);
   // Where the app layer sits in the tree (layer contract L2).
   const layout: AppLayerLayout = {
@@ -378,13 +379,16 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
       // createRequire bound to this module's URL gives them one that resolves relative
       // to the artifact, which is what makes the mirrored node_modules tree reachable
       // from bundled CJS as well as from the externals.
+      //
+      // `var`, because the framework's compiled dist/ declares the same three names in each
+      // of its files (scripts/build-dist.ts), and those land in this bundle's top scope too.
       js: [
         `import { createRequire as __curbCreateRequire } from "node:module";`,
         `import { fileURLToPath as __curbFileURLToPath } from "node:url";`,
         `import { dirname as __curbDirname } from "node:path";`,
-        `const require = __curbCreateRequire(import.meta.url);`,
-        `const __filename = __curbFileURLToPath(import.meta.url);`,
-        `const __dirname = __curbDirname(__filename);`,
+        `var require = __curbCreateRequire(import.meta.url);`,
+        `var __filename = __curbFileURLToPath(import.meta.url);`,
+        `var __dirname = __curbDirname(__filename);`,
       ].join("\n"),
     },
   }).catch((error: unknown) => {
@@ -456,7 +460,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     const unresolvable: string[] = [];
     const wholeCopied: string[] = [];
     for (const name of NATIVE_PACKAGES) {
-      const packageRoot = resolvePackageRoot(name, frameworkSrc);
+      const packageRoot = resolvePackageRoot(name, frameworkDir);
       if (!packageRoot) {
         unresolvable.push(name);
         continue;
@@ -474,7 +478,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     // the package's runtime contract by putting the model beside both generated entries.
     // Keeping the whole plugin external instead would pull its peer dependency closure
     // back into the artifact and restore thousands of files on every sandbox start.
-    const sileroRoot = resolvePackageRoot("@livekit/agents-plugin-silero", frameworkSrc);
+    const sileroRoot = resolvePackageRoot("@livekit/agents-plugin-silero", frameworkDir);
     if (!sileroRoot) {
       throw new Error(
         "curb build: @livekit/agents-plugin-silero is not resolvable, so its VAD model " +
@@ -530,10 +534,10 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     const seeds = [traceSeed];
     const externalOwnedRoots: string[] = [];
     for (const name of NATIVE_PACKAGES) {
-      const packageRoot = resolvePackageRoot(name, frameworkSrc);
+      const packageRoot = resolvePackageRoot(name, frameworkDir);
       if (!packageRoot) continue;
       externalOwnedRoots.push(relative(base, packageRoot).split(sep).join("/"));
-      const require = createRequire(join(frameworkSrc, "index.js"));
+      const require = createRequire(join(frameworkDir, "index.js"));
       try {
         seeds.push(require.resolve(name));
       } catch {
@@ -543,7 +547,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
       }
     }
     for (const name of RUNTIME_REQUIRED_PACKAGES) {
-      const packageRoot = resolvePackageRoot(name, frameworkSrc);
+      const packageRoot = resolvePackageRoot(name, frameworkDir);
       if (!packageRoot) {
         throw new Error(
           `curb build: ${name}, which the bundled framework loads by name at runtime, is not ` +
@@ -552,7 +556,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
         );
       }
       externalOwnedRoots.push(relative(base, packageRoot).split(sep).join("/"));
-      seeds.push(createRequire(join(frameworkSrc, "index.js")).resolve(name));
+      seeds.push(createRequire(join(frameworkDir, "index.js")).resolve(name));
     }
     // Loaded here, not at the top of the module: a --dependency-layer build never traces and
     // must not pay to load the tracer either (layer contract L1).
@@ -713,7 +717,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
   await assertNoBuildPathsLeaked({
     outDir,
     generated: [entrypoint],
-    roots: [projectRoot, traceBase, frameworkSrc, frameworkRoot],
+    roots: [projectRoot, traceBase, frameworkDir, frameworkRoot],
   });
   timer.mark("reproducible", "prove the emitted entries carry no build-machine path");
 
@@ -753,7 +757,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     NATIVE_PACKAGES,
     options.skipTrace
       ? {
-          resolve: (name) => resolvePackageRoot(name, frameworkSrc),
+          resolve: (name) => resolvePackageRoot(name, frameworkDir),
           root: traceBase,
           describe: "the project's install (this build ran with --no-trace, so the " +
             "artifact carries no dependency tree to read)",

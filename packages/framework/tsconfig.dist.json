@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist/types",
+    "types": ["node"]
+  },
+  "include": ["src/index.ts", "src/orchestration.ts", "src/providers.ts", "src/client/index.ts", "src/testing/index.ts", "src/vite-env.d.ts"]
+}

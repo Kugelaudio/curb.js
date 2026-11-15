@@ -17,7 +17,9 @@ example projects):
 ```text
 curb.js/
 ├── packages/framework/        # The framework package (published as "curb.js")
-│   ├── bin/curb.js       # CLI shim: generates the spanning tsx tsconfig, registers tsx
+│   ├── bin/curb.js       # CLI shim: runs dist/ (npm) or src/ (checkout), registers tsx for the project
+│   ├── scripts/build-dist.ts  # compiles the package npm receives into dist/ (prepack)
+│   ├── src/layout.ts          # the one module that knows whether dist/ or src/ is running
 │   ├── src/cli/main.ts        # CLI commands: dev / check / start / server / upgrade
 │   ├── src/vite/              # Preview Vite config (the page never imports agent code)
 │   ├── src/compiler.ts        # semantic tree -> compiled context + tools
@@ -51,10 +53,23 @@ Key seams:
   agent as data in the server's `agents` frame (`PreviewAgent`,
   `src/server/frames.ts`), so a skill may import `node:` modules. `curb build`
   bundles the same modules through `src/bundler/agent-modules.ts`.
-- The bin shim generates `.curb/tsx.tsconfig.json` spanning framework
-  and project sources: tsx applies its tsconfig only to include-matched
-  files; a single-tree config silently classic-transforms the other tree's
-  JSX ("React is not defined").
+- npm receives the framework compiled, the way Next.js ships `dist/compiled`:
+  `scripts/build-dist.ts` (run by `prepack`) bundles every pure-JavaScript
+  dependency into `dist/`, builds the preview page into `dist/preview/` and
+  writes the declarations to `dist/types/`, so a project installs only what
+  `dependencies` lists: native code, the LiveKit voice runtime, tsx for the
+  project's own TypeScript, and packages whose types the public API carries.
+  Moving a package from `devDependencies` to `dependencies` makes it an
+  install for every project again. `publishConfig.exports` names the compiled
+  entries; `scripts/npm-package.mjs` publishes them as `exports`. A checkout
+  runs `src/` through tsx and serves the preview through Vite with HMR; only
+  `src/layout.ts` tells the two apart. Check the compiled form with
+  `node scripts/npm-package.mjs <version> <out-dir>` and
+  `node scripts/release-install-test.mjs <out-dir>`.
+- The bin shim generates `.curb/tsx.tsconfig.json` spanning the project's
+  sources and, in a checkout, the framework's: tsx applies its tsconfig only
+  to include-matched files; a single-tree config silently classic-transforms
+  the other tree's JSX ("React is not defined").
 - `curb dev` reloads the agent on save. The CLI process (`src/cli/dev.ts`)
   owns the port, Vite and a watcher on the
   project's `src/`, `context/*.md` and `.env`; the agent server runs in a
@@ -79,6 +94,7 @@ npm run check:browser   # the static browser build on the starter project
 node scripts/npm-package.mjs <version> <out-dir>  # the tarballs npm receives
 node scripts/release-install-test.mjs <out-dir>   # scaffold, check and build from those tarballs
 npm run build      # tsc type-check build of the package
+npm run build:dist --workspace packages/framework  # the compiled dist/ npm receives (npm pack runs it)
 npm run check      # authoring diagnostics of the insurance example
 npm run server     # headless agent WS server (insurance example)
 ```
