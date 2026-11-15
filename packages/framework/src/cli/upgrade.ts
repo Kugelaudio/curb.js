@@ -113,9 +113,85 @@ export function rewriteCurbDep(pkgJsonText: string, spec: string): string {
   return `${JSON.stringify(pkg, null, 2)}\n`;
 }
 
+/** A dependency of the project raised to what the new curb needs. */
+export interface RaisedDependency {
+  name: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * Raise every dependency the project declares that is also a peer dependency of the new curb, when
+ * the lowest version the project's range allows is below the lowest the peer range allows: npm
+ * refuses to install curb next to a React the project pins below its floor. Ranges either side
+ * that are not plain semver (a tag, a URL, an alias) are left alone, and every other byte of
+ * package.json keeps its order and formatting.
+ */
+export function raisePeerFloors(
+  pkgJsonText: string,
+  peers: Record<string, string>,
+): { text: string; raised: RaisedDependency[] } {
+  const pkg = JSON.parse(pkgJsonText) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const raised: RaisedDependency[] = [];
+  for (const deps of [pkg.dependencies, pkg.devDependencies]) {
+    if (!deps) continue;
+    for (const [name, peer] of Object.entries(peers)) {
+      const from = deps[name];
+      if (from === undefined || name === "curb") continue;
+      const floor = lowestVersion(peer);
+      const current = lowestVersion(from);
+      if (floor === null || current === null || compareVersions(current, floor) >= 0) continue;
+      deps[name] = peer;
+      raised.push({ name, from, to: peer });
+    }
+  }
+  return { text: raised.length > 0 ? `${JSON.stringify(pkg, null, 2)}\n` : pkgJsonText, raised };
+}
+
+/**
+ * The lowest version a single-comparator range allows (`19.2.7`, `^19.2.7`, `~19.2`, `>=19.3.0`);
+ * `null` for anything else, which is left as the project wrote it. No semver package: the CLI
+ * runs from runtime dependencies alone.
+ */
+export function lowestVersion(range: string): string | null {
+  const match = /^(?:\^|~|>=|=)?\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(-[0-9A-Za-z.-]+)?$/.exec(range.trim());
+  if (!match) return null;
+  const [, major, minor = "0", patch = "0", prerelease = ""] = match;
+  return `${major}.${minor}.${patch}${prerelease}`;
+}
+
+/** The peer dependencies one published version of curb.js declares. Every failure names the URL. */
+export async function fetchPeerDependencies(
+  registry: string,
+  version: string,
+  timeoutMs = 10_000,
+): Promise<Record<string, string>> {
+  const manifest = await fetchRegistryJson(`${registry}/curb.js/${version}`, timeoutMs);
+  const peers = (manifest as { peerDependencies?: unknown } | null)?.peerDependencies;
+  if (peers === undefined) return {};
+  if (typeof peers !== "object" || peers === null) {
+    throw new Error(`The npm manifest of curb.js ${version} has no readable peerDependencies.`);
+  }
+  return Object.fromEntries(
+    Object.entries(peers).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
+
 /** The version a dist-tag of curb.js on npm points at. Every failure names the URL and a fix. */
 export async function fetchNpmVersion(registry: string, tag: string, timeoutMs = 10_000): Promise<string> {
   const url = `${registry}/-/package/curb.js/dist-tags`;
+  const tags = await fetchRegistryJson(url, timeoutMs);
+  const version = (tags as Record<string, unknown> | null)?.[tag];
+  if (typeof version !== "string" || version === "") {
+    throw new Error(`curb.js has no "${tag}" release on npm (${url}).`);
+  }
+  return version;
+}
+
+async function fetchRegistryJson(url: string, timeoutMs: number): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
@@ -126,18 +202,22 @@ export async function fetchNpmVersion(registry: string, tag: string, timeoutMs =
     );
   }
   if (!response.ok) throw new Error(`npm returned HTTP ${response.status} for ${url}.`);
-  let tags: unknown;
   try {
-    tags = await response.json();
+    return await response.json();
   } catch {
     throw new Error(`The npm response at ${url} is not valid JSON.`);
   }
-  const version = (tags as Record<string, unknown> | null)?.[tag];
-  if (typeof version !== "string" || version === "") {
-    throw new Error(`curb.js has no "${tag}" release on npm (${url}).`);
-  }
-  return version;
 }
+
+/** Runs `npm install` in the project and says whether it succeeded, or why not. */
+export type ProjectInstaller = (cwd: string) => { ok: true } | { ok: false; cause: string };
+
+const npmInstall: ProjectInstaller = (cwd) => {
+  // Through the shell: npm is a .cmd shim on Windows, which Node starts no other way.
+  const install = spawnSync("npm install", { cwd, stdio: "inherit", shell: true });
+  if (!install.error && install.status === 0) return { ok: true };
+  return { ok: false, cause: install.error ? install.error.message : `exit code ${install.status ?? "signal"}` };
+};
 
 /** Why a project outside npm gets no update, and the command that moves it there. */
 function notOnNpmMessage(spec: string, tag: string): string {
@@ -149,7 +229,11 @@ function notOnNpmMessage(spec: string, tag: string): string {
 }
 
 /** The `curb upgrade` command. Throws with an actionable message on failure (the CLI maps that to exit 1). */
-export async function runUpgrade(args: string[], cwd = process.cwd()): Promise<void> {
+export async function runUpgrade(
+  args: string[],
+  cwd = process.cwd(),
+  installer: ProjectInstaller = npmInstall,
+): Promise<void> {
   // A typo must not read as a plain `curb upgrade`, which rewrites package.json and installs.
   rejectUnknownArguments(args, "upgrade", { flags: ["--check", "--preview"], values: {} });
   const checkOnly = args.includes("--check");
@@ -199,18 +283,22 @@ export async function runUpgrade(args: string[], cwd = process.cwd()): Promise<v
     return;
   }
 
-  writeFileSync(pkgPath, rewriteCurbDep(pkgText, `${NPM_ALIAS}@${latest}`));
-  // Through the shell: npm is a .cmd shim on Windows, which Node starts no other way.
-  const install = spawnSync("npm install", { cwd, stdio: "inherit", shell: true });
-  if (install.error || install.status !== 0) {
+  const peers = await fetchPeerDependencies(npmRegistry(), latest);
+  const { text: nextText, raised } = raisePeerFloors(rewriteCurbDep(pkgText, `${NPM_ALIAS}@${latest}`), peers);
+  for (const { name, from, to } of raised) {
+    console.log(`curb v${latest} needs ${name} ${to}: raising ${name} from ${from} to ${to}.`);
+  }
+  writeFileSync(pkgPath, nextText);
+  const install = installer(cwd);
+  if (!install.ok) {
     writeFileSync(pkgPath, pkgText);
-    const cause = install.error ? install.error.message : `exit code ${install.status ?? "signal"}`;
     throw new Error(
-      `npm install failed (${cause}); package.json was restored to v${current}. Fix the npm error above and re-run \`curb upgrade\`.`,
+      `npm install failed (${install.cause}); package.json was restored to v${current}. Fix the npm error above and re-run \`curb upgrade\`.`,
     );
   }
+  const alsoRaised = raised.length > 0 ? ` ${raised.map(({ name, to }) => `${name} is now ${to}`).join(", ")}.` : "";
   console.log(
-    `curb updated: v${current} → v${latest}. The agent docs in node_modules/curb/docs/agent-guide/ were updated with it.`,
+    `curb updated: v${current} → v${latest}.${alsoRaised} The agent docs in node_modules/curb/docs/agent-guide/ were updated with it.`,
   );
 }
 
