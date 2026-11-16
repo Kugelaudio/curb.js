@@ -111,31 +111,38 @@ export function compileSite(root: SemanticNode | null, paths: string | string[])
     diagnoseOversizedSkill(path, context.tools.length - before, context);
   }
   diagnoseOversizedContext(context);
-  diagnoseToolGates(registry);
+  diagnoseToolGates(context, registry);
   return { context, registry };
 }
 
-/** A tool gated by `onlyAfter` on a tool that is not in the loaded context, or on itself, can
- * never run: the gate is an authoring error, thrown like any other wrong prop. */
-function diagnoseToolGates(registry: Map<string, ToolRegistryEntry>): void {
+/** A tool gated by `onlyAfter` on itself can never run: a static mistake, thrown like any other
+ * wrong prop. A gate on a tool that is not in the loaded context is only a warning: the context
+ * recompiles after every tool call and skill load, and a prerequisite that already succeeded may
+ * have stopped rendering, or live in a skill that is not loaded. The call-time refusal decides. */
+function diagnoseToolGates(context: CompiledContext, registry: Map<string, ToolRegistryEntry>): void {
   for (const [name, entry] of registry) {
     const gate = entry.limits?.onlyAfter;
     if (gate === undefined) continue;
-    const self = gate === name;
-    if (!self && registry.has(gate)) continue;
-    throw new AgentAuthoringError({
+    const location = {
+      ...(entry.definition.skillPath ? { skillPath: entry.definition.skillPath } : {}),
+      component: `Tool name=${JSON.stringify(name)}`,
+    };
+    if (gate === name) {
+      throw new AgentAuthoringError({
+        code: AUTHORING_DIAGNOSTIC_CODES.invalidProp,
+        severity: "error",
+        message: `Tool ${JSON.stringify(name)} has onlyAfter=${JSON.stringify(gate)}, itself, so it can never run.`,
+        location,
+        fix: "Name another tool in onlyAfter, or remove it.",
+      });
+    }
+    if (registry.has(gate)) continue;
+    addDiagnostic(context, {
       code: AUTHORING_DIAGNOSTIC_CODES.invalidProp,
-      severity: "error",
-      message: self
-        ? `Tool ${JSON.stringify(name)} has onlyAfter=${JSON.stringify(gate)}, itself, so it can never run.`
-        : `Tool ${JSON.stringify(name)} has onlyAfter=${JSON.stringify(gate)}, but no tool of that name is in the loaded context, so it can never run.`,
-      location: {
-        ...(entry.definition.skillPath ? { skillPath: entry.definition.skillPath } : {}),
-        component: `Tool name=${JSON.stringify(name)}`,
-      },
-      fix: self
-        ? "Name another tool in onlyAfter, or remove it."
-        : `Check the spelling of ${JSON.stringify(gate)}, render that tool in the same skill or the agent, or remove onlyAfter.`,
+      severity: "warning",
+      message: `Tool ${JSON.stringify(name)} has onlyAfter=${JSON.stringify(gate)}, but no tool of that name is in the loaded context; the call is refused until that tool has succeeded.`,
+      location,
+      fix: `Check the spelling of ${JSON.stringify(gate)}, or render that tool in the same skill or the agent.`,
     });
   }
 }
