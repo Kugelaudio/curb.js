@@ -93,6 +93,9 @@ export class AgentSiteRuntime {
   private readonly events: ContextEvent[] = [];
   private readonly agentContext: AgentContextEntry[] = [];
   private readonly toolErrors = new Map<string, string>();
+  /** Calls that ran per tool, and the tools that have succeeded, for `<Tool maxCallsPerConversation onlyAfter>`. */
+  private readonly toolRuns = new Map<string, number>();
+  private readonly toolSucceeded = new Set<string>();
   private readonly listeners = new Set<() => void>();
   private readonly maxLoadedSkills: number;
   private readonly authoringDiagnostics: readonly AuthoringDiagnostic[];
@@ -179,6 +182,16 @@ export class AgentSiteRuntime {
       throw new Error(`Tool "${name}" is not available ${this.where}.`);
     }
 
+    const refusal = this.limitRefusal(name, entry);
+    if (refusal) {
+      // The call never ran: no handler, and it counts toward nothing.
+      this.events.push({ type: "tool_called", name, input });
+      const result: ToolResult = { ok: false, message: refusal };
+      this.events.push({ type: "tool_result", name, result });
+      return { result, contextDiff: this.refresh("update") };
+    }
+    if (entry.limits) this.toolRuns.set(name, (this.toolRuns.get(name) ?? 0) + 1);
+
     this.events.push({ type: "tool_called", name, input });
     let result: ToolResult;
     this.toolCallInFlight = true;
@@ -186,6 +199,7 @@ export class AgentSiteRuntime {
       const fake = this.toolFakes.get(name);
       result = await (fake ? this.callFaked(name, fake, input) : entry.handler(input));
       if (result.ok) {
+        this.toolSucceeded.add(name);
         this.toolErrors.delete(name);
       } else if (result.message) {
         this.toolErrors.set(name, result.message);
@@ -214,6 +228,19 @@ export class AgentSiteRuntime {
     this.events.push({ type: "tool_result", name, result });
     const contextDiff = this.refresh("update");
     return { result, contextDiff };
+  }
+
+  /** The fixed result a call of `name` gets when it is over its limit or its prerequisite has not
+   * succeeded yet, or undefined when it may run. */
+  private limitRefusal(name: string, entry: ToolRegistryEntry): string | undefined {
+    const { maxCalls, onlyAfter } = entry.limits ?? {};
+    if (onlyAfter !== undefined && !this.toolSucceeded.has(onlyAfter)) {
+      return `"${name}" is not available yet: "${onlyAfter}" has to succeed first.`;
+    }
+    if (maxCalls !== undefined && (this.toolRuns.get(name) ?? 0) >= maxCalls) {
+      return `"${name}" has reached its limit of ${maxCalls} ${maxCalls === 1 ? "call" : "calls"} in this conversation and cannot be called again.`;
+    }
+    return undefined;
   }
 
   /**

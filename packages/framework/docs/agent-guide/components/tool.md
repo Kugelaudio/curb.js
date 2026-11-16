@@ -18,6 +18,8 @@ Every tool takes these:
 | `name` | `string` | The name the model calls |
 | `description` | `string` | When to call it, for the model |
 | `icon` | `string` | A [lucide](https://lucide.dev/icons) icon name for the preview. Never reaches the model |
+| `maxCallsPerConversation` | `number` | The most calls the model gets in one conversation; the next is refused ([Tool limits](../tool-limits.md)) |
+| `onlyAfter` | `string` | A tool that must have succeeded first; until then a call is refused ([Tool limits](../tool-limits.md)) |
 
 Then one of three ways to take input:
 

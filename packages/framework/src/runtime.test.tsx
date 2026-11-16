@@ -458,3 +458,78 @@ describe("agent site runtime", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 });
+
+describe("tool limits", () => {
+  const ok = () => ({ ok: true, message: "done" });
+
+  it("leaves a tool without limits unchanged", async () => {
+    const handler = vi.fn(ok);
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <Tool name="plain" description="No limits." onCall={handler} />
+      </Agent>,
+    );
+    for (let i = 0; i < 5; i += 1) {
+      expect((await runtime.callTool("plain")).result).toEqual({ ok: true, message: "done" });
+    }
+    expect(handler).toHaveBeenCalledTimes(5);
+  });
+
+  it("refuses the call over maxCallsPerConversation without running the handler", async () => {
+    const handler = vi.fn(ok);
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <Tool name="limited" description="Twice at most." maxCallsPerConversation={2} onCall={handler} />
+      </Agent>,
+    );
+    expect((await runtime.callTool("limited")).result.ok).toBe(true);
+    expect((await runtime.callTool("limited")).result.ok).toBe(true);
+    const third = await runtime.callTool("limited");
+    expect(third.result).toEqual({
+      ok: false,
+      message: '"limited" has reached its limit of 2 calls in this conversation and cannot be called again.',
+    });
+    expect((await runtime.callTool("limited")).result).toEqual(third.result);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a gated tool until its prerequisite tool succeeded", async () => {
+    const gated = vi.fn(ok);
+    let verified = false;
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <Tool name="verify" description="Check the caller." onCall={() => ({ ok: verified })} />
+        <Tool name="refund" description="Refund." onlyAfter="verify" onCall={gated} />
+      </Agent>,
+    );
+    expect((await runtime.callTool("refund")).result).toEqual({
+      ok: false,
+      message: '"refund" is not available yet: "verify" has to succeed first.',
+    });
+    await runtime.callTool("verify"); // fails
+    expect((await runtime.callTool("refund")).result.ok).toBe(false);
+    expect(gated).not.toHaveBeenCalled();
+    verified = true;
+    await runtime.callTool("verify");
+    expect((await runtime.callTool("refund")).result).toEqual({ ok: true, message: "done" });
+    expect(gated).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies the limits to a schema tool too", async () => {
+    const onSubmit = vi.fn(ok);
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <Tool
+          name="note"
+          description="Take a note."
+          schema={z.object({ text: z.string() })}
+          maxCallsPerConversation={1}
+          onSubmit={onSubmit}
+        />
+      </Agent>,
+    );
+    await runtime.callTool("note", { text: "a" });
+    expect((await runtime.callTool("note", { text: "b" })).result.ok).toBe(false);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+});
