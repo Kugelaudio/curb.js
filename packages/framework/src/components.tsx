@@ -195,6 +195,16 @@ export function Tool(
   props: ToolActionProps | InputToolProps | { def: ToolActionProps } | { def: InputToolProps },
 ): ReactNode {
   const config: ToolActionProps | InputToolProps = "def" in props ? props.def : props;
+  const limit = config.maxCallsPerConversation;
+  if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1)) {
+    throw new AgentAuthoringError({
+      code: AUTHORING_DIAGNOSTIC_CODES.invalidProp,
+      severity: "error",
+      message: `Tool ${JSON.stringify(config.name)} got maxCallsPerConversation=${JSON.stringify(limit) ?? "undefined"}, which is not a positive whole number.`,
+      location: { component: `Tool name=${JSON.stringify(config.name)}` },
+      fix: "Pass a whole number of 1 or more, or leave maxCallsPerConversation out for a tool without a limit.",
+    });
+  }
   if ("onCall" in config) {
     // Ignoring it would run the action without the caller's yes.
     if ("confirm" in config && config.confirm !== undefined) {

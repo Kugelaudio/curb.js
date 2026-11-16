@@ -554,4 +554,32 @@ describe("tool limits", () => {
     expect((await runtime.callTool("note", { text: "b" })).result.message).toContain("limit of 1 call");
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
+
+  it.each([0, -1, 1.5, Number.NaN])("rejects maxCallsPerConversation=%s as an authoring error", (limit) => {
+    expect(
+      () =>
+        new AgentSiteRuntime(
+          <Agent>
+            <Tool name="bad" description="Bad limit." maxCallsPerConversation={limit} onCall={ok} />
+          </Agent>,
+        ),
+    ).toThrow(/maxCallsPerConversation/);
+  });
+
+  it("warns when onlyAfter names a tool that is not declared, and errors on a self gate", () => {
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <Tool name="refund" description="Refund." onlyAfter="verify_calller" onCall={ok} />
+        <Tool name="loop" description="Never opens." onlyAfter="loop" onCall={ok} />
+        <Tool name="verify" description="Verify." onCall={ok} />
+        <Tool name="fine" description="Gated on a declared tool." onlyAfter="verify" onCall={ok} />
+      </Agent>,
+    );
+    const diagnostics = runtime.snapshot().context.diagnostics ?? [];
+    expect(diagnostics.map((d) => [d.severity, d.location.component])).toEqual([
+      ["error", 'Tool name="loop"'],
+      ["warning", 'Tool name="refund"'],
+    ]);
+    expect(diagnostics[1]!.message).toContain("verify_calller");
+  });
 });
