@@ -19,6 +19,7 @@ import type {
   SemanticNode,
   ToolDefinition,
   ToolInputSchema,
+  ToolLimits,
   ToolRegistryEntry,
 } from "./types.js";
 
@@ -520,6 +521,16 @@ function toLinkBlock(link: ContextLink) {
   };
 }
 
+/** The limits an authored tool declares, for the runtime to enforce on every call. */
+function limitsProp(node: SemanticNode): { limits?: ToolLimits } {
+  const { maxCallsPerConversation, onlyAfter } = node.props;
+  const limits: ToolLimits = {
+    ...(typeof maxCallsPerConversation === "number" ? { maxCalls: maxCallsPerConversation } : {}),
+    ...(typeof onlyAfter === "string" && onlyAfter ? { onlyAfter } : {}),
+  };
+  return Object.keys(limits).length > 0 ? { limits } : {};
+}
+
 function registerAction(
   node: SemanticNode,
   context: CompiledContext,
@@ -544,11 +555,13 @@ function registerAction(
   if (registry.has(name)) return definition;
   registry.set(name, {
     definition,
-    handler: async (input) => {
+    ...limitsProp(node),
+    handler: async (input, accepted) => {
       const handler = node.props.onCall;
       if (typeof handler !== "function") {
         throw new Error(`Action "${name}" is missing an onCall handler.`);
       }
+      accepted?.();
       return handler(providedSchema ? input : {});
     },
   });
@@ -579,12 +592,13 @@ function registerForm(
   if (registry.has(name)) return definition;
   registry.set(name, {
     definition,
-    handler: async (input) => {
+    ...limitsProp(node),
+    handler: async (input, accepted) => {
       const handler = node.props.onSubmit;
       if (typeof handler !== "function") {
         throw new Error(`Tool "${name}" is missing an onSubmit handler.`);
       }
-      return handler(input);
+      return handler(input, undefined, accepted);
     },
   });
   return definition;

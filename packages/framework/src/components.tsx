@@ -212,7 +212,7 @@ export function Tool(
   return <InputTool {...config} />;
 }
 
-function ActionTool({ name, description, icon, onCall, children }: ToolActionProps) {
+function ActionTool({ name, description, icon, onCall, maxCallsPerConversation, onlyAfter, children }: ToolActionProps) {
   const [error, setError] = useState<string | null>(null);
 
   async function callTool(input: Record<string, unknown>) {
@@ -231,7 +231,14 @@ function ActionTool({ name, description, icon, onCall, children }: ToolActionPro
   return (
     <>
       {error ? <ErrorMessage source={name}>{error}</ErrorMessage> : null}
-      <agent-tool name={name} description={description} icon={icon} onCall={callTool}>
+      <agent-tool
+        name={name}
+        description={description}
+        icon={icon}
+        maxCallsPerConversation={maxCallsPerConversation}
+        onlyAfter={onlyAfter}
+        onCall={callTool}
+      >
         {children}
       </agent-tool>
     </>
@@ -249,9 +256,12 @@ function InputTool(props: InputToolProps) {
   async function submitTool(
     input: Record<string, unknown>,
     fake?: (input: Record<string, unknown>) => Promise<ToolResult>,
+    accepted?: () => void,
   ) {
     try {
-      const nextResult = await (fake ?? props.onSubmit)(validate(input) as never);
+      const valid = validate(input);
+      accepted?.();
+      const nextResult = await (fake ?? props.onSubmit)(valid as never);
       setResult(nextResult);
       return nextResult;
     } catch (caughtError) {
@@ -291,6 +301,8 @@ function InputTool(props: InputToolProps) {
         name={props.name}
         description={props.description}
         icon={props.icon}
+        maxCallsPerConversation={props.maxCallsPerConversation}
+        onlyAfter={props.onlyAfter}
         tryWith={props.tryWith}
         onSubmit={submitTool}
         confirm={props.confirm ? readBack : undefined}

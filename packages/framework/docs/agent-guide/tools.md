@@ -287,3 +287,4 @@ prompt if you have them; do not restate the mechanics.
 
 - [State and conditional tools](./state.md): make a tool appear only when it should.
 - [Confirmations](./confirmations.md): have the caller approve an action first.
+- [Tool limits](./tool-limits.md): cap a tool's calls or require another tool to succeed first.

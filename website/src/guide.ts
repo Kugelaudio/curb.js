@@ -16,6 +16,7 @@ const ALL_PAGES = [
   { id: 'human-handoff', file: 'human-handoff.md', title: 'Human handoff', group: 'Guides', description: "Hand the caller to a person, or take a callback request when nobody is there." },
   { id: 'complex-handoffs', file: 'complex-handoffs.md', title: 'Complex handoffs', group: 'Guides', description: "Hand over by code, to a skill with its own voice, or to a person with a note." },
   { id: 'confirmations', file: 'confirmations.md', title: 'Confirmations', group: 'Guides', description: "Hold an action until the caller says yes, with the exact question they hear." },
+  { id: 'tool-limits', file: 'tool-limits.md', title: 'Tool limits', group: 'Guides', description: "Cap how often a tool runs in a conversation, or require another tool to succeed first." },
   { id: 'procedures', file: 'procedures.md', title: 'Step-by-step procedures', group: 'Guides', description: "Take the model through ordered steps, and unlock the last tool only when every step is done." },
   { id: 'who-speaks-first', file: 'who-speaks-first.md', title: 'Who speaks first', group: 'Guides', description: "Set who opens the call, and the exact words when they must not vary." },
   { id: 'mid-call-changes', file: 'mid-call-changes.md', title: 'Mid-call changes', group: 'Guides', description: "Change language, voice or model during a call, from the agent, the page or the host." },

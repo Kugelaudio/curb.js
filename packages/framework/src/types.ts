@@ -195,6 +195,12 @@ export type ToolPropsBase = SiteElementProps & {
   /** Optional lucide icon name for the preview's card ("lock", "shield-check").
    * Presentation only: it never reaches the model. */
   icon?: string;
+  /** The most times the model may call this tool in one conversation. A call over the limit is
+   * refused with a fixed result and the handler does not run. A refused call does not count. */
+  maxCallsPerConversation?: number;
+  /** The name of a tool that must have succeeded earlier in the conversation before this one
+   * runs. Until then a call is refused with a fixed result and the handler does not run. */
+  onlyAfter?: string;
 };
 
 /** What a block marks a tool it renders with, so the block's part in the conversation
@@ -370,8 +376,14 @@ export type AgentContextEntry = {
 
 export type ToolRegistryEntry = {
   definition: ToolDefinition;
-  handler: ToolHandler;
+  /** `accepted` is called once the input passed validation and the tool is about to run; only
+   * such a call counts toward `maxCallsPerConversation`. */
+  handler: (input: Record<string, unknown>, accepted?: () => void) => Promise<ToolResult> | ToolResult;
+  /** Limits the framework enforces on the model's calls (`<Tool maxCallsPerConversation onlyAfter>`). */
+  limits?: ToolLimits;
 };
+
+export type ToolLimits = { maxCalls?: number; onlyAfter?: string };
 
 /** Framework-provided tool name (installed by `AgentSiteRuntime`, always
  * available, every agent) that ends the current turn with no reply at all —
