@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInsuranceDemoRuntime } from "./test-fixtures/insurance-runtime.js";
-import { AgentSiteRuntime, Agent, Field, Tool, ToolInputError, z } from "./index.js";
+import { AgentSiteRuntime, Agent, Field, Tool, ToolInputError, createAgentStore, z } from "./index.js";
 import type { ToolFake } from "./runtime.js";
 import { END_CALL_TOOL_NAME, SKIP_TURN_TOOL_NAME, type ToolResult } from "./types.js";
 
@@ -553,5 +553,84 @@ describe("tool limits", () => {
     expect((await runtime.callTool("note", { text: "a" })).result).toEqual({ ok: true, message: "done" });
     expect((await runtime.callTool("note", { text: "b" })).result.message).toContain("limit of 1 call");
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])("rejects maxCallsPerConversation=%s as an authoring error", (limit) => {
+    expect(
+      () =>
+        new AgentSiteRuntime(
+          <Agent>
+            <Tool name="bad" description="Bad limit." maxCallsPerConversation={limit} onCall={ok} />
+          </Agent>,
+        ),
+    ).toThrow(/maxCallsPerConversation/);
+  });
+
+  it("warns, and does not throw, when onlyAfter names a tool that is not declared", async () => {
+    const gated = vi.fn(ok);
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <Tool name="refund" description="Refund." onlyAfter="verify_calller" onCall={gated} />
+      </Agent>,
+    );
+    const warning = runtime.snapshot().context.diagnostics?.find((d) => d.location.component === 'Tool name="refund"');
+    expect(warning?.severity).toBe("warning");
+    expect(warning?.message).toContain("verify_calller");
+    expect((await runtime.callTool("refund")).result.ok).toBe(false);
+    expect(gated).not.toHaveBeenCalled();
+  });
+
+  it("keeps a gated tool working after its prerequisite stopped rendering", async () => {
+    const useGate = createAgentStore<{ verified: boolean; verify: () => void }>("limits-gate", (set) => ({
+      verified: false,
+      verify: () => set({ verified: true }),
+    }));
+    function App() {
+      const { verified, verify } = useGate();
+      return (
+        <Agent>
+          {verified ? null : (
+            <Tool
+              name="verify"
+              description="Verify."
+              onCall={() => {
+                verify();
+                return { ok: true };
+              }}
+            />
+          )}
+          <Tool name="refund" description="Refund." onlyAfter="verify" onCall={ok} />
+        </Agent>
+      );
+    }
+    const runtime = new AgentSiteRuntime(<App />);
+    expect((await runtime.callTool("refund")).result.ok).toBe(false);
+    expect((await runtime.callTool("verify")).result.ok).toBe(true);
+    // verify is gone from the context now; refund recompiled without it and still runs.
+    expect(runtime.snapshot().context.tools.map((tool) => tool.name)).not.toContain("verify");
+    expect((await runtime.callTool("refund")).result).toEqual({ ok: true, message: "done" });
+  });
+
+  it("throws when onlyAfter names the tool itself", () => {
+    expect(
+      () =>
+        new AgentSiteRuntime(
+          <Agent>
+            <Tool name="loop" description="Never opens." onlyAfter="loop" onCall={ok} />
+          </Agent>,
+        ),
+    ).toThrow(/itself/);
+  });
+
+  it("accepts onlyAfter naming a declared tool", () => {
+    expect(
+      () =>
+        new AgentSiteRuntime(
+          <Agent>
+            <Tool name="verify" description="Verify." onCall={ok} />
+            <Tool name="fine" description="Gated." onlyAfter="verify" onCall={ok} />
+          </Agent>,
+        ),
+    ).not.toThrow();
   });
 });

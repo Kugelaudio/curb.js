@@ -45,3 +45,11 @@ Neither runs `onCall`.
 
 A call that passed validation and then failed counts toward `maxCallsPerConversation`, and a prerequisite counts only
 once a call of it returned `ok: true`. See [`<Tool>`](./components/tool.md) for the other props.
+
+## Checks
+
+A `maxCallsPerConversation` that is not a whole number of 1 or more, and an `onlyAfter` that names
+the tool itself, throw an authoring error as soon as the tool renders. An `onlyAfter` that names no
+tool in the loaded context only gets a warning, because the prerequisite may live in a skill that
+is not loaded, or may have stopped rendering after it succeeded; the call is refused until that
+tool has succeeded, and runs once it has.
