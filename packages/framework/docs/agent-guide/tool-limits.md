@@ -10,7 +10,7 @@ framework enforces them instead of the prompt.
 | `onlyAfter` | `string` | The name of a tool that must have succeeded earlier in the conversation |
 
 A call that breaks a limit is refused: the model gets a failed result with a fixed message, and
-the handler does not run. A refused call does not count toward `maxCallsPerConversation`. A tool
+the handler does not run. A refused call does not count toward `maxCallsPerConversation`, and neither does a call whose input fails the tool's schema. A tool
 without either prop behaves as it always did.
 
 ## Example
@@ -43,5 +43,5 @@ Before `verify_caller` succeeds, `issue_refund` returns
 returns `"issue_refund" has reached its limit of 1 call in this conversation and cannot be called again.`
 Neither runs `onCall`.
 
-A call that ran and failed counts toward `maxCallsPerConversation`, and a prerequisite counts only
+A call that passed validation and then failed counts toward `maxCallsPerConversation`, and a prerequisite counts only
 once a call of it returned `ok: true`. See [`<Tool>`](./components/tool.md) for the other props.

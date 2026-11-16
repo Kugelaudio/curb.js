@@ -556,11 +556,12 @@ function registerAction(
   registry.set(name, {
     definition,
     ...limitsProp(node),
-    handler: async (input) => {
+    handler: async (input, accepted) => {
       const handler = node.props.onCall;
       if (typeof handler !== "function") {
         throw new Error(`Action "${name}" is missing an onCall handler.`);
       }
+      accepted?.();
       return handler(providedSchema ? input : {});
     },
   });
@@ -592,12 +593,12 @@ function registerForm(
   registry.set(name, {
     definition,
     ...limitsProp(node),
-    handler: async (input) => {
+    handler: async (input, accepted) => {
       const handler = node.props.onSubmit;
       if (typeof handler !== "function") {
         throw new Error(`Tool "${name}" is missing an onSubmit handler.`);
       }
-      return handler(input);
+      return handler(input, undefined, accepted);
     },
   });
   return definition;

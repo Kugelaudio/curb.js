@@ -45,7 +45,7 @@ export type ToolFake = (input: Record<string, unknown>) => Promise<ToolResult>;
 
 /** A `<Tool>` form's `onSubmit` (`submitTool` in components.tsx): it checks the input, then runs
  * `fake` where it would run the author's `onSubmit`. */
-type FakeableSubmit = (input: Record<string, unknown>, fake: ToolFake) => Promise<ToolResult>;
+type FakeableSubmit = (input: Record<string, unknown>, fake: ToolFake, accepted?: () => void) => Promise<ToolResult>;
 
 export type SiteFactory = (state: {
   /** The active skill's path (most recently loaded); "" while no skill is loaded. */
@@ -190,14 +190,17 @@ export class AgentSiteRuntime {
       this.events.push({ type: "tool_result", name, result });
       return { result, contextDiff: this.refresh("update") };
     }
-    if (entry.limits) this.toolRuns.set(name, (this.toolRuns.get(name) ?? 0) + 1);
+    // Only a call whose input passed validation counts: a malformed call must not use up the limit.
+    const accepted = () => {
+      if (entry.limits) this.toolRuns.set(name, (this.toolRuns.get(name) ?? 0) + 1);
+    };
 
     this.events.push({ type: "tool_called", name, input });
     let result: ToolResult;
     this.toolCallInFlight = true;
     try {
       const fake = this.toolFakes.get(name);
-      result = await (fake ? this.callFaked(name, fake, input) : entry.handler(input));
+      result = await (fake ? this.callFaked(name, fake, input, accepted) : entry.handler(input, accepted));
       if (result.ok) {
         this.toolSucceeded.add(name);
         this.toolErrors.delete(name);
@@ -256,10 +259,15 @@ export class AgentSiteRuntime {
   }
 
   /** A call of `name`, which a test faked with `fake` (see `fakeTools`). */
-  private callFaked(name: string, fake: ToolFake, input: Record<string, unknown>): Promise<ToolResult> {
+  private callFaked(
+    name: string,
+    fake: ToolFake,
+    input: Record<string, unknown>,
+    accepted: () => void,
+  ): Promise<ToolResult> {
     const id = this.registry.get(name)?.definition.id;
     const submit = id === undefined ? undefined : toolForm(this.root.container.root, id)?.props.onSubmit;
-    return typeof submit === "function" ? (submit as FakeableSubmit)(input, fake) : fake(input);
+    return typeof submit === "function" ? (submit as FakeableSubmit)(input, fake, accepted) : (accepted(), fake(input));
   }
 
   /** The rendered tools the block `block` marked as its own (`ToolMark`), each with the name it

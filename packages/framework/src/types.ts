@@ -376,7 +376,9 @@ export type AgentContextEntry = {
 
 export type ToolRegistryEntry = {
   definition: ToolDefinition;
-  handler: ToolHandler;
+  /** `accepted` is called once the input passed validation and the tool is about to run; only
+   * such a call counts toward `maxCallsPerConversation`. */
+  handler: (input: Record<string, unknown>, accepted?: () => void) => Promise<ToolResult> | ToolResult;
   /** Limits the framework enforces on the model's calls (`<Tool maxCallsPerConversation onlyAfter>`). */
   limits?: ToolLimits;
 };

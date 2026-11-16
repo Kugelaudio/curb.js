@@ -532,4 +532,26 @@ describe("tool limits", () => {
     expect((await runtime.callTool("note", { text: "b" })).result.ok).toBe(false);
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
+
+  it("does not count a call whose input failed validation", async () => {
+    const onSubmit = vi.fn(ok);
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <Tool
+          name="note"
+          description="Take a note."
+          schema={z.object({ text: z.string() })}
+          maxCallsPerConversation={1}
+          onSubmit={onSubmit}
+        />
+      </Agent>,
+    );
+    const invalid = (await runtime.callTool("note", { text: 3 })).result;
+    expect(invalid.ok).toBe(false);
+    expect(invalid.message).not.toContain("limit");
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect((await runtime.callTool("note", { text: "a" })).result).toEqual({ ok: true, message: "done" });
+    expect((await runtime.callTool("note", { text: "b" })).result.message).toContain("limit of 1 call");
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
 });

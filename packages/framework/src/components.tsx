@@ -256,9 +256,12 @@ function InputTool(props: InputToolProps) {
   async function submitTool(
     input: Record<string, unknown>,
     fake?: (input: Record<string, unknown>) => Promise<ToolResult>,
+    accepted?: () => void,
   ) {
     try {
-      const nextResult = await (fake ?? props.onSubmit)(validate(input) as never);
+      const valid = validate(input);
+      accepted?.();
+      const nextResult = await (fake ?? props.onSubmit)(valid as never);
       setResult(nextResult);
       return nextResult;
     } catch (caughtError) {
