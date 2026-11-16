@@ -4,7 +4,9 @@ import { AgentSession } from "../../../agent-session.js";
 import type { AgentRunRequest, AgentRunResponse, AgentTurnStreamEvent } from "../../../llm/types.js";
 import { createInsuranceDemoRuntime } from "../../../test-fixtures/insurance-runtime.js";
 import type { CallReporter } from "../../../hosted/call-reporter.js";
+import { AudioFrame } from "@livekit/rtc-node";
 import { CurbVoiceAgent } from "./curb-agent.js";
+import { ConversationClips } from "./clip-store.js";
 
 function userSaid(text: string): llm.ChatContext {
   const chat = new llm.ChatContext();
@@ -150,5 +152,50 @@ describe("turn cancellation and failures", () => {
       kind: "timeout",
       message: "The LLM did not answer within 60000 ms",
     });
+  });
+});
+
+describe("STT recreation with the clip tap", () => {
+  const frame = () => new AudioFrame(new Int16Array(160), 16000, 1, 160);
+
+  it("leaves the call's audio unlocked when an STT node fails, so the recreated stream reads it", async () => {
+    // The base node as LiveKit's default runs it: it reads the input, releases its own reader
+    // when the provider fails (DeferredReadableStream.detachSource), and ends with the error.
+    const reads: number[] = [];
+    const base = Object.getPrototypeOf(CurbVoiceAgent.prototype) as { sttNode: (...args: unknown[]) => unknown };
+    const sttNode = vi.spyOn(base, "sttNode").mockImplementation(async (input: unknown) => {
+      const reader = (input as ReadableStream<AudioFrame>).getReader();
+      return new ReadableStream({
+        async start(controller) {
+          const { value } = await reader.read();
+          if (value) reads.push(value.samplesPerChannel);
+          reader.releaseLock();
+          controller.error(new Error("Kugel STT refused the connection: HTTP 429"));
+        },
+      });
+    });
+    try {
+      const clips = new ConversationClips();
+      const append = vi.spyOn(clips, "append");
+      const agent = new CurbVoiceAgent({ instructions: "Test agent", clips, async *runTurn() {} });
+      let push!: ReadableStreamDefaultController<AudioFrame>;
+      const audio = new ReadableStream<AudioFrame>({ start(controller) { push = controller; } });
+
+      push.enqueue(frame());
+      const first = (await agent.sttNode(audio as never, {}))!;
+      await expect((first as ReadableStream).getReader().read()).rejects.toThrow("HTTP 429");
+
+      // LiveKit's STT pipeline recreates the node on the same audio after its backoff.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      push.enqueue(frame());
+      const second = (await agent.sttNode(audio as never, {}))!;
+      await expect((second as ReadableStream).getReader().read()).rejects.toThrow("HTTP 429");
+
+      expect(reads).toEqual([160, 160]);
+      expect(append).toHaveBeenCalledTimes(2);
+      expect(sttNode).toHaveBeenCalledTimes(2);
+    } finally {
+      sttNode.mockRestore();
+    }
   });
 });

@@ -16,6 +16,41 @@ import { reportTurnEvent } from "../turn-report.js";
 import type { CallReporter } from "../../../hosted/call-reporter.js";
 import type { ConversationClips } from "./clip-store.js";
 
+/**
+ * `stream` unchanged for its reader, with `done` run once when it ends, fails or is cancelled.
+ * Its events and its error pass through as they are: LiveKit decides by the error's type
+ * whether to recreate the node.
+ */
+function untilDone<T>(stream: ReadableStream<T>, done: () => void): ReadableStream<T> {
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    done();
+  };
+  const reader = stream.getReader();
+  return new ReadableStream<T>({
+    async pull(controller) {
+      try {
+        const { done: ended, value } = await reader.read();
+        if (ended) {
+          finish();
+          controller.close();
+        } else {
+          controller.enqueue(value);
+        }
+      } catch (error) {
+        finish();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      finish();
+      await reader.cancel(reason);
+    },
+  });
+}
+
 /** Copy one AudioFrame's PCM16 into a standalone Buffer. */
 function frameToBuffer(frame: AudioFrame): Buffer {
   return Buffer.from(
@@ -107,6 +142,12 @@ export class CurbVoiceAgent extends voice.Agent {
   ): Promise<Awaited<ReturnType<voice.Agent["sttNode"]>>> {
     const clips = this.clips;
     if (!clips) return super.sttNode(audio, modelSettings);
+    // The tap's pipe holds the call's audio stream until it is stopped. LiveKit recreates the
+    // STT node on that same stream after a provider error (a refused connection, a dropped
+    // socket), and its own cleanup releases only its reader of `tapped`; a pipe still running
+    // would leave the audio locked and the recreated node would fail on it, ending the call's
+    // speech recognition. So the pipe stops, without cancelling the audio, when this node ends.
+    const stop = new AbortController();
     // Node's web-streams typings and the DOM lib disagree on pipeThrough;
     // the runtime objects are the same web streams.
     const tapped = (audio as ReadableStream<AudioFrame>).pipeThrough(
@@ -116,8 +157,20 @@ export class CurbVoiceAgent extends voice.Agent {
           controller.enqueue(frame);
         },
       }),
+      { signal: stop.signal, preventCancel: true },
     ) as Parameters<voice.Agent["sttNode"]>[0];
-    return super.sttNode(tapped, modelSettings);
+    let node: Awaited<ReturnType<voice.Agent["sttNode"]>>;
+    try {
+      node = await super.sttNode(tapped, modelSettings);
+    } catch (error) {
+      stop.abort();
+      throw error;
+    }
+    if (!node) {
+      stop.abort();
+      return node;
+    }
+    return untilDone(node as ReadableStream<unknown>, () => stop.abort()) as typeof node;
   }
 
   /** Tee the synthesized audio into the assistant clip store — the exact TTS
