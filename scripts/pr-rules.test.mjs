@@ -194,6 +194,28 @@ test("every other title rule still applies to Dependabot", () => {
   assert.match(check("chore(deps): Bump ".padEnd(MAX_TITLE_LENGTH + 1, "a"))[0], /^title-length: /);
 });
 
+const GROUPED_TITLE =
+  "chore(deps): Bump @astrojs/markdown-remark from 7.3.5 to 7.3.6 in /website in the minor-and-patch group across 1 directory";
+
+test("Dependabot's group suffix does not count toward the title length", () => {
+  assert.ok([...GROUPED_TITLE].length > MAX_TITLE_LENGTH);
+  assert.deepEqual(titleErrors(GROUPED_TITLE, DEPENDABOT_LOGIN), []);
+  const across = GROUPED_TITLE.replace("1 directory", "2 directories");
+  assert.deepEqual(titleErrors(across, DEPENDABOT_LOGIN), []);
+  assert.match(titleErrors(GROUPED_TITLE, "someone").at(-1), /^title-subject: /);
+  assert.match(titleErrors(GROUPED_TITLE, "someone")[0], /^title-length: the title is 122 /);
+  const long = "chore(deps): Bump ".padEnd(MAX_TITLE_LENGTH + 1, "a");
+  const grouped = `${long} in the minor-and-patch group across 1 directory`;
+  assert.match(titleErrors(grouped, DEPENDABOT_LOGIN)[0], /^title-length: the title is 101 /);
+  assert.match(titleErrors(`${GROUPED_TITLE}.`, DEPENDABOT_LOGIN)[0], /^title-length: /);
+});
+
+test("a person's title over the limit still fails, whatever it ends with", () => {
+  const person = GROUPED_TITLE.replace("Bump", "bump");
+  assert.match(titleErrors(person, "someone")[0], /^title-length: the title is 122 /);
+  assert.match(titleErrors("fix: ".padEnd(MAX_TITLE_LENGTH + 1, "a"), "someone")[0], /^title-length: /);
+});
+
 test("the body rule still applies to Dependabot, whose real bodies pass it", () => {
   assert.deepEqual(bodyErrors("Bumps [ai](https://example.com) from 6.0.311 to 7.0.155."), []);
   assert.deepEqual(bodyErrors("Bumps the minor-and-patch group with 33 updates:"), []);

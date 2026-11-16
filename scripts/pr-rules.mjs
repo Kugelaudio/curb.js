@@ -13,6 +13,10 @@ export const MAX_TITLE_LENGTH = 100;
 // records in the event payload, which nothing in a pull request can edit.
 export const DEPENDABOT_LOGIN = "dependabot[bot]";
 
+// A grouped Dependabot update ends its title with this, and dependabot.yml cannot shorten it, so
+// its title-length counts without it. The rest of the title still has to fit.
+const DEPENDABOT_GROUP_SUFFIX = / in the \S+ group across \d+ director(?:y|ies)$/;
+
 const TITLE_EXAMPLE = "feat(framework): add a hook that runs after a call";
 const BODY_EXAMPLE = "## What\n\nA hook that runs after a call.\n\n## Why\n\nProjects need the transcript.";
 
@@ -35,8 +39,9 @@ export function titleErrors(title, author) {
   const errors = [];
   const fail = (rule, problem) => errors.push(failure(rule, problem, TITLE_EXAMPLE));
 
-  if ([...title].length > MAX_TITLE_LENGTH) {
-    fail("title-length", `the title is ${[...title].length} characters, the limit is ${MAX_TITLE_LENGTH}`);
+  const counted = author === DEPENDABOT_LOGIN ? title.replace(DEPENDABOT_GROUP_SUFFIX, "") : title;
+  if ([...counted].length > MAX_TITLE_LENGTH) {
+    fail("title-length", `the title is ${[...counted].length} characters, the limit is ${MAX_TITLE_LENGTH}`);
   }
   const subject = TITLE.exec(title)?.[1];
   if (subject === undefined) {
