@@ -48,7 +48,7 @@ once a call of it returned `ok: true`. See [`<Tool>`](./components/tool.md) for 
 
 ## Checks
 
-`maxCallsPerConversation` must be a whole number of 1 or more; anything else is an authoring error
-when the tool renders. An `onlyAfter` that names a tool missing from the loaded context gets a
-warning (the tool may live in a skill that is not loaded yet), and an `onlyAfter` that names the
-tool itself is an error, because it can never run.
+A wrong declaration throws an authoring error as soon as the tool renders: a
+`maxCallsPerConversation` that is not a whole number of 1 or more, an `onlyAfter` that names no tool
+in the loaded context, or one that names the tool itself. Render the prerequisite tool in the same
+skill or in the agent, so it is loaded whenever the gated tool is.

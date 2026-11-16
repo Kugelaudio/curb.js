@@ -111,25 +111,24 @@ export function compileSite(root: SemanticNode | null, paths: string | string[])
     diagnoseOversizedSkill(path, context.tools.length - before, context);
   }
   diagnoseOversizedContext(context);
-  diagnoseToolGates(context, registry);
+  diagnoseToolGates(registry);
   return { context, registry };
 }
 
-/** A tool gated by `onlyAfter` on a tool that is not in the loaded context, or on itself, is
- * refused until that tool is loaded and succeeds. The prerequisite may live in a skill that is
- * not loaded yet, so a missing one is a warning; a gate on the tool itself can never open. */
-function diagnoseToolGates(context: CompiledContext, registry: Map<string, ToolRegistryEntry>): void {
+/** A tool gated by `onlyAfter` on a tool that is not in the loaded context, or on itself, can
+ * never run: the gate is an authoring error, thrown like any other wrong prop. */
+function diagnoseToolGates(registry: Map<string, ToolRegistryEntry>): void {
   for (const [name, entry] of registry) {
     const gate = entry.limits?.onlyAfter;
     if (gate === undefined) continue;
     const self = gate === name;
     if (!self && registry.has(gate)) continue;
-    addDiagnostic(context, {
+    throw new AgentAuthoringError({
       code: AUTHORING_DIAGNOSTIC_CODES.invalidProp,
-      severity: self ? "error" : "warning",
+      severity: "error",
       message: self
         ? `Tool ${JSON.stringify(name)} has onlyAfter=${JSON.stringify(gate)}, itself, so it can never run.`
-        : `Tool ${JSON.stringify(name)} has onlyAfter=${JSON.stringify(gate)}, but no tool of that name is in the loaded context, so calls are refused until one is loaded and succeeds.`,
+        : `Tool ${JSON.stringify(name)} has onlyAfter=${JSON.stringify(gate)}, but no tool of that name is in the loaded context, so it can never run.`,
       location: {
         ...(entry.definition.skillPath ? { skillPath: entry.definition.skillPath } : {}),
         component: `Tool name=${JSON.stringify(name)}`,

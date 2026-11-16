@@ -566,20 +566,38 @@ describe("tool limits", () => {
     ).toThrow(/maxCallsPerConversation/);
   });
 
-  it("warns when onlyAfter names a tool that is not declared, and errors on a self gate", () => {
-    const runtime = new AgentSiteRuntime(
-      <Agent>
-        <Tool name="refund" description="Refund." onlyAfter="verify_calller" onCall={ok} />
-        <Tool name="loop" description="Never opens." onlyAfter="loop" onCall={ok} />
-        <Tool name="verify" description="Verify." onCall={ok} />
-        <Tool name="fine" description="Gated on a declared tool." onlyAfter="verify" onCall={ok} />
-      </Agent>,
-    );
-    const diagnostics = runtime.snapshot().context.diagnostics ?? [];
-    expect(diagnostics.map((d) => [d.severity, d.location.component])).toEqual([
-      ["error", 'Tool name="loop"'],
-      ["warning", 'Tool name="refund"'],
-    ]);
-    expect(diagnostics[1]!.message).toContain("verify_calller");
+  it("throws when onlyAfter names a tool that is not declared", () => {
+    expect(
+      () =>
+        new AgentSiteRuntime(
+          <Agent>
+            <Tool name="refund" description="Refund." onlyAfter="verify_calller" onCall={ok} />
+            <Tool name="verify" description="Verify." onCall={ok} />
+          </Agent>,
+        ),
+    ).toThrow(/refund.*onlyAfter="verify_calller".*never run/);
+  });
+
+  it("throws when onlyAfter names the tool itself", () => {
+    expect(
+      () =>
+        new AgentSiteRuntime(
+          <Agent>
+            <Tool name="loop" description="Never opens." onlyAfter="loop" onCall={ok} />
+          </Agent>,
+        ),
+    ).toThrow(/itself/);
+  });
+
+  it("accepts onlyAfter naming a declared tool", () => {
+    expect(
+      () =>
+        new AgentSiteRuntime(
+          <Agent>
+            <Tool name="verify" description="Verify." onCall={ok} />
+            <Tool name="fine" description="Gated." onlyAfter="verify" onCall={ok} />
+          </Agent>,
+        ),
+    ).not.toThrow();
   });
 });
