@@ -93,7 +93,7 @@
     "@livekit/agents-plugin-silero": "1.9.5",
     "@livekit/rtc-node": "1.2.1",
     "@opentelemetry/api": "1.10.0",
-    "@types/node": "25.9.3",
+    "@types/node": "25.9.9",
     "esbuild": "0.28.2",
     "livekit-server-sdk": "2.19.2",
     "onnxruntime-node": "1.31.1",
