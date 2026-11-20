@@ -226,7 +226,7 @@ function App() {
   useEffect(() => {
     const grew = assistantMessageCount > lastArmedCount.current;
     lastArmedCount.current = assistantMessageCount;
-    if (!grew) return;
+    if (!grew || hostTransport) return;
     // TEMPORARY: the commit moment, on the same timeline as the phases.
     void fetch(
       `/__voice-phase?p=${encodeURIComponent(`assistant message committed (#${assistantMessageCount})`)}`,
