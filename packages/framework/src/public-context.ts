@@ -2,6 +2,7 @@ import { formatMissingMarkdownError, normalizePublicSrc } from "./public-context
 
 const cache = new Map<string, string>();
 const isBrowser = typeof window !== "undefined";
+let latestMarkdownLoad = 0;
 
 if (!isBrowser) {
   const { hydratePublicMarkdownCache } = await import("./public-context.node.js");
@@ -28,6 +29,7 @@ async function fetchPublicMarkdownIndex(basePath: string): Promise<string[]> {
 export async function preloadPublicMarkdown(basePath = "") {
   if (!isBrowser) return;
 
+  const load = ++latestMarkdownLoad;
   const files = await fetchPublicMarkdownIndex(basePath);
   const documents = await Promise.all(
     files.map(async (src) => {
@@ -44,6 +46,7 @@ export async function preloadPublicMarkdown(basePath = "") {
       return [src, await response.text()] as const;
     }),
   );
+  if (load !== latestMarkdownLoad) return;
   cache.clear();
   for (const [src, content] of documents) cache.set(src, content);
 }

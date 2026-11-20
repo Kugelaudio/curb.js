@@ -39,7 +39,7 @@ import { InstructionsDialog } from "./instructions-dialog.js";
 import { callForReply, dateLineOf } from "./model-input.js";
 import { ModelInputDialog } from "./model-input-dialog.js";
 import { pageInfoFromQuery, refusedPageInfoNotice } from "./page-info.js";
-import { pageBase, pathForRoute, routeForView, routeFromPath, viewForRoute, type PreviewView } from "./preview-route.js";
+import { pageBase, pathForRoute, routeForEmbeddedSnapshot, routeForView, routeFromPath, viewForRoute, type PreviewView } from "./preview-route.js";
 import {
   blockingSignature,
   CannotAnswerPill,
@@ -178,11 +178,19 @@ function App() {
   // races its creation. Again on every new connection: after `curb dev` reloaded the agent,
   // the new server's copy compiles the saved code.
   const linkedConnection = useRef(0);
+  const embeddedSnapshot = useRef(0);
   useEffect(() => {
-    // `connection` counts connections whose agent arrived, so `outline` is this connection's.
-    if (linkedConnection.current === state.connection || !state.connected || !outline || !context) return;
+    if (!state.connected || !outline || !context) return;
+    const firstOnConnection = linkedConnection.current !== state.connection;
+    const refreshedEmbed = hostTransport && embeddedSnapshot.current !== state.agentSnapshot;
+    if (!firstOnConnection && !refreshedEmbed) return;
     linkedConnection.current = state.connection;
-    const route = routeFromPath(window.location.pathname, outline.skillPaths, pageBase());
+    embeddedSnapshot.current = state.agentSnapshot;
+    const { pathname } = window.location;
+    const base = pageBase();
+    const route = hostTransport
+      ? routeForEmbeddedSnapshot(pathname, outline.skillPaths, base, firstOnConnection ? undefined : viewRef.current)
+      : routeFromPath(pathname, outline.skillPaths, base);
     const next = viewForRoute(route);
     navigate(next, "replace");
     if (next.overlay?.kind !== "skill") client.inspectSkill(context.path);
@@ -190,18 +198,18 @@ function App() {
       requestAnimationFrame(() => document.getElementById("context-tools")?.scrollIntoView({ block: "start" }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.connected, state.connection, outline, context]);
+  }, [state.connected, state.connection, state.agentSnapshot, outline, context]);
 
-  // A reload may come from a saved context/*.md: the page's copy of the markdown (branch
-  // views of documents not rendered yet) is read again, as the agent's was, and shown.
+  // Refresh the browser cache after a reconnect or a later embedded snapshot.
   const [, setMarkdownRevision] = useState(0);
+  const markdownSnapshot = hostTransport ? state.agentSnapshot : state.connection;
   useEffect(() => {
-    if (state.connection <= 1) return;
+    if (markdownSnapshot <= 1) return;
     preloadPublicMarkdown(markdownBase).then(
       () => setMarkdownRevision((revision) => revision + 1),
       (error: unknown) => console.error("[preview] could not read the context markdown again:", error),
     );
-  }, [state.connection]);
+  }, [markdownSnapshot]);
 
   // Back and forward move between views.
   useEffect(() => {

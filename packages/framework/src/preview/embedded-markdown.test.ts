@@ -41,3 +41,24 @@ it("preloads and refreshes a namespaced document before its inactive skill branc
   await preloadPublicMarkdown(pageBase(root));
   expect(resolvePublicMarkdown("billing/inactive.md")).toBe(content);
 });
+
+it("keeps the newest embedded markdown when an older request finishes last", async () => {
+  vi.stubGlobal("window", {});
+  let finishOlder!: (response: Response) => void;
+  const delayed = new Promise<Response>((resolve) => { finishOlder = resolve; });
+  const fetch = vi.fn()
+    .mockResolvedValueOnce(Response.json(["billing.md"]))
+    .mockReturnValueOnce(delayed)
+    .mockResolvedValueOnce(Response.json(["billing.md"]))
+    .mockResolvedValueOnce(new Response("# Current"));
+  vi.stubGlobal("fetch", fetch);
+  const { preloadPublicMarkdown, resolvePublicMarkdown } = await import("../public-context.js");
+
+  const older = preloadPublicMarkdown("/embedded");
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  await preloadPublicMarkdown("/embedded");
+  finishOlder(new Response("# Old"));
+  await older;
+
+  expect(resolvePublicMarkdown("billing.md")).toBe("# Current");
+});

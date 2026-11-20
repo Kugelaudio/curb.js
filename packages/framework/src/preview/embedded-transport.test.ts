@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { embeddedPreviewTransport } from "./embedded-transport.js";
+import { routeForEmbeddedSnapshot, viewForRoute } from "./preview-route.js";
 import { DemoWsClient } from "./ws-client.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -36,14 +37,24 @@ describe("embedded preview client", () => {
     receive({ type: "voice_session", live: true, transport: "livekit", url: "wss://example.test", token: "fixture", room: "fixture" });
     receive({ type: "mcp_servers", servers: [{ id: "one", status: "auth_required", authUrl: "https://example.test/authorize" }] });
     receive({ type: "dev_reload", state: "waiting", until: "reply_ends", files: [] });
-    const agent = { id: "agent", source: "", preview: {}, skills: [] };
+    const agent = { id: "agent", source: "", preview: {}, skills: [{ path: "/billing", source: "" }, { path: "/welcome", source: "" }] };
     receive({ type: "agents", agents: [agent.id], active: agent });
     expect(client.getState()).toMatchObject({
       activeAgent: agent, reload: null, mcpServers: [],
       voice: { live: false, connecting: false, token: null, url: null, room: null },
     });
 
+    const base = "/preview";
+    const location = `${base}/skill/welcome`;
+    const skills = agent.skills.map((skill) => skill.path);
+    expect(routeForEmbeddedSnapshot(location, skills, base)).toEqual({ kind: "skill", path: "/welcome" });
     client.inspectSkill("/billing");
+    const openSheet = viewForRoute({ kind: "skill", path: "/billing" });
+    receive({ type: "agents", agents: [agent.id], active: agent });
+    expect(client.getState()).toMatchObject({ connection: 1, agentSnapshot: 2 });
+    expect(routeForEmbeddedSnapshot(location, skills, base, openSheet)).toEqual({ kind: "skill", path: "/billing" });
+    expect(routeForEmbeddedSnapshot(location, ["/welcome"], base, openSheet)).toEqual({ kind: "home" });
+
     client.voiceStart();
     client.voiceStop();
     client.mcpConnect("one");

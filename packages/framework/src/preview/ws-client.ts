@@ -70,8 +70,10 @@ export type DemoClientState = {
    * conversation could not bring back); null when there is nothing. Cleared when another
    * conversation becomes active. */
   notice: string | null;
-  /** Counts fresh agent descriptions: the first per socket, or each embedded host snapshot. */
+  /** Counts connections described by their first agents frame. */
   connection: number;
+  /** Counts every agent snapshot, including updates on the current connection. */
+  agentSnapshot: number;
 };
 
 const INITIAL_STATE: DemoClientState = {
@@ -100,6 +102,7 @@ const INITIAL_STATE: DemoClientState = {
   missingKeys: {},
   notice: null,
   connection: 0,
+  agentSnapshot: 0,
 };
 
 /** The keys the active agent needs and the server does not have: while there are any, the
@@ -373,7 +376,8 @@ export class DemoWsClient {
           agents: message.agents,
           activeAgent: message.active,
           unavailable: null,
-          connection: this.state.connection + (firstOnSocket || this.transport ? 1 : 0),
+          connection: this.state.connection + (firstOnSocket ? 1 : 0),
+          agentSnapshot: this.state.agentSnapshot + 1,
           // The inspector shadows the active agent — stale views from another
           // agent must not survive a switch.
           ...(message.active.id !== this.state.activeAgent?.id
