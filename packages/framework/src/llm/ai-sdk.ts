@@ -27,6 +27,7 @@ import { serializeLlmInput } from "./serialize-input.js";
 const REPO_ROOT = COMPILED ? null : resolve(packageRoot, "../..");
 
 export type AgentModelUsage = {
+  /** Uncached input; cache reads and writes have their own counters. */
   inputTokens: number | undefined;
   outputTokens: number | undefined;
   cacheReadTokens: number | undefined;
@@ -36,8 +37,6 @@ export type AgentModelUsage = {
 export type AiSdkAgentOptions = {
   /** The conversation's effective llm, read per turn (`runtime.settings.current().llm`). */
   llm: LlmDescriptor;
-  maxOutputTokens?: number;
-  onUsage?: (usage: AgentModelUsage) => void;
 };
 
 /** The model fields of an AI SDK call: the model, its sampling and its provider options. */
@@ -160,7 +159,7 @@ function describeInvalidToolCall(call: SdkToolCall): string {
 
 export async function runAiSdkAgent(
   request: AgentRunRequest,
-  options: AiSdkAgentOptions,
+  options: AiSdkAgentOptions & { maxOutputTokens?: number; onUsage?: (usage: AgentModelUsage) => void },
 ): Promise<AgentRunResponse> {
   const result = await generateText({
     ...buildAgentCallParams(request, options),

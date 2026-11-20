@@ -8,8 +8,8 @@ if (!isBrowser) {
   hydratePublicMarkdownCache(cache);
 }
 
-async function fetchPublicMarkdownIndex() {
-  const response = await fetch("/context.index.json");
+async function fetchPublicMarkdownIndex(basePath: string): Promise<string[]> {
+  const response = await fetch(`${basePath}/context.index.json`);
   // 404 means the project has no context/ directory — a defined empty state.
   // Anything else non-ok is a real serving failure and must surface.
   if (response.status === 404) return [];
@@ -18,27 +18,34 @@ async function fetchPublicMarkdownIndex() {
   }
 
   const files = (await response.json()) as unknown;
-  if (!Array.isArray(files) || files.some((file) => typeof file !== "string")) {
+  if (!Array.isArray(files) || !files.every((file) => typeof file === "string")) {
     throw new Error("context/context.index.json must be a JSON array of markdown paths.");
   }
 
   return files;
 }
 
-export async function preloadPublicMarkdown() {
+export async function preloadPublicMarkdown(basePath = "") {
   if (!isBrowser) return;
 
-  const files = await fetchPublicMarkdownIndex();
-  await Promise.all(
+  const files = await fetchPublicMarkdownIndex(basePath);
+  const documents = await Promise.all(
     files.map(async (src) => {
-      const response = await fetch(`/${src}`);
+      const parts = src.split("/");
+      if (!src.endsWith(".md") || parts.some((part) => part === "" || part === "." || part === "..")) {
+        throw new Error(`Invalid context markdown path: ${src}`);
+      }
+      const path = parts.map(encodeURIComponent).join("/");
+      const response = await fetch(`${basePath}/${path}`);
       if (!response.ok) {
         throw new Error(`Failed to load context markdown: ${src}`);
       }
 
-      cache.set(src, await response.text());
+      return [src, await response.text()] as const;
     }),
   );
+  cache.clear();
+  for (const [src, content] of documents) cache.set(src, content);
 }
 
 /**

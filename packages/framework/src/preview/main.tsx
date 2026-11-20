@@ -69,6 +69,7 @@ import "./preview.css";
 const NO_REPLAY: ConversationReplayState = { active: false, timeMs: 0, windows: [] };
 
 const hostTransport = embeddedPreviewTransport();
+const markdownBase = hostTransport ? pageBase() : "";
 
 function App() {
   // The page's own info from its URL (`?client.event=…`), read once: what a page an agent is
@@ -109,6 +110,7 @@ function App() {
     );
   }, []);
   useEffect(() => {
+    if (hostTransport) return;
     const ticket = state.voice;
     if (ticket.live && ticket.transport && ticket.url && ticket.token && ticket.room && state.activeConversation) {
       void voiceClient.start({
@@ -194,8 +196,8 @@ function App() {
   // views of documents not rendered yet) is read again, as the agent's was, and shown.
   const [, setMarkdownRevision] = useState(0);
   useEffect(() => {
-    if (hostTransport || state.connection <= 1) return;
-    preloadPublicMarkdown().then(
+    if (state.connection <= 1) return;
+    preloadPublicMarkdown(markdownBase).then(
       () => setMarkdownRevision((revision) => revision + 1),
       (error: unknown) => console.error("[preview] could not read the context markdown again:", error),
     );
@@ -570,6 +572,6 @@ function findSkill<T extends { path: string; children: T[] }>(nodes: readonly T[
 
 // Fill the browser-side markdown cache before the first render, so a skill's sheet can open
 // any `<Text src>` document, including ones whose branch is not rendered yet.
-if (!hostTransport) await preloadPublicMarkdown();
+await preloadPublicMarkdown(markdownBase);
 
 createRoot(document.getElementById("root")!).render(<App />);

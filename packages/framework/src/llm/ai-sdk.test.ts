@@ -145,7 +145,7 @@ async function fakeChatEndpoint() {
           ...head,
           object: "chat.completion",
           choices: [{ index: 0, message: { role: "assistant", content: "Hallo." }, finish_reason: "stop" }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          usage: { prompt_tokens: 7, completion_tokens: 1, total_tokens: 8, prompt_tokens_details: { cached_tokens: 3 } },
         }),
       );
     });
@@ -220,6 +220,26 @@ describe("openaiCompatible request body", () => {
       }
       expect(endpoint.bodies[0]).toMatchObject({ stream: true });
       expect(endpoint.bodies[1]).not.toHaveProperty("stream");
+    } finally {
+      await endpoint.close();
+    }
+  });
+
+  it("sets the cap on a headless turn and reports provider usage once", async () => {
+    vi.stubEnv("AGENT_LLM_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
+    const endpoint = await fakeChatEndpoint();
+    const onUsage = vi.fn();
+    try {
+      const llm = openaiCompatible({ baseURL: endpoint.baseURL, model: "qwen3.8-27b" });
+      await runAiSdkAgent(turn, { llm, maxOutputTokens: 80, onUsage });
+      expect(endpoint.bodies[0]).toMatchObject({ max_tokens: 80 });
+      expect(onUsage).toHaveBeenCalledExactlyOnceWith({
+        inputTokens: 4,
+        outputTokens: 1,
+        cacheReadTokens: 3,
+        cacheWriteTokens: undefined,
+      });
     } finally {
       await endpoint.close();
     }

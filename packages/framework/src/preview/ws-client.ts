@@ -70,8 +70,7 @@ export type DemoClientState = {
    * conversation could not bring back); null when there is nothing. Cleared when another
    * conversation becomes active. */
   notice: string | null;
-  /** Counts the connections whose agent the server described (their first `agents` frame):
-   * each is a new server-side connection, whose inspector the page points at its skill. */
+  /** Counts fresh agent descriptions: the first per socket, or each embedded host snapshot. */
   connection: number;
 };
 
@@ -171,7 +170,8 @@ export class DemoWsClient {
   connect(): void {
     this.closed = false;
     if (this.transport) {
-      this.patch({ connected: true });
+      this.agentDescribed = false;
+      this.patch({ connected: true, reload: null });
       this.disconnect = this.transport.connect((message) => this.handleServerMessage(message));
       return;
     }
@@ -180,8 +180,11 @@ export class DemoWsClient {
 
   dispose(): void {
     this.closed = true;
-    this.disconnect?.();
-    this.disconnect = undefined;
+    if (this.disconnect) {
+      this.disconnect();
+      this.disconnect = undefined;
+      this.patch({ connected: false });
+    }
     this.socket?.close();
     this.socket = null;
   }
@@ -260,7 +263,7 @@ export class DemoWsClient {
   /** Attach voice to this conversation: the server joins a LiveKit room on
    * the SAME session and answers with a voice_session ticket frame. */
   voiceStart(): void {
-    if (this.state.voice.live || this.state.voice.connecting || missingKeysOf(this.state).length > 0) return;
+    if (this.transport || this.state.voice.live || this.state.voice.connecting || missingKeysOf(this.state).length > 0) return;
     this.patch({ voice: { ...this.state.voice, connecting: true }, lastError: null });
     this.send({ type: "voice_start" });
   }
@@ -370,7 +373,7 @@ export class DemoWsClient {
           agents: message.agents,
           activeAgent: message.active,
           unavailable: null,
-          connection: this.state.connection + (firstOnSocket ? 1 : 0),
+          connection: this.state.connection + (firstOnSocket || this.transport ? 1 : 0),
           // The inspector shadows the active agent — stale views from another
           // agent must not survive a switch.
           ...(message.active.id !== this.state.activeAgent?.id
