@@ -70,9 +70,10 @@ export type DemoClientState = {
    * conversation could not bring back); null when there is nothing. Cleared when another
    * conversation becomes active. */
   notice: string | null;
-  /** Counts the connections whose agent the server described (their first `agents` frame):
-   * each is a new server-side connection, whose inspector the page points at its skill. */
+  /** Counts connections described by their first agents frame. */
   connection: number;
+  /** Counts every agent snapshot, including updates on the current connection. */
+  agentSnapshot: number;
 };
 
 const INITIAL_STATE: DemoClientState = {
@@ -101,6 +102,7 @@ const INITIAL_STATE: DemoClientState = {
   missingKeys: {},
   notice: null,
   connection: 0,
+  agentSnapshot: 0,
 };
 
 /** The keys the active agent needs and the server does not have: while there are any, the
@@ -126,12 +128,18 @@ function defaultWsUrl(): string {
  * via a `useSyncExternalStore`-compatible subscription. It holds NO agent
  * runtime/session — every rendered value comes from the server.
  */
+export interface PreviewTransport {
+  connect(receive: (message: ServerMessage) => void): () => void;
+  send(message: ClientMessage): void;
+}
+
 export class DemoWsClient {
   private readonly url: string;
   /** The page's own info (`client.*`): sent on every connection, so a restarted server
    * gets it too, and the server puts it on every conversation this page starts. */
   private readonly pageInfo: Readonly<Record<string, string>>;
   private socket: WebSocket | null = null;
+  private disconnect?: () => void;
   private state: DemoClientState = INITIAL_STATE;
   private readonly listeners = new Set<() => void>();
   private reconnectDelay = 500;
@@ -142,7 +150,11 @@ export class DemoWsClient {
   /** The current socket's server has described its agent (sent `agents`). */
   private agentDescribed = false;
 
-  constructor(url: string = defaultWsUrl(), pageInfo: Readonly<Record<string, string>> = {}) {
+  constructor(
+    url: string = defaultWsUrl(),
+    pageInfo: Readonly<Record<string, string>> = {},
+    private readonly transport?: PreviewTransport,
+  ) {
     this.url = url;
     this.pageInfo = pageInfo;
   }
@@ -160,11 +172,22 @@ export class DemoWsClient {
 
   connect(): void {
     this.closed = false;
+    if (this.transport) {
+      this.agentDescribed = false;
+      this.patch({ connected: true, reload: null });
+      this.disconnect = this.transport.connect((message) => this.handleServerMessage(message));
+      return;
+    }
     this.openSocket();
   }
 
   dispose(): void {
     this.closed = true;
+    if (this.disconnect) {
+      this.disconnect();
+      this.disconnect = undefined;
+      this.patch({ connected: false });
+    }
     this.socket?.close();
     this.socket = null;
   }
@@ -243,7 +266,7 @@ export class DemoWsClient {
   /** Attach voice to this conversation: the server joins a LiveKit room on
    * the SAME session and answers with a voice_session ticket frame. */
   voiceStart(): void {
-    if (this.state.voice.live || this.state.voice.connecting || missingKeysOf(this.state).length > 0) return;
+    if (this.transport || this.state.voice.live || this.state.voice.connecting || missingKeysOf(this.state).length > 0) return;
     this.patch({ voice: { ...this.state.voice, connecting: true }, lastError: null });
     this.send({ type: "voice_start" });
   }
@@ -354,6 +377,7 @@ export class DemoWsClient {
           activeAgent: message.active,
           unavailable: null,
           connection: this.state.connection + (firstOnSocket ? 1 : 0),
+          agentSnapshot: this.state.agentSnapshot + 1,
           // The inspector shadows the active agent — stale views from another
           // agent must not survive a switch.
           ...(message.active.id !== this.state.activeAgent?.id
@@ -423,7 +447,9 @@ export class DemoWsClient {
   }
 
   private send(message: ClientMessage): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
+    if (this.transport) {
+      this.transport.send(message);
+    } else if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(message));
     } else {
       this.patch({ lastError: { scope: "protocol", message: "Not connected to the server yet." } });

@@ -58,3 +58,8 @@ export type {
   VoiceSessionStartOptions,
 } from "./server/voice/orchestration.js";
 export { END_CALL_TOOL_NAME, SKIP_TURN_TOOL_NAME } from "./types.js";
+
+export { agentAppElement } from "./routing.js";
+export { runAiSdkAgent, type AgentModelUsage } from "./llm/ai-sdk.js";
+export type { ClientMessage, ServerMessage } from "./server/protocol.js";
+export { contextFrame, messagesFrame, llmTraceFrame } from "./server/frames.js";

@@ -32,13 +32,14 @@ import { ConversationHeader } from "./conversation-header.js";
 import { ConversationPlayer, type ConversationReplayState } from "./conversation-player.js";
 import { ConversationThread } from "./conversation-thread.js";
 import { lastCallOf } from "./conversation-turns.js";
+import { embeddedPreviewTransport } from "./embedded-transport.js";
 import { AgentUnavailable, PreviewLoading, reloadNotice } from "./dev-reload.js";
 import { resolveIcon } from "./icon.js";
 import { InstructionsDialog } from "./instructions-dialog.js";
 import { callForReply, dateLineOf } from "./model-input.js";
 import { ModelInputDialog } from "./model-input-dialog.js";
 import { pageInfoFromQuery, refusedPageInfoNotice } from "./page-info.js";
-import { pageBase, pathForRoute, routeForView, routeFromPath, viewForRoute, type PreviewView } from "./preview-route.js";
+import { pageBase, pathForRoute, routeForEmbeddedSnapshot, routeForView, routeFromPath, viewForRoute, type PreviewView } from "./preview-route.js";
 import {
   blockingSignature,
   CannotAnswerPill,
@@ -67,13 +68,16 @@ import "./preview.css";
 
 const NO_REPLAY: ConversationReplayState = { active: false, timeMs: 0, windows: [] };
 
+const hostTransport = embeddedPreviewTransport();
+const markdownBase = hostTransport ? pageBase() : "";
+
 function App() {
   // The page's own info from its URL (`?client.event=…`), read once: what a page an agent is
   // embedded in would send. Refused entries are shown, never sent.
   const pageInfo = useMemo(() => pageInfoFromQuery(window.location.search), []);
   // The runtime and AgentSession live on the server. This client connects over the WS and
   // renders from server-pushed state; it owns no agent runtime.
-  const client = useMemo(() => new DemoWsClient(undefined, pageInfo.info), [pageInfo]);
+  const client = useMemo(() => new DemoWsClient(undefined, pageInfo.info, hostTransport), [pageInfo]);
   useEffect(() => {
     client.connect();
     return () => client.dispose();
@@ -92,11 +96,13 @@ function App() {
   const callState = useSyncExternalStore(voiceSubscribe, voiceSnapshot);
   useEffect(() => {
     // The client publishes an explicit call error if enumeration fails.
+    if (hostTransport) return;
     void voiceClient.refreshMicrophones().catch(() => undefined);
   }, [voiceClient]);
   // Said before Start call: an app's built-in browser or a blocked page has no microphone.
   const [micWarning, setMicWarning] = useState<string | null>(null);
   useEffect(() => {
+    if (hostTransport) return;
     void microphoneDenied().then((denied) =>
       setMicWarning(
         microphoneWarning({ embedded: embeddedBrowserName(navigator.userAgent), denied, pageUrl: window.location.origin }),
@@ -104,6 +110,7 @@ function App() {
     );
   }, []);
   useEffect(() => {
+    if (hostTransport) return;
     const ticket = state.voice;
     if (ticket.live && ticket.transport && ticket.url && ticket.token && ticket.room && state.activeConversation) {
       void voiceClient.start({
@@ -156,7 +163,7 @@ function App() {
   const navigate = (next: PreviewView, history: "push" | "replace" = "push") => {
     setView(next);
     const url = `${pathForRoute(routeForView(next), pageBase())}${window.location.search}`;
-    if (`${window.location.pathname}${window.location.search}` !== url) {
+    if (!hostTransport && `${window.location.pathname}${window.location.search}` !== url) {
       if (history === "push") window.history.pushState(null, "", url);
       else window.history.replaceState(null, "", url);
     }
@@ -171,11 +178,19 @@ function App() {
   // races its creation. Again on every new connection: after `curb dev` reloaded the agent,
   // the new server's copy compiles the saved code.
   const linkedConnection = useRef(0);
+  const embeddedSnapshot = useRef(0);
   useEffect(() => {
-    // `connection` counts connections whose agent arrived, so `outline` is this connection's.
-    if (linkedConnection.current === state.connection || !state.connected || !outline || !context) return;
+    if (!state.connected || !outline || !context) return;
+    const firstOnConnection = linkedConnection.current !== state.connection;
+    const refreshedEmbed = hostTransport && embeddedSnapshot.current !== state.agentSnapshot;
+    if (!firstOnConnection && !refreshedEmbed) return;
     linkedConnection.current = state.connection;
-    const route = routeFromPath(window.location.pathname, outline.skillPaths, pageBase());
+    embeddedSnapshot.current = state.agentSnapshot;
+    const { pathname } = window.location;
+    const base = pageBase();
+    const route = hostTransport
+      ? routeForEmbeddedSnapshot(pathname, outline.skillPaths, base, firstOnConnection ? undefined : viewRef.current)
+      : routeFromPath(pathname, outline.skillPaths, base);
     const next = viewForRoute(route);
     navigate(next, "replace");
     if (next.overlay?.kind !== "skill") client.inspectSkill(context.path);
@@ -183,18 +198,18 @@ function App() {
       requestAnimationFrame(() => document.getElementById("context-tools")?.scrollIntoView({ block: "start" }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.connected, state.connection, outline, context]);
+  }, [state.connected, state.connection, state.agentSnapshot, outline, context]);
 
-  // A reload may come from a saved context/*.md: the page's copy of the markdown (branch
-  // views of documents not rendered yet) is read again, as the agent's was, and shown.
+  // Refresh the browser cache after a reconnect or a later embedded snapshot.
   const [, setMarkdownRevision] = useState(0);
+  const markdownSnapshot = hostTransport ? state.agentSnapshot : state.connection;
   useEffect(() => {
-    if (state.connection <= 1) return;
-    preloadPublicMarkdown().then(
+    if (markdownSnapshot <= 1) return;
+    preloadPublicMarkdown(markdownBase).then(
       () => setMarkdownRevision((revision) => revision + 1),
       (error: unknown) => console.error("[preview] could not read the context markdown again:", error),
     );
-  }, [state.connection]);
+  }, [markdownSnapshot]);
 
   // Back and forward move between views.
   useEffect(() => {
@@ -221,7 +236,7 @@ function App() {
   useEffect(() => {
     const grew = assistantMessageCount > lastArmedCount.current;
     lastArmedCount.current = assistantMessageCount;
-    if (!grew) return;
+    if (!grew || hostTransport) return;
     // TEMPORARY: the commit moment, on the same timeline as the phases.
     void fetch(
       `/__voice-phase?p=${encodeURIComponent(`assistant message committed (#${assistantMessageCount})`)}`,
@@ -422,7 +437,7 @@ function App() {
               replay={replay}
               agentName={agentName(activeAgent.id, activeAgent.name)}
               blocked={blocked}
-              suggestedPrompts={blocked ? [] : outline.suggestedPrompts}
+              suggestedPrompts={blocked || hostTransport ? [] : outline.suggestedPrompts}
               onPrompt={send}
               skillLabel={labelOf}
               toolIcon={toolIcon}
@@ -431,9 +446,9 @@ function App() {
                 setModelInputFor(message);
                 setModelInputOpen(true);
               }}
-              onRetry={state.running ? undefined : (index) => client.rewind(index)}
+              onRetry={hostTransport || state.running ? undefined : (index) => client.rewind(index)}
               onGoBack={
-                state.running
+                hostTransport || state.running
                   ? undefined
                   : (index, text) => {
                       client.rewind(index, false);
@@ -441,7 +456,11 @@ function App() {
                     }
               }
             />
-            <Composer
+            {hostTransport ? (
+              <div aria-live="polite" className="px-4 pb-2 text-sm">
+                {notices.map((notice) => <p key={notice.key}>{notice.text}</p>)}
+              </div>
+            ) : <Composer
               value={input}
               onChange={setInput}
               onSubmit={send}
@@ -451,7 +470,7 @@ function App() {
               call={call}
               blocked={blocked}
               onShowProblems={openProblems}
-            />
+            />}
           </section>
         </ContextColumnLayout>
       </div>
@@ -561,6 +580,6 @@ function findSkill<T extends { path: string; children: T[] }>(nodes: readonly T[
 
 // Fill the browser-side markdown cache before the first render, so a skill's sheet can open
 // any `<Text src>` document, including ones whose branch is not rendered yet.
-await preloadPublicMarkdown();
+await preloadPublicMarkdown(markdownBase);
 
 createRoot(document.getElementById("root")!).render(<App />);

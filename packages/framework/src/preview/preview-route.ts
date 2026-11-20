@@ -96,6 +96,15 @@ export function viewForRoute(route: PreviewRoute): PreviewView {
   }
 }
 
+/** The URL opens the first embedded view. A later host snapshot retains a valid open view. */
+export function routeForEmbeddedSnapshot(
+  pathname: string, skillPaths: readonly string[], base: string, openView?: PreviewView,
+): PreviewRoute {
+  if (!openView) return routeFromPath(pathname, skillPaths, base);
+  const route = routeForView(openView);
+  return route.kind === "skill" && !skillPaths.includes(route.path) ? { kind: "home" } : route;
+}
+
 /** The route a view is reached by. */
 export function routeForView(view: PreviewView): PreviewRoute {
   return view.overlay ?? { kind: "home" };
