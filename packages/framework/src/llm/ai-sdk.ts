@@ -26,9 +26,18 @@ import { serializeLlmInput } from "./serialize-input.js";
 /** The curb.js checkout, whose env files hold a key while working on the framework itself; none when installed. */
 const REPO_ROOT = COMPILED ? null : resolve(packageRoot, "../..");
 
+export type AgentModelUsage = {
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+  cacheReadTokens: number | undefined;
+  cacheWriteTokens: number | undefined;
+};
+
 export type AiSdkAgentOptions = {
   /** The conversation's effective llm, read per turn (`runtime.settings.current().llm`). */
   llm: LlmDescriptor;
+  maxOutputTokens?: number;
+  onUsage?: (usage: AgentModelUsage) => void;
 };
 
 /** The model fields of an AI SDK call: the model, its sampling and its provider options. */
@@ -153,7 +162,17 @@ export async function runAiSdkAgent(
   request: AgentRunRequest,
   options: AiSdkAgentOptions,
 ): Promise<AgentRunResponse> {
-  const result = await generateText({ ...buildAgentCallParams(request, options), abortSignal: request.signal });
+  const result = await generateText({
+    ...buildAgentCallParams(request, options),
+    abortSignal: request.signal,
+    maxOutputTokens: options.maxOutputTokens,
+  });
+  options.onUsage?.({
+    inputTokens: result.usage.inputTokenDetails.noCacheTokens,
+    outputTokens: result.usage.outputTokens,
+    cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens,
+    cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens,
+  });
   return {
     text: normalizeLlmPunctuation(result.text),
     toolCalls: mapToolCalls(result.toolCalls),

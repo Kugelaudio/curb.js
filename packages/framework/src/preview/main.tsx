@@ -32,6 +32,7 @@ import { ConversationHeader } from "./conversation-header.js";
 import { ConversationPlayer, type ConversationReplayState } from "./conversation-player.js";
 import { ConversationThread } from "./conversation-thread.js";
 import { lastCallOf } from "./conversation-turns.js";
+import { embeddedPreviewTransport } from "./embedded-transport.js";
 import { AgentUnavailable, PreviewLoading, reloadNotice } from "./dev-reload.js";
 import { resolveIcon } from "./icon.js";
 import { InstructionsDialog } from "./instructions-dialog.js";
@@ -67,13 +68,15 @@ import "./preview.css";
 
 const NO_REPLAY: ConversationReplayState = { active: false, timeMs: 0, windows: [] };
 
+const hostTransport = embeddedPreviewTransport();
+
 function App() {
   // The page's own info from its URL (`?client.event=…`), read once: what a page an agent is
   // embedded in would send. Refused entries are shown, never sent.
   const pageInfo = useMemo(() => pageInfoFromQuery(window.location.search), []);
   // The runtime and AgentSession live on the server. This client connects over the WS and
   // renders from server-pushed state; it owns no agent runtime.
-  const client = useMemo(() => new DemoWsClient(undefined, pageInfo.info), [pageInfo]);
+  const client = useMemo(() => new DemoWsClient(undefined, pageInfo.info, hostTransport), [pageInfo]);
   useEffect(() => {
     client.connect();
     return () => client.dispose();
@@ -92,11 +95,13 @@ function App() {
   const callState = useSyncExternalStore(voiceSubscribe, voiceSnapshot);
   useEffect(() => {
     // The client publishes an explicit call error if enumeration fails.
+    if (hostTransport) return;
     void voiceClient.refreshMicrophones().catch(() => undefined);
   }, [voiceClient]);
   // Said before Start call: an app's built-in browser or a blocked page has no microphone.
   const [micWarning, setMicWarning] = useState<string | null>(null);
   useEffect(() => {
+    if (hostTransport) return;
     void microphoneDenied().then((denied) =>
       setMicWarning(
         microphoneWarning({ embedded: embeddedBrowserName(navigator.userAgent), denied, pageUrl: window.location.origin }),
@@ -156,7 +161,7 @@ function App() {
   const navigate = (next: PreviewView, history: "push" | "replace" = "push") => {
     setView(next);
     const url = `${pathForRoute(routeForView(next), pageBase())}${window.location.search}`;
-    if (`${window.location.pathname}${window.location.search}` !== url) {
+    if (!hostTransport && `${window.location.pathname}${window.location.search}` !== url) {
       if (history === "push") window.history.pushState(null, "", url);
       else window.history.replaceState(null, "", url);
     }
@@ -189,7 +194,7 @@ function App() {
   // views of documents not rendered yet) is read again, as the agent's was, and shown.
   const [, setMarkdownRevision] = useState(0);
   useEffect(() => {
-    if (state.connection <= 1) return;
+    if (hostTransport || state.connection <= 1) return;
     preloadPublicMarkdown().then(
       () => setMarkdownRevision((revision) => revision + 1),
       (error: unknown) => console.error("[preview] could not read the context markdown again:", error),
@@ -422,7 +427,7 @@ function App() {
               replay={replay}
               agentName={agentName(activeAgent.id, activeAgent.name)}
               blocked={blocked}
-              suggestedPrompts={blocked ? [] : outline.suggestedPrompts}
+              suggestedPrompts={blocked || hostTransport ? [] : outline.suggestedPrompts}
               onPrompt={send}
               skillLabel={labelOf}
               toolIcon={toolIcon}
@@ -431,9 +436,9 @@ function App() {
                 setModelInputFor(message);
                 setModelInputOpen(true);
               }}
-              onRetry={state.running ? undefined : (index) => client.rewind(index)}
+              onRetry={hostTransport || state.running ? undefined : (index) => client.rewind(index)}
               onGoBack={
-                state.running
+                hostTransport || state.running
                   ? undefined
                   : (index, text) => {
                       client.rewind(index, false);
@@ -441,7 +446,11 @@ function App() {
                     }
               }
             />
-            <Composer
+            {hostTransport ? (
+              <div aria-live="polite" className="px-4 pb-2 text-sm">
+                {notices.map((notice) => <p key={notice.key}>{notice.text}</p>)}
+              </div>
+            ) : <Composer
               value={input}
               onChange={setInput}
               onSubmit={send}
@@ -451,7 +460,7 @@ function App() {
               call={call}
               blocked={blocked}
               onShowProblems={openProblems}
-            />
+            />}
           </section>
         </ContextColumnLayout>
       </div>
@@ -561,6 +570,6 @@ function findSkill<T extends { path: string; children: T[] }>(nodes: readonly T[
 
 // Fill the browser-side markdown cache before the first render, so a skill's sheet can open
 // any `<Text src>` document, including ones whose branch is not rendered yet.
-await preloadPublicMarkdown();
+if (!hostTransport) await preloadPublicMarkdown();
 
 createRoot(document.getElementById("root")!).render(<App />);

@@ -126,12 +126,18 @@ function defaultWsUrl(): string {
  * via a `useSyncExternalStore`-compatible subscription. It holds NO agent
  * runtime/session — every rendered value comes from the server.
  */
+export interface PreviewTransport {
+  connect(receive: (message: ServerMessage) => void): () => void;
+  send(message: ClientMessage): void;
+}
+
 export class DemoWsClient {
   private readonly url: string;
   /** The page's own info (`client.*`): sent on every connection, so a restarted server
    * gets it too, and the server puts it on every conversation this page starts. */
   private readonly pageInfo: Readonly<Record<string, string>>;
   private socket: WebSocket | null = null;
+  private disconnect?: () => void;
   private state: DemoClientState = INITIAL_STATE;
   private readonly listeners = new Set<() => void>();
   private reconnectDelay = 500;
@@ -142,7 +148,11 @@ export class DemoWsClient {
   /** The current socket's server has described its agent (sent `agents`). */
   private agentDescribed = false;
 
-  constructor(url: string = defaultWsUrl(), pageInfo: Readonly<Record<string, string>> = {}) {
+  constructor(
+    url: string = defaultWsUrl(),
+    pageInfo: Readonly<Record<string, string>> = {},
+    private readonly transport?: PreviewTransport,
+  ) {
     this.url = url;
     this.pageInfo = pageInfo;
   }
@@ -160,11 +170,18 @@ export class DemoWsClient {
 
   connect(): void {
     this.closed = false;
+    if (this.transport) {
+      this.patch({ connected: true });
+      this.disconnect = this.transport.connect((message) => this.handleServerMessage(message));
+      return;
+    }
     this.openSocket();
   }
 
   dispose(): void {
     this.closed = true;
+    this.disconnect?.();
+    this.disconnect = undefined;
     this.socket?.close();
     this.socket = null;
   }
@@ -423,7 +440,9 @@ export class DemoWsClient {
   }
 
   private send(message: ClientMessage): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
+    if (this.transport) {
+      this.transport.send(message);
+    } else if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(message));
     } else {
       this.patch({ lastError: { scope: "protocol", message: "Not connected to the server yet." } });
