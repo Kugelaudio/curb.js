@@ -457,6 +457,40 @@ describe("agent site runtime", () => {
     }
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it("asks a test's guard before a tool without a fake runs, and never about a fake or the framework's own tools", async () => {
+    const saveNote = vi.fn(async (): Promise<ToolResult> => ({ ok: true }));
+    const ping = vi.fn(async (): Promise<ToolResult> => ({ ok: true }));
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <Tool schema={z.object({ text: z.string() })} name="save_note" description="Save a note." onSubmit={saveNote} />
+        <Tool name="ping" description="Ping the CRM." onCall={ping} />
+        <Tool name="lookup" description="Look something up." onCall={async () => ({ ok: true, message: "Found." })} />
+      </Agent>,
+    );
+    runtime.setEndCallRequest(() => {});
+    runtime.fakeTools({ ping: async () => ({ ok: true, message: "Pinged (fake)." }) });
+    const asked: string[] = [];
+    runtime.guardUnfakedTools((name) => {
+      asked.push(name);
+      return name === "save_note" ? { ok: false, message: "Not run in this test." } : undefined;
+    });
+
+    // Stopped: the guard's result is the call's result, and the tool did not run.
+    expect((await runtime.callTool("save_note", { text: "hi" })).result).toEqual({ ok: false, message: "Not run in this test." });
+    expect(saveNote).not.toHaveBeenCalled();
+    // Let through: the tool runs as always.
+    expect((await runtime.callTool("lookup", {})).result).toEqual({ ok: true, message: "Found." });
+    // A fake, and the framework's own tools, are never the guard's business.
+    expect((await runtime.callTool("ping", {})).result).toEqual({ ok: true, message: "Pinged (fake)." });
+    expect((await runtime.callTool(SKIP_TURN_TOOL_NAME, {})).result).toEqual({ ok: true });
+    expect((await runtime.callTool(END_CALL_TOOL_NAME, { goodbye: "Bye." })).result).toEqual({ ok: true });
+    expect(asked).toEqual(["save_note", "lookup"]);
+
+    runtime.guardUnfakedTools(null);
+    await runtime.callTool("save_note", { text: "real" });
+    expect(saveNote).toHaveBeenCalledWith({ text: "real" });
+  });
 });
 
 describe("tool limits", () => {
