@@ -171,6 +171,20 @@ improve the agent from a real conversation.
 
 There are two ways to put your agent live.
 
+### On KugelAudio Cloud
+
+KugelAudio Cloud builds and hosts the agent, with phone numbers, call logs and scaling handled for you.
+
+1. Write to [hello@kugelaudio.com](mailto:hello@kugelaudio.com) to have hosting switched on for your organization.
+2. Deploy:
+
+```bash
+npx curb secrets push   # send your .env keys to the hosted agent
+npx curb deploy         # build and go live, prints a playground link
+```
+
+[deploying.md](packages/framework/docs/agent-guide/deploying.md) has the flags and limits.
+
 ### On your own servers
 
 A Curb agent runs anywhere Node runs, with your own LiveKit and your own provider keys.
@@ -184,20 +198,6 @@ npm start
 
 To ship it to a server, `npx curb build` packs the project into one self-contained directory.
 [hosting.md](packages/framework/docs/agent-guide/hosting.md) covers all the ways to run an agent.
-
-### On KugelAudio
-
-KugelAudio builds and hosts the agent, with phone numbers, call logs and scaling handled for you.
-
-1. Write to [hello@kugelaudio.com](mailto:hello@kugelaudio.com) to have hosting switched on for your organization.
-2. Deploy:
-
-```bash
-npx curb secrets push   # send your .env keys to the hosted agent
-npx curb deploy         # build and go live, prints a playground link
-```
-
-[deploying.md](packages/framework/docs/agent-guide/deploying.md) has the flags and limits.
 
 ## Documentation
 
