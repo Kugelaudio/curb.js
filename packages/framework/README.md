@@ -7,16 +7,22 @@
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License" src="https://img.shields.io/npm/l/curb.js.svg?style=for-the-badge&labelColor=000000"></a>
 </div>
 
-## A working voice agent out of the box
+## Quickstart
 
-You write what the agent knows and what it can do, as React components. Curb runs the call.
+You need Node.js 22.12 or newer, on Linux or macOS, or on Windows through WSL.
 
-| You write | Curb runs for you |
-| --- | --- |
-| Who the agent is: a system prompt | Speech-to-text, the LLM and text-to-speech, each swappable in one line |
-| What it can do: tools, as functions with typed input | Turn-taking, interruptions and pauses on a live call |
-| What it knows: skills and plain markdown | The model's request on every turn: only the instructions and tools your state allows |
-| Conversations to keep as tests | A preview where you talk to the agent and see what the model saw |
+```bash
+npm create curb.js my-agent
+cd my-agent
+npx curb login         # sign in once in the browser
+npm run dev            # open http://127.0.0.1:4000
+```
+
+`npm run dev` opens the **preview**, where you talk to your agent: type, or press **Start call**
+and speak. The starter agent is **Juno**, a personal assistant. Ask her "how does this work?",
+then make `src/agent/agent.tsx` your own.
+
+## Your first agent
 
 A receptionist for a bike workshop, in `src/agent/agent.tsx`:
 
@@ -73,26 +79,31 @@ only once a slot is booked, so the model cannot call it before. `/prices` is a
 [skill](https://curbjs.com/docs/agents-and-skills/): the model opens it when the caller asks what a
 repair costs.
 
-## Quickstart
+## How it works
 
-You need Node.js 22.12 or newer, on Linux or macOS, or on Windows through WSL.
+You write the agent as React components:
 
-```bash
-npm create curb.js my-agent
-cd my-agent
-npx curb login         # sign in once in the browser
-npm run dev            # open http://127.0.0.1:4000
-```
+- who it is, in a system prompt
+- what it can do, as tools: functions with typed input
+- what it knows, in skills and plain markdown
+- conversations to keep as tests
 
-> **The package is `curb.js`, not `curb`.** `curb` on npm is an unrelated templating
-> package, so `npm i curb` installs the wrong thing. Start with `npm create curb.js`
-> rather than `npm i curb.js`: the project depends on the framework through an alias,
-> `"curb": "npm:curb.js@<version>"`, and your code imports from `"curb"`.
+Curb runs everything else:
+
+- speech-to-text, the LLM and text-to-speech, each swappable in one line
+- turn-taking, interruptions and pauses on a live call
+- the model's request on every turn, with only the instructions and tools your state allows
+- a preview where you talk to the agent and see what the model saw
 
 The defaults run speech-to-text, the LLM and text-to-speech on KugelAudio, so
 `curb login` is all the setup you need. Flags to `npm create curb.js` pick
 Anthropic, OpenAI, Azure, Deepgram, ElevenLabs, Cartesia or any OpenAI-compatible
 endpoint instead.
+
+> **The package is `curb.js`, not `curb`.** `curb` on npm is an unrelated templating
+> package, so `npm i curb` installs the wrong thing. Start with `npm create curb.js`
+> rather than `npm i curb.js`: the project depends on the framework through an alias,
+> `"curb": "npm:curb.js@<version>"`, and your code imports from `"curb"`.
 
 ## Documentation
 
