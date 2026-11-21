@@ -404,14 +404,12 @@ describe("a reply that ends in end_call's goodbye", () => {
     expect(failures(result)).toEqual([]);
   });
 
-  it("flags a sentence the caller hears twice when the model wrote the goodbye as text too", async () => {
-    // The session says the first sentence of the step's text, then end_call's goodbye in full:
-    // the caller hears that sentence twice, on a call as here, and the check names it. Once the
-    // session says only the rest of such a goodbye, this reply is the goodbye alone and no
-    // check fails: this test then asserts that instead.
+  it("records a goodbye the model wrote as text too once, as the caller hears it", async () => {
+    // The session says the first sentence of the step's text, then only the rest of end_call's
+    // goodbye, so the reply is the goodbye alone and no check fails.
     const result = await ends(goodbye);
-    expect(result.turns[0]?.reply).toBe(`Glad I could help, Alex. ${goodbye}`);
-    expect(failures(result)).toEqual([["no sentence repeated within a turn", 'turn 1 says "Glad I could help, Alex." more than once']]);
+    expect(result.turns[0]?.reply).toBe(goodbye);
+    expect(failures(result)).toEqual([]);
   });
 });
 
