@@ -99,7 +99,9 @@ without voice (typed preview chat) has no `end_call`, and the model is not told 
 either.
 
 The tool fires mid-turn, before its `goodbye` is said: the session says the goodbye once
-the tool ran, as the end of the same reply. So the disconnect waits for that reply's
+the tool ran, as the end of the same reply. A model that wrote the goodbye as text in the
+same step has said its first sentences by then; the session says only the rest, so the
+caller hears no sentence twice. So the disconnect waits for that reply's
 `waitForPlayout()`, LiveKit's own signal that every frame of the reply has been handed to
 the published track. It is the same signal that decides whether a reply is committed whole
 or truncated to the words that actually played, so a goodbye is never cut off, and a user

@@ -52,6 +52,39 @@ describe("TurnSpeech", () => {
     expect(speech.reply).toBe("Thanks for your feedback. Goodbye.");
   });
 
+  it("leaves out of a closing line the sentences the turn has just said, and nothing else", () => {
+    const goodbye = "Glad I could help, Alex. Take care and see you Monday!";
+    const said = (deltas: string[]) => {
+      const speech = new TurnSpeech();
+      stream(speech, deltas);
+      speech.toolInputStart();
+      speech.endStep(false);
+      return speech;
+    };
+
+    // The model wrote the goodbye as text too: its first sentence was out before the tool call showed.
+    const twice = said(["Glad I could help, Alex. ", "Take care and see you Monday!"]);
+    expect(twice.reply).toBe("Glad I could help, Alex.");
+    expect(twice.unheard(goodbye)).toBe("Take care and see you Monday!");
+    expect(twice.line(twice.unheard(goodbye))).toBe("Take care and see you Monday.");
+    expect(twice.reply).toBe("Glad I could help, Alex. Take care and see you Monday.");
+
+    // Case and punctuation aside, and after other words of the same turn.
+    expect(said(["Booked. ", "glad i could help alex! ", "Bye."]).unheard(goodbye)).toBe("Take care and see you Monday!");
+    // All of it was said: nothing is left to say.
+    expect(said([`${goodbye} `, "Bye."]).unheard(goodbye)).toBe("");
+    // Nothing was said, or other words were: the whole line.
+    expect(said(["Glad I could help, Alex."]).unheard(goodbye)).toBe(goodbye);
+    expect(said(["All done. ", "Bye."]).unheard(goodbye)).toBe(goodbye);
+    // Half a sentence in common is not a sentence the caller heard: the line is said whole.
+    expect(said(["Glad I could help. ", "Bye."]).unheard(goodbye)).toBe(goodbye);
+    expect(said(["Glad I could help, Alex. ", "Bye."]).unheard("Glad I could help, Alex, and take care!")).toBe("Glad I could help, Alex, and take care!");
+    // Only what was said last counts: a sentence from earlier in the turn is not the start of the line.
+    expect(said(["Take care and see you Monday! ", "Your order has shipped. ", "Bye."]).unheard("Take care and see you Monday!")).toBe(
+      "Take care and see you Monday!",
+    );
+  });
+
   it("joins the words of two steps with one space", () => {
     const speech = new TurnSpeech();
     speech.startStep();

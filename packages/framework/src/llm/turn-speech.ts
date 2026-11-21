@@ -18,6 +18,23 @@ const LEADING_STAGE_DIRECTIONS = /^\s*(?:(?:\[[^[\]]*\p{L}[^[\]]*\]|\([^()]*\p{L
 /** A step that opens with a bracket or parenthesis it has not closed yet. */
 const OPEN_STAGE_DIRECTION = /^\s*(?:(?:\[[^[\]]*\]|\([^()]*\))\s*)*(?:\[[^\]]*|\([^)]*)$/;
 
+/** The sentences of `text`, each with the break that follows it, so that joined they are `text`. */
+function sentencesOf(text: string): string[] {
+  const sentences: string[] = [];
+  let from = 0;
+  for (const match of text.matchAll(SENTENCE_BREAK)) {
+    const end = match.index + match[0].length;
+    sentences.push(text.slice(from, end));
+    from = end;
+  }
+  return [...sentences, text.slice(from)].filter((sentence) => sentence.trim());
+}
+
+/** A sentence as two of them are compared: its words, whatever their case and punctuation. */
+function wordsOf(sentence: string): string {
+  return sentence.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
 /**
  * What one turn says aloud, decided while its LLM steps stream.
  *
@@ -28,7 +45,8 @@ const OPEN_STAGE_DIRECTION = /^\s*(?:(?:\[[^[\]]*\]|\([^()]*\))\s*)*(?:\[[^\]]*|
  * call. When a tool call starts, the step falls silent: whatever is held stays held until the
  * step ends, and is dropped then. What a tool call says comes from its input or its tool, as
  * a {@link line} of its own once the call ran: an `end_call`'s goodbye, a `<Tool confirm>`
- * read-back.
+ * read-back. A model that wrote its goodbye as text too has said the start of it by then, so
+ * only the rest of the goodbye is said ({@link unheard}).
  *
  * A step's opening stage directions ({@link LEADING_STAGE_DIRECTIONS}) are never said: a step
  * opening with a bracket says nothing until it closed. A step that wrote nothing else says
@@ -103,6 +121,27 @@ export class TurnSpeech {
     this.startStep();
     this.verbatim = true;
     return this.wholeStep(text, true);
+  }
+
+  /**
+   * The part of `line` the caller has not heard: `line` without its leading sentences that
+   * are, word for word, the last sentences this turn said. A model often writes its goodbye
+   * as text and passes it to `end_call` as well; of that text every sentence but the newest
+   * was said before the tool call showed, and saying the whole goodbye after it would say
+   * them twice. Only whole sentences that were said are left out, compared by their words
+   * (case and punctuation aside), so nothing the caller has not heard is dropped. "" when
+   * the turn has said all of it.
+   */
+  unheard(line: string): string {
+    const said = sentencesOf(this.said).map(wordsOf);
+    const sentences = sentencesOf(line);
+    for (let count = Math.min(said.length, sentences.length); count > 0; count -= 1) {
+      const last = said.slice(-count);
+      if (last.every((words, index) => words !== "" && words === wordsOf(sentences[index]!))) {
+        return sentences.slice(count).join("").trim();
+      }
+    }
+    return line;
   }
 
   private release(cut: number): string {
