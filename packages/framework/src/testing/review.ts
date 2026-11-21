@@ -25,6 +25,21 @@ export const UNRESOLVED: JudgeQuestion = {
     "Quote the words that show it was left open.",
 };
 
+/**
+ * What a review asks instead of `ended_early` when the agent ended the call. A real call has no
+ * goal written down, so "did the agent end it early" is a judgement the judge makes poorly
+ * without one; whether the caller's last line was a goodbye is a fact it reads well. Code makes
+ * a "no" the `ended_early` finding.
+ */
+export const CALLER_CLOSED: JudgeQuestion = {
+  id: "caller_closed",
+  kind: "expectation",
+  text:
+    'In the caller\'s last line before the agent ended the call, the caller said goodbye or said that they need nothing else ("that\'s all", "nothing else, thanks"). ' +
+    "A thank-you alone, a new request, an answer to the agent's question, or a request the agent then carried out is not a goodbye. " +
+    "Quote the caller's last line.",
+};
+
 /** What a review can find, in one sentence each: the built-in findings and `unresolved`. */
 export const REVIEW_FINDINGS: Readonly<Record<string, string>> = {
   ...JUDGE_FINDINGS,
@@ -37,22 +52,34 @@ export const NOT_ASKED = {
   ending: { questions: ["ended_early"], of: "whose record does not say who ended the call" },
 } as const;
 
-/** The questions for one call: every built-in finding its record can answer, then `unresolved`. */
+/** The questions for one call: every built-in finding its record can answer, then `unresolved`.
+ * `ended_early` is asked as {@link CALLER_CLOSED}, and only of a call the agent ended. */
 export function reviewQuestions(call: Pick<ReviewCall, "recordsTools" | "endedBy">): JudgeQuestion[] {
-  const left: readonly string[] = [...(call.recordsTools ? [] : NOT_ASKED.tools.questions), ...(call.endedBy === null ? NOT_ASKED.ending.questions : [])];
-  return [...judgeQuestions(null, []).filter((question) => !left.includes(question.id)), UNRESOLVED];
+  const left: readonly string[] = [...(call.recordsTools ? [] : NOT_ASKED.tools.questions), ...NOT_ASKED.ending.questions];
+  return [...judgeQuestions(null, []).filter((question) => !left.includes(question.id)), ...(call.endedBy === "agent" ? [CALLER_CLOSED] : []), UNRESOLVED];
 }
 
 /** One thing the judge found on one call. */
 export type ReviewFinding = { call: string; kind: string; turn: number | null; quote: string; reason: string };
 
-/** The judge's yes answers about a call, as findings. */
-export function findingsOf(call: string, judged: JudgeResult): ReviewFinding[] {
-  return judged.answers.flatMap((answer) =>
-    answer.kind === "finding" && answer.answer === "yes" && answer.quote !== null
-      ? [{ call, kind: answer.id, turn: answer.turn, quote: answer.quote, reason: answer.reason }]
-      : [],
-  );
+/** Longest quote of the agent's last words an `ended_early` finding keeps. */
+const MAX_LAST_WORDS = 200;
+
+/** The judge's yes answers about a call, as findings; and `ended_early` when the agent ended the
+ * call and the caller's last line was no goodbye, quoting the agent's last words. */
+export function findingsOf(call: Pick<ReviewCall, "id" | "turns">, judged: JudgeResult): ReviewFinding[] {
+  return judged.answers.flatMap((answer): ReviewFinding[] => {
+    if (answer.id === CALLER_CLOSED.id) {
+      const last = call.turns.findLast((turn) => turn.endedCall) ?? call.turns.at(-1);
+      const words = last?.reply.trim() || last?.caller?.trim() || "";
+      if (answer.answer !== "no" || !last || !words) return [];
+      const quote = words.length > MAX_LAST_WORDS ? `…${words.slice(-MAX_LAST_WORDS)}` : words;
+      return [{ call: call.id, kind: "ended_early", turn: last.turn, quote, reason: answer.reason }];
+    }
+    return answer.kind === "finding" && answer.answer === "yes" && answer.quote !== null
+      ? [{ call: call.id, kind: answer.id, turn: answer.turn, quote: answer.quote, reason: answer.reason }]
+      : [];
+  });
 }
 
 /** A scenario that would reproduce a pattern, as the fields to put into `scenario({ ... })`. */
@@ -74,7 +101,7 @@ export type ReviewPattern = {
 
 /** Most findings one grouping request is sent. */
 export const MAX_GROUPED_FINDINGS = 300;
-const GROUPING_ATTEMPTS = 2;
+const GROUPING_ATTEMPTS = 3;
 const MAX_EXAMPLES = 3;
 const FENCE_OPEN = "<<<FINDINGS";
 const FENCE_CLOSE = "FINDINGS>>>";
@@ -137,7 +164,7 @@ function draftOf(scenario: unknown, kinds: readonly string[]): ScenarioDraft | n
  * Sort `findings` into patterns with one request to `llm`, and count them in code. A finding
  * the model left out, put into two patterns, or was not sent (beyond {@link MAX_GROUPED_FINDINGS},
  * an even sample is sent) goes into a pattern of its kind. An answer that cannot be read is
- * asked for once more; after that every finding goes by its kind, and a note says so.
+ * asked for up to twice more; after that every finding goes by its kind, and a note says so.
  * Patterns come with the most calls first; `judged` is the number of calls their share is of.
  */
 export async function groupFindings(params: {

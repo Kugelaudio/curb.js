@@ -9,18 +9,20 @@ const ids = (call: Parameters<typeof reviewQuestions>[0]) => reviewQuestions(cal
 
 describe("the questions of a review", () => {
   it("asks only what a call's record can answer, and always whether the caller got what they called for", () => {
-    expect(ids({ recordsTools: true, endedBy: "caller" })).toEqual(["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use", "ended_early", "unresolved"]);
-    // No recorded tool calls: a claim cannot be held against them.
-    expect(ids({ recordsTools: false, endedBy: "agent" })).toEqual(["asked_again", "ignored_caller", "incoherent", "ended_early", "unresolved"]);
+    // The caller hung up: the agent did not end it early.
+    expect(ids({ recordsTools: true, endedBy: "caller" })).toEqual(["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use", "unresolved"]);
+    // No recorded tool calls: a claim cannot be held against them. The agent ended it: was the caller's last line a goodbye?
+    expect(ids({ recordsTools: false, endedBy: "agent" })).toEqual(["asked_again", "ignored_caller", "incoherent", "caller_closed", "unresolved"]);
     // Nobody knows who ended the call: it cannot have been ended early.
     expect(ids({ recordsTools: true, endedBy: null })).toEqual(["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use", "unresolved"]);
     expect(ids({ recordsTools: false, endedBy: null })).toEqual(["asked_again", "ignored_caller", "incoherent", "unresolved"]);
   });
 
   it("words the built-in findings as curb test does, and adds no goal", () => {
-    const own = judgeQuestions(null, []);
+    const own = judgeQuestions(null, []).filter((question) => question.id !== "ended_early");
     const asked = reviewQuestions({ recordsTools: true, endedBy: "agent" });
-    expect(asked.slice(0, -1)).toEqual(own);
+    expect(asked.slice(0, -2)).toEqual(own);
+    expect(judgePrompt(asked)).toContain("- caller_closed: Is this true of the call? In the caller's last line before the agent ended the call, the caller said goodbye");
     expect(judgePrompt(asked)).toContain(
       "- unresolved: Is this true of the call? The caller did not get what they called for by the end of the call: it was not done, not answered, or only promised for later.",
     );
@@ -50,7 +52,7 @@ describe("judging a call for a review", () => {
     expect(llm.requests[0]!.systemPrompt).not.toContain("- goal:");
     expect(judgeView(conversation).slice(-2)).toEqual(["(The record does not say who ended the call.)", "TRANSCRIPT>>>"]);
     // The caller's words may show that a call left them without what they wanted.
-    expect(findingsOf("call-a", judged)).toEqual([
+    expect(findingsOf({ id: "call-a", turns }, judged)).toEqual([
       { call: "call-a", kind: "ignored_caller", turn: 2, quote: "Someone will call you back", reason: "It did not answer the question." },
       { call: "call-a", kind: "unresolved", turn: 2, quote: "So is it moved?", reason: "Moving an appointment: it was only promised." },
     ]);
@@ -60,7 +62,21 @@ describe("judging a call for a review", () => {
     const llm = judge({ unresolved: { answer: "yes", turn: 2, quote: "I give up", reason: "Moving an appointment." } });
     const judged = await judgeConversation({ llm, conversation: { turns, endedBy: "caller", caller: null }, questions: [UNRESOLVED] });
     expect(judged.answers[0]).toMatchObject({ id: "unresolved", answer: "unknown", quote: null });
-    expect(findingsOf("call-a", judged)).toEqual([]);
+    expect(findingsOf({ id: "call-a", turns }, judged)).toEqual([]);
+  });
+
+  it("finds ended_early when the agent ended the call and the caller's last line was no goodbye, quoting the agent", async () => {
+    const ended = [turns[0]!, { ...turns[1]!, endedCall: true }];
+    const asked = reviewQuestions({ recordsTools: false, endedBy: "agent" });
+    const open = await judgeConversation({ llm: judge({ caller_closed: { answer: "no", turn: 2, quote: "So is it moved?", reason: "The caller asked a question." } }), conversation: { turns: ended, endedBy: "agent", caller: null }, questions: asked });
+    expect(findingsOf({ id: "call-a", turns: ended }, open)).toEqual([
+      { call: "call-a", kind: "ended_early", turn: 2, quote: "Someone will call you back. Goodbye.", reason: "The caller asked a question." },
+    ]);
+    // A goodbye, or no answer, finds nothing.
+    for (const answer of ["yes", "unknown"] as const) {
+      const closed = await judgeConversation({ llm: judge({ caller_closed: { answer, turn: 2, quote: "So is it moved?", reason: "-" } }), conversation: { turns: ended, endedBy: "agent", caller: null }, questions: asked });
+      expect(findingsOf({ id: "call-a", turns: ended }, closed)).toEqual([]);
+    }
   });
 });
 
@@ -166,15 +182,15 @@ describe("sorting findings into patterns", () => {
     expect(patterns.reduce((sum, pattern) => sum + pattern.findings, 0)).toBe(findings.length);
   });
 
-  it("asks once more for an answer that cannot be read, then lists the findings by kind and says so", async () => {
+  it("asks up to twice more for an answer that cannot be read, then lists the findings by kind and says so", async () => {
     const again = grouper("I would group them like this: first...", JSON.stringify({ patterns: [{ ...EARLY, findings: [1, 2, 3, 4, 5, 6, 7] }] }));
     expect((await groupFindings({ llm: again.llm, findings, judged: 4 })).patterns).toHaveLength(1);
     expect(again.requests).toHaveLength(2);
 
-    const never = grouper("no", '{"patterns":[]}');
+    const never = grouper("no", '{"patterns":[]}', "{");
     const { patterns, notes } = await groupFindings({ llm: never.llm, findings, judged: 4 });
 
-    expect(never.requests).toHaveLength(2);
+    expect(never.requests).toHaveLength(3);
     expect(notes).toEqual(["The findings could not be sorted into patterns (its answer could not be read): they are listed by kind, without scenarios."]);
     expect(patterns.map((pattern) => [pattern.title, pattern.calls, pattern.findings, pattern.scenario])).toEqual([
       ["The agent ended the call although the caller had not said goodbye or that they needed nothing else.", 4, 4, null],

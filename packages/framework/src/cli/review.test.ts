@@ -57,7 +57,7 @@ const exported = (callId: string, endReason = "caller_ended", reply = "Someone w
     transcript: { turns: [{ speaker: "caller", text: `[${callId}] Please move my appointment to Friday.` }, { speaker: "agent", text: reply }] },
   });
 
-const early = (reason = "The caller had not said goodbye."): Answers => ({ ended_early: { answer: "yes", turn: 1, quote: "Goodbye", reason } });
+const early = (reason = "The caller had not said goodbye."): Answers => ({ caller_closed: { answer: "no", turn: 1, quote: "Please move my appointment", reason } });
 const open: Answers = { unresolved: { answer: "yes", turn: 1, quote: "Someone will call you back", reason: "Moving an appointment: only a callback was promised." } };
 const asked = (request: AgentRunRequest) => [...request.systemPrompt.matchAll(/^- ([a-z_0-9]+): /gm)].map((match) => match[1]);
 
@@ -109,9 +109,9 @@ describe("curb review", () => {
         "",
         "1. Says goodbye before the caller is done",
         "   3 of 4 judged call(s), 75% · ended_early",
-        '   call a1, turn 1: "Goodbye" (The caller had not said goodbye.)',
-        '   call b2, turn 1: "Goodbye" (The caller had not said goodbye.)',
-        '   call c3, turn 1: "Goodbye" (The caller had not said goodbye.)',
+        '   call a1, turn 1: "Someone will call you back. Goodbye." (The caller had not said goodbye.)',
+        '   call b2, turn 1: "Someone will call you back. Goodbye." (The caller had not said goodbye.)',
+        '   call c3, turn 1: "Someone will call you back. Goodbye." (The caller had not said goodbye.)',
         "   Scenario to add:",
         '     caller: { goal: "Move an appointment, then ask for the address" },',
         '     failOn: ["ended_early"],',
@@ -138,7 +138,7 @@ describe("curb review", () => {
     expect(stats.mostInFlight).toBe(2);
     expect(stats.grouped).toHaveLength(1);
     // An export holds no tool calls, and "transfer" does not say who ended call e5.
-    expect(asked(stats.judged.find((request) => callOf(request) === "a1")!)).toEqual(["asked_again", "ignored_caller", "incoherent", "ended_early", "unresolved"]);
+    expect(asked(stats.judged.find((request) => callOf(request) === "a1")!)).toEqual(["asked_again", "ignored_caller", "incoherent", "caller_closed", "unresolved"]);
     expect(asked(stats.judged.find((request) => callOf(request) === "e5")!)).toEqual(["asked_again", "ignored_caller", "incoherent", "unresolved"]);
     expect(stats.judged[0]!.stateSnapshot).toContain("(The agent's tools were not recorded for this call.)");
     expect(progress).toEqual(["Judging 5 call(s) on openai:gpt-5.4-mini, 2 at a time.", "Judged 1 of 5 call(s).", "Judged 2 of 5 call(s).", "Judged 3 of 5 call(s).", "Judged 4 of 5 call(s).", "Sorting 5 finding(s) into patterns."]);
@@ -160,7 +160,7 @@ describe("curb review", () => {
           share: 0.5,
           findings: 1,
           kinds: ["ended_early"],
-          examples: [{ call: "a1", kind: "ended_early", turn: 1, quote: "Goodbye", reason: "The caller had not said goodbye." }],
+          examples: [{ call: "a1", kind: "ended_early", turn: 1, quote: "Someone will call you back. Goodbye.", reason: "The caller had not said goodbye." }],
           scenario: null,
         },
       ],
@@ -169,7 +169,7 @@ describe("curb review", () => {
       notes: ["The findings could not be sorted into patterns (its answer could not be read): they are listed by kind, without scenarios."],
       judgeModel: "openai:gpt-5.4-mini",
       judgePromptVersion: "3",
-      usage: { agent: null, caller: null, judge: { inputTokens: 400, outputTokens: 40, cacheReadTokens: 0, cacheWriteTokens: 0 }, totalTokens: 440 },
+      usage: { agent: null, caller: null, judge: { inputTokens: 500, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 }, totalTokens: 550 },
       exitCode: 0,
     } satisfies ReviewReport);
     expect(printed.endsWith("}\n")).toBe(true);
@@ -202,14 +202,15 @@ describe("curb review", () => {
     // No finding: nothing to sort.
     expect(stats.grouped).toEqual([]);
     const questions = Object.fromEntries(stats.judged.map((request) => [callOf(request), asked(request)]));
-    const all = ["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use", "ended_early", "unresolved"];
+    const tools = ["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use"];
     expect(questions).toEqual({
-      // A saved run records tool calls and who ended the call.
-      run: all,
-      exp: ["asked_again", "ignored_caller", "incoherent", "ended_early", "unresolved"],
+      // A saved run records tool calls and who ended the call: here the caller, so it was not ended early.
+      run: [...tools, "unresolved"],
+      // An export records who ended the call (here the caller), but no tool calls.
+      exp: ["asked_again", "ignored_caller", "incoherent", "unresolved"],
       note: ["asked_again", "ignored_caller", "incoherent", "unresolved"],
       // The dev store records tool calls; this conversation never called end_call.
-      dev: all.filter((id) => id !== "ended_early"),
+      dev: [...tools, "unresolved"],
     });
     expect(stats.judged.find((request) => callOf(request) === "run")!.stateSnapshot).toContain("- book_appointment: Book an appointment.");
   });
@@ -261,14 +262,26 @@ describe("curb review", () => {
     expect(stats.grouped).toEqual([]);
   });
 
+  it("leaves out a file of a folder that holds no calls, and names it", async () => {
+    const root = project({ "calls/a.jsonl": exported("a1"), "calls/readme.md": "# Calls of March\n" });
+    const { host } = reviewHost();
+
+    const { code, printed } = await review(["calls"], root, host);
+
+    expect(code).toBe(0);
+    expect(printed).toContain("Reviewed 1 call(s)");
+    expect(printed).toContain("Note: Left out 1 file(s) that hold no calls in a shape curb review reads: calls/readme.md.\n");
+  });
+
   it("refuses a file that holds no calls, naming it and the shapes there are", async () => {
-    const root = project({ "calls/a.jsonl": exported("a1"), "calls/readme.md": "# Calls of March\n", "empty/notes.csv": "", "only-missing.jsonl": JSON.stringify({ callId: "x", transcript: null }) });
+    const root = project({ "calls/readme.md": "# Calls of March\n", "empty/notes.csv": "", "only-missing.jsonl": JSON.stringify({ callId: "x", transcript: null }) });
     const { host, stats } = reviewHost();
     const shapes =
       "a saved test run (.curb/test-runs/<id>.json); a Calls export from the KugelAudio dashboard (JSON Lines, one call per line); the output of `npx curb conversations --json`; " +
       'a text or Markdown file with one call, whose lines start with "Caller:" and "Agent:"';
 
-    await expect(review(["calls"], root, host)).rejects.toThrow(`[CURB_REVIEW_UNREADABLE] calls/readme.md holds no calls in a shape curb review reads.\nFix: pass ${shapes}.`);
+    await expect(review(["calls/readme.md"], root, host)).rejects.toThrow(`[CURB_REVIEW_UNREADABLE] calls/readme.md holds no calls in a shape curb review reads.\nFix: pass ${shapes}.`);
+    await expect(review(["calls"], root, host)).rejects.toThrow("[CURB_REVIEW_NO_CALLS] Nothing to review: calls holds no call with a transcript.");
     await expect(review(["march.jsonl"], root, host)).rejects.toThrow("[CURB_REVIEW_NOT_FOUND] No file or folder at march.jsonl.");
     // A folder without call files, an export without transcripts, and a project that never talked.
     await expect(review(["empty"], root, host)).rejects.toThrow("[CURB_REVIEW_NO_CALLS] Nothing to review: empty holds no call with a transcript.");
@@ -289,7 +302,7 @@ describe("curb review", () => {
       req.on("end", () => {
         bodies.push(raw);
         const content = raw.includes("You review one recorded phone call")
-          ? JSON.stringify({ answers: [{ id: "ended_early", answer: "yes", turn: 1, quote: "Goodbye", reason: "The caller had not said goodbye." }] })
+          ? JSON.stringify({ answers: [{ id: "caller_closed", answer: "no", turn: 1, quote: "Please move my appointment", reason: "The caller had not said goodbye." }] })
           : JSON.stringify({ patterns: [{ title: "Says goodbye right after a promise", findings: [1, 2], scenario: { goal: "Move an appointment" } }] });
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ id: "c1", created: 0, model: "m", object: "chat.completion", choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 } }));

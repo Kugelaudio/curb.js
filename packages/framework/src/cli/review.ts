@@ -62,27 +62,33 @@ export function parseReviewArgs(args: readonly string[]): ReviewArgs {
 const READ_EXTENSIONS = [".json", ".jsonl", ".md", ".txt"];
 
 /** The calls of every path: a file, or a folder's files of the extensions a call comes in.
- * Throws, naming the file and the shapes there are, on one that holds no calls. */
-export function readCallFiles(projectRoot: string, paths: readonly string[]): ReadCalls {
-  const read: ReadCalls = { calls: [], skipped: 0 };
+ * Throws, naming the file and the shapes there are, on a file given by name that holds no
+ * calls. In a folder, such a file (a README beside the exports) is left out and named in
+ * `ignored`. */
+export function readCallFiles(projectRoot: string, paths: readonly string[]): ReadCalls & { ignored: string[] } {
+  const read = { calls: [] as ReviewCall[], skipped: 0, ignored: [] as string[] };
   for (const given of paths) {
     const path = resolve(projectRoot, given);
     if (!existsSync(path)) throw new Error(`[CURB_REVIEW_NOT_FOUND] No file or folder at ${given}.\nFix: pass ${REVIEW_SHAPES}; or a folder of such files.`);
     const isCallFile = (name: string) => READ_EXTENSIONS.some((extension) => name.toLowerCase().endsWith(extension));
-    // Each file as the report of a refusal names it: the way it was given.
-    const files = statSync(path).isDirectory() ? readdirSync(path).filter(isCallFile).sort().map((name) => join(given, name)) : [given];
+    const folder = statSync(path).isDirectory();
+    // Each file as a refusal or a note names it: the way it was given.
+    const files = folder ? readdirSync(path).filter(isCallFile).sort().map((name) => join(given, name)) : [given];
     for (const file of files) {
       const found = callsIn(basename(file), readFileSync(resolve(projectRoot, file), "utf8"));
-      if (!found) throw new Error(`[CURB_REVIEW_UNREADABLE] ${file} holds no calls in a shape curb review reads.\nFix: pass ${REVIEW_SHAPES}.`);
-      read.calls.push(...found.calls);
-      read.skipped += found.skipped;
+      if (!found && folder) read.ignored.push(file);
+      else if (!found) throw new Error(`[CURB_REVIEW_UNREADABLE] ${file} holds no calls in a shape curb review reads.\nFix: pass ${REVIEW_SHAPES}.`);
+      else {
+        read.calls.push(...found.calls);
+        read.skipped += found.skipped;
+      }
     }
   }
   return read;
 }
 
 /** The last `last` conversations of the project's `curb dev` store. */
-function readStoredCalls(projectRoot: string, last: number, env: NodeJS.ProcessEnv): ReadCalls {
+function readStoredCalls(projectRoot: string, last: number, env: NodeJS.ProcessEnv): ReadCalls & { ignored?: string[] } {
   const file = conversationsFile(env);
   const found = file === null ? [] : recordedConversations(projectRoot, file, { last, id: null, json: false }).map((conversation) => storedCall(conversation)!);
   const calls = found.filter((call) => call.turns.length > 0);
@@ -104,7 +110,7 @@ export async function reviewCommand(
   const run = parseReviewArgs(args);
   const given = run.paths.length > 0;
   // Read before the host is made: it turns conversation recording off for this process.
-  const { calls, skipped } = given ? readCallFiles(projectRoot, run.paths) : readStoredCalls(projectRoot, run.last ?? DEFAULT_LAST, options.env ?? process.env);
+  const { calls, skipped, ignored = [] } = given ? readCallFiles(projectRoot, run.paths) : readStoredCalls(projectRoot, run.last ?? DEFAULT_LAST, options.env ?? process.env);
   // Two sources may name a call alike, and the report counts calls by their id.
   const named = new Map<string, number>();
   for (const call of calls) {
@@ -139,7 +145,7 @@ export async function reviewCommand(
         slots.run(async (): Promise<ReviewFinding[] | { call: string; reason: string }> => {
           const conversation = { turns: call.turns, endedBy: call.endedBy, caller: null, tools: call.tools };
           const result = await judgeConversation({ llm: judge, conversation, questions: reviewQuestions(call), model: judgeModel }).then(
-            (answers) => findingsOf(call.id, answers),
+            (answers) => findingsOf(call, answers),
             (error: unknown) => ({ call: call.id, reason: describeProviderError(error) }),
           );
           done += 1;
@@ -165,7 +171,7 @@ export async function reviewCommand(
       patterns,
       notAsked: [...notAsked((call) => !call.recordsTools, NOT_ASKED.tools), ...notAsked((call) => call.endedBy === null, NOT_ASKED.ending)],
       notJudged,
-      notes,
+      notes: [...(ignored.length > 0 ? [`Left out ${ignored.length} file(s) that hold no calls in a shape curb review reads: ${ignored.join(", ")}.`] : []), ...notes],
       judgeModel,
       judgePromptVersion: JUDGE_PROMPT_VERSION,
       usage: runUsage({ agent: null, caller: null, judge: tokens.total() }),

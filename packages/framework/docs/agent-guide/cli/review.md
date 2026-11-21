@@ -18,13 +18,17 @@ whose `.json`, `.jsonl`, `.md` and `.txt` files are read. A file is recognised b
 | The output of [`curb conversations --json`](./conversations.md) | yes | only when the agent called `end_call` |
 | Text or Markdown with one call, whose lines start with `Caller:`, `User:` or `Customer:` and `Agent:`, `Assistant:` or `Bot:` | no | no |
 
-Any other file is refused with its name. A call without a transcript is left out and counted.
+A file you name that holds none of these is refused with its name; in a folder, such a file (a
+README beside the exports) is left out, and the report names it. A call without a transcript is
+left out and counted.
 
 The judge of [`curb test`](./test.md) answers its questions about each call, and one more request
 sorts the findings into patterns. Each call is asked only what its record can answer:
 `claimed_without_tool` and `wrong_tool_use` need recorded tool calls, and `ended_early` needs to
-know who ended the call. A review adds one question, `unresolved`: the caller did not get what they
-called for by the end of the call.
+know who ended the call. A real call has no goal written down, so `ended_early` is asked as a fact:
+when the agent ended the call, was the caller's last line a goodbye, or that they need nothing
+else? When it was not, the finding quotes the agent's last words. A review adds one question,
+`unresolved`: the caller did not get what they called for by the end of the call.
 
 ## Options
 
