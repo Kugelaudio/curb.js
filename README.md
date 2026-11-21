@@ -169,7 +169,8 @@ improve the agent from a real conversation.
 
 ## Hosting
 
-There are two ways to put your agent live.
+There are two ways to put your agent live. Run the commands yourself, or ask your coding agent
+to: the project's `AGENTS.md` tells it how.
 
 ### On KugelAudio Cloud
 
