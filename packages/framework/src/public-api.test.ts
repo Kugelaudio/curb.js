@@ -2,11 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import ts from "typescript";
 import { expect, it } from "vitest";
+import { REVIEW_OPTIONS } from "./cli/review.js";
 import { TEST_OPTIONS } from "./cli/test.js";
 
 /**
  * What a project can reach: every entry point's exported names, every CLI command, and the
- * options of `curb upgrade` and `curb test`. A
+ * options of `curb upgrade`, `curb test` and `curb review`. A
  * change to public-api.txt is a change to what projects depend on. Adding a line is a
  * feature; removing or renaming one breaks projects, so it needs `feat(framework)!:`.
  * After a deliberate change, run `npx vitest run --project api -u` and commit the file.
@@ -46,7 +47,7 @@ function upgradeFlags(): string[] {
 }
 
 function testOptions(): string[] {
-  return TEST_OPTIONS.map((option) => `curb test ${option}`);
+  return [...TEST_OPTIONS.map((option) => `curb test ${option}`), ...REVIEW_OPTIONS.map((option) => `curb review ${option}`)];
 }
 
 it("the public API changes only on purpose", async () => {

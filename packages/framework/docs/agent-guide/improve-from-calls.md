@@ -2,7 +2,8 @@
 
 The fastest way to improve an agent is to hand a coding agent a call that went wrong, let it
 fix the cause, and let it prove the fix by talking to the agent itself. You need no test
-script to start: the call is the test.
+script to start: the call is the test. With many calls, first find out which fault comes back
+most often: [Many calls](#many-calls-find-what-to-fix-first).
 
 ## 1. Copy the transcript
 
@@ -79,8 +80,64 @@ Text checks cannot hear timing, interruptions or pronunciation. Run `npm run dev
 agent once. Then put it live with `npx curb deploy` ([Deploying](./deploying.md)), on
 [your own servers](./hosting.md), or from a browser project with `agent_publish`.
 
+## Many calls: find what to fix first
+
+One call shows one fault. To see which faults come back, hand Curb all the calls:
+
+| Where the calls are | What to run |
+|---|---|
+| Hosted agent, dashboard | On the **Calls** page, export a date range as JSONL, then `npx curb review calls.jsonl` |
+| `curb dev` preview | `npx curb review`: the last 20 conversations, with no file (`--last <n>` for more) |
+| Transcripts as text or Markdown | `npx curb review transcripts/`: one call per file, lines starting with `Caller:` and `Agent:` |
+| A [saved test run](./test-runs.md) | `npx curb review .curb/test-runs/<id>.json` |
+
+The judge of `curb test` reads every call, and the report sorts what it found into patterns, the
+one on the most calls first ([`curb review`](./cli/review.md)):
+
+```text
+Reviewed 48 call(s): 29 with no finding, 17 with findings, 2 not judged.
+
+1. Ends the call right after booking, before the caller says goodbye
+   9 of 46 judged call(s), 20% · ended_early
+   call 0f3a51c2, turn 5: "You're all set for Tuesday at ten. Goodbye!" (The caller had not said goodbye.)
+   Scenario to add:
+     caller: { goal: "Book a haircut, then ask what it costs", knows: "Name Alex Example" },
+     failOn: ["ended_early"],
+```
+
+Read a pattern from top to bottom: what the agent does wrong, on how many of the judged calls, and
+the words of up to three calls that show it. Open one of those calls and read the turn before you
+believe the title. Then work through the patterns one at a time:
+
+1. Put the pattern's scenario into a file under `src/agent/`, inside `scenario({ ... })`.
+2. Run `npx curb test` and see it fail. A scenario that passes does not reproduce the pattern:
+   change its caller until it does.
+3. Fix the agent (the table in section 2 names the usual causes) and run `npx curb test` again.
+4. After the fix is live, export the newer calls and review them: the pattern's share should drop.
+
+What a review does and does not do:
+
+- **The calls are sent to the judge's model.** By default that is a model of the project's own
+  LLM provider; `--judge-model` picks another.
+- **The report quotes the calls.** A quote can hold a name or a number a caller said, so read a
+  report before you share it.
+- **A scenario draft uses invented names and numbers.** A model wrote it from the findings, so
+  check it for real data before you commit it.
+- **An export without tool calls cannot show `claimed_without_tool` or `wrong_tool_use`.** The
+  report says of how many calls they were not asked.
+- **A judge can be wrong.** That is why every pattern carries quotes to read, and why a number
+  in the report is counted by code, not by the model.
+
+With a coding agent, the whole loop is one request:
+
+```text
+Run `npx curb review calls.jsonl --json`. Take the pattern on the most calls, add its scenario,
+make it fail with `npx curb test`, fix the agent and run the test again.
+```
+
 ## Next steps
 
 - [Testing an agent](./testing.md): every flag and check.
+- [`curb review`](./cli/review.md): the files it reads, its report and its JSON.
 - [The preview](./preview.md): rewind, per-message audio and what the model read.
 - [Diagnostics](./diagnostics.md): every code `curb check` can report.
