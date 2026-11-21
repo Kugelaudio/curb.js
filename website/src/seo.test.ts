@@ -80,7 +80,7 @@ describe('tagline', () => {
   })
 
   it('bolds phrases of the description without changing its words', () => {
-    expect(SITE_LEDE_HTML.match(/<strong>/g)).toHaveLength(4)
+    expect(SITE_LEDE_HTML.match(/<strong>/g)).toHaveLength(5)
     expect(SITE_LEDE_HTML.replace(/<\/?strong>/g, '')).toBe(SITE_DESCRIPTION)
   })
 

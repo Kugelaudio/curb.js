@@ -6,9 +6,9 @@ export const SITE_NAME = 'Curb'
 export const SITE_HEADLINE = 'Voice agents your coding agent can build and improve.'
 
 export const SITE_DESCRIPTION =
-  'Prompts and tools are plain code, and test conversations check the result. Run the agent on your own servers, or let KugelAudio host it.'
+  'Describe the agent you want. Your coding agent builds it, talks to it, and improves it. Run it on your own servers, or let KugelAudio host it.'
 
-const LEDE_EMPHASIS = ['plain code', 'test conversations', 'your own servers', 'KugelAudio host it']
+const LEDE_EMPHASIS = ['builds it', 'talks to it', 'improves it', 'your own servers', 'KugelAudio host it']
 
 /** The home page's lede: SITE_DESCRIPTION with its key phrases in bold. */
 export const SITE_LEDE_HTML = LEDE_EMPHASIS.reduce(

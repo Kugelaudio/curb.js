@@ -6,7 +6,7 @@
     </picture>
   </h1>
   <p><strong>Voice agents your coding agent can build and improve.</strong></p>
-  <p>Prompts and tools are plain code, and test conversations check the result. Run the agent on your own servers, or let KugelAudio host it.</p>
+  <p>Describe the agent you want. Your coding agent builds it, talks to it, and improves it. Run it on your own servers, or let KugelAudio host it.</p>
   <p><sub>
     <a href="#quickstart">Quickstart</a> ·
     <a href="#how-it-works">How it works</a> ·
