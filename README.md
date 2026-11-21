@@ -5,30 +5,33 @@
       <img alt="Curb" src=".github/assets/logo-on-light.svg" width="220">
     </picture>
   </h1>
-  <p><strong>The framework for production voice agents.</strong></p>
-  <p>Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships.</p>
-  <p>
-    <a href="#quickstart"><strong>Quickstart</strong></a> ·
-    <a href="#how-it-works"><strong>How it works</strong></a> ·
-    <a href="#hosting"><strong>Hosting</strong></a> ·
-    <a href="https://curbjs.com/docs/"><strong>Docs</strong></a>
-  </p>
+  <p><strong>Voice agents your coding agent can build and improve.</strong></p>
+  <p>Describe the agent you want. Your coding agent builds it, talks to it, and improves it. Run it on your own servers, or let KugelAudio host it.</p>
+  <p><sub>
+    <a href="#quickstart">Quickstart</a> ·
+    <a href="#hosting">Hosting</a> ·
+    <a href="#how-it-works">How it works</a> ·
+    <a href="https://curbjs.com/docs/">Docs</a>
+  </sub></p>
 </div>
 
-## A working voice agent out of the box
+## Quickstart
 
-You write what the agent knows and what it can do, as React components. Curb runs the call.
+You need Node.js 22.12 or newer, on Linux or macOS, or on Windows through WSL.
 
-| You write | Curb runs for you |
-| --- | --- |
-| Who the agent is: a system prompt | Speech-to-text, the LLM and text-to-speech, each swappable in one line |
-| What it can do: tools, as functions with typed input | Turn-taking, interruptions and pauses on a live call |
-| What it knows: skills and plain markdown | The model's request on every turn: only the instructions and tools your state allows |
-| Conversations to keep as tests | A preview where you talk to the agent and see what the model saw |
+```bash
+npm create curb.js my-agent
+cd my-agent
+npx curb login         # sign in once in the browser
+npm run dev            # open http://127.0.0.1:4000
+```
 
-**Want it hosted?** KugelAudio runs Curb agents with phone numbers, call logs and scaling. Write to
-[hello@kugelaudio.com](mailto:hello@kugelaudio.com). [Hosting](#hosting) shows how it works, and
-how to run an agent on your own servers.
+`npm run dev` opens the **preview**, where you talk to your agent: type, or press **Start call**
+and speak. The starter agent is **Juno**, a personal assistant. Ask her "how does this work?",
+then make `src/agent/agent.tsx` your own, or open the folder in Claude Code or Cursor and
+describe the agent you want.
+
+## What an agent looks like
 
 A receptionist for a bike workshop, in `src/agent/agent.tsx`:
 
@@ -85,32 +88,54 @@ only once a slot is booked, so the model cannot call it before. `/prices` is a
 [skill](https://curbjs.com/docs/agents-and-skills/): the model opens it when the caller asks what a
 repair costs.
 
-## Quickstart
+## Hosting
 
-You need Node.js 22.12 or newer, on Linux or macOS, or on Windows through WSL.
+There are two ways to put your agent live. Run the commands yourself, or ask your coding agent
+to: the project's `AGENTS.md` tells it how.
+
+### On KugelAudio Cloud
+
+KugelAudio Cloud builds and hosts the agent, with phone numbers, call logs and scaling handled for you.
+
+1. Write to [hello@kugelaudio.com](mailto:hello@kugelaudio.com) to have hosting switched on for your organization.
+2. Deploy:
 
 ```bash
-npm create curb.js my-agent
-cd my-agent
-npx curb login         # sign in once in the browser
-npm run dev            # open http://127.0.0.1:4000
+npx curb secrets push   # send your .env keys to the hosted agent
+npx curb deploy         # build and go live, prints a playground link
 ```
 
-`npm run dev` opens the **preview**, where you talk to your agent: type, or press **Start call**
-and speak. The starter agent is **Juno**, a personal assistant. Ask her "how does this work?",
-then make `src/agent/agent.tsx` your own.
+[deploying.md](packages/framework/docs/agent-guide/deploying.md) has the flags and limits.
 
-The defaults run speech-to-text, the LLM and text-to-speech on KugelAudio, so
-`curb login` is all the setup you need. Flags to `npm create curb.js` pick
-Anthropic, OpenAI, Azure, Deepgram, ElevenLabs, Cartesia or any OpenAI-compatible
-endpoint instead.
+### On your own servers
 
-> **The package is `curb.js`, not `curb`.** `curb` on npm is an unrelated templating
-> package, so `npm i curb` installs the wrong thing. Start with `npm create curb.js`
-> rather than `npm i curb.js`: the project depends on the framework through an alias,
-> `"curb": "npm:curb.js@<version>"`, and your code imports from `"curb"`.
+A Curb agent runs anywhere Node runs, with your own LiveKit and your own provider keys.
+
+1. Set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`.
+2. Start the agent:
+
+```bash
+npm start
+```
+
+To ship it to a server, `npx curb build` packs the project into one self-contained directory.
+[hosting.md](packages/framework/docs/agent-guide/hosting.md) covers all the ways to run an agent.
 
 ## How it works
+
+The agent is React components, written by you or your coding agent:
+
+- who it is, in a system prompt
+- what it can do, as tools: functions with typed input
+- what it knows, in skills and plain markdown
+- conversations to keep as tests
+
+Curb runs everything else:
+
+- speech-to-text, the LLM and text-to-speech, each swappable in one line
+- turn-taking, interruptions and pauses on a live call
+- the model's request on every turn, with only the instructions and tools your state allows
+- a preview where you talk to the agent and see what the model saw
 
 <p align="center">
   <picture>
@@ -119,14 +144,15 @@ endpoint instead.
   </picture>
 </p>
 
-- **Your components are the prompt.** Curb renders them the way React renders UI, and the output
-  is the model's request: instructions, knowledge and tools. When your state changes, the request
-  changes with it, and a tool your code does not render is not in it.
-- **Skills load only when needed.** A skill is one topic in a folder of its own. The model sees
-  its description and opens it when the call gets there, so an agent with 50 skills still sends
-  a small prompt.
-- **Every provider is a prop.** Speech-to-text, the LLM and text-to-speech are set on `<Agent>`,
-  hosted or self-hosted. Swapping one is a single line.
+Your components are the prompt. Curb renders them the way React renders UI, and the output
+is the model's request: instructions, knowledge and tools. When your state changes, the request
+changes with it, and a tool your code does not render is not in it.
+
+## Skills
+
+Skills load only when needed. A skill is one topic in a folder of its own. The model sees
+its description and opens it when the call gets there, so an agent with 50 skills still sends
+a small prompt.
 
 The `/prices` skill of the agent above is a description and a component:
 
@@ -156,32 +182,32 @@ From there an agent grows like any React app:
 [shared state](https://curbjs.com/docs/state/), [step-by-step procedures](https://curbjs.com/docs/procedures/),
 [confirmations](https://curbjs.com/docs/confirmations/) and [tools from any MCP server](https://curbjs.com/docs/mcp/).
 
-## Test before it ships
+## Providers
+
+Every provider is a prop. Speech-to-text, the LLM and text-to-speech are set on `<Agent>`,
+hosted or self-hosted. Swapping one is a single line.
+
+The defaults run speech-to-text, the LLM and text-to-speech on KugelAudio, so
+`curb login` is all the setup you need. Flags to `npm create curb.js` pick
+Anthropic, OpenAI, Azure, Deepgram, ElevenLabs, Cartesia or any OpenAI-compatible
+endpoint instead.
+
+## Improve it with your coding agent
+
+A new project comes with an `AGENTS.md`, so Claude Code or Cursor can run these commands and
+improve the agent from a real conversation:
 
 - `npm run dev`: talk to the agent, replay a call with its audio, and see what the model saw on every turn.
 - `npx curb check`: type-checks the project and explains how to fix each mistake.
 - `npx curb say "Do you have a slot on Tuesday?"`: one caller turn in the terminal, with the reply and the tool calls.
 - `npx curb test`: runs whole conversations as tests, with no microphone.
 
-A new project comes with an `AGENTS.md`, so Claude Code or Cursor can run these commands and
-improve the agent from a real conversation.
+## Package name
 
-## Hosting
-
-A Curb agent runs anywhere Node runs, with your own LiveKit and your own provider keys: set
-`LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`, then run `npm start`. `npx curb build`
-packs the project into one self-contained directory. See
-[hosting.md](packages/framework/docs/agent-guide/hosting.md) for all the ways to run an agent.
-
-Or let KugelAudio build and host it, with phone numbers, call logs and scaling handled for you.
-Hosting is switched on for your organization on request (hello@kugelaudio.com):
-
-```bash
-npx curb secrets push   # send your .env keys to the hosted agent
-npx curb deploy         # build and go live, prints a playground link
-```
-
-See [deploying.md](packages/framework/docs/agent-guide/deploying.md) for flags and limits.
+The package is `curb.js`, not `curb`. `curb` on npm is an unrelated templating
+package, so `npm i curb` installs the wrong thing. Start with `npm create curb.js`
+rather than `npm i curb.js`: the project depends on the framework through an alias,
+`"curb": "npm:curb.js@<version>"`, and your code imports from `"curb"`.
 
 ## Documentation
 

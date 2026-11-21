@@ -1,8 +1,8 @@
 <div align="center">
-  <a href="https://curbjs.com"><img alt="Curb" src="https://curbjs.com/og.png?v=2" width="360"></a>
+  <a href="https://curbjs.com"><img alt="Curb" src="https://curbjs.com/og.png?v=3" width="360"></a>
   <h1>create-curb.js</h1>
-  <p><strong>The framework for production voice agents.</strong></p>
-  <p>Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships.</p>
+  <p><strong>Voice agents your coding agent can build and improve.</strong></p>
+  <p>Describe the agent you want. Your coding agent builds it, talks to it, and improves it. Run it on your own servers, or let KugelAudio host it.</p>
   <a href="https://www.npmjs.com/package/create-curb.js"><img alt="npm version" src="https://img.shields.io/npm/v/create-curb.js.svg?style=for-the-badge&labelColor=000000"></a>
   <a href="https://curbjs.com/docs/installation/"><img alt="Node.js version" src="https://img.shields.io/node/v/create-curb.js.svg?style=for-the-badge&labelColor=000000"></a>
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License" src="https://img.shields.io/npm/l/create-curb.js.svg?style=for-the-badge&labelColor=000000"></a>
