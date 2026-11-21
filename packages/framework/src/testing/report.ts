@@ -16,21 +16,16 @@ import type { RunUsage } from "./usage.js";
 /** A scenario file that could not be loaded: reported as a failed scenario, never skipped. */
 export type LoadFailure = { name: string; file: string; passed: false; error: string };
 
-/** A scenario that did not run because the run was cut short, with why. */
-export type SkippedScenario = { name: string; file: string; passed: false; skipped: string };
-
-export type ScenarioReport = ScenarioResult | LoadFailure | SkippedScenario;
+export type ScenarioReport = ScenarioResult | LoadFailure;
 
 /** How a whole `curb test` ended, and the exit code that says so. */
 export const TEST_EXIT_CODES = {
   /** Every scenario passed. */
   pass: 0,
-  /** A scenario failed, could not be loaded or was stopped; or there was none to run. */
+  /** A scenario failed or could not be loaded; or there was none to run. */
   fail: 1,
   /** None failed, but too many runs of a scenario were errors to say that it passes. */
   error: 2,
-  /** None failed, but the token budget (`--max-tokens`) was spent before every run ran. */
-  budget: 3,
 } as const;
 
 export type TestOutcome = keyof typeof TEST_EXIT_CODES;
@@ -59,13 +54,11 @@ export type TestReport = {
 
 export const isResult = (report: ScenarioReport): report is ScenarioResult => "runs" in report;
 
-/** How the whole run ended: a failure before errors, errors before a spent budget. */
+/** How the whole run ended: a failure before errors. */
 export function testOutcome(scenarios: readonly ScenarioReport[]): TestOutcome {
   const failed = scenarios.some((report) => ("error" in report ? true : isResult(report) && report.outcome === "fail"));
   if (failed) return "fail";
-  if (scenarios.some((report) => isResult(report) && report.outcome === "error")) return "error";
-  const cutShort = scenarios.some((report) => "skipped" in report || (isResult(report) && report.stats.cutShort === "budget"));
-  return cutShort ? "budget" : "pass";
+  return scenarios.some((report) => isResult(report) && report.outcome === "error") ? "error" : "pass";
 }
 
 /** One turn as the report prints it: the caller's line, how it answered an action waiting for
@@ -118,10 +111,10 @@ function findingLines(run: Pick<ScenarioRun, "judge">): string[] {
     .map((answer) => `  find  ${answer.id}: ${evidenceText(answer.turn, answer.quote, answer.earlierTurn)} (${answer.reason})`);
 }
 
-/** The verdict line of a scenario: its outcome, and for an error or a stop the reason. */
+/** The verdict line of a scenario: its outcome, and for an error the reason. */
 function verdictLine(result: ScenarioResult, counted: string): string {
   const shown = result.runs.length === 1 ? result.runs[0] : undefined;
-  const why = result.stopped ? `: stopped, ${result.stopped.code}` : shown?.error ? `: ${shown.error.kind}: ${shown.error.message}` : "";
+  const why = shown?.error ? `: ${shown.error.kind}: ${shown.error.message}` : "";
   return `${VERDICT[result.outcome]} ${result.name} (${counted}, ${seconds(result.durationMs)})${why}`;
 }
 
@@ -132,7 +125,6 @@ export function formatChecks(result: ScenarioResult): string {
     ...checkLines(result.checks),
     ...result.runs.flatMap(findingLines),
     ...result.notes.map((note) => `  note  ${note}`),
-    ...(result.stopped ? [result.stopped.message] : []),
     verdictLine(result, `${callerTurns(result.turns)} caller turn(s)`),
   ];
   return `${lines.join("\n")}\n`;
@@ -159,12 +151,6 @@ function runsLine(result: ScenarioResult): string {
   ];
   return `  runs  ${parts.join(", ")}`;
 }
-
-const CUT_SHORT = {
-  decided: "no further run could change the outcome",
-  budget: "the token budget (--max-tokens) was spent",
-  stopped: "the scenario was stopped",
-} as const;
 
 function findingStatLine(finding: FindingStats): string {
   const [example] = finding.examples;
@@ -198,7 +184,6 @@ export function formatRepeated(result: ScenarioResult): string {
   const variants = result.variants.map((variant) => `${variant.experiment}=${variant.variant} ${variant.passed}/${variant.passed + variant.failed}${variant.errors > 0 ? ` (+${variant.errors} error(s))` : ""}`);
   const lines = [
     runsLine(result),
-    ...(stats.cutShort ? [`  note  ${stats.ran} of ${stats.runs} run(s) ran: ${CUT_SHORT[stats.cutShort]}`] : []),
     ...result.checkStats.map((check) => {
       const unknown = check.unknown > 0 ? `, ${check.unknown} unknown` : "";
       return `  ${check.passed === check.total ? "pass" : "FAIL"}  ${check.name}: ${check.passed}/${check.total} (${percent(check.passRate)}${unknown})`;
@@ -207,7 +192,6 @@ export function formatRepeated(result: ScenarioResult): string {
     ...result.findings.filter((finding) => finding.found > 0).map(findingStatLine),
     ...(variants.length > 0 ? [`  variants passed  ${variants.join(" · ")}`] : []),
     ...result.notes.map((note) => `  note  ${note}`),
-    ...(result.stopped ? [result.stopped.message] : []),
     ...notPassed.slice(0, MAX_TRANSCRIPTS).flatMap(runTranscript),
     ...(notPassed.length > MAX_TRANSCRIPTS ? [`  note  ${notPassed.length - MAX_TRANSCRIPTS} more run(s) did not pass; the saved run has every transcript`] : []),
     verdictLine(result, `${result.flaky ? "flaky: " : ""}${stats.passed}/${stats.passed + stats.failed} run(s) passed`),
@@ -250,11 +234,10 @@ export function formatSummary(report: TestReport): string {
   if (lines.length > 1) lines.push("");
 
   // A flaky scenario is listed as flaky whether its rate was enough to pass or not.
-  const sorted = { passed: [] as ScenarioReport[], failed: [] as ScenarioReport[], flaky: [] as ScenarioResult[], unassessed: [] as ScenarioReport[], skipped: [] as ScenarioReport[] };
+  const sorted = { passed: [] as ScenarioReport[], failed: [] as ScenarioReport[], flaky: [] as ScenarioResult[], unassessed: [] as ScenarioReport[] };
   for (const entry of report.scenarios) {
     if (entry.passed) sorted.passed.push(entry);
     if (isResult(entry) && entry.flaky) sorted.flaky.push(entry);
-    else if ("skipped" in entry) sorted.skipped.push(entry);
     else if (isResult(entry) && entry.outcome === "error") sorted.unassessed.push(entry);
     else if (!entry.passed) sorted.failed.push(entry);
   }
@@ -265,17 +248,15 @@ export function formatSummary(report: TestReport): string {
       ? [`Flaky (passed on some runs, failed on others): ${sorted.flaky.map((result) => `${result.name} (${result.file}) ${result.stats.passed}/${result.stats.passed + result.stats.failed}`).join(", ")}`]
       : []),
     ...(sorted.unassessed.length > 0 ? [`Not assessed (too many errors): ${named(sorted.unassessed)}`] : []),
-    ...(sorted.skipped.length > 0 ? [`Not run (token budget spent): ${named(sorted.skipped)}`] : []),
   ];
   lines.push(parts.join(" "));
   return `${lines.join("\n")}\n`;
 }
 
-const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
+const cell = (text: string) => text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 
 function outcomeCell(report: ScenarioReport): string {
   if ("error" in report) return "fail (not loaded)";
-  if ("skipped" in report) return "not run";
   return report.flaky && !report.passed ? "fail (flaky)" : report.flaky ? "pass (flaky)" : report.outcome;
 }
 
@@ -305,7 +286,7 @@ function markdownRuns(result: ScenarioResult): string[] {
 export function markdownReport(report: TestReport): string {
   const results = report.scenarios.filter(isResult);
   const lines = [
-    `## curb test: ${report.outcome === "pass" ? "passed" : report.outcome === "fail" ? "failed" : report.outcome === "error" ? "too many errors" : "stopped at the token budget"}`,
+    `## curb test: ${report.outcome === "pass" ? "passed" : report.outcome === "fail" ? "failed" : "too many errors"}`,
     "",
     `${report.scenarios.filter((entry) => entry.passed).length} of ${report.scenarios.length} scenario(s) passed in ${seconds(report.durationMs)}.`,
     "",
@@ -321,10 +302,8 @@ export function markdownReport(report: TestReport): string {
 
   for (const entry of report.scenarios) {
     if ("error" in entry) lines.push(`### ${entry.name}`, "", entry.error, "");
-    else if ("skipped" in entry) lines.push(`### ${entry.name}`, "", `Not run: ${entry.skipped}.`, "");
     else if (!entry.passed || entry.flaky || entry.findings.some((finding) => finding.found > 0)) {
       lines.push(`### ${entry.name}`, "", `\`${entry.file}\`, ${runsLine(entry).replace(/^ {2}runs {2}/, "")}`, "");
-      if (entry.stopped) lines.push(entry.stopped.message, "");
       const failing = entry.checkStats.filter((check) => check.passed < check.total);
       if (failing.length > 0) {
         lines.push("| Check | Runs passed |", "|---|---|", ...failing.map((check) => `| ${cell(check.name)} | ${check.passed}/${check.total} |`), "");

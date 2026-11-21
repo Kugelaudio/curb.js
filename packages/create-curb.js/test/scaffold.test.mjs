@@ -341,8 +341,6 @@ for (const name of ["default", ...Object.keys(BUSINESS_TEMPLATES)]) {
     for (const source of simulated) {
       assert.match(source, /\.\.\.personas\.\w+/);
       assert.match(source, /\bexpectations: \[/);
-      // Its tools may run on every run only because the scenario says so.
-      assert.match(source, /\brealTools: \[/);
     }
     for (const source of scenarios) assert.match(source, /\bstate(Matches)?[(<]/);
     // A store a scenario reads is one the agent defines.
@@ -351,10 +349,6 @@ for (const name of ["default", ...Object.keys(BUSINESS_TEMPLATES)]) {
     const read = scenarios.flatMap((source) => [...source.matchAll(/\bstate(?:Matches)?(?:<[^>]*>)?\("([a-z]+)"/g)].map((match) => match[1]));
     assert.ok(read.length > 0);
     assert.deepEqual(read.filter((store) => !stores.includes(store)), []);
-    // And a tool it lets run for real is one the agent has.
-    const tools = [...agent.matchAll(/\bname="([a-z_]+)"/g)].map((match) => match[1]);
-    const allowed = simulated.flatMap((source) => [...(source.match(/realTools: \[([^\]]*)\]/)?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((match) => match[1]));
-    assert.deepEqual(allowed.filter((tool) => !tools.includes(tool)), []);
   });
 }
 
@@ -369,7 +363,7 @@ test("every project ships a workflow that runs curb check and curb test on pull 
     assert.match(workflow, /^permissions:\n {2}contents: read\n/m);
     assert.match(workflow, /KUGELAUDIO_API_KEY: \$\{\{ secrets\.KUGELAUDIO_API_KEY \}\}/);
     assert.match(workflow, /run: npx curb check\n/);
-    assert.match(workflow, /run: npx curb test --runs \d+ --max-tokens \d+\n/);
+    assert.match(workflow, /run: npx curb test\n/);
     // Third-party actions are pinned to a commit, and no checkout leaves its token behind.
     const uses = [...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]);
     assert.ok(uses.length >= 2);

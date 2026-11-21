@@ -22,10 +22,9 @@ export default scenario({
   // a scripted scenario needs neither: the same words run once and must pass.
   runs: 3,
   minPassRate: 0.66,
-  // find_order reads sample data and the others only change this call's own state, so they may
-  // run on every run (--runs). A tool that writes to a real system gets a fake instead:
+  // Every run runs the agent's tools for real. Here find_order reads sample data and the others
+  // only change this call's own state. A tool that writes to a real system gets a fake:
   // fakes: { open_ticket: { ok: true, message: "Ticket T-1 opened." } }
-  realTools: ["find_order", "open_ticket", "hand_over_to_team"],
   // A judge answers each sentence with yes, no or unknown, and quotes the turn that shows it.
   expectations: ["The agent says a ticket is open only after its open_ticket call succeeded."],
   // The agent's state at the end of the call: one ticket about the damage, and nothing else.

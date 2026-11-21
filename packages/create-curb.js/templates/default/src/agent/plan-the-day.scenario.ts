@@ -22,8 +22,6 @@ export default scenario({
   // a scripted scenario needs neither: the same words run once and must pass.
   runs: 3,
   minPassRate: 0.66,
-  // The task tools only change this call's own list, so they may run on every run (--runs).
-  realTools: ["add_task", "complete_task", "remove_task", "wrap_up_day"],
   // A judge answers each sentence with yes, no or unknown, and quotes the turn that shows it.
   expectations: ["The agent says a task is on the list only after its add_task call for that task succeeded."],
   // The agent's state at the end of the call: each of the three tasks is on the list, once.

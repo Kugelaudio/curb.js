@@ -2,7 +2,7 @@ import type { AgentModelUsage } from "../llm/ai-sdk.js";
 
 /**
  * Token counts of a test run, as the providers report them. Nothing here knows a price: a
- * report shows tokens, and `curb test --max-tokens` stops on them.
+ * report shows tokens.
  */
 
 /** Tokens one role used. Input is the uncached part; cache reads and writes have their own counters. */
@@ -68,35 +68,4 @@ export function sumUsage(runs: ReadonlyArray<RunUsage | null>): RunUsage | null 
     }
   }
   return runUsage({ agent: counters.agent.total(), caller: counters.caller.total(), judge: counters.judge.total() });
-}
-
-/** The tokens a whole `curb test` may use (`--max-tokens`). Runs report what they used when they
- * end; once the limit is reached no further run starts. Without a limit it is never spent. */
-export class TokenBudget {
-  readonly limit: number | null;
-  private used = 0;
-  private heard = false;
-
-  constructor(limit: number | null = null) {
-    this.limit = limit;
-  }
-
-  spend(usage: RunUsage | null): void {
-    if (!usage) return;
-    this.heard = true;
-    this.used += usage.totalTokens;
-  }
-
-  get spent(): number {
-    return this.used;
-  }
-
-  /** Whether any run reported usage: without it a limit cannot be held. */
-  get reported(): boolean {
-    return this.heard;
-  }
-
-  get exhausted(): boolean {
-    return this.limit !== null && this.used >= this.limit;
-  }
 }

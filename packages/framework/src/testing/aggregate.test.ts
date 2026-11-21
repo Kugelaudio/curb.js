@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { saved, turn } from "../test-fixtures/conversations.js";
-import { aggregateScenario, outcomeOpen } from "./aggregate.js";
+import { aggregateScenario } from "./aggregate.js";
 import type { JudgeAnswer } from "./judge.js";
 import type { SavedConversation, SavedScenarioSettings } from "./record.js";
 
@@ -35,7 +35,6 @@ describe("a scenario's runs as one result", () => {
       errorRate: 0,
       minPassRate: 1,
       maxErrorRate: 0.2,
-      cutShort: null,
     });
     expect(result).toMatchObject({ outcome: "fail", passed: false, flaky: true, durationMs: 4200 });
     expect(result.checkStats).toEqual([{ name: "the caller reaches its goal", passed: 4, total: 5, passRate: 0.8, unknown: 0 }]);
@@ -117,38 +116,7 @@ describe("a scenario's runs as one result", () => {
     expect(aggregate([long], { runs: 1 })).toMatchObject({ outcome: "pass", style: { wordsP90: 12, limits: [] } });
   });
 
-  it("is failed, with nothing to show, when it was stopped before a run finished", () => {
-    const result = aggregateScenario({
-      settings,
-      conversations: [],
-      maxErrorRate: 0.2,
-      durationMs: 10,
-      cutShort: "stopped",
-      stopped: { code: "CURB_TEST_TOOL_NOT_FAKED", message: "stopped" },
-    });
-    expect(result).toMatchObject({ outcome: "fail", passed: false, turns: [], checks: [], runs: [], stats: { ran: 0, cutShort: "stopped" } });
-  });
-});
-
-describe("whether further runs can change the outcome", () => {
-  const strict = { minPassRate: 1, maxErrorRate: 0.2 };
-  const open = (passed: number, failed: number, errors: number, remaining: number, settings = strict) =>
-    outcomeOpen({ passed, failed, errors, remaining, settings });
-
-  it("is decided by the first failure when every run must pass", () => {
-    expect(open(2, 0, 0, 3)).toBe(true);
-    expect(open(2, 1, 0, 2)).toBe(false);
-    expect(open(5, 0, 0, 0)).toBe(false);
-  });
-
-  it("is decided once the share can no longer be reached, or can no longer be missed", () => {
-    const most = { minPassRate: 0.6, maxErrorRate: 0.2 };
-    // 1 of 3 so far, 2 to go: 3 of 5 is still in reach.
-    expect(open(1, 2, 0, 2, most)).toBe(true);
-    // 0 of 3 so far: 2 of 5 at best.
-    expect(open(0, 3, 0, 2, most)).toBe(false);
-    // 3 of 3 so far, and even two more failures leave 3 of 5; but two more errors would be too many.
-    expect(open(3, 0, 0, 2, most)).toBe(true);
-    expect(open(4, 0, 0, 1, most)).toBe(false);
+  it("is an error, with nothing to show, when it has no run", () => {
+    expect(aggregate([])).toMatchObject({ outcome: "error", passed: false, turns: [], checks: [], runs: [], stats: { ran: 0, passRate: null } });
   });
 });

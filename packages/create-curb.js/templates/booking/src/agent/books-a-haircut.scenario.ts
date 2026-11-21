@@ -22,10 +22,9 @@ export default scenario({
   // a scripted scenario needs neither: the same words run once and must pass.
   runs: 3,
   minPassRate: 0.66,
-  // The calendar lives in this call's own state, so its tools may run on every run (--runs).
-  // A tool that writes to a real calendar gets a fake instead:
+  // Every run runs the agent's tools for real. Here they only change this call's own calendar.
+  // A tool that writes to a real calendar gets a fake:
   // fakes: { book_appointment: { ok: true, message: "Booked as B-1." } }
-  realTools: ["list_free_slots", "book_appointment", "cancel_appointment"],
   // A judge answers each sentence with yes, no or unknown, and quotes the turn that shows it.
   expectations: ["The agent says the appointment is booked only after its book_appointment call succeeded."],
   // The agent's state at the end of the call: one haircut for Alex, and nothing else.

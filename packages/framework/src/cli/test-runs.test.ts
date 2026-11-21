@@ -66,7 +66,6 @@ const MILK = `import { scenario } from "curb/testing";
 export default scenario({
   name: "adds milk",
   caller: { goal: "Put milk on the list" },
-  realTools: ["add_task"],
   expectations: ["The agent says that milk is on the list."],
   expect: ({ stateMatches }) => [stateMatches("tasks", { tasks: [{ title: "milk" }] })],
 });
@@ -107,7 +106,7 @@ describe("curb test, repeated and saved runs", () => {
       judge: (run): Answers => (run === 2 ? { goal: "no", incoherent: { answer: "yes", turn: 2, quote: "Bye!", reason: "It says bye twice." } } : {}),
     });
 
-    const { code, printed } = await run(["--runs", "3", "--concurrency", "1", "--no-early-stop", "milk"], root, host);
+    const { code, printed } = await run(["--runs", "3", "--concurrency", "1", "milk"], root, host);
 
     expect(code).toBe(1);
     expect(stats.bundles).toBe(3);
@@ -152,7 +151,7 @@ describe("curb test, repeated and saved runs", () => {
 
   it("passes a scenario at the share it asks for, and still lists it as flaky", async () => {
     const root = project({
-      "src/agent/milk.scenario.ts": MILK.replace("realTools:", "minPassRate: 0.5,\n  realTools:"),
+      "src/agent/milk.scenario.ts": MILK.replace("expectations:", "minPassRate: 0.5,\n  expectations:"),
     });
     const { host } = tasksHost({ agent: milkAgent, caller: milkCaller, judge: (run): Answers => (run === 1 ? { goal: "no" } : {}) });
 
@@ -181,7 +180,7 @@ describe("curb test, repeated and saved runs", () => {
       },
     };
 
-    const { code, printed } = await run(["--runs", "3", "--concurrency", "1", "--no-early-stop"], root, flakyJudge);
+    const { code, printed } = await run(["--runs", "3", "--concurrency", "1"], root, flakyJudge);
 
     // One error in three runs is within what a scenario may have; the two that completed passed.
     expect(code).toBe(0);
@@ -205,7 +204,7 @@ describe("curb test, repeated and saved runs", () => {
     expect(printed).not.toContain("FAIL");
   });
 
-  it("stops at the first failed run when every run must pass, and runs a scripted scenario once whatever --runs says", async () => {
+  it("runs every run of a simulated scenario also once one failed, and a scripted scenario once whatever --runs says", async () => {
     const root = project({ "src/agent/milk.scenario.ts": MILK, "src/agent/hello.scenario.ts": HELLO });
     const { host, stats } = tasksHost({ agent: () => [says("Hello there.")], caller: () => ["[hang up]"], judge: () => ({ goal: "no" }) });
 
@@ -215,8 +214,8 @@ describe("curb test, repeated and saved runs", () => {
     const report = JSON.parse(printed) as TestReport;
     const [hello, milk] = report.scenarios as ScenarioResult[];
     expect(hello).toMatchObject({ name: "hello", mode: "scripted", passed: true, stats: { runs: 1, ran: 1 } });
-    expect(milk.stats).toMatchObject({ runs: 5, ran: 1, failed: 1, cutShort: "decided" });
-    expect(stats.bundles).toBe(2);
+    expect(milk.stats).toMatchObject({ runs: 5, ran: 5, failed: 5 });
+    expect(stats.bundles).toBe(6);
   });
 
   it("keeps every field --json had, with the values a single run always gave, and only adds to them", async () => {
@@ -365,25 +364,6 @@ describe("curb test, repeated and saved runs", () => {
     expect(printed).toMatch(/\n0 of 1 scenario\(s\) passed in \d+\.\ds\. Not assessed \(too many errors\): hello \(src\/agent\/hello\.scenario\.ts\)\n$/);
   });
 
-  it("exits 3 when --max-tokens stopped the run before every scenario ran, and says which did not", async () => {
-    const root = project({
-      "src/agent/a.scenario.ts": HELLO,
-      "src/agent/b.scenario.ts": HELLO,
-      "src/agent/c.scenario.ts": HELLO,
-    });
-    const { host, stats } = tasksHost({ agent: () => [says("Hello there.")], tokens: 600 });
-
-    const { code, printed } = await run(["--max-tokens", "1000", "--concurrency", "1", "--json"], root, host);
-
-    expect(code).toBe(3);
-    expect(stats.bundles).toBe(2);
-    const report = JSON.parse(printed) as TestReport;
-    expect(report).toMatchObject({ passed: false, outcome: "budget", exitCode: 3, usage: { totalTokens: 1200 } });
-    expect(report.scenarios.map((entry) => [entry.name, entry.passed])).toEqual([["a", true], ["b", true], ["c", false]]);
-    expect(report.scenarios[2]).toEqual({ name: "c", file: "src/agent/c.scenario.ts", passed: false, skipped: "the token budget (--max-tokens) was spent before it ran" });
-    expect(savedRun(root).complete).toBe(false);
-  });
-
   /** Scripted scenarios that each say one line, and an agent that takes `ms(line)` to answer it. */
   function timedHost(ms: (line: string) => number) {
     const flight = { now: 0, most: 0 };
@@ -456,25 +436,19 @@ export default scenario({ turns: ["${name}"], ${extra}expect: ({ said }) => [sai
     expect(printed).toMatch(/\n3 of 3 scenario\(s\) passed in \d+\.\ds\.\n$/);
   });
 
-  it("stops a repeated scenario at a tool without a fake, and lets --allow-real-tools run it", async () => {
+  it("runs a tool without a fake for real on every run of a repeated scenario", async () => {
     const root = project({
       "src/agent/send.scenario.ts": `import { scenario } from "curb/testing";
 export default scenario({ caller: { goal: "Send my list to Sam" }, runs: 2 });
 `,
     });
-    const play = () => tasksHost({ agent: () => [calls(sendSummary("Sam")), says("Sent to Sam."), hangUp("Goodbye.")], caller: () => ["Send my list to Sam.", "Bye! [hang up: met - sent]"] });
+    const { host, stats } = tasksHost({ agent: () => [calls(sendSummary("Sam")), says("Sent to Sam."), hangUp("Goodbye.")], caller: () => ["Send my list to Sam.", "Bye! [hang up: met - sent]"] });
 
-    const stopped = play();
-    const { code, printed } = await run(["--concurrency", "1"], root, stopped.host);
-    expect(code).toBe(1);
-    expect(stopped.stats.sends).toBe(0);
-    expect(printed).toContain('[CURB_TEST_TOOL_NOT_FAKED] Scenario "send" runs 2 times and reached "send_summary", which has no fake');
-    expect(printed).toContain("FAIL send (0/0 run(s) passed, ");
-    expect(printed).toContain("): stopped, CURB_TEST_TOOL_NOT_FAKED\n");
+    const { code, printed } = await run(["--concurrency", "1"], root, host);
 
-    const allowed = play();
-    expect((await run(["--concurrency", "1", "--allow-real-tools"], root, allowed.host)).code).toBe(0);
-    expect(allowed.stats.sends).toBe(2);
+    expect(code).toBe(0);
+    expect(stats.sends).toBe(2);
+    expect(printed).toContain("PASS send (2/2 run(s) passed, ");
   });
 
   it("writes the report as Markdown to --report and to the GitHub job summary", async () => {
@@ -482,7 +456,7 @@ export default scenario({ caller: { goal: "Send my list to Sam" }, runs: 2 });
     const { host } = tasksHost({ agent: milkAgent, caller: milkCaller, judge: (run): Answers => (run === 1 ? { goal: "no" } : {}) });
     const summary = join(root, "step-summary.md");
 
-    await run(["--runs", "2", "--no-early-stop", "--concurrency", "1", "--report", "reports/curb.md", "milk"], root, host, { GITHUB_STEP_SUMMARY: summary });
+    await run(["--runs", "2", "--concurrency", "1", "--report", "reports/curb.md", "milk"], root, host, { GITHUB_STEP_SUMMARY: summary });
 
     const markdown = readFileSync(join(root, "reports/curb.md"), "utf8");
     expect(readFileSync(summary, "utf8")).toBe(`${markdown}\n`);
@@ -498,23 +472,26 @@ export default scenario({ caller: { goal: "Send my list to Sam" }, runs: 2 });
     const quiet = project({ "src/agent/hello.scenario.ts": HELLO });
     await run([], quiet, tasksHost({ agent: () => [says("Hello there.")] }).host);
     expect(existsSync(join(quiet, "reports"))).toBe(false);
+
+    // A backslash and a pipe in a name stay inside their table cell.
+    const odd = project({ "src/agent/hello.scenario.ts": HELLO.replace("turns:", String.raw`name: "a\\b|c", turns:`) });
+    await run(["--report", "report.md"], odd, tasksHost({ agent: () => [says("Hello there.")] }).host);
+    expect(readFileSync(join(odd, "report.md"), "utf8")).toContain(String.raw`| a\\b\|c | pass | 1/1 |`);
   });
 
-  it("fails a scenario on a style limit from --style, which the scenario's own limit overrides", async () => {
-    const root = project({
-      "src/agent/hello.scenario.ts": HELLO,
-      "src/agent/long.scenario.ts": `import { scenario } from "curb/testing";
-export default scenario({ turns: ["Hi"], style: { wordsP90: 10 } });
-`,
-    });
+  it("fails a scenario whose replies are above its own style limit", async () => {
+    const styled = (limit: number) => `import { scenario } from "curb/testing";
+export default scenario({ turns: ["Hi"], style: { wordsP90: ${limit} } });
+`;
+    const root = project({ "src/agent/long.scenario.ts": styled(10), "src/agent/short.scenario.ts": styled(3) });
     const { host } = tasksHost({ agent: () => [says("Hello there, how are you?")] });
 
-    const { code, printed } = await run(["--style", "wordsP90=3"], root, host);
+    const { code, printed } = await run([], root, host);
 
     expect(code).toBe(1);
-    expect(printed).toContain("  FAIL  style: wordsP90 at most 3: wordsP90 is 5, above the limit of 3\n");
     expect(printed).toContain("  pass  style: wordsP90 at most 10: wordsP90 is 5, within the limit of 10\n");
-    expect(printed).toMatch(/1 of 2 scenario\(s\) passed in \d+\.\ds\. Failed: hello \(src\/agent\/hello\.scenario\.ts\)\n$/);
+    expect(printed).toContain("  FAIL  style: wordsP90 at most 3: wordsP90 is 5, above the limit of 3\n");
+    expect(printed).toMatch(/1 of 2 scenario\(s\) passed in \d+\.\ds\. Failed: short \(src\/agent\/short\.scenario\.ts\)\n$/);
   });
 });
 
@@ -526,19 +503,11 @@ describe("curb test options", () => {
         "--runs",
         "5",
         "--concurrency=8",
-        "--max-error-rate",
-        "0.5",
         "--caller-model",
         "openai:gpt-5.4-mini",
         "--judge-model=gpt-5.2",
-        "--max-tokens",
-        "200000",
-        "--style",
-        "wordsP90=40, questionShare=0.6",
         "--report",
         "report.md",
-        "--allow-real-tools",
-        "--no-early-stop",
         "--json",
       ]),
     ).toEqual({
@@ -546,41 +515,18 @@ describe("curb test options", () => {
       json: true,
       runs: 5,
       concurrency: 8,
-      maxErrorRate: 0.5,
       callerModel: "openai:gpt-5.4-mini",
       judgeModel: "gpt-5.2",
-      maxTokens: 200000,
-      style: { wordsP90: 40, questionShare: 0.6 },
       report: "report.md",
-      allowRealTools: true,
-      noEarlyStop: true,
     });
     expect(parseTestArgs(["--rejudge", "latest"])).toEqual({ filter: "", json: false, rejudge: "latest" });
-    expect(TEST_OPTIONS).toEqual([
-      "--json",
-      "--allow-real-tools",
-      "--no-early-stop",
-      "--runs",
-      "--concurrency",
-      "--max-error-rate",
-      "--caller-model",
-      "--judge-model",
-      "--max-tokens",
-      "--style",
-      "--report",
-      "--rejudge",
-    ]);
+    expect(TEST_OPTIONS).toEqual(["--json", "--runs", "--concurrency", "--caller-model", "--judge-model", "--report", "--rejudge"]);
   });
 
   it("refuses a value out of range, naming what the option takes", () => {
     expect(() => parseTestArgs(["--runs", "0"])).toThrow("curb test: --runs must be a whole number of runs from 1 to 100; got 0.");
     expect(() => parseTestArgs(["--runs", "500"])).toThrow("from 1 to 100; got 500.");
     expect(() => parseTestArgs(["--concurrency", "64"])).toThrow('curb test: --concurrency must be a whole number from 1 to 16; got "64".');
-    expect(() => parseTestArgs(["--max-error-rate", "20"])).toThrow('curb test: --max-error-rate must be a share from 0 to 1; got "20".');
-    expect(() => parseTestArgs(["--max-tokens", "lots"])).toThrow('curb test: --max-tokens must be a whole number of tokens, at least 1; got "lots".');
-    expect(() => parseTestArgs(["--style", "words=40,wordsP90"])).toThrow(
-      'curb test: --style takes limits such as wordsP90=40,questionShare=0.6: "words" is no style number;',
-    );
     expect(() => parseTestArgs(["--runs"])).toThrow("curb test: --runs needs a value: --runs <n>.");
     expect(() => parseTestArgs(["--report", "--json"])).toThrow("curb test: --report needs a value: --report <file>.");
   });

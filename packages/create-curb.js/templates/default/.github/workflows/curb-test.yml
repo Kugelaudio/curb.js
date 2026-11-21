@@ -36,12 +36,8 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npx curb check
-      # Each simulated-caller scenario runs three times and must pass every time; scripted
-      # scenarios run once. The report lands in the job summary, and --max-tokens stops the
-      # job cleanly (exit code 3) instead of letting a loop run up a bill. The two scenarios
-      # this project starts with use roughly 60,000 to 90,000 tokens this way, so 400,000 is
-      # a starting point with room for a few more: read the Tokens line of a run, and set
-      # the budget to two or three times what your scenarios use.
+      # Each scenario says how often it runs and how many runs must pass (runs, minPassRate).
+      # The report lands in the job summary.
       - name: npx curb test
         if: env.KUGELAUDIO_API_KEY != ''
-        run: npx curb test --runs 3 --max-tokens 400000
+        run: npx curb test

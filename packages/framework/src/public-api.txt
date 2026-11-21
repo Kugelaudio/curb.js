@@ -297,18 +297,13 @@ curb secrets
 curb server
 curb start
 curb test
-curb test --allow-real-tools
 curb test --caller-model
 curb test --concurrency
 curb test --json
 curb test --judge-model
-curb test --max-error-rate
-curb test --max-tokens
-curb test --no-early-stop
 curb test --rejudge
 curb test --report
 curb test --runs
-curb test --style
 curb upgrade
 curb upgrade --check
 curb upgrade --preview

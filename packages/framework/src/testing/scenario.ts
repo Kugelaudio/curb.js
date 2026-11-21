@@ -217,9 +217,6 @@ export type ScenarioDefinition = {
    * as on a real call (its schema's rules and transforms included), its success or error line
    * follows the result, and a `confirm` tool still waits for the caller's yes. */
   fakes?: Readonly<Record<string, ScenarioFake>>;
-  /** Tools that may run for real on every run of a scenario that runs more than once, by name,
-   * or "all". A tool that is neither here nor in `fakes` stops such a scenario before it runs. */
-  realTools?: readonly string[] | "all";
   /** How often the scenario runs. Default: 1, or what `curb test --runs` says for a simulated
    * caller. Each run is a conversation of its own. */
   runs?: number;
@@ -256,7 +253,6 @@ const FIELDS = [
   "client",
   "experiments",
   "fakes",
-  "realTools",
   "runs",
   "minPassRate",
   "expectations",
@@ -297,7 +293,7 @@ function scenarioProblems(definition: unknown): string[] {
   }
   const problems = unknownFields(definition, FIELDS, "a scenario");
   const { name, caller, turns, maxTurns, client, experiments, fakes, expect } = definition;
-  const { realTools, runs, minPassRate, expectations, failOn, style } = definition;
+  const { runs, minPassRate, expectations, failOn, style } = definition;
   if (name !== undefined && (typeof name !== "string" || !name.trim())) {
     problems.push("name must be a non-empty string.");
   }
@@ -324,7 +320,6 @@ function scenarioProblems(definition: unknown): string[] {
   if (minPassRate !== undefined && (typeof minPassRate !== "number" || !(minPassRate > 0 && minPassRate <= 1))) {
     problems.push(`minPassRate must be the share of runs that must pass, above 0 and at most 1 (0.8 for four in five); got ${preview(minPassRate)}.`);
   }
-  if (realTools !== undefined) problems.push(...realToolsProblems(realTools));
   if (expectations !== undefined) problems.push(...expectationsProblems(expectations));
   if (failOn !== undefined) problems.push(...failOnProblems(failOn));
   if (style !== undefined) problems.push(...styleLimitsProblems(style).map((problem) => `style: ${problem}`));
@@ -379,14 +374,6 @@ export function runsProblem(value: unknown): string | undefined {
     : `must be a whole number of runs from 1 to ${MAX_RUNS}; got ${preview(value)}.`;
 }
 
-function realToolsProblems(realTools: unknown): string[] {
-  if (realTools === "all") return [];
-  if (!Array.isArray(realTools) || realTools.some((tool) => typeof tool !== "string" || !tool.trim())) {
-    return ['realTools must be "all" or a list of the tool names that may run for real on every run, e.g. ["find_order"].'];
-  }
-  return [];
-}
-
 function expectationsProblems(expectations: unknown): string[] {
   if (!Array.isArray(expectations) || expectations.length === 0) {
     return ['expectations must be a non-empty list of sentences about the call, e.g. ["The agent reads the booking number back."].'];
@@ -409,7 +396,7 @@ function failOnProblems(failOn: unknown): string[] {
 }
 
 /** What is wrong with `limits` as style limits (`{ wordsP90: 40 }`), one entry per problem. */
-export function styleLimitsProblems(limits: unknown): string[] {
+function styleLimitsProblems(limits: unknown): string[] {
   if (!isRecord(limits)) return [`give the highest value per style number, e.g. { wordsP90: 40 }; the numbers are ${STYLE_METRICS.join(", ")}.`];
   return Object.entries(limits).flatMap(([metric, limit]) => {
     if (!(STYLE_METRICS as readonly string[]).includes(metric)) {

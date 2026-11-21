@@ -11,7 +11,6 @@ import { isJudgeRequest, judge } from "../test-fixtures/conversations.js";
 import { addTask, calls, hangUp, says as taskSays, sendSummary, steps, tasksBundle } from "../test-fixtures/tasks.js";
 import { RunSlots, plannedRuns, runScenario, runVariants, scenarioSessionId, scenarioVariants, type ScenarioResult } from "./run.js";
 import { scenario, type ScenarioCheck, type ScenarioDefinition } from "./scenario.js";
-import { TokenBudget } from "./usage.js";
 
 /** The fixture project's agent (AGENT_PROJECT_DIR in vitest.config.ts) on `llm`. */
 async function fixtureBundle(llm: AgentLlmClient) {
@@ -501,8 +500,6 @@ describe("repeated runs", () => {
     goals: Array<"yes" | "no">;
     runs?: number;
     concurrency?: number;
-    earlyStop?: boolean;
-    budget?: TokenBudget;
     tokensPerRun?: number;
   }) {
     let built = 0;
@@ -511,7 +508,7 @@ describe("repeated runs", () => {
     const goals = [...params.goals];
     const finished: number[] = [];
     const result = await runScenario({
-      scenario: scenario({ caller: { goal: "Put milk on the list" }, realTools: ["add_task"], ...params.definition }),
+      scenario: scenario({ caller: { goal: "Put milk on the list" }, ...params.definition }),
       name: "milk",
       file: "src/agent/milk.scenario.ts",
       createBundle: async () => {
@@ -529,8 +526,6 @@ describe("repeated runs", () => {
       },
       ...(params.runs === undefined ? {} : { runs: params.runs }),
       ...(params.concurrency === undefined ? {} : { slots: new RunSlots(params.concurrency) }),
-      ...(params.earlyStop === undefined ? {} : { earlyStop: params.earlyStop }),
-      ...(params.budget ? { budget: params.budget } : {}),
       onRun: (run) => {
         inFlight -= 1;
         finished.push(run.run);
@@ -539,31 +534,26 @@ describe("repeated runs", () => {
     return { result, built, mostInFlight, finished };
   }
 
-  it("needs two of three runs when the scenario says so, and stops once two have passed", async () => {
+  it("needs two of three runs when the scenario says so", async () => {
     const twoOfThree = { runs: 3, minPassRate: 0.66 };
-    // The third run could not change the outcome: not by failing, and not by being an error.
-    const decided = await repeat({ goals: ["yes", "yes", "no"], concurrency: 1, definition: twoOfThree });
-    expect(decided.built).toBe(2);
-    expect(decided.result).toMatchObject({ outcome: "pass", flaky: false, stats: { runs: 3, ran: 2, passed: 2, minPassRate: 0.66, cutShort: "decided" } });
-
     const flaky = await repeat({ goals: ["no", "yes", "yes"], concurrency: 1, definition: twoOfThree });
-    expect(flaky.result).toMatchObject({ outcome: "pass", flaky: true, stats: { ran: 3, passed: 2, failed: 1, passRate: 0.667 } });
+    expect(flaky.result).toMatchObject({ outcome: "pass", flaky: true, stats: { runs: 3, ran: 3, passed: 2, failed: 1, passRate: 0.667, minPassRate: 0.66 } });
 
     const failed = await repeat({ goals: ["no", "no", "yes"], concurrency: 1, definition: twoOfThree });
-    expect(failed.result).toMatchObject({ outcome: "fail", stats: { ran: 2, passed: 0, failed: 2, cutShort: "decided" } });
+    expect(failed.result).toMatchObject({ outcome: "fail", flaky: true, stats: { ran: 3, passed: 1, failed: 2, passRate: 0.333 } });
 
     // --runs overrides the scenario's number of runs, and its share still applies.
-    const more = await repeat({ goals: ["yes", "no", "yes", "no", "yes", "yes"], runs: 6, concurrency: 1, earlyStop: false, definition: twoOfThree });
+    const more = await repeat({ goals: ["yes", "no", "yes", "no", "yes", "yes"], runs: 6, concurrency: 1, definition: twoOfThree });
     expect(more.result).toMatchObject({ outcome: "pass", stats: { runs: 6, ran: 6, passed: 4, passRate: 0.667, minPassRate: 0.66 } });
   });
 
   it("runs a simulated scenario as often as asked, each run on a bundle of its own, and reports the rates", async () => {
-    const { result, built, finished } = await repeat({ goals: ["yes", "no", "yes", "yes"], runs: 4, concurrency: 1, earlyStop: false, definition: { minPassRate: 0.5 } });
+    const { result, built, finished } = await repeat({ goals: ["yes", "no", "yes", "yes"], runs: 4, concurrency: 1, definition: { minPassRate: 0.5 } });
 
     expect(built).toBe(4);
     expect(finished).toEqual([1, 2, 3, 4]);
     expect(result).toMatchObject({ outcome: "pass", passed: true, flaky: true });
-    expect(result.stats).toMatchObject({ runs: 4, ran: 4, passed: 3, failed: 1, errors: 0, passRate: 0.75, reliability: 0.316, cutShort: null });
+    expect(result.stats).toMatchObject({ runs: 4, ran: 4, passed: 3, failed: 1, errors: 0, passRate: 0.75, reliability: 0.316 });
     expect(result.checkStats.find((check) => check.name === "the caller reaches its goal")).toMatchObject({ passed: 3, total: 4, passRate: 0.75 });
     // Each run is there with its own conversation; the one shown first is the one that failed.
     expect(result.runs.map((run) => [run.run, run.outcome])).toEqual([[1, "pass"], [2, "fail"], [3, "pass"], [4, "pass"]]);
@@ -571,15 +561,11 @@ describe("repeated runs", () => {
     expect(result.runs.every((run) => run.endState?.stores.tasks !== undefined)).toBe(true);
   });
 
-  it("stops once no further run can change the outcome, unless told to run them all", async () => {
-    const stopped = await repeat({ goals: ["yes", "no", "yes", "yes", "yes"], runs: 5, concurrency: 1 });
-    // Every run must pass, and the second did not.
-    expect(stopped.built).toBe(2);
-    expect(stopped.result).toMatchObject({ outcome: "fail", flaky: true, stats: { runs: 5, ran: 2, passed: 1, failed: 1, cutShort: "decided" } });
-
-    const all = await repeat({ goals: ["yes", "no", "yes", "yes", "yes"], runs: 5, concurrency: 1, earlyStop: false });
+  it("runs every run that was asked for, also once the outcome is decided", async () => {
+    // Every run must pass, and the second did not: the other three run all the same.
+    const all = await repeat({ goals: ["yes", "no", "yes", "yes", "yes"], runs: 5, concurrency: 1 });
     expect(all.built).toBe(5);
-    expect(all.result.stats).toMatchObject({ ran: 5, passed: 4, failed: 1, passRate: 0.8, cutShort: null });
+    expect(all.result).toMatchObject({ outcome: "fail", flaky: true, stats: { runs: 5, ran: 5, passed: 4, failed: 1, passRate: 0.8 } });
   });
 
   it("runs as many runs at a time as there are slots, four when nothing says otherwise", async () => {
@@ -661,20 +647,17 @@ describe("repeated runs", () => {
     expect(plannedRuns(scenario({ turns: ["Hi"], runs: 2 }), 10)).toBe(2);
   });
 
-  it("starts no further run once the token budget is spent, and counts what each run used", async () => {
-    const budget = new TokenBudget(2500);
-    const { result, built } = await repeat({ goals: [], runs: 6, concurrency: 1, budget, tokensPerRun: 1000 });
+  it("counts the tokens each run used, and all of them together", async () => {
+    const { result } = await repeat({ goals: [], runs: 3, concurrency: 1, tokensPerRun: 1000 });
 
-    expect(built).toBe(3);
-    expect(budget.spent).toBe(3000);
-    expect(result.stats).toMatchObject({ runs: 6, ran: 3, passed: 3, cutShort: "budget" });
+    expect(result.stats).toMatchObject({ runs: 3, ran: 3, passed: 3 });
     expect(result.usage).toEqual({ agent: { inputTokens: 3000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, caller: null, judge: null, totalTokens: 3000 });
     expect(result.runs[0]?.usage?.totalTokens).toBe(1000);
   });
 });
 
 describe("tools on repeated runs", () => {
-  const twice = async (definition: Partial<ScenarioDefinition>, options: { allowRealTools?: boolean } = {}) => {
+  const twice = async (definition: Partial<ScenarioDefinition>) => {
     const sends: Array<ReturnType<typeof tasksBundle>["send"]> = [];
     const result = await runScenario({
       scenario: scenario({ caller: { goal: "Send my list to Sam" }, runs: 2, ...definition }),
@@ -690,42 +673,26 @@ describe("tools on repeated runs", () => {
         return { caller: llm, judge: llm };
       },
       slots: new RunSlots(1),
-      ...options,
     });
     return { result, realSends: sends.reduce((sum, send) => sum + send.mock.calls.length, 0) };
   };
 
-  it("stops a repeated scenario before a tool without a fake runs, and says how to fix it", async () => {
+  it("runs a tool without a fake for real on every run", async () => {
     const { result, realSends } = await twice({});
 
-    expect(realSends).toBe(0);
-    expect(result).toMatchObject({ outcome: "fail", passed: false, runs: [], stats: { runs: 2, ran: 0, cutShort: "stopped" } });
-    expect(result.stopped).toEqual({
-      code: "CURB_TEST_TOOL_NOT_FAKED",
-      message:
-        '[CURB_TEST_TOOL_NOT_FAKED] Scenario "send" runs 2 times and reached "add_task", "send_summary", which have no fake: every run would run them for real. They were not run, and the scenario was stopped.\n' +
-        'Fix: fake each in the scenario (fakes: { add_task: { ok: true, message: "..." } }). A tool that is safe to run on every run, because it only reads or only changes the call\'s own state, can be allowed instead (realTools: ["add_task", "send_summary"]). ' +
-        "`curb test --allow-real-tools` allows every tool for one invocation.",
-    });
+    expect(realSends).toBe(2);
+    expect(result).toMatchObject({ outcome: "pass", stats: { runs: 2, ran: 2, passed: 2 } });
   });
 
-  it("runs the tools the scenario allows or fakes, and stops at the next one that is neither", async () => {
-    const stopped = await twice({ realTools: ["add_task"] });
-    expect(stopped.realSends).toBe(0);
-    expect(stopped.result.stopped?.message).toContain('reached "send_summary", which has no fake: every run would run it for real. It was not run');
+  it("runs a fake in place of its tool on every run, and the other tools for real", async () => {
+    const faked = await twice({ fakes: { send_summary: { ok: true, message: "Sent (fake)." } } });
 
-    const faked = await twice({ realTools: ["add_task"], fakes: { send_summary: { ok: true, message: "Sent (fake)." } } });
     expect(faked.realSends).toBe(0);
     expect(faked.result).toMatchObject({ outcome: "pass", stats: { ran: 2, passed: 2 } });
     expect(faked.result.runs[0]?.endState?.stores.tasks).toEqual({ tasks: [{ title: "milk", done: false }] });
   });
 
-  it("lets every tool run when the scenario or the invocation says so", async () => {
-    expect((await twice({ realTools: "all" })).realSends).toBe(2);
-    expect((await twice({}, { allowRealTools: true })).realSends).toBe(2);
-  });
-
-  it("runs tools for real on a scenario that runs once, as it always has", async () => {
+  it("runs tools for real on a scenario that runs once", async () => {
     const { runtime, session, send } = tasksBundle(steps([calls(sendSummary("Sam")), taskSays("Sent to Sam.")]));
     const result = await runScenario({
       scenario: scenario({ turns: ["Send my list to Sam."] }),
@@ -764,7 +731,7 @@ describe("experiments on repeated runs", () => {
 
   it("covers every variant across the runs and reports each on its own", async () => {
     const result = await runScenario({
-      scenario: scenario({ caller: { goal: "Put milk on the list" }, realTools: "all", experiments: { pacing: "slow" } }),
+      scenario: scenario({ caller: { goal: "Put milk on the list" }, experiments: { pacing: "slow" } }),
       name: id.name,
       file: id.file,
       createBundle: async () => ({ ...tasksBundle(steps([taskSays("Milk is on your list."), taskSays("Bye!")])), experiments }),

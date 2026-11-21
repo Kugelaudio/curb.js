@@ -49,9 +49,6 @@ export type ScenarioStats = {
   errorRate: number;
   minPassRate: number;
   maxErrorRate: number;
-  /** Why fewer runs ran than asked: the outcome was decided, the token budget ran out, or the
-   * scenario was stopped. Null when all of them ran. */
-  cutShort: "decided" | "budget" | "stopped" | null;
 };
 
 /** How one check did across the completed runs it was put to. */
@@ -80,9 +77,6 @@ export type VariantStats = {
   passRate: number | null;
 };
 
-/** Why a scenario was stopped before its runs were through. */
-export type ScenarioStop = { code: string; message: string };
-
 export type ScenarioResult = {
   name: string;
   /** The scenario file, relative to the project root. */
@@ -110,8 +104,6 @@ export type ScenarioResult = {
   style: StyleReport;
   usage: RunUsage | null;
   runs: ScenarioRun[];
-  /** Set when the scenario was stopped, e.g. a tool without a fake on a repeated run. */
-  stopped?: ScenarioStop;
 };
 
 /** The run of a saved conversation, as a report shows it. */
@@ -137,7 +129,7 @@ export function scenarioRun(conversation: SavedConversation): ScenarioRun {
 
 const rate = (count: number, total: number) => Math.round((count / total) * 1000) / 1000;
 
-/** What a scenario shows when no run finished: it was stopped, or its budget ran out, first. */
+/** What a scenario shows when it has no run to show. */
 const NO_RUN: Pick<ScenarioRun, "endedBy" | "turns" | "checks" | "notes"> = { endedBy: "error", turns: [], checks: [], notes: [] };
 
 export function aggregateScenario(params: {
@@ -147,8 +139,6 @@ export function aggregateScenario(params: {
   durationMs: number;
   /** Notes about the scenario as a whole, shown after the run's own. */
   notes?: readonly string[];
-  cutShort?: ScenarioStats["cutShort"];
-  stopped?: ScenarioStop;
 }): ScenarioResult {
   const { settings, maxErrorRate } = params;
   const runs = [...params.conversations].sort((left, right) => left.scenario.run - right.scenario.run).map(scenarioRun);
@@ -174,13 +164,12 @@ export function aggregateScenario(params: {
     errorRate: runs.length === 0 ? 0 : rate(errors, runs.length),
     minPassRate: settings.minPassRate,
     maxErrorRate,
-    cutShort: params.cutShort ?? null,
   };
 
   // Runs that failed are evidence whatever else happened. Without them, a scenario whose runs
   // mostly could not be assessed is an error, not a pass.
   const outcome: RunOutcome =
-    params.stopped || (passRate !== null && passRate < settings.minPassRate) || styleChecks.some((check) => !check.pass)
+    (passRate !== null && passRate < settings.minPassRate) || styleChecks.some((check) => !check.pass)
       ? "fail"
       : passRate === null || stats.errorRate > maxErrorRate
         ? "error"
@@ -206,25 +195,7 @@ export function aggregateScenario(params: {
     style,
     usage: sumUsage(runs.map((run) => run.usage)),
     runs,
-    ...(params.stopped ? { stopped: params.stopped } : {}),
   };
-}
-
-/**
- * Whether further runs can still change a scenario's outcome, given the runs that are in:
- * false once it fails even if every remaining run passes, or passes even if every remaining
- * run fails or is an error.
- */
-export function outcomeOpen(counts: { passed: number; failed: number; errors: number; remaining: number; settings: { minPassRate: number; maxErrorRate: number } }): boolean {
-  const { passed, failed, errors, remaining } = counts;
-  const { minPassRate, maxErrorRate } = counts.settings;
-  if (remaining <= 0) return false;
-  const completed = passed + failed;
-  const bestRate = (passed + remaining) / (completed + remaining);
-  if (bestRate < minPassRate) return false;
-  const worstRate = passed / (completed + remaining);
-  const worstErrorRate = (errors + remaining) / (completed + errors + remaining);
-  return !(passed > 0 && worstRate >= minPassRate && worstErrorRate <= maxErrorRate);
 }
 
 function checkStats(runs: readonly ScenarioRun[]): CheckStats[] {

@@ -237,47 +237,23 @@ says pass or fail. A scenario is a file ending in `.scenario.ts` anywhere under
 import { scenario } from "curb/testing";
 
 export default scenario({
-  name: "books a follow-up", // optional, default: the file name ("booking")
   caller: {
     goal: "Book a follow-up call for next week",
     knows: "Name Max Mustermann, company Example GmbH, email max@example.com",
-    language: "de", // optional, default: the agent's language
   },
-  maxTurns: 12, // optional: the most caller turns, 12 by default
   expect: ({ called }) => [called("book_meeting")],
 });
 ```
 
-A file may hold several scenarios: besides its default export, every
-`export const <name> = scenario({ ... })` runs too, named by its `name` or else
-by the export (`forecast`).
-
-The caller is one of two kinds:
-
-- `caller`: an LLM plays a person with that goal. It answers the agent's last
-  reply with one short spoken line, gives what it `knows` when asked, and
-  hangs up when it is done. Use it for the paths real callers take.
-- `turns: ["Hallo", "Ja, gern", ...]`: scripted lines, one per caller turn, the
-  same words every run. Use them where the wording matters (a read-back, a
-  refusal) and for edge cases a simulated caller would not try. A scripted
-  scenario is a gate: it runs once and must pass.
-
-Run every scenario, or those whose name or file contains a filter:
+An LLM plays a caller with that goal, and `expect` says what must have happened
+when the call is over. Run it:
 
 ```bash
 npx curb test
-npx curb test booking
 ```
 
-Each scenario runs on a fresh session, the way a call does: spoken turns with
-the voice rules, `end_call` available, and the agent's opening first when it
-speaks first: its greeting (`firstTurn: "agent"`) or its fixed line
-(`firstTurn: { say }`, no model call), as turn 0. Up to four conversations
-run at the same time (`--concurrency`), and the report still reads in the
-scenarios' order: the call as it goes, then every check:
-
 ```text
---- books a follow-up (src/agent/booking.scenario.ts)
+--- booking (src/agent/booking.scenario.ts)
 caller: Hallo, ich möchte einen Folgetermin für nächste Woche vereinbaren.
 agent:  Gern. Auf welchen Namen und an welche E-Mail-Adresse?
 caller: Max Mustermann, max@example.com.
@@ -294,15 +270,67 @@ agent:  Gern geschehen. Auf Wiederhören.
   pass  the agent does not hang up on a caller who still wants something: the agent ended the call at turn 3, and the caller was done
   pass  the caller reaches its goal: The agent booked the follow-up for Tuesday and confirmed it. (turn 2 "Ich habe Sie für Dienstag")
   pass  called book_meeting: turn 2: {"name":"Max Mustermann","email":"max@example.com","day":"2026-10-27"}
-PASS books a follow-up (3 caller turn(s), 14.2s)
+PASS booking (3 caller turn(s), 14.2s)
 
 Style (counted from the agent's replies):
-  books a follow-up: words per reply p50 8, p90 14 · ends on a question 67% · repeated opening 0%, closing 0% · steps per turn 1.33 (max 2) · refused tool calls per run 0
+  booking: words per reply p50 8, p90 14 · ends on a question 67% · repeated opening 0%, closing 0% · steps per turn 1.33 (max 2) · refused tool calls per run 0
 Tokens: 9,412 tokens (agent 6,820 in / 96 out · caller 1,530 in / 41 out · judge 870 in / 55 out)
 Saved: .curb/test-runs/20261027T101502118Z-k3f9.json (check it again without running the agent: npx curb test --rejudge latest)
 
 1 of 1 scenario(s) passed in 15.0s.
 ```
+
+The report prints the call, then one line per check, then the scenario's verdict.
+A scenario passes when every check under it passes: the built-in ones, the
+judge's answer to whether the caller reached its goal, and your own from
+`expect`. When one fails, its `FAIL` line names the check and says why, and the
+transcript above it shows the turn. Read the last line first: it says how many
+scenarios passed ([Reading a report](#reading-a-report)).
+
+A model does not answer the same way twice, so a scenario can pass on one run
+and fail on the next. When it fails some of the time, have it run several times
+and say what share of the runs must pass:
+
+```ts
+  runs: 3,
+  minPassRate: 0.66, // two of three; default 1, every run
+```
+
+The report then shows each run and the pass rate
+([Running a scenario more than once](#running-a-scenario-more-than-once)). The
+rest of this section is reference.
+
+### Scenarios and callers
+
+A scenario may also set `name` (default: the file name, `booking` above),
+`caller.language` (default: the agent's language) and `maxTurns` (default: 12
+caller turns); [Testing API](./testing-api.md) lists every field. A file may
+hold several scenarios: besides its default export, every
+`export const <name> = scenario({ ... })` runs too, named by its `name` or else
+by the export (`forecast`).
+
+The caller is one of two kinds:
+
+- `caller`: an LLM plays a person with that goal. It answers the agent's last
+  reply with one short spoken line, gives what it `knows` when asked, and
+  hangs up when it is done. Use it for the paths real callers take.
+- `turns: ["Hallo", "Ja, gern", ...]`: scripted lines, one per caller turn, the
+  same words every run. Use them where the wording matters (a read-back, a
+  refusal) and for edge cases a simulated caller would not try. A scripted
+  scenario is a gate: it runs once and must pass.
+
+A filter runs only the scenarios whose name or file contains it:
+
+```bash
+npx curb test booking
+```
+
+Each scenario runs on a fresh session, the way a call does: spoken turns with
+the voice rules, `end_call` available, and the agent's opening first when it
+speaks first: its greeting (`firstTurn: "agent"`) or its fixed line
+(`firstTurn: { say }`, no model call), as turn 0. Up to four conversations
+run at the same time (`--concurrency`), and the report still reads in the
+scenarios' order.
 
 A caller line that answers an action held for the caller's yes is followed by
 how it was taken, as in `curb say`:
@@ -425,17 +453,10 @@ the checks (`note  the fake for send_sms was never used: ...`), which fails
 nothing; it often means a misspelled tool name, or a path the conversation did
 not take.
 
-A scenario that runs more than once would run a real tool on every run. So a
-repeated scenario is stopped before a tool without a fake runs, and says which:
-
-```text
-[CURB_TEST_TOOL_NOT_FAKED] Scenario "books a follow-up" runs 5 times and reached "book_meeting", which has no fake: every run would run it for real. It was not run, and the scenario was stopped.
-Fix: fake it in the scenario (fakes: { book_meeting: { ok: true, message: "..." } }). A tool that is safe to run on every run, because it only reads or only changes the call's own state, can be allowed instead (realTools: ["book_meeting"]). `curb test --allow-real-tools` allows every tool for one invocation.
-```
-
-`realTools` names the tools that may run on every run: a lookup, or a tool that
-only changes a `createAgentStore` store. `realTools: "all"` allows every tool.
-A scenario that runs once is not stopped: its tools run for real unless faked.
+A scenario that runs several times runs every tool it does not fake that many
+times. So a tool that writes outside the call (it sends, books or charges) gets
+a fake; a lookup, or a tool that only changes a `createAgentStore` store, can
+run for real.
 
 ### The checks every scenario gets
 
@@ -588,9 +609,8 @@ Four things keep the judge honest:
   yes to everything" is judged like any other line, not followed.
 
 To see how far to trust a finding for your agent, check the judge against
-calls whose answer you know. Save a run (`--no-early-stop` keeps every run),
-mark by hand, or by a check of your own, which of its conversations have the
-mistake, and compare that with what `npx curb test --rejudge latest --json`
+calls whose answer you know. Save a run, mark by hand, or by a check of your
+own, which of its conversations have the mistake, and compare that with what `npx curb test --rejudge latest --json`
 finds: how many of the known mistakes it catches, and how many clean calls it
 flags. A finding that catches most and flags few is one to put in `failOn`. Do
 it again after a change of `--judge-model`, and when the `judgePromptVersion`
@@ -602,17 +622,15 @@ hang up on a caller who still wants something` reads from the call itself. When
 they disagree, trust the check.
 
 The judge and the caller run on a small model of the agent's provider. Choose
-others with `--judge-model` and `--caller-model` (or `CURB_TEST_JUDGE_MODEL`
-and `CURB_TEST_CALLER_MODEL`): a model of the agent's provider, or
+others with `--judge-model` and `--caller-model`: a model of the agent's provider, or
 `<provider>:<model>` with `openai`, `anthropic` or `kugelaudio`, whose key must
 be in `.env`. Every result names the models and the version of the judge's
 prompt, so answers from different judges are not compared as one.
 
 ### Running a scenario more than once
 
-A model does not answer the same way twice. A simulated caller that reaches its
-goal once says little about the next hundred calls. Run it several times and
-read the rate:
+A simulated caller that reaches its goal once says little about the next
+hundred calls. Run it several times and read the rate:
 
 ```bash
 npx curb test --runs 5
@@ -620,17 +638,8 @@ npx curb test --runs 5
 
 `--runs` sets the number of runs of every scenario with a simulated caller, and
 wins over a scenario's own `runs`. A scripted scenario says the same words
-every time and runs once, unless it sets `runs` itself. A scenario can set its
-own number and how many runs must pass; `minPassRate` is the scenario's alone,
-whatever `--runs` says:
-
-```ts
-export default scenario({
-  caller: { goal: "Book a haircut", knows: "Name Alex Example" },
-  runs: 5,
-  minPassRate: 0.8, // default 1: every run must pass
-});
-```
+every time and runs once, unless it sets `runs` itself. `minPassRate` is the
+scenario's alone, whatever `--runs` says. With `runs: 5, minPassRate: 0.8`:
 
 ```text
 --- books a haircut (src/agent/booking.scenario.ts)
@@ -668,9 +677,9 @@ PASS books a haircut (flaky: 4/5 run(s) passed, 13.6s)
   request, and the report still shows the rate and marks the scenario flaky.
   Raise the share toward 1, and the runs with it, once a scenario passes every
   time for a while. A scripted scenario stays a gate: it runs once and must pass.
-- Runs stop early once no further run can change the outcome: with every run
-  required to pass, at the first failure; with two of three, after two passes. `--no-early-stop` runs them all, for
-  when you want the rate itself.
+- Every run that was asked for runs, and a tool without a fake runs for real
+  on each. Fake a tool that sends, books or charges before you raise `runs`
+  ([Faking what must not run](#faking-what-must-not-run)).
 - **A rate limit slows the run down; it does not fail it.** When the provider
   answers 429 (or 503 with `Retry-After`), every request of the run, the
   agent's, the caller's and the judge's, waits for the pause it asks for, or
@@ -700,7 +709,7 @@ Reaching `maxTurns` with the goal reached passes, as it always has. A turn
 error that is the agent's own (the step limit, an empty reply) is a failure.
 
 Errors cannot hide a problem: when more than a third of a scenario's runs are
-errors (`--max-error-rate`, default 0.34: one run in three), or none completed,
+errors (one run in three is allowed), or none completed,
 the scenario is `ERROR` and `curb test` exits 2. A run that failed still counts: a scenario
 with failures below its `minPassRate` fails, however many errors it has.
 
@@ -718,19 +727,14 @@ same conversations always give the same numbers:
 | `stepsPerTurn`, `stepsPerTurnMax` | model steps per turn |
 | `refusedToolCallsPerRun` | tool calls that were refused, per run |
 
-They are reported for every scenario and fail nothing. Set a limit where a
-number matters, in the scenario or for every scenario:
+They are reported for every scenario and fail nothing. Set a limit in a
+scenario where a number matters:
 
 ```ts
 style: { wordsP90: 40, repeatedClosingShare: 0.3 },
 ```
 
-```bash
-npx curb test --style wordsP90=40,questionShare=0.6
-```
-
-A scenario whose number is above a limit fails. A scenario's own limit wins over
-`--style`.
+A scenario whose number is above a limit fails.
 
 ### Saved runs and re-judging
 
@@ -772,7 +776,6 @@ second time. It prints the same report and saves the result as a run of its own.
 | 0 | every scenario passed |
 | 1 | a scenario failed or could not be loaded, there is no scenario, or the filter matches none |
 | 2 | none failed, but a scenario had too many errors to say that it passes |
-| 3 | none failed, but `--max-tokens` stopped the run before every run ran |
 
 `--json` prints one object instead, for scripts:
 
@@ -781,7 +784,7 @@ second time. It prints the same report and saves the result as a run of its own.
   "passed": true,
   "scenarios": [
     {
-      "name": "books a follow-up",
+      "name": "booking",
       "file": "src/agent/booking.scenario.ts",
       "mode": "simulated",
       "passed": true,
@@ -794,7 +797,7 @@ second time. It prints the same report and saves the result as a run of its own.
       "notes": [],
       "outcome": "pass",
       "flaky": false,
-      "stats": { "runs": 1, "ran": 1, "passed": 1, "failed": 0, "errors": 0, "passRate": 1, "reliability": 1, "errorRate": 0, "minPassRate": 1, "maxErrorRate": 0.34, "cutShort": null },
+      "stats": { "runs": 1, "ran": 1, "passed": 1, "failed": 0, "errors": 0, "passRate": 1, "reliability": 1, "errorRate": 0, "minPassRate": 1, "maxErrorRate": 0.34 },
       "checkStats": [{ "name": "no turn errors", "passed": 1, "total": 1, "passRate": 1, "unknown": 0 }],
       "findings": [{ "id": "asked_again", "question": "...", "found": 0, "unknown": 0, "total": 1, "rate": 0, "examples": [] }],
       "variants": [],
@@ -837,31 +840,21 @@ rate limit slowed the run down: how often and how long it waited, and how many
 conversations at a time it ended on.
 
 A scenario file that cannot be loaded is reported as
-`{ "name", "file", "passed": false, "error" }`, and one the token budget did not
-reach as `{ "name", "file", "passed": false, "skipped" }`.
+`{ "name", "file", "passed": false, "error" }`.
 
 ### In CI
 
 A new project ships `.github/workflows/curb-test.yml`: it runs `curb check` and
-`curb test --runs 3 --max-tokens 400000` on every pull request, once the
-repository has the agent's LLM key as a secret (`KUGELAUDIO_API_KEY` by
-default). On GitHub Actions the report is also written to the job summary
-(`GITHUB_STEP_SUMMARY`), and `--report <file>` writes the same Markdown to a
-file anywhere.
+`curb test` on every pull request, once the repository has the agent's LLM key
+as a secret (`KUGELAUDIO_API_KEY` by default). Each scenario says how often it
+runs and how many runs must pass (`runs`, `minPassRate`). On GitHub Actions the
+report is also written to the job summary (`GITHUB_STEP_SUMMARY`), and
+`--report <file>` writes the same Markdown to a file anywhere.
 
-`--max-tokens` is a budget for the whole invocation, in tokens: once the runs
-together have used that many, no further run starts, the report says which
-scenarios did not run, and `curb test` exits 3. Runs in flight finish, so the
-total can end somewhat above the budget. It needs a provider that reports token
-usage; `curb test` says so when none did. Curb reports tokens, not money: it
-knows no price.
-
-The workflow's 400,000 is a starting point. On the starter project, five runs
-of its simulated scenario plus its scripted one measured about 90,000 to
-130,000 tokens on a small model, so the workflow's three runs use roughly
-60,000 to 90,000, and the budget leaves four to six times that. Tokens grow
-with the prompt, the turns per call and the number of scenarios: read the
-`Tokens` line of your own run, and set the budget to two or three times it.
+Curb reports tokens, not money: it knows no price. On the starter project,
+three runs of its simulated scenario plus its scripted one use roughly 60,000
+to 90,000 tokens on a small model. Tokens grow with the prompt, the turns per
+call and the number of scenarios: read the `Tokens` line of your own run.
 
 ### What it costs and what it touches
 
@@ -874,7 +867,7 @@ with the prompt, the turns per call and the number of scenarios: read the
   endpoint. `--caller-model` and `--judge-model` choose others. A simulated
   scenario makes one judge call per run, and one more caller call when the
   agent hangs up first.
-- Tools run for real on a scenario that runs once, unless it fakes them. Fake
+- A tool runs for real on every run, unless the scenario fakes it. Fake
   every tool that books, sends or deletes something (`fakes`, above), or point
   it at test data. Scenarios run at the same time, so their real tools do too:
   `--concurrency 1` runs one conversation after another.

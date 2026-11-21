@@ -46,7 +46,7 @@ A run's id is the time it started and four random characters, so ids sort by tim
 | Field | What it holds |
 |---|---|
 | `format`, `version` | `"curb.test-run"` and `1`. A file of another format or version is refused with what it is |
-| `complete` | `false` while scenarios are still running, and for a run the token budget cut short |
+| `complete` | `false` while scenarios are still running |
 | `rejudgedFrom` | The id of the run whose conversations these are, on a re-judged run |
 | `models` | The model that played each part, as `provider:model` |
 | `callerPromptVersion`, `judgePromptVersion` | The versions of the simulated caller's and the judge's prompt. Answers from different versions are not the same measurement |
@@ -116,9 +116,9 @@ A scenario that is still in the project, by its file and name, brings its `expec
 `scenarios` apply, its `expect` is left out, and the report notes it. The judge runs again on every
 conversation it would be asked about, with `--judge-model` when given, as many at a time as
 `--concurrency` allows. The agent and the simulated
-caller are not run: their tokens in `usage` are the ones the first run used, and `--runs`,
-`--caller-model` and `--allow-real-tools` change nothing. `--judge-model`, `--style`,
-`--max-error-rate`, `--max-tokens`, `--report`, `--json` and a filter apply as on a run.
+caller are not run: their tokens in `usage` are the ones the first run used, and `--runs` and
+`--caller-model` change nothing. `--judge-model`, `--report`, `--json` and a filter apply as on a
+run.
 
 ## Version history
 

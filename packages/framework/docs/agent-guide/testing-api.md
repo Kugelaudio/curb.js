@@ -33,9 +33,8 @@ export default scenario({
 | `maxTurns` | `number` | 12 for a simulated caller | The most caller turns, at most 100 for a simulated caller |
 | `client` | object | | Page info the call starts with |
 | `experiments` | object | | The variant, by experiment name. An experiment left out is covered by repeated runs |
-| `fakes` | object | | Tools that must not run for real, each with the result its calls get, or a function of the input that returns one |
-| `realTools` | `string[] \| "all"` | none | Tools that may run for real on every run of a scenario that runs more than once |
-| `runs` | `number` | 1 | How often the scenario runs, 1 to 100. `curb test --runs` overrides it for a simulated caller |
+| `fakes` | object | | Tools that must not run for real, each with the result its calls get, or a function of the input that returns one. A tool without a fake runs for real on every run, so fake one that sends, books or charges |
+| `runs` | `number` | 1 | How often the scenario runs, 1 to 100. `curb test --runs` overrides it for a simulated caller. Its tools without a fake run that many times |
 | `minPassRate` | `number` | 1 | The share of completed runs that must pass, above 0 and at most 1 |
 | `expectations` | `string[]` | | Sentences about the call that a judge answers with yes, no or unknown. A no fails the run. At most 12 |
 | `failOn` | `JudgeFinding[]` | none | Built-in judge findings that fail a run when found |
@@ -132,7 +131,7 @@ a call whose `content` is `not_stored`.
 
 | Version | Changes |
 |---|---|
-| v1.25.0 | `personas` added. `scenario` takes `runs`, `minPassRate`, `realTools`, `expectations`, `failOn`, `style`, and `caller.persona` and `caller.behaviours`. `expect` gets `state`, `stateMatches`, `context` and `calledInOrder`, and `called` matches nested input by the fields it names |
+| v1.25.0 | `personas` added. `scenario` takes `runs`, `minPassRate`, `expectations`, `failOn`, `style`, and `caller.persona` and `caller.behaviours`. `expect` gets `state`, `stateMatches`, `context` and `calledInOrder`, and `called` matches nested input by the fields it names |
 | v1.15.0 | `runHook` and `buildCallEvent` added |
 | v1.4.33 | `curb/testing` introduced with `scenario` |
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TokenBudget, TokenCounter, runUsage, sumUsage } from "./usage.js";
+import { TokenCounter, runUsage, sumUsage } from "./usage.js";
 
 describe("token usage", () => {
   it("adds up what the provider reports, and is null while it reported nothing", () => {
@@ -19,20 +19,5 @@ describe("token usage", () => {
     expect(runUsage({ agent: null, caller: null, judge: null })).toBeNull();
     expect(sumUsage([run, null, run])).toMatchObject({ agent: { inputTokens: 300 }, caller: null, judge: { outputTokens: 20 }, totalTokens: 1070 });
     expect(sumUsage([null])).toBeNull();
-  });
-
-  it("is spent once the runs together reach the limit, and never without one", () => {
-    const run = runUsage({ agent: { inputTokens: 600, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, caller: null, judge: null });
-    const budget = new TokenBudget(1000);
-    expect([budget.exhausted, budget.reported]).toEqual([false, false]);
-    budget.spend(null);
-    budget.spend(run);
-    expect([budget.exhausted, budget.reported, budget.spent]).toEqual([false, true, 600]);
-    budget.spend(run);
-    expect(budget.exhausted).toBe(true);
-
-    const open = new TokenBudget();
-    open.spend(run);
-    expect(open.exhausted).toBe(false);
   });
 });

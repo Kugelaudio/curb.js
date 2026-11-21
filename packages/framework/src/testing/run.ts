@@ -10,7 +10,7 @@ import type { AgentChatMessage } from "../llm/types.js";
 import type { AgentSiteRuntime, ToolFake } from "../runtime.js";
 import { clientInfo } from "../server/protocol.js";
 import { SKIP_TURN_TOOL_NAME, type ToolResult } from "../types.js";
-import { aggregateScenario, outcomeOpen, scenarioRun, type ScenarioResult, type ScenarioRun, type ScenarioStats, type ScenarioStop } from "./aggregate.js";
+import { aggregateScenario, scenarioRun, type ScenarioResult, type ScenarioRun } from "./aggregate.js";
 import { assessConversation, assessmentSettings } from "./assess.js";
 import { askCallerAfterHangUp, nextCallerLine } from "./caller.js";
 import { fallbackLineIn, type ScenarioEndedBy } from "./checks.js";
@@ -25,9 +25,8 @@ import {
   type ScenarioToolCall,
   type ScenarioTurn,
   type ScenarioTurnError,
-  type StyleLimits,
 } from "./scenario.js";
-import { TokenBudget, TokenCounter, runUsage, type TokenUsage } from "./usage.js";
+import { TokenCounter, runUsage, type TokenUsage } from "./usage.js";
 
 /** The agent one scenario talks to: a fresh runtime and session, built the way a call builds them. */
 export type ScenarioBundle = {
@@ -277,9 +276,6 @@ export const MAX_CONCURRENCY = 16;
  * in three, so that a single provider hiccup does not void a scenario that runs three times. */
 export const DEFAULT_MAX_ERROR_RATE = 0.34;
 
-/** The code a scenario is stopped with when a repeated run would run a tool for real. */
-export const TOOL_NOT_FAKED = "CURB_TEST_TOOL_NOT_FAKED";
-
 /**
  * How many conversations may be in flight at once. One is shared by every scenario of a
  * `curb test`, so `--concurrency` bounds the whole run: scenarios wait for a slot like the
@@ -341,8 +337,6 @@ export function scenarioSettings(params: {
   file: string;
   /** `curb test --runs`. */
   runs?: number;
-  /** Style limits for every scenario (`curb test --style`); the scenario's own win. */
-  style?: StyleLimits;
 }): SavedScenarioSettings {
   const { scenario } = params;
   return {
@@ -353,15 +347,14 @@ export function scenarioSettings(params: {
     minPassRate: scenario.minPassRate ?? 1,
     expectations: [...(scenario.expectations ?? [])],
     failOn: [...(scenario.failOn ?? [])],
-    style: { ...params.style, ...scenario.style },
+    style: { ...scenario.style },
   };
 }
 
 /**
  * Run one scenario: each run a conversation of its own on a fresh bundle, as many at a time as
  * `slots` has room for, each assessed as it ends (`assess.ts`), all summed up into one result
- * (`aggregate.ts`). Runs stop early once no further run can change the outcome, when the token
- * budget is spent, and when a run reaches a tool that would run for real on every run.
+ * (`aggregate.ts`). Every run that was asked for runs.
  *
  * A conversation runs as a call: the scenario's fakes in place and its page info (`client`) on
  * the conversation first, then the agent's opening (its greeting or fixed line) when it speaks
@@ -369,8 +362,8 @@ export function scenarioSettings(params: {
  * attached the way a live call attaches it. It stops when the agent hangs up, the caller hangs
  * up or runs out of lines, `maxTurns` is reached, or a turn reports an error.
  *
- * A scenario that runs once runs its tools for real unless it fakes them, as it always has;
- * undoing what they did is the scenario author's business.
+ * A tool runs for real on every run unless the scenario fakes it; undoing what it did is the
+ * scenario author's business.
  */
 export async function runScenario(params: {
   scenario: Scenario;
@@ -390,15 +383,8 @@ export async function runScenario(params: {
   /** The slots its runs wait for: shared with the other scenarios of the run. Default: its own. */
   slots?: RunSlots;
   maxErrorRate?: number;
-  /** False to run every run even when the outcome is decided. Default true. */
-  earlyStop?: boolean;
-  /** Let every tool run for real on repeated runs (`curb test --allow-real-tools`). */
-  allowRealTools?: boolean;
-  /** Style limits for every scenario; the scenario's own win. */
-  style?: StyleLimits;
   /** Stamped into each run's judge result. */
   models?: TestModels;
-  budget?: TokenBudget;
   /** Called with each turn as soon as it is over, so a report can print the call as it goes.
    * Only a scenario that runs once reports its turns. */
   onTurn?: (turn: ScenarioTurn) => void;
@@ -409,42 +395,20 @@ export async function runScenario(params: {
   const { scenario } = params;
   const settings = scenarioSettings(params);
   const maxErrorRate = params.maxErrorRate ?? DEFAULT_MAX_ERROR_RATE;
-  const budget = params.budget ?? new TokenBudget();
   const slots = params.slots ?? new RunSlots();
   const createBundle = params.createBundle ?? (() => Promise.resolve(params.bundle!));
   if (!params.createBundle && settings.runs > 1) {
     throw new Error(`curb: scenario "${params.name}" runs ${settings.runs} times and needs a bundle for each: pass createBundle.`);
   }
-  // Tools run for real on a single run, as they always have. On repeated runs only the tools
-  // the scenario allows do; any other is stopped before it runs, and the scenario with it.
-  const guarded = settings.runs > 1 && !params.allowRealTools && scenario.realTools !== "all";
-  const allowed = new Set(Array.isArray(scenario.realTools) ? scenario.realTools : []);
 
   const conversations: SavedConversation[] = [];
   const covered: Array<Record<string, string>> = [];
   let declared: readonly ExperimentDeclaration[] = [];
-  let stopped: ScenarioStop | undefined;
-  let cutShort: ScenarioStats["cutShort"] = null;
   let next = 0;
 
-  const open = () => {
-    const done = conversations.map((conversation) => conversation.assessment.outcome);
-    return outcomeOpen({
-      passed: done.filter((outcome) => outcome === "pass").length,
-      failed: done.filter((outcome) => outcome === "fail").length,
-      errors: done.filter((outcome) => outcome === "error").length,
-      remaining: settings.runs - done.length,
-      settings: { minPassRate: settings.minPassRate, maxErrorRate },
-    });
-  };
-
-  /** One run, in a slot of its own. What decides whether it still starts is read once the slot
-   * is free, not when it was asked for: by then other runs may have decided the scenario. */
+  /** One run, in a slot of its own. Which run it is is read once the slot is free. */
   const runNext = async () => {
-    if (stopped) cutShort = "stopped";
-    else if (budget.exhausted) cutShort = "budget";
-    else if (params.earlyStop !== false && conversations.length > 0 && !open()) cutShort = "decided";
-    if (cutShort || next >= settings.runs) return;
+    if (next >= settings.runs) return;
     const run = next;
     next += 1;
 
@@ -452,35 +416,29 @@ export async function runScenario(params: {
     declared = bundle.experiments ?? [];
     const counters = { caller: new TokenCounter(), judge: new TokenCounter() };
     const llms = params.llms?.((role, usage) => counters[role].add(usage)) ?? { caller: params.simulator!, judge: params.simulator! };
-    const played = await playConversation({
+    const record = await playConversation({
       scenario,
       name: params.name,
       file: params.file,
       run,
       bundle,
       caller: llms.caller,
-      guard: guarded ? (tool) => !allowed.has(tool) : null,
       ...(settings.runs === 1 && params.onTurn ? { onTurn: params.onTurn } : {}),
     });
-    if ("blocked" in played) {
-      stopped ??= toolNotFaked(params.name, settings.runs, played.blocked);
-      return;
-    }
     const assessment = await assessConversation({
-      record: played.record,
+      record,
       settings: assessmentSettings(scenario),
       judge: llms.judge,
       judgeModel: params.models?.judge ?? null,
     });
     const usage = runUsage({ agent: bundle.tokens?.() ?? null, caller: counters.caller.total(), judge: counters.judge.total() });
-    const conversation: SavedConversation = { ...played.record, usage, assessment };
-    budget.spend(usage);
+    const conversation: SavedConversation = { ...record, usage, assessment };
     covered.push(conversation.experiments);
     conversations.push(conversation);
     params.onRun?.(scenarioRun(conversation), conversation);
   };
   const worker = async () => {
-    while (next < settings.runs && !cutShort && !stopped) await slots.run(runNext);
+    while (next < settings.runs) await slots.run(runNext);
   };
   await Promise.all(Array.from({ length: Math.min(settings.runs, slots.limit) }, worker));
 
@@ -489,34 +447,11 @@ export async function runScenario(params: {
     conversations,
     maxErrorRate,
     durationMs: Math.round(performance.now() - started),
-    notes: stopped ? [] : uncoveredVariants(declared, scenario, covered),
-    // Runs that were stopped together leave no worker to note it.
-    cutShort: stopped ? "stopped" : cutShort,
-    ...(stopped ? { stopped } : {}),
+    notes: uncoveredVariants(declared, scenario, covered),
   });
 }
 
-function toolNotFaked(name: string, runs: number, tools: readonly string[]): ScenarioStop {
-  const [first = "the_tool"] = tools;
-  const many = tools.length > 1;
-  const named = tools.map((tool) => `"${tool}"`).join(", ");
-  return {
-    code: TOOL_NOT_FAKED,
-    message:
-      `[${TOOL_NOT_FAKED}] Scenario "${name}" runs ${runs} times and reached ${named}, which ${many ? "have" : "has"} no fake: every run would run ${many ? "them" : "it"} for real. ` +
-      `${many ? "They were" : "It was"} not run, and the scenario was stopped.\n` +
-      `Fix: fake ${many ? "each" : "it"} in the scenario (fakes: { ${first}: { ok: true, message: "..." } }). A tool that is safe to run on every run, because it only reads or only changes the call's own state, can be allowed instead (realTools: [${tools.map((tool) => JSON.stringify(tool)).join(", ")}]). ` +
-      "`curb test --allow-real-tools` allows every tool for one invocation.",
-  };
-}
-
-/** What the guard answers a call it stops; the model never acts on it, the run ends with the turn. */
-const NOT_RUN = "Not run: this test run does not run this tool.";
-
-/**
- * Play one conversation of a scenario on `bundle` and return its record, or the tools `guard`
- * stopped: a conversation that reached one of those is not a run.
- */
+/** Play one conversation of a scenario on `bundle` and return its record. */
 async function playConversation(params: {
   scenario: Scenario;
   name: string;
@@ -525,26 +460,16 @@ async function playConversation(params: {
   run: number;
   bundle: ScenarioBundle;
   caller: AgentLlmClient;
-  /** Says which tools without a fake must not run; null lets every tool run. */
-  guard: ((tool: string) => boolean) | null;
   onTurn?: (turn: ScenarioTurn) => void;
-}): Promise<{ record: ConversationRecord } | { blocked: string[] }> {
+}): Promise<ConversationRecord> {
   const started = performance.now();
   const startedAt = new Date().toISOString();
-  const { scenario, bundle, guard } = params;
+  const { scenario, bundle } = params;
   let hungUp = false;
   bundle.runtime.setEndCallRequest(() => {
     hungUp = true;
   });
   const fakes = scenario.fakes ? installFakes(bundle.runtime, scenario.fakes) : null;
-  const blocked = new Set<string>();
-  if (guard) {
-    bundle.runtime.guardUnfakedTools((tool) => {
-      if (!guard(tool)) return undefined;
-      blocked.add(tool);
-      return { ok: false, message: NOT_RUN };
-    });
-  }
 
   // Tools come and go with the agent's state, so every render is looked at: the judge is told
   // each tool the model was offered at some point, without the framework's own.
@@ -592,7 +517,7 @@ async function playConversation(params: {
   const language = scenario.caller?.language ?? agentLanguage(bundle.runtime.settings.view());
   let callerEnding: CallerEnding | null = null;
   let said = 0;
-  while (endedBy === null && blocked.size === 0) {
+  while (endedBy === null) {
     if (lines && said >= lines.length) {
       endedBy = "script";
       break;
@@ -628,9 +553,7 @@ async function playConversation(params: {
       endedBy ??= "caller";
     }
   }
-  bundle.runtime.guardUnfakedTools(null);
   stopNotingTools();
-  if (blocked.size > 0) return { blocked: [...blocked] };
   // Turns set it from a callback, which the compiler does not follow.
   const ended = endedBy as ScenarioEndedBy;
 
@@ -640,29 +563,27 @@ async function playConversation(params: {
   }
 
   return {
-    record: {
-      format: "curb.conversation",
-      version: 1,
-      source: "scenario",
-      scenario: { name: params.name, file: params.file, mode: scenario.caller ? "simulated" : "scripted", run: params.run + 1 },
-      caller: scenario.caller ?? null,
-      experiments,
-      startedAt,
-      durationMs: Math.round(performance.now() - started),
-      turns,
-      tools: [...offered.values()],
-      ending: {
-        by: ended,
-        ...(stopReason === undefined ? {} : { reason: stopReason }),
-        unsaid: [...(lines?.slice(said) ?? [])],
-        maxTurns,
-        ...(providerError ? { providerError: true as const } : {}),
-        caller: callerEnding,
-      },
-      endState: endStateOf(bundle.runtime),
-      unusedFakes: fakes?.unused() ?? [],
-      usage: null,
+    format: "curb.conversation",
+    version: 1,
+    source: "scenario",
+    scenario: { name: params.name, file: params.file, mode: scenario.caller ? "simulated" : "scripted", run: params.run + 1 },
+    caller: scenario.caller ?? null,
+    experiments,
+    startedAt,
+    durationMs: Math.round(performance.now() - started),
+    turns,
+    tools: [...offered.values()],
+    ending: {
+      by: ended,
+      ...(stopReason === undefined ? {} : { reason: stopReason }),
+      unsaid: [...(lines?.slice(said) ?? [])],
+      maxTurns,
+      ...(providerError ? { providerError: true as const } : {}),
+      caller: callerEnding,
     },
+    endState: endStateOf(bundle.runtime),
+    unusedFakes: fakes?.unused() ?? [],
+    usage: null,
   };
 }
 

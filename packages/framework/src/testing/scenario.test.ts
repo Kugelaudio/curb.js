@@ -28,7 +28,7 @@ describe("scenario()", () => {
 
     expect(() => scenario(definition)).toThrow(
       [
-        'scenario(): Unknown field "steps" in a scenario; it takes name, caller, turns, maxTurns, client, experiments, fakes, realTools, runs, minPassRate, expectations, failOn, style, expect.',
+        'scenario(): Unknown field "steps" in a scenario; it takes name, caller, turns, maxTurns, client, experiments, fakes, runs, minPassRate, expectations, failOn, style, expect.',
         "Give caller (a simulated caller) or turns (scripted caller lines), not both.",
         'Unknown field "mood" in caller; it takes goal, knows, language, persona, behaviours.',
         'caller.goal must say what the caller wants from the call, e.g. "Book a follow-up call for next week".',
@@ -96,13 +96,11 @@ describe("scenario()", () => {
       caller: { goal: "Book a haircut", ...personas.rushed },
       runs: 5,
       minPassRate: 0.8,
-      realTools: ["list_free_slots"],
       expectations: ["The agent reads the booking number back."],
       failOn: ["claimed_without_tool"],
       style: { wordsP90: 40 },
     };
     expect(scenario(definition)).toEqual(definition);
-    expect(scenario({ turns: ["Hi"], realTools: "all" }).realTools).toBe("all");
 
     expect(() =>
       scenario({
@@ -110,7 +108,6 @@ describe("scenario()", () => {
         maxTurns: 500,
         runs: 0,
         minPassRate: 80,
-        realTools: "every",
         expectations: ["The agent is polite.", " "],
         failOn: ["was_rude"],
         style: { wordsP99: 40, wordsP90: "short" },
@@ -122,7 +119,6 @@ describe("scenario()", () => {
         "maxTurns (500) is more than a simulated caller may take; give at most 100.",
         "runs must be a whole number of runs from 1 to 100; got 0.",
         "minPassRate must be the share of runs that must pass, above 0 and at most 1 (0.8 for four in five); got 80.",
-        'realTools must be "all" or a list of the tool names that may run for real on every run, e.g. ["find_order"].',
         "expectations must hold one sentence per entry; entry 2 is empty or not a string.",
         'failOn names "was_rude", which is no judge finding; the findings are asked_again, claimed_without_tool, ignored_caller, incoherent, wrong_tool_use, ended_early.',
         'style: "wordsP99" is no style number; the numbers are wordsP50, wordsP90, questionShare, repeatedOpeningShare, repeatedClosingShare, sameGoodbyeShare, stepsPerTurn, stepsPerTurnMax, refusedToolCallsPerRun.',

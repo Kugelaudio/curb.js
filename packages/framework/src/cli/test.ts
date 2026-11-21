@@ -47,13 +47,11 @@ import {
   isScenario,
   runsProblem,
   scenario as accepted,
-  styleLimitsProblems,
   type Scenario,
   type ScenarioDefinition,
   type ScenarioTurn,
-  type StyleLimits,
 } from "../testing/scenario.js";
-import { TokenBudget, TokenCounter, runUsage, sumUsage } from "../testing/usage.js";
+import { TokenCounter, runUsage, sumUsage } from "../testing/usage.js";
 import { curbVersion } from "../version.js";
 import {
   diagnosticsNote,
@@ -85,25 +83,17 @@ provider failed, the simulated caller got stuck or made up a fact, the judge cou
 read): it is left out of the pass rate. A rate limit of the provider is no error: the run
 waits for it, goes on more slowly, and the report says how long it waited.
 
-Tools run for real on a scenario that runs once, except those it fakes (fakes). A scenario
-that runs more than once is stopped before a tool without a fake runs, unless it allows the
-tool (realTools).
+A tool runs for real on every run unless the scenario fakes it (fakes).
 
   <filter>               run only the scenarios whose name or file contains it (ignoring case)
   --runs <n>             run every simulated-caller scenario n times (1 to 100) and report
                          rates; scripted scenarios run once unless they set runs themselves
   --concurrency <k>      conversations at a time, across all scenarios and their runs
                          (default ${DEFAULT_CONCURRENCY}, at most ${MAX_CONCURRENCY}); the report keeps the scenarios' order
-  --no-early-stop        run every run even once the outcome can no longer change
-  --max-error-rate <r>   the share of a scenario's runs that may be errors, 0 to 1 (default ${DEFAULT_MAX_ERROR_RATE})
   --caller-model <id>    the model that plays the caller: a model of the agent's provider, or
                          <provider>:<model> with openai, anthropic or kugelaudio
-                         (default: CURB_TEST_CALLER_MODEL, else a small model of the agent's provider)
-  --judge-model <id>     the same for the judge (default: CURB_TEST_JUDGE_MODEL)
-  --max-tokens <n>       stop starting runs once all runs together used n tokens
-  --allow-real-tools     let tools without a fake run on every run of a repeated scenario
-  --style <limits>       fail a scenario whose style number is above a limit, for example
-                         wordsP90=40,questionShare=0.6 (a scenario's own style wins)
+                         (default: a small model of the agent's provider)
+  --judge-model <id>     the same for the judge
   --report <file>        also write the report as Markdown (GITHUB_STEP_SUMMARY gets it too)
   --rejudge <run>        check the conversations of a saved run again, without running the
                          agent: "latest", a run's id, or the path of its file
@@ -116,8 +106,7 @@ tool (realTools).
 Every run is saved to .curb/test-runs/<id>.json (the newest 20 are kept).
 
 Exit code 0 when every scenario passed; 1 when a scenario failed, or no scenario was found or
-matched; 2 when none failed but too many runs of a scenario were errors; 3 when none failed
-but --max-tokens stopped the run before every run ran.`;
+matched; 2 when none failed but too many runs of a scenario were errors.`;
 
 /** The file name ending that makes a module under src/ a scenario. */
 export const SCENARIO_SUFFIX = ".scenario.ts";
@@ -144,30 +133,22 @@ export type TestArgs = {
   json: boolean;
   runs?: number;
   concurrency?: number;
-  maxErrorRate?: number;
   callerModel?: string;
   judgeModel?: string;
-  maxTokens?: number;
   /** A file the Markdown report is written to. */
   report?: string;
   /** The saved run to check again. */
   rejudge?: string;
-  style?: StyleLimits;
-  allowRealTools?: true;
-  noEarlyStop?: true;
 };
 
 /** The options that take no value. */
-const FLAGS = ["--json", "--allow-real-tools", "--no-early-stop"];
+const FLAGS = ["--json"];
 /** The options that take one, each with what it is. */
 const VALUES: Readonly<Record<string, string>> = {
   "--runs": "<n>",
   "--concurrency": "<k>",
-  "--max-error-rate": "<0..1>",
   "--caller-model": "<id>",
   "--judge-model": "<id>",
-  "--max-tokens": "<n>",
-  "--style": "<metric=limit,...>",
   "--report": "<file>",
   "--rejudge": "<run>",
 };
@@ -204,35 +185,16 @@ export function parseTestArgs(args: readonly string[]): TestArgs {
   };
   const runs = number("--runs", () => true, "a whole number");
   if (runs !== undefined && runsProblem(runs)) throw wrong("--runs", runsProblem(runs)!);
-  const style = values.has("--style") ? styleLimits(values.get("--style")!) : undefined;
-  const styleProblems = style ? styleLimitsProblems(style) : [];
-  if (styleProblems.length > 0) throw wrong("--style", `takes limits such as wordsP90=40,questionShare=0.6: ${styleProblems.join(" ")}`);
   return {
     filter: words.join(" ").trim(),
     json: flags.has("--json"),
     runs,
     concurrency: number("--concurrency", (value) => Number.isInteger(value) && value >= 1 && value <= MAX_CONCURRENCY, `a whole number from 1 to ${MAX_CONCURRENCY}`),
-    maxErrorRate: number("--max-error-rate", (value) => value >= 0 && value <= 1, "a share from 0 to 1"),
     callerModel: values.get("--caller-model"),
     judgeModel: values.get("--judge-model"),
-    maxTokens: number("--max-tokens", (value) => Number.isInteger(value) && value >= 1, "a whole number of tokens, at least 1"),
     report: values.get("--report"),
     rejudge: values.get("--rejudge"),
-    style,
-    ...(flags.has("--allow-real-tools") ? { allowRealTools: true as const } : {}),
-    ...(flags.has("--no-early-stop") ? { noEarlyStop: true as const } : {}),
   };
-}
-
-/** `wordsP90=40,questionShare=0.6` as limits; a part that is not `name=number` keeps its text,
- * so the check of the limits names it. */
-function styleLimits(text: string): StyleLimits {
-  return Object.fromEntries(
-    text.split(",").filter((part) => part.trim()).map((part) => {
-      const [metric = "", limit = ""] = part.split("=").map((side) => side.trim());
-      return [metric, limit === "" ? Number.NaN : Number(limit)];
-    }),
-  );
 }
 
 /** Which of the two parts a simulation model plays. */
@@ -349,8 +311,8 @@ const NO_MODELS: TestModels = { agent: null, caller: null, judge: null };
  * retries hold each attempt to the real deadline, and a rate limit may take minutes to lift. */
 const SESSION_PATIENCE_MS = 60 * 60_000;
 
-/** What one `curb test` invocation runs with: the arguments, with the environment's defaults. */
-type TestRunOptions = TestArgs & { concurrency: number; maxErrorRate: number };
+/** What one `curb test` invocation runs with: the arguments, with the defaults filled in. */
+type TestRunOptions = TestArgs & { concurrency: number };
 
 /**
  * `curb test <args>` in the project at `projectRoot` (its .env already loaded). Writes the report
@@ -365,13 +327,7 @@ export async function testCommand(
   const out = options.out ?? ((text: string) => void process.stdout.write(text));
   const env = options.env ?? process.env;
   const parsed = parseTestArgs(args);
-  const run: TestRunOptions = {
-    ...parsed,
-    concurrency: parsed.concurrency ?? DEFAULT_CONCURRENCY,
-    maxErrorRate: parsed.maxErrorRate ?? DEFAULT_MAX_ERROR_RATE,
-    callerModel: parsed.callerModel ?? env.CURB_TEST_CALLER_MODEL,
-    judgeModel: parsed.judgeModel ?? env.CURB_TEST_JUDGE_MODEL,
-  };
+  const run: TestRunOptions = { ...parsed, concurrency: parsed.concurrency ?? DEFAULT_CONCURRENCY };
   const files = findScenarioFiles(projectRoot);
   if (files.length === 0 && run.rejudge === undefined) {
     console.error(NO_SCENARIOS);
@@ -403,8 +359,6 @@ type TestSession = {
 const matches = (filter: string, entry: { name: string; file: string }) =>
   !filter || entry.name.toLowerCase().includes(filter.toLowerCase()) || entry.file.toLowerCase().includes(filter.toLowerCase());
 
-const SKIPPED = "the token budget (--max-tokens) was spent before it ran";
-
 /**
  * The report of scenarios that run at the same time, printed in their own order: what a
  * scenario writes is printed at once while every scenario before it is done, and kept until
@@ -430,7 +384,7 @@ function inOrder(out: (text: string) => void, count: number) {
   };
 }
 
-/** The scenarios of a run that was cut short, as its file holds them: every one that ran. */
+/** The scenarios that are through, in their own order, as the run's file holds them meanwhile. */
 function inScenarioOrder<T>(byIndex: ReadonlyArray<T | undefined>): T[] {
   return byIndex.filter((entry): entry is T => entry !== undefined);
 }
@@ -450,10 +404,9 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost | Promi
   }
 
   const host = await hostOf();
-  const budget = new TokenBudget(run.maxTokens ?? null);
   const slots = new RunSlots(run.concurrency);
   host.throttle?.onSlowDown(() => void slots.lower());
-  const saved = newSavedRun(run);
+  const saved = newSavedRun();
   const printed = inOrder(run.json ? () => {} : out, selected.length);
   const reports: ScenarioReport[] = [];
   const settingsOf: Array<SavedScenarioSettings | undefined> = [];
@@ -478,7 +431,7 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost | Promi
       write(`FAIL ${entry.name}: ${entry.error}\n`);
       return { ...entry, passed: false };
     }
-    const settings = scenarioSettings({ scenario: entry.scenario, name: entry.name, file: entry.file, runs: run.runs, style: run.style });
+    const settings = scenarioSettings({ scenario: entry.scenario, name: entry.name, file: entry.file, runs: run.runs });
     const once = settings.runs === 1;
     const conversations: SavedConversation[] = [];
     const result = await runScenario({
@@ -492,23 +445,13 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost | Promi
       }),
       runs: run.runs,
       slots,
-      maxErrorRate: run.maxErrorRate,
-      earlyStop: !run.noEarlyStop,
-      allowRealTools: run.allowRealTools === true,
-      style: run.style,
       models: saved.models,
-      budget,
       ...(once ? { onTurn: (turn: ScenarioTurn) => write(formatTurn(turn)) } : {}),
       onRun: (finished, conversation) => {
         conversations.push(conversation);
         if (!once) write(formatRunLine(finished, settings.runs));
       },
     });
-    // The budget was spent before its first run: it did not run, and says nothing.
-    if (result.stats.ran === 0 && result.stats.cutShort === "budget") {
-      write(`not run: ${SKIPPED}\n`);
-      return { name: entry.name, file: entry.file, passed: false, skipped: SKIPPED };
-    }
     write(once ? formatChecks(result) : formatRepeated(result));
     settingsOf[index] = settings;
     conversationsOf[index] = conversations;
@@ -524,9 +467,6 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost | Promi
       }
     }),
   );
-  if (run.maxTokens !== undefined && !budget.reported && conversationsOf.some((conversations) => conversations?.length)) {
-    console.error("note: --max-tokens could not be held: the provider reported no token usage for any run.");
-  }
   return finish(session, { ...saved, scenarios: inScenarioOrder(settingsOf), conversations: inScenarioOrder(conversationsOf).flat() }, reports, throttledBy(host, slots));
 }
 
@@ -536,7 +476,7 @@ function throttledBy(host: TestHost, slots: RunSlots): TestReport["throttled"] {
   return stats && stats.waits > 0 ? { ...stats, concurrency: slots.limit } : undefined;
 }
 
-function newSavedRun(run: TestRunOptions): SavedTestRun {
+function newSavedRun(): SavedTestRun {
   const now = new Date();
   return {
     format: "curb.test-run",
@@ -548,7 +488,7 @@ function newSavedRun(run: TestRunOptions): SavedTestRun {
     models: NO_MODELS,
     callerPromptVersion: CALLER_PROMPT_VERSION,
     judgePromptVersion: JUDGE_PROMPT_VERSION,
-    maxErrorRate: run.maxErrorRate,
+    maxErrorRate: DEFAULT_MAX_ERROR_RATE,
     scenarios: [],
     conversations: [],
   };
@@ -559,7 +499,7 @@ function newSavedRun(run: TestRunOptions): SavedTestRun {
 function finish(session: TestSession, saved: SavedTestRun, scenarios: ScenarioReport[], throttled: TestReport["throttled"]): number {
   const { run, out, env, projectRoot } = session;
   const hasRuns = saved.conversations.length > 0;
-  if (hasRuns) saveTestRun(projectRoot, { ...saved, complete: scenarios.every((entry) => !("skipped" in entry)) });
+  if (hasRuns) saveTestRun(projectRoot, { ...saved, complete: true });
   const outcome = testOutcome(scenarios);
   const report: TestReport = {
     passed: scenarios.every((entry) => entry.passed),
@@ -609,8 +549,7 @@ async function rejudge(session: TestSession, which: string, hostOf: () => TestHo
   // The judge runs on the agent's provider, which only a bundle knows; no turn is played on it.
   const llm = (await host.createBundle()).runtime.settings.current().llm;
   const models = { ...(host.models?.(llm) ?? NO_MODELS), agent: source.models.agent, caller: source.models.caller };
-  const saved: SavedTestRun = { ...newSavedRun(run), rejudgedFrom: source.id, models, callerPromptVersion: source.callerPromptVersion };
-  const budget = new TokenBudget(run.maxTokens ?? null);
+  const saved: SavedTestRun = { ...newSavedRun(), rejudgedFrom: source.id, models, callerPromptVersion: source.callerPromptVersion };
   const slots = new RunSlots(run.concurrency);
   host.throttle?.onSlowDown(() => void slots.lower());
   const printed = inOrder(run.json ? () => {} : out, selected.length);
@@ -623,13 +562,12 @@ async function rejudge(session: TestSession, which: string, hostOf: () => TestHo
     const current = loaded.find((entry) => entry.file === was.file && entry.name === was.name);
     const scenario = current && "scenario" in current ? current.scenario : null;
     const settings: SavedScenarioSettings = scenario
-      ? { ...scenarioSettings({ scenario, name: was.name, file: was.file, style: run.style }), runs: was.runs }
-      : { ...was, style: { ...run.style, ...was.style } };
+      ? { ...scenarioSettings({ scenario, name: was.name, file: was.file }), runs: was.runs }
+      : was;
     const recorded = source.conversations.filter((entry) => entry.scenario.file === was.file && entry.scenario.name === was.name);
-    const judged = await Promise.all(
+    const conversations = await Promise.all(
       recorded.map(({ assessment: _before, ...record }) =>
-        slots.run(async (): Promise<SavedConversation | null> => {
-          if (budget.exhausted) return null;
+        slots.run(async (): Promise<SavedConversation> => {
           const judgeTokens = new TokenCounter();
           const assessment = await assessConversation({
             record,
@@ -637,21 +575,17 @@ async function rejudge(session: TestSession, which: string, hostOf: () => TestHo
             judge: host.simulator(llm, "judge", judgeTokens.add),
             judgeModel: models.judge,
           });
-          budget.spend(runUsage({ agent: null, caller: null, judge: judgeTokens.total() }));
           const usage = runUsage({ agent: record.usage?.agent ?? null, caller: record.usage?.caller ?? null, judge: judgeTokens.total() });
           return { ...record, usage, assessment };
         }),
       ),
     );
-    const conversations = judged.filter((conversation) => conversation !== null);
-    if (conversations.length === 0) return { name: was.name, file: was.file, passed: false, skipped: SKIPPED };
     const result = aggregateScenario({
       settings,
       conversations,
-      maxErrorRate: run.maxErrorRate,
+      maxErrorRate: DEFAULT_MAX_ERROR_RATE,
       durationMs: Math.round(performance.now() - startedAt),
       notes: scenario ? [] : [`${was.file} no longer holds a scenario named "${was.name}": its saved settings were applied, and its expect was not`],
-      ...(conversations.length < recorded.length ? { cutShort: "budget" as const } : {}),
     });
     settingsOf[index] = settings;
     conversationsOf[index] = conversations;

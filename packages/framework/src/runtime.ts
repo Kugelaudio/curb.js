@@ -43,10 +43,6 @@ export type ReadBackOutcome = { readBack: string } | { result: ToolResult };
  * it gets the input `onSubmit` would get, and its result is the call's result. */
 export type ToolFake = (input: Record<string, unknown>) => Promise<ToolResult>;
 
-/** What a test asks before a tool without a fake runs (`AgentSiteRuntime.guardUnfakedTools`): the
- * result its call gets instead, or `undefined` to let the tool run. */
-export type UnfakedToolGuard = (name: string) => ToolResult | undefined;
-
 /** A `<Tool>` form's `onSubmit` (`submitTool` in components.tsx): it checks the input, then runs
  * `fake` where it would run the author's `onSubmit`. */
 type FakeableSubmit = (input: Record<string, unknown>, fake: ToolFake, accepted?: () => void) => Promise<ToolResult>;
@@ -123,8 +119,6 @@ export class AgentSiteRuntime {
   private call: CallView | null = null;
   /** Tools a test replaced, by name (see `fakeTools`); empty outside tests. */
   private toolFakes: ReadonlyMap<string, ToolFake> = new Map();
-  /** What a test asks before a tool with no fake runs (see `guardUnfakedTools`); null outside tests. */
-  private unfakedToolGuard: UnfakedToolGuard | null = null;
   /** Stable `useRouter()` value, provided around every render (see refresh). */
   private readonly routerApi: AgentRouterApi = {
     push: (path: string) => this.navigate(path),
@@ -206,9 +200,7 @@ export class AgentSiteRuntime {
     this.toolCallInFlight = true;
     try {
       const fake = this.toolFakes.get(name);
-      // The framework's own tools touch nothing outside the call, so the guard never hears of them.
-      const stopped = fake || entry.definition.scope === "runtime" ? undefined : this.unfakedToolGuard?.(name);
-      result = stopped ?? (await (fake ? this.callFaked(name, fake, input, accepted) : entry.handler(input, accepted)));
+      result = await (fake ? this.callFaked(name, fake, input, accepted) : entry.handler(input, accepted));
       if (result.ok) {
         this.toolSucceeded.add(name);
         this.toolErrors.delete(name);
@@ -264,15 +256,6 @@ export class AgentSiteRuntime {
    */
   fakeTools(fakes: Readonly<Record<string, ToolFake>>): void {
     this.toolFakes = new Map(Object.entries(fakes));
-  }
-
-  /**
-   * For tests only (`curb test` with repeated runs): ask `guard` before each call of a tool that
-   * has no fake and is not the framework's own. A result it returns is the call's result and the
-   * tool does not run; `undefined` lets it run. `null` removes the guard.
-   */
-  guardUnfakedTools(guard: UnfakedToolGuard | null): void {
-    this.unfakedToolGuard = guard;
   }
 
   /** A call of `name`, which a test faked with `fake` (see `fakeTools`). */
