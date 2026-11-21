@@ -3,7 +3,7 @@ import { GUIDE_PAGES, pageUrl, type GuidePageId } from './guide'
 export const SITE_NAME = 'Curb'
 
 // og.png shows SITE_HEADLINE as pixels: regenerate it and bump OG_IMAGE_PATH when the headline changes.
-export const SITE_HEADLINE = 'Voice agents your coding agent can build, test and fix.'
+export const SITE_HEADLINE = 'Voice agents your coding agent can build and improve.'
 
 export const SITE_DESCRIPTION =
   'Prompts and tools are plain code, and test conversations check the result. Run the agent on your own servers, or let KugelAudio host it.'

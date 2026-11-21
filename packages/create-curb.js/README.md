@@ -1,7 +1,7 @@
 <div align="center">
   <a href="https://curbjs.com"><img alt="Curb" src="https://curbjs.com/og.png?v=3" width="360"></a>
   <h1>create-curb.js</h1>
-  <p><strong>Voice agents your coding agent can build, test and fix.</strong></p>
+  <p><strong>Voice agents your coding agent can build and improve.</strong></p>
   <p>Prompts and tools are plain code, and test conversations check the result. Run the agent on your own servers, or let KugelAudio host it.</p>
   <a href="https://www.npmjs.com/package/create-curb.js"><img alt="npm version" src="https://img.shields.io/npm/v/create-curb.js.svg?style=for-the-badge&labelColor=000000"></a>
   <a href="https://curbjs.com/docs/installation/"><img alt="Node.js version" src="https://img.shields.io/node/v/create-curb.js.svg?style=for-the-badge&labelColor=000000"></a>

@@ -5,7 +5,7 @@
       <img alt="Curb" src=".github/assets/logo-on-light.svg" width="220">
     </picture>
   </h1>
-  <p><strong>Voice agents your coding agent can build, test and fix.</strong></p>
+  <p><strong>Voice agents your coding agent can build and improve.</strong></p>
   <p>Prompts and tools are plain code, and test conversations check the result. Run the agent on your own servers, or let KugelAudio host it.</p>
   <p><sub>
     <a href="#quickstart">Quickstart</a> ·

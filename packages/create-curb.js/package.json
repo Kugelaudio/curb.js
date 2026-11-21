@@ -1,7 +1,7 @@
 {
   "name": "create-curb.js",
   "version": "1.0.1",
-  "description": "Create a Curb voice agent with one command. Voice agents your coding agent can build, test and fix.",
+  "description": "Create a Curb voice agent with one command. Voice agents your coding agent can build and improve.",
   "keywords": [
     "curb",
     "curb.js",

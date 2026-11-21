@@ -2,7 +2,7 @@
   "name": "curb",
   "version": "1.0.0",
   "private": true,
-  "description": "Voice agents your coding agent can build, test and fix. Prompts and tools are plain code, and test conversations check the result. Run the agent on your own servers, or let KugelAudio host it.",
+  "description": "Voice agents your coding agent can build and improve. Prompts and tools are plain code, and test conversations check the result. Run the agent on your own servers, or let KugelAudio host it.",
   "keywords": [
     "curb",
     "voice-agent",
