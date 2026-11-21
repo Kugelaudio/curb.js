@@ -163,7 +163,7 @@ export async function createAgentSession(
   llm: AgentLlmClient,
   streamLlm?: AgentLlmStreamStep,
   agentId?: string,
-  options?: { spokenStyleSuffix?: string },
+  options?: { spokenStyleSuffix?: string; llmTimeoutMs?: number },
 ): Promise<HostedSession> {
   const { runtime, agentId: id, definition } = await createAgentRuntime(agentId);
   const session = new AgentSession(runtime, llm, {
@@ -172,6 +172,7 @@ export async function createAgentSession(
     timeZone: definition.timeZone,
     streamLlm,
     spokenStyleSuffix: options?.spokenStyleSuffix,
+    llmTimeoutMs: options?.llmTimeoutMs,
     // `firstTurn: { say }`: the session opens every conversation with the line, on every route
     // (a call, typed chat, curb say, curb test), so none can skip it or say it twice.
     opening: openingLineOf(definition.firstTurn),
