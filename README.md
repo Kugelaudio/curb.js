@@ -88,6 +88,39 @@ only once a slot is booked, so the model cannot call it before. `/prices` is a
 [skill](https://curbjs.com/docs/agents-and-skills/): the model opens it when the caller asks what a
 repair costs.
 
+## Hosting
+
+There are two ways to put your agent live. Run the commands yourself, or ask your coding agent
+to: the project's `AGENTS.md` tells it how.
+
+### On KugelAudio Cloud
+
+KugelAudio Cloud builds and hosts the agent, with phone numbers, call logs and scaling handled for you.
+
+1. Write to [hello@kugelaudio.com](mailto:hello@kugelaudio.com) to have hosting switched on for your organization.
+2. Deploy:
+
+```bash
+npx curb secrets push   # send your .env keys to the hosted agent
+npx curb deploy         # build and go live, prints a playground link
+```
+
+[deploying.md](packages/framework/docs/agent-guide/deploying.md) has the flags and limits.
+
+### On your own servers
+
+A Curb agent runs anywhere Node runs, with your own LiveKit and your own provider keys.
+
+1. Set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`.
+2. Start the agent:
+
+```bash
+npm start
+```
+
+To ship it to a server, `npx curb build` packs the project into one self-contained directory.
+[hosting.md](packages/framework/docs/agent-guide/hosting.md) covers all the ways to run an agent.
+
 ## How it works
 
 The agent is React components, written by you or your coding agent:
@@ -168,39 +201,6 @@ improve the agent from a real conversation:
 - `npx curb check`: type-checks the project and explains how to fix each mistake.
 - `npx curb say "Do you have a slot on Tuesday?"`: one caller turn in the terminal, with the reply and the tool calls.
 - `npx curb test`: runs whole conversations as tests, with no microphone.
-
-## Hosting
-
-There are two ways to put your agent live. Run the commands yourself, or ask your coding agent
-to: the project's `AGENTS.md` tells it how.
-
-### On KugelAudio Cloud
-
-KugelAudio Cloud builds and hosts the agent, with phone numbers, call logs and scaling handled for you.
-
-1. Write to [hello@kugelaudio.com](mailto:hello@kugelaudio.com) to have hosting switched on for your organization.
-2. Deploy:
-
-```bash
-npx curb secrets push   # send your .env keys to the hosted agent
-npx curb deploy         # build and go live, prints a playground link
-```
-
-[deploying.md](packages/framework/docs/agent-guide/deploying.md) has the flags and limits.
-
-### On your own servers
-
-A Curb agent runs anywhere Node runs, with your own LiveKit and your own provider keys.
-
-1. Set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`.
-2. Start the agent:
-
-```bash
-npm start
-```
-
-To ship it to a server, `npx curb build` packs the project into one self-contained directory.
-[hosting.md](packages/framework/docs/agent-guide/hosting.md) covers all the ways to run an agent.
 
 ## Package name
 
