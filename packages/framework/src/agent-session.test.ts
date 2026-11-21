@@ -516,6 +516,66 @@ describe("AgentSession", () => {
       expect(requests).toHaveLength(1);
     });
 
+    it("a goodbye the step wrote as text too is heard once: the closing line goes on from what was said", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const hangUp = vi.fn();
+      runtime.setEndCallRequest(hangUp);
+      const goodbye = "Glad I could help, Alex. Take care and see you Monday!";
+      // Of the step's text the first sentence is out before the tool call shows; the second is held and dropped.
+      const { streamLlm } = scriptedStream([{ text: goodbye, toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye } }] }]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm });
+
+      const turn = await streamTurn(session, "No, that's everything. Thanks, bye.");
+
+      expect(turn.deltas).toEqual(["Glad I could help, Alex. ", "Take care and see you Monday."]);
+      expect(turn.heard).toBe("Glad I could help, Alex. Take care and see you Monday.");
+      expect(turn.reply).toBe("Glad I could help, Alex. Take care and see you Monday.");
+      expect(hangUp).toHaveBeenCalledTimes(1);
+      expect(session.messages.map((message) => [message.role, message.content])).toEqual([
+        ["user", "No, that's everything. Thanks, bye."],
+        ["assistant", "Glad I could help, Alex."],
+        ["tool", "The call ends once the goodbye has played."],
+        ["assistant", "Take care and see you Monday."],
+      ]);
+    });
+
+    it("a goodbye that was said to its end before end_call ran adds nothing, and the call still ends", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const hangUp = vi.fn();
+      runtime.setEndCallRequest(hangUp);
+      const goodbye = "Glad I could help. Take care.";
+      const { streamLlm, requests } = scriptedStream([
+        { text: `${goodbye} Have a lovely day.`, toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye } }] },
+        { text: "should never run" },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm });
+
+      const turn = await streamTurn(session, "that's all, thanks, bye");
+
+      expect(turn.events.map((event) => event.type)).toEqual(["delta", "delta", "tool", "done"]);
+      expect(turn.reply).toBe("Glad I could help. Take care.");
+      expect(hangUp).toHaveBeenCalledTimes(1);
+      expect(session.messages.map((message) => [message.role, message.content])).toEqual([
+        ["user", "that's all, thanks, bye"],
+        ["assistant", "Glad I could help. Take care."],
+        ["tool", "The call ends once the goodbye has played."],
+      ]);
+      expect(requests).toHaveLength(1);
+    });
+
+    it("a goodbye that only resembles what the step said is said in full: no word the caller has not heard is dropped", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      runtime.setEndCallRequest(() => {});
+      const { streamLlm } = scriptedStream([
+        { text: "Glad I could help, Alex. Bye for now.", toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye: "Glad I could help, Alex, and take care!" } }] },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm });
+
+      const turn = await streamTurn(session, "bye");
+
+      expect(turn.reply).toBe("Glad I could help, Alex. Glad I could help, Alex, and take care.");
+    });
+
     it("refuses an end_call without a goodbye: the call stays up and the turn goes on", async () => {
       const runtime = createInsuranceDemoRuntime();
       const hangUp = vi.fn();

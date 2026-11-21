@@ -622,9 +622,15 @@ export class AgentSession {
             this.pending = { ...outcome.held, heldAt: this.arrivals, ...heardAt };
             this.readBackReported = false;
           }
-          const delta = speech.line(closing);
-          messages = this.keepSpokenText(messages, speech.stepText);
-          if (streaming && delta) yield this.spokenDelta(delta, speech);
+          // A goodbye whose first sentences the step already said (the model wrote it as text
+          // too) goes on from there; one that was said to its end adds nothing. A read-back
+          // is always asked in full: it is the question the caller answers.
+          const line = outcome.held ? closing : speech.unheard(closing);
+          if (line) {
+            const delta = speech.line(line);
+            messages = this.keepSpokenText(messages, speech.stepText);
+            if (streaming && delta) yield this.spokenDelta(delta, speech);
+          }
         }
         if (outcome.done) break;
       }
