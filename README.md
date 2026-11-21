@@ -9,8 +9,8 @@
   <p>Describe the agent you want. Your coding agent builds it, talks to it, and improves it. Run it on your own servers, or let KugelAudio host it.</p>
   <p><sub>
     <a href="#quickstart">Quickstart</a> ·
-    <a href="#how-it-works">How it works</a> ·
     <a href="#hosting">Hosting</a> ·
+    <a href="#how-it-works">How it works</a> ·
     <a href="https://curbjs.com/docs/">Docs</a>
   </sub></p>
 </div>
