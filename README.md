@@ -5,8 +5,8 @@
       <img alt="Curb" src=".github/assets/logo-on-light.svg" width="220">
     </picture>
   </h1>
-  <p><strong>The framework for production voice agents.</strong></p>
-  <p>Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships.</p>
+  <p><strong>Voice agents your coding agent can build, test and fix.</strong></p>
+  <p>Prompts and tools are plain code, and test conversations check the result. Run the agent on your own servers, or let KugelAudio host it.</p>
   <p><sub>
     <a href="#quickstart">Quickstart</a> ·
     <a href="#how-it-works">How it works</a> ·

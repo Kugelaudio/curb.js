@@ -3,12 +3,12 @@ import { GUIDE_PAGES, pageUrl, type GuidePageId } from './guide'
 export const SITE_NAME = 'Curb'
 
 // og.png shows SITE_HEADLINE as pixels: regenerate it and bump OG_IMAGE_PATH when the headline changes.
-export const SITE_HEADLINE = 'The framework for production voice agents.'
+export const SITE_HEADLINE = 'Voice agents your coding agent can build, test and fix.'
 
 export const SITE_DESCRIPTION =
-  'Dynamic prompting with full control, in plain code you own. Your coding agent can build, test, and simulate conversations before it ships.'
+  'Prompts and tools are plain code, and test conversations check the result. Run the agent on your own servers, or let KugelAudio host it.'
 
-const LEDE_EMPHASIS = ['Dynamic prompting', 'full control', 'you own', 'build', 'test', 'simulate conversations']
+const LEDE_EMPHASIS = ['plain code', 'test conversations', 'your own servers', 'KugelAudio host it']
 
 /** The home page's lede: SITE_DESCRIPTION with its key phrases in bold. */
 export const SITE_LEDE_HTML = LEDE_EMPHASIS.reduce(
@@ -19,7 +19,7 @@ export const SITE_LEDE_HTML = LEDE_EMPHASIS.reduce(
 export const SITE_TITLE = `${SITE_NAME}: ${SITE_HEADLINE.charAt(0).toLowerCase()}${SITE_HEADLINE.slice(1, -1)}`
 
 /** Link previews are cached by image URL, so a new image needs a new version here. */
-export const OG_IMAGE_PATH = '/og.png?v=2'
+export const OG_IMAGE_PATH = '/og.png?v=3'
 
 export const OG_IMAGE_ALT = SITE_TITLE
 
