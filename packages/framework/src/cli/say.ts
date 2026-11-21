@@ -264,7 +264,7 @@ export async function runSayTurn(params: {
     session.updateInfo(clientInfo(params.client ?? {}));
     opening = await playOpening(session, bundle.firstTurn);
   }
-  let played: PlayedTurn = { reply: "", errors: [], messages: [], confirmation: null };
+  let played: PlayedTurn = { reply: "", errors: [], messages: [], confirmation: null, steps: 0 };
   if (endedCall) notes.push('The agent hung up in its opening, so your words were not said. Start over with curb say --new "...".');
   else played = await playTurn(session, params.text);
 

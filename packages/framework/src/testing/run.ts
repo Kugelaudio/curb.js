@@ -1,26 +1,33 @@
 import type { AgentLlmClient, AgentSession } from "../agent-session.js";
+import { snapshotAgentStores } from "../agent-state.js";
 import type { AgentFirstTurn } from "../config.js";
 import { experimentInfo, type ExperimentDeclaration } from "../experiments.js";
-import { assignExperiments } from "../experiments.node.js";
+import { assignExperiments, forcedVariant } from "../experiments.node.js";
+import type { AgentModelUsage } from "../llm/ai-sdk.js";
 import { declinedNote, unclearNote, type ConfirmationVerdict, type PendingConfirmation } from "../llm/confirmation.js";
 import { agentLanguage } from "../llm/localized.js";
 import type { AgentChatMessage } from "../llm/types.js";
 import type { AgentSiteRuntime, ToolFake } from "../runtime.js";
 import { clientInfo } from "../server/protocol.js";
 import { SKIP_TURN_TOOL_NAME, type ToolResult } from "../types.js";
-import { judgeGoal, nextCallerLine } from "./caller.js";
-import { builtInChecks, expectContext, fallbackLineIn, goalCheck, type ScenarioEndedBy } from "./checks.js";
+import { aggregateScenario, outcomeOpen, scenarioRun, type ScenarioResult, type ScenarioRun, type ScenarioStats, type ScenarioStop } from "./aggregate.js";
+import { assessConversation, assessmentSettings } from "./assess.js";
+import { askCallerAfterHangUp, nextCallerLine } from "./caller.js";
+import { fallbackLineIn, type ScenarioEndedBy } from "./checks.js";
+import type { CallerEnding, ConversationRecord, EndState, RecordedTool, SavedConversation, SavedScenarioSettings, TestModels } from "./record.js";
+import { describeProviderError } from "./resilience.js";
 import {
   DEFAULT_MAX_TURNS,
   toolResultProblem,
   type Scenario,
-  type ScenarioCheck,
   type ScenarioConfirmation,
   type ScenarioFake,
   type ScenarioToolCall,
   type ScenarioTurn,
   type ScenarioTurnError,
+  type StyleLimits,
 } from "./scenario.js";
+import { TokenBudget, TokenCounter, runUsage, type TokenUsage } from "./usage.js";
 
 /** The agent one scenario talks to: a fresh runtime and session, built the way a call builds them. */
 export type ScenarioBundle = {
@@ -32,6 +39,12 @@ export type ScenarioBundle = {
   /** `defineAgent({ experiments })` as the bundle manifest carries them: the call gets one variant
    * of each, the scenario's own or drawn as a call would draw it. */
   experiments?: readonly ExperimentDeclaration[];
+  /** The tokens the agent's LLM requests used on this bundle so far; null while its provider
+   * reported none. */
+  tokens?: () => TokenUsage | null;
+  /** How many of the agent's LLM requests failed for good on this bundle so far (after the
+   * retries). A turn that failed while this went up failed on the provider, not on the agent. */
+  providerErrors?: () => number;
 };
 
 /**
@@ -63,6 +76,49 @@ export function scenarioVariants(
   return { ...assignExperiments(experiments, scenarioSessionId(file, name), scenario.client ?? {}), ...pins };
 }
 
+/**
+ * The variants of one run of a scenario. Its first run gets what {@link scenarioVariants} gives,
+ * as a scenario that runs once always has. Each further run moves every experiment the scenario
+ * leaves open (not pinned, and not picked by its page info) on to its next variant, so that
+ * repeated runs cover every variant of every experiment instead of testing one of them N times.
+ */
+export function runVariants(
+  scenarioId: { file: string; name: string },
+  experiments: readonly ExperimentDeclaration[],
+  scenario: Scenario,
+  run: number,
+): Record<string, string> {
+  const first = scenarioVariants(scenarioId, experiments, scenario);
+  const moved = openExperiments(experiments, scenario).map((experiment) => {
+    const names = drawable(experiment);
+    return [experiment.name, names[(names.indexOf(first[experiment.name]!) + run) % names.length]!];
+  });
+  return { ...first, ...Object.fromEntries(moved) };
+}
+
+/** The variants a call can draw: those with a weight. */
+const drawable = (experiment: ExperimentDeclaration) => experiment.variants.filter((variant) => variant.weight > 0).map((variant) => variant.name);
+
+/** The experiments whose variant the scenario leaves to the draw. */
+function openExperiments(experiments: readonly ExperimentDeclaration[], scenario: Scenario): ExperimentDeclaration[] {
+  return experiments.filter(
+    (experiment) => !Object.hasOwn(scenario.experiments ?? {}, experiment.name) && forcedVariant(experiment, scenario.client ?? {}) === undefined,
+  );
+}
+
+/** One note per open experiment whose variants `runs` runs do not all reach, naming them. */
+function uncoveredVariants(experiments: readonly ExperimentDeclaration[], scenario: Scenario, covered: ReadonlyArray<Record<string, string>>): string[] {
+  return openExperiments(experiments, scenario).flatMap((experiment) => {
+    const seen = new Set(covered.map((variants) => variants[experiment.name]));
+    const missed = drawable(experiment).filter((variant) => !seen.has(variant));
+    if (missed.length === 0) return [];
+    return [
+      `experiment ${experiment.name}: ${covered.length} run(s) covered ${[...seen].map((variant) => `"${variant}"`).join(", ")} and not ${missed.map((variant) => `"${variant}"`).join(", ")}; ` +
+        `run it ${drawable(experiment).length} times (runs) to cover every variant, or pin one (experiments: { ${experiment.name}: ... })`,
+    ];
+  });
+}
+
 /** The session id a scenario's variants are drawn for: the same on every run of it. */
 export function scenarioSessionId(file: string, name: string): string {
   return `scenario:${file}:${name}`;
@@ -76,12 +132,15 @@ export type PlayedTurn = {
   errors: ScenarioTurnError[];
   messages: AgentChatMessage[];
   confirmation: ScenarioConfirmation | null;
+  /** The LLM steps the turn took. */
+  steps: number;
 };
 
 /** One spoken turn on the session, as a call runs it: the caller's line, or (`synthetic`) the
  * framework's own input. */
 export async function playTurn(session: AgentSession, text: string, kind?: "synthetic", spoken = true): Promise<PlayedTurn> {
   const before = session.messages.length;
+  const stepsBefore = session.llmTrace.length;
   // The caller's line answers the action waiting for their yes, if one waits; framework input never does.
   const pending = kind ? null : session.pendingConfirmation;
   const errors: ScenarioTurnError[] = [];
@@ -91,7 +150,13 @@ export async function playTurn(session: AgentSession, text: string, kind?: "synt
     else if (event.type === "done") reply = event.reply;
   }
   const messages = session.messages.slice(before);
-  return { reply, errors, messages, confirmation: pending && confirmationIn(messages, pending, text.trim()) };
+  return {
+    reply,
+    errors,
+    messages,
+    confirmation: pending && confirmationIn(messages, pending, text.trim()),
+    steps: session.llmTrace.length - stepsBefore,
+  };
 }
 
 /**
@@ -197,59 +262,310 @@ export async function playOpening(
       errors: [{ kind: "failed", message: describe(error) }],
       messages: session.messages.slice(before),
       confirmation: null,
+      steps: 0,
     };
   }
-  return line === null ? null : { reply: line, errors: [], messages: session.messages.slice(before), confirmation: null };
+  return line === null ? null : { reply: line, errors: [], messages: session.messages.slice(before), confirmation: null, steps: 0 };
 }
 
-export type ScenarioResult = {
-  name: string;
-  /** The scenario file, relative to the project root. */
-  file: string;
-  mode: "scripted" | "simulated";
-  passed: boolean;
-  endedBy: ScenarioEndedBy;
-  durationMs: number;
-  turns: ScenarioTurn[];
-  checks: ScenarioCheck[];
-  /** Things worth knowing that fail nothing: a fake no call used, a scenario without checks of its own. */
-  notes: string[];
-};
+export type { ScenarioResult, ScenarioRun } from "./aggregate.js";
+
+/** Conversations in flight at once when nothing says otherwise, and the most that may be asked for. */
+export const DEFAULT_CONCURRENCY = 4;
+export const MAX_CONCURRENCY = 16;
+/** The share of a scenario's runs that may be errors before the scenario itself is one: one run
+ * in three, so that a single provider hiccup does not void a scenario that runs three times. */
+export const DEFAULT_MAX_ERROR_RATE = 0.34;
+
+/** The code a scenario is stopped with when a repeated run would run a tool for real. */
+export const TOOL_NOT_FAKED = "CURB_TEST_TOOL_NOT_FAKED";
 
 /**
- * Run one scenario as a call: the scenario's fakes in place and its page info (`client`) on the
- * conversation first, then the agent's opening (its greeting or fixed line) when it speaks first,
- * then every caller line as a spoken turn on the bundle's session, with `end_call` attached the
- * way a live call attaches it. The conversation stops when the agent hangs up, the caller hangs
- * up or runs out of lines, `maxTurns` is reached, or a turn reports an error. Then every check
- * runs.
+ * How many conversations may be in flight at once. One is shared by every scenario of a
+ * `curb test`, so `--concurrency` bounds the whole run: scenarios wait for a slot like the
+ * runs of one scenario do, first come first served.
+ */
+export class RunSlots {
+  private slots: number;
+  private taken = 0;
+  private readonly waiting: Array<() => void> = [];
+
+  constructor(limit: number = DEFAULT_CONCURRENCY) {
+    this.slots = limit;
+  }
+
+  /** How many conversations may be in flight now. */
+  get limit(): number {
+    return this.slots;
+  }
+
+  /** Halve the slots, down to one, for the rest of the run: the provider said to slow down.
+   * Conversations in flight go on; the next ones wait until there is room under the new limit. */
+  lower(): number {
+    this.slots = Math.max(1, Math.floor(this.slots / 2));
+    return this.slots;
+  }
+
+  /** Run `task` once a slot is free, and free the slot when it settles. */
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    // Behind whoever waits already; a waiting task is handed its slot by the one that frees it.
+    if (this.taken < this.slots && this.waiting.length === 0) this.taken += 1;
+    else await new Promise<void>((resolve) => this.waiting.push(resolve));
+    try {
+      return await task();
+    } finally {
+      this.taken -= 1;
+      // Not while more are in flight than the limit, lowered meanwhile, allows.
+      while (this.taken < this.slots && this.waiting.length > 0) {
+        this.taken += 1;
+        this.waiting.shift()!();
+      }
+    }
+  }
+}
+
+/** The LLMs that play the caller and judge one run. */
+export type RunLlms = { caller: AgentLlmClient; judge: AgentLlmClient };
+
+/** How often a scenario runs: its own `runs`, which `requested` (`curb test --runs`) overrides
+ * for a simulated caller. Scripted lines say the same words every time and run once unless the
+ * scenario itself asks for more. */
+export function plannedRuns(scenario: Scenario, requested?: number): number {
+  return (scenario.caller ? requested : undefined) ?? scenario.runs ?? 1;
+}
+
+/** What a scenario asks of its runs, as it is saved beside them. */
+export function scenarioSettings(params: {
+  scenario: Scenario;
+  name: string;
+  file: string;
+  /** `curb test --runs`. */
+  runs?: number;
+  /** Style limits for every scenario (`curb test --style`); the scenario's own win. */
+  style?: StyleLimits;
+}): SavedScenarioSettings {
+  const { scenario } = params;
+  return {
+    name: params.name,
+    file: params.file,
+    mode: scenario.caller ? "simulated" : "scripted",
+    runs: plannedRuns(scenario, params.runs),
+    minPassRate: scenario.minPassRate ?? 1,
+    expectations: [...(scenario.expectations ?? [])],
+    failOn: [...(scenario.failOn ?? [])],
+    style: { ...params.style, ...scenario.style },
+  };
+}
+
+/**
+ * Run one scenario: each run a conversation of its own on a fresh bundle, as many at a time as
+ * `slots` has room for, each assessed as it ends (`assess.ts`), all summed up into one result
+ * (`aggregate.ts`). Runs stop early once no further run can change the outcome, when the token
+ * budget is spent, and when a run reaches a tool that would run for real on every run.
  *
- * Tools run for real unless the scenario fakes them; undoing what they did is the scenario
- * author's business.
+ * A conversation runs as a call: the scenario's fakes in place and its page info (`client`) on
+ * the conversation first, then the agent's opening (its greeting or fixed line) when it speaks
+ * first, then every caller line as a spoken turn on the bundle's session, with `end_call`
+ * attached the way a live call attaches it. It stops when the agent hangs up, the caller hangs
+ * up or runs out of lines, `maxTurns` is reached, or a turn reports an error.
+ *
+ * A scenario that runs once runs its tools for real unless it fakes them, as it always has;
+ * undoing what they did is the scenario author's business.
  */
 export async function runScenario(params: {
   scenario: Scenario;
   name: string;
   file: string;
-  bundle: ScenarioBundle;
-  /** The LLM the simulated caller and the judge run on. A scripted scenario never calls it. */
-  simulator: AgentLlmClient;
-  /** Called with each turn as soon as it is over, so a report can print the call as it goes. */
+  /** The bundle of a scenario that runs once. Give this or `createBundle`. */
+  bundle?: ScenarioBundle;
+  /** A fresh bundle for each run. */
+  createBundle?: () => Promise<ScenarioBundle>;
+  /** The LLM that plays the caller and judges, when their tokens need no counting. A scripted
+   * scenario without `expectations` never calls it. Give this or `llms`. */
+  simulator?: AgentLlmClient;
+  /** The caller's and the judge's LLM for one run; `onUsage` hears the tokens each used. */
+  llms?: (onUsage: (role: "caller" | "judge", usage: AgentModelUsage) => void) => RunLlms;
+  /** `curb test --runs`: the runs of a simulated-caller scenario. */
+  runs?: number;
+  /** The slots its runs wait for: shared with the other scenarios of the run. Default: its own. */
+  slots?: RunSlots;
+  maxErrorRate?: number;
+  /** False to run every run even when the outcome is decided. Default true. */
+  earlyStop?: boolean;
+  /** Let every tool run for real on repeated runs (`curb test --allow-real-tools`). */
+  allowRealTools?: boolean;
+  /** Style limits for every scenario; the scenario's own win. */
+  style?: StyleLimits;
+  /** Stamped into each run's judge result. */
+  models?: TestModels;
+  budget?: TokenBudget;
+  /** Called with each turn as soon as it is over, so a report can print the call as it goes.
+   * Only a scenario that runs once reports its turns. */
   onTurn?: (turn: ScenarioTurn) => void;
+  /** Called with each run when it is assessed, with its conversation as it is saved. */
+  onRun?: (run: ScenarioRun, conversation: SavedConversation) => void;
 }): Promise<ScenarioResult> {
   const started = performance.now();
-  const { scenario, bundle } = params;
+  const { scenario } = params;
+  const settings = scenarioSettings(params);
+  const maxErrorRate = params.maxErrorRate ?? DEFAULT_MAX_ERROR_RATE;
+  const budget = params.budget ?? new TokenBudget();
+  const slots = params.slots ?? new RunSlots();
+  const createBundle = params.createBundle ?? (() => Promise.resolve(params.bundle!));
+  if (!params.createBundle && settings.runs > 1) {
+    throw new Error(`curb: scenario "${params.name}" runs ${settings.runs} times and needs a bundle for each: pass createBundle.`);
+  }
+  // Tools run for real on a single run, as they always have. On repeated runs only the tools
+  // the scenario allows do; any other is stopped before it runs, and the scenario with it.
+  const guarded = settings.runs > 1 && !params.allowRealTools && scenario.realTools !== "all";
+  const allowed = new Set(Array.isArray(scenario.realTools) ? scenario.realTools : []);
+
+  const conversations: SavedConversation[] = [];
+  const covered: Array<Record<string, string>> = [];
+  let declared: readonly ExperimentDeclaration[] = [];
+  let stopped: ScenarioStop | undefined;
+  let cutShort: ScenarioStats["cutShort"] = null;
+  let next = 0;
+
+  const open = () => {
+    const done = conversations.map((conversation) => conversation.assessment.outcome);
+    return outcomeOpen({
+      passed: done.filter((outcome) => outcome === "pass").length,
+      failed: done.filter((outcome) => outcome === "fail").length,
+      errors: done.filter((outcome) => outcome === "error").length,
+      remaining: settings.runs - done.length,
+      settings: { minPassRate: settings.minPassRate, maxErrorRate },
+    });
+  };
+
+  /** One run, in a slot of its own. What decides whether it still starts is read once the slot
+   * is free, not when it was asked for: by then other runs may have decided the scenario. */
+  const runNext = async () => {
+    if (stopped) cutShort = "stopped";
+    else if (budget.exhausted) cutShort = "budget";
+    else if (params.earlyStop !== false && conversations.length > 0 && !open()) cutShort = "decided";
+    if (cutShort || next >= settings.runs) return;
+    const run = next;
+    next += 1;
+
+    const bundle = await createBundle();
+    declared = bundle.experiments ?? [];
+    const counters = { caller: new TokenCounter(), judge: new TokenCounter() };
+    const llms = params.llms?.((role, usage) => counters[role].add(usage)) ?? { caller: params.simulator!, judge: params.simulator! };
+    const played = await playConversation({
+      scenario,
+      name: params.name,
+      file: params.file,
+      run,
+      bundle,
+      caller: llms.caller,
+      guard: guarded ? (tool) => !allowed.has(tool) : null,
+      ...(settings.runs === 1 && params.onTurn ? { onTurn: params.onTurn } : {}),
+    });
+    if ("blocked" in played) {
+      stopped ??= toolNotFaked(params.name, settings.runs, played.blocked);
+      return;
+    }
+    const assessment = await assessConversation({
+      record: played.record,
+      settings: assessmentSettings(scenario),
+      judge: llms.judge,
+      judgeModel: params.models?.judge ?? null,
+    });
+    const usage = runUsage({ agent: bundle.tokens?.() ?? null, caller: counters.caller.total(), judge: counters.judge.total() });
+    const conversation: SavedConversation = { ...played.record, usage, assessment };
+    budget.spend(usage);
+    covered.push(conversation.experiments);
+    conversations.push(conversation);
+    params.onRun?.(scenarioRun(conversation), conversation);
+  };
+  const worker = async () => {
+    while (next < settings.runs && !cutShort && !stopped) await slots.run(runNext);
+  };
+  await Promise.all(Array.from({ length: Math.min(settings.runs, slots.limit) }, worker));
+
+  return aggregateScenario({
+    settings,
+    conversations,
+    maxErrorRate,
+    durationMs: Math.round(performance.now() - started),
+    notes: stopped ? [] : uncoveredVariants(declared, scenario, covered),
+    // Runs that were stopped together leave no worker to note it.
+    cutShort: stopped ? "stopped" : cutShort,
+    ...(stopped ? { stopped } : {}),
+  });
+}
+
+function toolNotFaked(name: string, runs: number, tools: readonly string[]): ScenarioStop {
+  const [first = "the_tool"] = tools;
+  const many = tools.length > 1;
+  const named = tools.map((tool) => `"${tool}"`).join(", ");
+  return {
+    code: TOOL_NOT_FAKED,
+    message:
+      `[${TOOL_NOT_FAKED}] Scenario "${name}" runs ${runs} times and reached ${named}, which ${many ? "have" : "has"} no fake: every run would run ${many ? "them" : "it"} for real. ` +
+      `${many ? "They were" : "It was"} not run, and the scenario was stopped.\n` +
+      `Fix: fake ${many ? "each" : "it"} in the scenario (fakes: { ${first}: { ok: true, message: "..." } }). A tool that is safe to run on every run, because it only reads or only changes the call's own state, can be allowed instead (realTools: [${tools.map((tool) => JSON.stringify(tool)).join(", ")}]). ` +
+      "`curb test --allow-real-tools` allows every tool for one invocation.",
+  };
+}
+
+/** What the guard answers a call it stops; the model never acts on it, the run ends with the turn. */
+const NOT_RUN = "Not run: this test run does not run this tool.";
+
+/**
+ * Play one conversation of a scenario on `bundle` and return its record, or the tools `guard`
+ * stopped: a conversation that reached one of those is not a run.
+ */
+async function playConversation(params: {
+  scenario: Scenario;
+  name: string;
+  file: string;
+  /** 0 for the first run. */
+  run: number;
+  bundle: ScenarioBundle;
+  caller: AgentLlmClient;
+  /** Says which tools without a fake must not run; null lets every tool run. */
+  guard: ((tool: string) => boolean) | null;
+  onTurn?: (turn: ScenarioTurn) => void;
+}): Promise<{ record: ConversationRecord } | { blocked: string[] }> {
+  const started = performance.now();
+  const startedAt = new Date().toISOString();
+  const { scenario, bundle, guard } = params;
   let hungUp = false;
   bundle.runtime.setEndCallRequest(() => {
     hungUp = true;
   });
   const fakes = scenario.fakes ? installFakes(bundle.runtime, scenario.fakes) : null;
+  const blocked = new Set<string>();
+  if (guard) {
+    bundle.runtime.guardUnfakedTools((tool) => {
+      if (!guard(tool)) return undefined;
+      blocked.add(tool);
+      return { ok: false, message: NOT_RUN };
+    });
+  }
+
+  // Tools come and go with the agent's state, so every render is looked at: the judge is told
+  // each tool the model was offered at some point, without the framework's own.
+  const offered = new Map<string, RecordedTool>();
+  const noteTools = () => {
+    for (const tool of bundle.runtime.snapshot().context.tools) {
+      if (tool.scope !== "runtime") offered.set(tool.name, { name: tool.name, description: tool.description });
+    }
+  };
+  noteTools();
+  const stopNotingTools = bundle.runtime.subscribe(noteTools);
 
   const turns: ScenarioTurn[] = [];
   let endedBy: ScenarioEndedBy | null = null;
   let stopReason: string | undefined;
-  /** Record one turn (number 0: the opening, no caller line) and note when it ends the call. */
-  const take = (played: PlayedTurn, caller: string | null, number: number) => {
+  let providerError = false;
+  /** Play one turn (number 0: the opening, no caller line), record it and note when it ends the call. */
+  const take = async (play: () => Promise<PlayedTurn | null>, caller: string | null, number: number) => {
+    const failedBefore = bundle.providerErrors?.() ?? 0;
+    const played = await play();
+    if (!played) return;
     const turn = scenarioTurn(bundle.runtime, played, caller, number, fakes);
     turn.endedCall = hungUp;
     turns.push(turn);
@@ -257,6 +573,8 @@ export async function runScenario(params: {
     if (turn.errors.length > 0) {
       endedBy = "error";
       stopReason = turn.errors.map((error) => `${error.kind}: ${error.message}`).join("; ");
+      // A request that timed out, or failed for good on the provider, is not the agent's doing.
+      providerError = turn.errors.some((error) => error.kind === "timeout") || (bundle.providerErrors?.() ?? 0) > failedBefore;
     } else if (turn.endedCall) {
       endedBy = "agent";
     }
@@ -264,19 +582,17 @@ export async function runScenario(params: {
 
   // The page the call came from and the call's experiment variants, before the call opens: the
   // opening may read them.
-  const callInfo = {
-    ...clientInfo(scenario.client ?? {}),
-    ...experimentInfo(scenarioVariants({ file: params.file, name: params.name }, bundle.experiments ?? [], scenario)),
-  };
+  const experiments = runVariants({ file: params.file, name: params.name }, bundle.experiments ?? [], scenario, params.run);
+  const callInfo = { ...clientInfo(scenario.client ?? {}), ...experimentInfo(experiments) };
   if (Object.keys(callInfo).length > 0) bundle.session.updateInfo(callInfo);
-  const opening = await playOpening(bundle.session, bundle.firstTurn);
-  if (opening) take(opening, null, 0);
+  await take(() => playOpening(bundle.session, bundle.firstTurn), null, 0);
 
   const lines = scenario.turns;
   const maxTurns = scenario.maxTurns ?? lines?.length ?? DEFAULT_MAX_TURNS;
   const language = scenario.caller?.language ?? agentLanguage(bundle.runtime.settings.view());
+  let callerEnding: CallerEnding | null = null;
   let said = 0;
-  while (endedBy === null) {
+  while (endedBy === null && blocked.size === 0) {
     if (lines && said >= lines.length) {
       endedBy = "script";
       break;
@@ -286,54 +602,97 @@ export async function runScenario(params: {
       break;
     }
     let line = lines?.[said];
-    let hangsUpAfter = false;
+    let ends: CallerEnding | null = null;
     if (line === undefined) {
       try {
-        const answer = await nextCallerLine({ llm: params.simulator, caller: scenario.caller!, language, turns });
-        hangsUpAfter = answer.hangsUp;
+        const answer = await nextCallerLine({ llm: params.caller, caller: scenario.caller!, language, turns });
+        ends = answer.end && { done: true, ...answer.end };
         line = answer.line;
       } catch (error) {
         endedBy = "simulator";
-        stopReason = describe(error);
+        stopReason = describeProviderError(error);
         break;
       }
       if (!line) {
         endedBy = "caller";
+        callerEnding = ends;
         break;
       }
     }
     said += 1;
+    const spoken = line;
     // On an agent with `s2s` this text goes to the back office, whose turns carry no spoken rules.
-    take(await playTurn(bundle.session, line, undefined, !bundle.runtime.settings.s2s()), line, said);
-    if (endedBy === null && hangsUpAfter) endedBy = "caller";
+    await take(() => playTurn(bundle.session, spoken, undefined, !bundle.runtime.settings.s2s()), spoken, said);
+    if (ends) {
+      callerEnding = ends;
+      endedBy ??= "caller";
+    }
   }
-  const ended: ScenarioEndedBy = endedBy;
+  bundle.runtime.guardUnfakedTools(null);
+  stopNotingTools();
+  if (blocked.size > 0) return { blocked: [...blocked] };
+  // Turns set it from a callback, which the compiler does not follow.
+  const ended = endedBy as ScenarioEndedBy;
 
-  const checks = builtInChecks({
-    turns,
-    endedBy: ended,
-    ...(stopReason === undefined ? {} : { stopReason }),
-    unsaid: lines?.slice(said) ?? [],
-    maxTurns,
-  });
-  if (scenario.caller) checks.push(await judged(scenario, turns, ended, params.simulator));
-  checks.push(...(await authorChecks(scenario, turns)));
-  const notes = [
-    ...(fakes?.unused() ?? []).map((tool) => `the fake for ${tool} was never used: no call of ${tool} ran`),
-    ...(scenario.expect ? [] : ["this scenario has no checks of its own (expect), so only the built-in checks ran"]),
-  ];
+  // The agent hung up on a line of the caller's that did not say it was done: ask the caller.
+  if (ended === "agent" && scenario.caller && !callerEnding) {
+    callerEnding = await callerAfterHangUp(params.caller, scenario, language, turns);
+  }
 
   return {
-    name: params.name,
-    file: params.file,
-    mode: scenario.caller ? "simulated" : "scripted",
-    passed: checks.every((check) => check.pass),
-    endedBy: ended,
-    durationMs: Math.round(performance.now() - started),
-    turns,
-    checks,
-    notes,
+    record: {
+      format: "curb.conversation",
+      version: 1,
+      source: "scenario",
+      scenario: { name: params.name, file: params.file, mode: scenario.caller ? "simulated" : "scripted", run: params.run + 1 },
+      caller: scenario.caller ?? null,
+      experiments,
+      startedAt,
+      durationMs: Math.round(performance.now() - started),
+      turns,
+      tools: [...offered.values()],
+      ending: {
+        by: ended,
+        ...(stopReason === undefined ? {} : { reason: stopReason }),
+        unsaid: [...(lines?.slice(said) ?? [])],
+        maxTurns,
+        ...(providerError ? { providerError: true as const } : {}),
+        caller: callerEnding,
+      },
+      endState: endStateOf(bundle.runtime),
+      unusedFakes: fakes?.unused() ?? [],
+      usage: null,
+    },
   };
+}
+
+/** What the caller says about a call the agent ended; null when it cannot be asked or read. */
+async function callerAfterHangUp(
+  llm: AgentLlmClient,
+  scenario: Scenario,
+  language: string,
+  turns: readonly ScenarioTurn[],
+): Promise<CallerEnding | null> {
+  try {
+    const answer = await askCallerAfterHangUp({ llm, caller: scenario.caller!, language, turns });
+    if (!answer) return null;
+    return answer.done ? { done: true, ...answer.end } : { done: false, goalMet: null, reason: answer.wanted };
+  } catch {
+    // KEEP-JUSTIFIED: no answer IS the answer "the caller did not say"; the hang-up check reports it.
+    return null;
+  }
+}
+
+/** The agent's state as the conversation left it; null when the runtime cannot show it. */
+function endStateOf(runtime: AgentSiteRuntime): EndState | null {
+  try {
+    const { context, stateSnapshot } = runtime.snapshot();
+    const stores = Object.fromEntries(Object.entries(snapshotAgentStores(runtime).stores).map(([key, saved]) => [key, saved.values]));
+    return { stores, context: stateSnapshot, skillPath: context.path };
+  } catch {
+    // KEEP-JUSTIFIED: a runtime with no context IS the answer "no state"; state() says so when asked.
+    return null;
+  }
 }
 
 /** One turn as the report shows it: the reply as the caller heard it, the tool calls, the errors. */
@@ -358,6 +717,7 @@ function scenarioTurn(
     skillPath: runtime.snapshot().context.path,
     skipped: toolCalls.some((call) => call.name === SKIP_TURN_TOOL_NAME && call.ok),
     endedCall: false,
+    steps: played.steps,
   };
 }
 
@@ -387,65 +747,6 @@ export function toolCallsOf(
         })
       : [],
   );
-}
-
-/** The judge's verdict on a simulated caller's goal. A conversation that broke off is not judged. */
-async function judged(
-  scenario: Scenario,
-  turns: readonly ScenarioTurn[],
-  endedBy: ScenarioEndedBy,
-  llm: AgentLlmClient,
-): Promise<ScenarioCheck> {
-  if (endedBy === "error" || endedBy === "simulator") {
-    return goalCheck({ notJudged: "the conversation broke off before it ended" });
-  }
-  try {
-    return goalCheck(await judgeGoal({ llm, caller: scenario.caller!, turns, endedBy }));
-  } catch (error) {
-    return goalCheck({ notJudged: describe(error) });
-  }
-}
-
-/** The author's `expect` checks. Whatever it does wrong becomes a failed check that says so. */
-async function authorChecks(scenario: Scenario, turns: readonly ScenarioTurn[]): Promise<ScenarioCheck[]> {
-  if (!scenario.expect) return [];
-  let returned: unknown;
-  try {
-    returned = await scenario.expect(expectContext(turns));
-  } catch (error) {
-    return [{ name: "expect", pass: false, detail: `expect threw: ${describe(error)}` }];
-  }
-  if (!Array.isArray(returned)) {
-    return [
-      {
-        name: "expect",
-        pass: false,
-        detail: `expect must return a list of checks, e.g. [called("book_meeting")]; it returned ${preview(returned)}.`,
-      },
-    ];
-  }
-  return returned.map((check: unknown, index) => {
-    if (isCheck(check)) {
-      const { name, pass, detail } = check;
-      return { name, pass, ...(detail === undefined ? {} : { detail: String(detail) }) };
-    }
-    return {
-      name: `expect, entry ${index + 1}`,
-      pass: false,
-      detail: `${preview(check)} is not a check. Return checks such as called("book_meeting"), said("Tuesday") or check("what must hold", condition).`,
-    };
-  });
-}
-
-function isCheck(value: unknown): value is ScenarioCheck {
-  if (typeof value !== "object" || value === null) return false;
-  const check = value as Record<string, unknown>;
-  return typeof check.name === "string" && typeof check.pass === "boolean";
-}
-
-function preview(value: unknown): string {
-  const text = typeof value === "function" ? "a function" : JSON.stringify(value) ?? String(value);
-  return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 }
 
 function describe(error: unknown): string {

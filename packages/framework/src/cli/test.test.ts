@@ -9,6 +9,8 @@ import { AGENT_FIRST_TURN_PROMPT } from "../server/voice/livekit-host/call-openi
 import { LISA, bookingRuntime, booked, callsBook, readBackOf, says as booking, scripted, type Booking } from "../test-fixtures/booking.js";
 import { END_CALL_TOOL_NAME } from "../types.js";
 import { END_CALL_VOICE_STYLE } from "../voice-style.js";
+import { isJudgeRequest, judgeAnswer } from "../test-fixtures/conversations.js";
+import type { ScenarioResult } from "../testing/run.js";
 import { createTestProject } from "./test-project.js";
 import { parseTestArgs, simulationLlm, testCommand, type ScenarioReport, type TestHost } from "./test.js";
 import { typeCheckProject } from "./typecheck.js";
@@ -185,24 +187,26 @@ export default scenario({
     const simulatorRequests: AgentRunRequest[] = [];
     const simulator: AgentLlmClient = async (request) => {
       simulatorRequests.push(request);
-      if (request.systemPrompt.startsWith("You review")) {
-        return say("PASS: The agent recorded the callback request and confirmed it.");
+      if (isJudgeRequest(request)) {
+        const goal = { answer: "yes" as const, turn: 2, quote: "an advisor will call you back", reason: "The agent recorded the callback request and confirmed it." };
+        return say(judgeAnswer(request, { goal }));
       }
-      return say(callerLines.shift() ?? "[hang up]");
+      return say(callerLines.shift() ?? "[hang up: met - the callback is booked]");
     };
 
     const { code, printed } = await run(["--json"], root, fixtureHost({ llm: agent.llm, simulator }));
 
     expect(code).toBe(0);
-    const [result] = (JSON.parse(printed) as { scenarios: Array<Extract<ScenarioReport, { mode: string }>> }).scenarios;
+    const [result] = (JSON.parse(printed) as { scenarios: ScenarioResult[] }).scenarios;
     expect(result).toMatchObject({ name: "goal", mode: "simulated", passed: true, endedBy: "agent" });
     expect(result.checks.find((check) => check.name === "the caller reaches its goal")).toEqual({
       name: "the caller reaches its goal",
       pass: true,
       detail: "The agent recorded the callback request and confirmed it.",
+      evidence: { answer: "yes", turn: 2, quote: "an advisor will call you back" },
     });
-    // Three caller lines, then the judge: the agent hung up, so the caller was not asked again.
-    expect(simulatorRequests).toHaveLength(4);
+    // Three caller lines, the caller's word on the agent's hang-up, then the judge.
+    expect(simulatorRequests).toHaveLength(5);
     const [opening, second] = simulatorRequests;
     expect(opening.systemPrompt).toContain("Your goal for this call: Get an advisor to call back about the policy");
     expect(opening.systemPrompt).toContain("You speak English.");
@@ -210,10 +214,15 @@ export default scenario({
     expect(second.stateSnapshot).toEqual(
       expect.arrayContaining(["You: Hi, can an advisor call me back?", "Agent: Sure. What's your name, your number, and what is it about?"]),
     );
-    const judge = simulatorRequests[3];
+    expect(result.runs[0].ending.caller).toEqual({ done: true, goalMet: true, reason: "the callback is booked" });
+    expect(result.checks.find((check) => check.name === "the agent does not hang up on a caller who still wants something")).toMatchObject({
+      pass: true,
+      detail: "the agent ended the call at turn 3, and the caller was done",
+    });
+    const judge = simulatorRequests[4];
     expect(judge.stateSnapshot).toEqual(
       expect.arrayContaining([
-        '(The agent called the tool request_callback: ok. Input: {"name":"Max Mustermann","phone":"0151 2345678","topic":"policy"})',
+        '[turn 2] (The agent called the tool request_callback: ok. Input: {"name":"Max Mustermann","phone":"0151 2345678","topic":"policy"}. Data: {"name":"Max Mustermann","phone":"0151 2345678","topic":"policy"})',
         "(The agent ended the call.)",
       ]),
     );
