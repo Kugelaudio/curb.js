@@ -20,9 +20,10 @@ npm run dev            # open http://127.0.0.1:4000
 
 `npm run dev` opens the **preview**, where you talk to your agent: type, or press **Start call**
 and speak. The starter agent is **Juno**, a personal assistant. Ask her "how does this work?",
-then make `src/agent/agent.tsx` your own.
+then make `src/agent/agent.tsx` your own, or open the folder in Claude Code or Cursor and
+describe the agent you want.
 
-## Your first agent
+## What an agent looks like
 
 A receptionist for a bike workshop, in `src/agent/agent.tsx`:
 
@@ -81,7 +82,7 @@ repair costs.
 
 ## How it works
 
-You write the agent as React components:
+The agent is React components, written by you or your coding agent:
 
 - who it is, in a system prompt
 - what it can do, as tools: functions with typed input
@@ -95,15 +96,26 @@ Curb runs everything else:
 - the model's request on every turn, with only the instructions and tools your state allows
 - a preview where you talk to the agent and see what the model saw
 
+Your components are the prompt. Curb renders them the way React renders UI, and the output
+is the model's request: instructions, knowledge and tools. When your state changes, the request
+changes with it, and a tool your code does not render is not in it.
+
+## Providers
+
+Every provider is a prop. Speech-to-text, the LLM and text-to-speech are set on `<Agent>`,
+hosted or self-hosted. Swapping one is a single line.
+
 The defaults run speech-to-text, the LLM and text-to-speech on KugelAudio, so
 `curb login` is all the setup you need. Flags to `npm create curb.js` pick
 Anthropic, OpenAI, Azure, Deepgram, ElevenLabs, Cartesia or any OpenAI-compatible
 endpoint instead.
 
-> **The package is `curb.js`, not `curb`.** `curb` on npm is an unrelated templating
-> package, so `npm i curb` installs the wrong thing. Start with `npm create curb.js`
-> rather than `npm i curb.js`: the project depends on the framework through an alias,
-> `"curb": "npm:curb.js@<version>"`, and your code imports from `"curb"`.
+## Package name
+
+The package is `curb.js`, not `curb`. `curb` on npm is an unrelated templating
+package, so `npm i curb` installs the wrong thing. Start with `npm create curb.js`
+rather than `npm i curb.js`: the project depends on the framework through an alias,
+`"curb": "npm:curb.js@<version>"`, and your code imports from `"curb"`.
 
 ## Documentation
 
