@@ -15,6 +15,18 @@ export function addAppointment(book: Book, appointment: Omit<Appointment, "id">)
   };
 }
 
+/** What a model writes into a name field when the caller never said their name. */
+const PLACEHOLDER_NAMES = ["caller", "the caller", "customer", "client", "user", "guest", "unknown", "anonymous", "name", "none", "na", "tbd"];
+
+/**
+ * Whether `name` is a name a person gave, not a word that stands in for one: a booking under
+ * "Caller" is one nobody can be greeted by when they arrive.
+ */
+export function isPersonName(name: string): boolean {
+  const letters = name.toLowerCase().replace(/[^\p{L}\s]/gu, "").replace(/\s+/g, " ").trim();
+  return letters !== "" && !PLACEHOLDER_NAMES.includes(letters);
+}
+
 export function removeAppointment(book: Book, id: string) {
   return {
     book: { ...book, appointments: book.appointments.filter((a) => a.id !== id) },

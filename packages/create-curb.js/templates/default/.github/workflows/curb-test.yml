@@ -1,0 +1,47 @@
+name: curb test
+
+# Runs the agent's checks and its conversation scenarios on every pull request. The scenarios
+# call the agent's LLM, so the job needs KUGELAUDIO_API_KEY as a repository secret (Settings >
+# Secrets and variables > Actions), an API key from the KugelAudio dashboard. An agent on
+# another provider needs that provider's key here instead, under the name its .env uses.
+#
+# A pull request from a fork gets no secrets, so the scenarios are skipped there and only
+# `curb check` runs.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: curb-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KUGELAUDIO_API_KEY: ${{ secrets.KUGELAUDIO_API_KEY }}
+      # CPU binaries ship in npm; this skips a download the tests do not need.
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx curb check
+      # Each simulated-caller scenario runs three times and must pass every time; scripted
+      # scenarios run once. The report lands in the job summary, and --max-tokens stops the
+      # job cleanly (exit code 3) instead of letting a loop run up a bill. The two scenarios
+      # this project starts with use roughly 60,000 to 90,000 tokens this way, so 400,000 is
+      # a starting point with room for a few more: read the Tokens line of a run, and set
+      # the budget to two or three times what your scenarios use.
+      - name: npx curb test
+        if: env.KUGELAUDIO_API_KEY != ''
+        run: npx curb test --runs 3 --max-tokens 400000

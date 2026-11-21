@@ -11,7 +11,7 @@ import {
   z,
 } from "curb";
 import { kugelaudio } from "curb/providers";
-import { type Appointment, addAppointment, removeAppointment } from "./calendar.js";
+import { type Appointment, addAppointment, isPersonName, removeAppointment } from "./calendar.js";
 
 /**
  * Lena, the booking agent of Birch Street Studio, a made-up hair and beauty studio. This file is
@@ -63,7 +63,7 @@ const bookSchema = z.object({
   service: z.enum(SERVICES).describe("The service the caller wants."),
   date: z.iso.date().describe("The day, as YYYY-MM-DD."),
   time: z.string().regex(/^\d{2}:00$/).describe("The start time on the hour, 24-hour HH:00, one of the free slots."),
-  name: z.string().min(1).describe("The caller's name, as they said it."),
+  name: z.string().min(1).describe("The caller's name, as they said it. Ask for it first if they have not said it."),
 });
 
 const cancelSchema = z.object({
@@ -108,6 +108,11 @@ function Calendar() {
           name="book_appointment"
           description="Book an appointment in a free slot. Call it only after the caller confirmed service, day, time and name."
           onSubmit={(input) => {
+            // Structural, like the slot checks below: the model cannot book under a stand-in
+            // for a name it never asked for.
+            if (!isPersonName(input.name)) {
+              return { ok: false, message: `"${input.name}" is not a name. Ask the caller for their name, then book with it.` };
+            }
             if (!isOpenDay(input.date) || !hours.includes(input.time)) {
               return { ok: false, message: "That is outside opening hours. Offer another slot from list_free_slots." };
             }
