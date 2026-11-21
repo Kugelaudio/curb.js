@@ -49,6 +49,8 @@ naming it.
 | `AGENT_LLM_TIMEOUT_MS` | `60000` | How long a model may take to answer |
 | `KUGEL_CONVERSATIONS_DB` | a local file | Where conversations are recorded. `off` turns it off ([The preview](./preview.md#recorded-conversations)) |
 | `CURB_NO_OPEN` | | `1` keeps `curb dev` from opening the browser |
+| `CURB_TEST_CALLER_MODEL` | a small model of the agent's provider | The model that plays the simulated caller in `curb test`: a model of the agent's provider, or `<provider>:<model>`. `--caller-model` wins ([Testing](./testing.md#what-the-judge-looks-for)) |
+| `CURB_TEST_JUDGE_MODEL` | a small model of the agent's provider | The same for the judge. `--judge-model` wins |
 | `CURB_NPM_REGISTRY` | `https://registry.npmjs.org` | Where `curb upgrade` looks for new versions. Set it to a mirror |
 | `MCP_SERVERS_FILE` | `mcp.servers.json` | The servers added in the preview |
 | `MCP_AUTH_DIR` | `.mcp-auth` | Where MCP sign-ins are stored |

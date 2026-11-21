@@ -11,6 +11,7 @@ my-agent/
     agent.tsx         exports `agent` (defineAgent): the agent level, where every conversation
                       starts: prompts, config, skills index, tools every skill has
     <name>/skill.tsx  one folder per skill, opened when needed; nested folders are sub-skills
+    *.scenario.ts     optional conversations `curb test` plays, anywhere under src/
 ```
 
 The voice session (speech, turn-taking, interruptions, the production worker) is the
@@ -39,7 +40,7 @@ These stay out of git. The project's `.gitignore` already lists them.
 |---|---|
 | `.env` | Your keys and settings. See [Configuration](./configuration.md) |
 | `.data/` | Recorded conversations, by default `.data/conversations.jsonl` |
-| `.curb/` | Generated files, and `link.json`, the hosted agent this project deploys to |
+| `.curb/` | Generated files, `link.json` (the hosted agent this project deploys to), and `test-runs/`, the conversations of the last `curb test` runs ([Saved test runs](./test-runs.md)) |
 | `.mcp-auth/` | Tokens of MCP servers you signed in to |
 
 `mcp.servers.json` holds the MCP servers you added in the preview. It never holds tokens.
