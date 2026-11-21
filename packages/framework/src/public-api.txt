@@ -262,17 +262,25 @@
 ./providers kugelaudio
 ./providers openai
 ./providers openaiCompatible
+./testing CallerBehaviour
+./testing CallerPersona
+./testing ExpectedCall
+./testing JudgeFinding
 ./testing Scenario
 ./testing ScenarioCaller
 ./testing ScenarioCheck
 ./testing ScenarioConfirmation
 ./testing ScenarioDefinition
+./testing ScenarioEvidence
 ./testing ScenarioExpectContext
 ./testing ScenarioFake
 ./testing ScenarioToolCall
 ./testing ScenarioTurn
 ./testing ScenarioTurnError
+./testing StyleLimits
+./testing StyleMetric
 ./testing buildCallEvent
+./testing personas
 ./testing runHook
 ./testing scenario
 curb build
@@ -289,6 +297,18 @@ curb secrets
 curb server
 curb start
 curb test
+curb test --allow-real-tools
+curb test --caller-model
+curb test --concurrency
+curb test --json
+curb test --judge-model
+curb test --max-error-rate
+curb test --max-tokens
+curb test --no-early-stop
+curb test --rejudge
+curb test --report
+curb test --runs
+curb test --style
 curb upgrade
 curb upgrade --check
 curb upgrade --preview

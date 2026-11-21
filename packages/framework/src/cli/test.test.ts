@@ -97,7 +97,8 @@ describe("curb test", () => {
 
   async function run(args: string[], root: string, host: TestHost) {
     const out: string[] = [];
-    const code = await testCommand(args, root, { host, out: (text) => void out.push(text) });
+    // An empty environment: no model picked by the machine's variables, no job summary written.
+    const code = await testCommand(args, root, { host, out: (text) => void out.push(text), env: {} });
     return { code, printed: out.join("") };
   }
 
