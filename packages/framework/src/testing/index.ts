@@ -59,6 +59,7 @@ export type {
   ScenarioEvidence,
   ScenarioExpectContext,
   ScenarioFake,
+  ScenarioRunResult,
   ScenarioToolCall,
   ScenarioTurn,
   ScenarioTurnError,

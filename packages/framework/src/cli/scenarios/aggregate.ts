@@ -1,4 +1,4 @@
-import { FINDINGS, passRate as rateOf, styleNumbers, type JudgeFinding, type ScenarioCheck, type ScenarioTurn } from "../../testing/index.js";
+import { FINDINGS, passRate as rateOf, styleNumbers, type ScenarioCheck, type ScenarioTurn } from "../../testing/index.js";
 import { styleLimitLine } from "./style.js";
 import type {
   ConversationEnding,
@@ -60,12 +60,12 @@ export type ScenarioStats = {
   maxErrorRate: number;
 };
 
-/** How one check did across the completed runs it was put to. */
-export type CheckStats = { name: string; passed: number; total: number; passRate: number; unknown: number };
+/** How one check did across the completed runs it was put to. A `reportOnly` one (`note`) fails nothing. */
+export type CheckStats = { name: string; passed: number; total: number; passRate: number; unknown: number; reportOnly?: true };
 
-/** How often the judge found one of its built-in findings, over the runs it judged. */
+/** How often the judge found one of its findings, built-in or the scenario's own, over the runs it judged. */
 export type FindingStats = {
-  id: JudgeFinding;
+  id: string;
   question: string;
   found: number;
   unknown: number;
@@ -148,6 +148,8 @@ export function aggregateScenario(params: {
   durationMs: number;
   /** Notes about the scenario as a whole, shown after the run's own. */
   notes?: readonly string[];
+  /** The scenario's checks across its runs (`expectRuns`), and the tokens they used. */
+  acrossRuns?: { checks: readonly ScenarioCheck[]; usage: RunUsage | null };
 }): ScenarioResult {
   const { settings, maxErrorRate } = params;
   const runs = [...params.conversations].sort((left, right) => left.scenario.run - right.scenario.run).map(scenarioRun);
@@ -158,6 +160,8 @@ export function aggregateScenario(params: {
     pass: limit.pass,
     detail: styleLimitLine(limit),
   }));
+  const acrossRuns = [...(params.acrossRuns?.checks ?? [])];
+  const failsScenario = (check: ScenarioCheck) => !check.pass && !check.reportOnly && !check.notJudged;
   const stats: ScenarioStats = {
     runs: settings.runs,
     ran: runs.length,
@@ -174,7 +178,7 @@ export function aggregateScenario(params: {
   // Runs that failed are evidence whatever else happened. Without them, a scenario whose runs
   // mostly could not be assessed is an error, not a pass.
   const outcome: RunOutcome =
-    (passRate !== null && passRate < settings.minPassRate) || styleChecks.some((check) => !check.pass)
+    (passRate !== null && passRate < settings.minPassRate) || styleChecks.some((check) => !check.pass) || acrossRuns.some(failsScenario)
       ? "fail"
       : passRate === null || stats.errorRate > maxErrorRate
         ? "error"
@@ -189,16 +193,16 @@ export function aggregateScenario(params: {
     endedBy: shown.endedBy,
     durationMs: params.durationMs,
     turns: shown.turns,
-    checks: [...shown.checks, ...styleChecks],
+    checks: [...shown.checks, ...styleChecks, ...acrossRuns],
     notes: [...shown.notes, ...(params.notes ?? [])],
     outcome,
     flaky: passed > 0 && failed > 0,
     stats,
     checkStats: checkStats(runs),
-    findings: findingStats(runs),
+    findings: findingStats(runs, settings.findings ?? {}),
     variants: variantStats(runs),
     style,
-    usage: sumUsage(runs.map((run) => run.usage)),
+    usage: sumUsage([...runs.map((run) => run.usage), params.acrossRuns?.usage ?? null]),
     runs,
   };
 }
@@ -210,7 +214,7 @@ function checkStats(runs: readonly ScenarioRun[]): CheckStats[] {
     for (const check of run.checks) {
       // A check the judge never answered was not put to the run: it is in no rate.
       if (check.notJudged) continue;
-      const entry = stats.get(check.name) ?? { name: check.name, passed: 0, total: 0, passRate: 0, unknown: 0 };
+      const entry = stats.get(check.name) ?? { name: check.name, passed: 0, total: 0, passRate: 0, unknown: 0, ...(check.reportOnly ? { reportOnly: true as const } : {}) };
       entry.total += 1;
       if (check.pass) entry.passed += 1;
       if (check.evidence?.answer === "unknown") entry.unknown += 1;
@@ -224,15 +228,17 @@ function checkStats(runs: readonly ScenarioRun[]): CheckStats[] {
 /** Longest list of examples a finding carries. */
 const MAX_EXAMPLES = 3;
 
-function findingStats(runs: readonly ScenarioRun[]): FindingStats[] {
+/** The built-in findings, then the scenario's own (`own`), each with how often it was found. */
+function findingStats(runs: readonly ScenarioRun[], own: Readonly<Record<string, string>>): FindingStats[] {
   const judged = runs.filter((run) => run.judge !== null);
   if (judged.length === 0) return [];
-  return (Object.keys(FINDINGS) as JudgeFinding[]).map((id) => {
+  const questions: Record<string, string> = { ...own, ...FINDINGS };
+  return [...Object.keys(FINDINGS), ...Object.keys(own).filter((id) => !Object.hasOwn(FINDINGS, id))].map((id) => {
     const answers = judged.flatMap((run) => (run.judge?.answers ?? []).filter((answer) => answer.id === id).map((answer) => ({ run: run.run, ...answer })));
     const found = answers.filter((answer) => answer.answer === "yes");
     return {
       id,
-      question: FINDINGS[id],
+      question: questions[id]!,
       found: found.length,
       unknown: answers.filter((answer) => answer.answer === "unknown").length,
       total: judged.length,

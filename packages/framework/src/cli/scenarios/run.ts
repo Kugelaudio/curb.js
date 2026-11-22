@@ -12,9 +12,10 @@ import {
   type TestHost,
 } from "../../testing/index.js";
 import { aggregateScenario, scenarioRun, type ScenarioResult, type ScenarioRun } from "./aggregate.js";
-import { assessConversation, assessmentSettings } from "./assess.js";
+import { acrossRunsChecks, assessConversation, assessmentSettings } from "./assess.js";
 import type { ExperimentDeclaration, SavedConversation, SavedScenarioSettings } from "./types.js";
 import { runUsage } from "./usage.js";
+import type { RunUsage } from "./types.js";
 
 /**
  * How `curb test` runs a scenario, from the public functions of `curb/testing`: each run is
@@ -55,6 +56,7 @@ export function scenarioSettings(params: {
     runs: plannedRuns(scenario, params.runs),
     minPassRate: scenario.minPassRate ?? 1,
     expectations: [...(scenario.expectations ?? [])],
+    ...(scenario.findings ? { findings: { ...scenario.findings } } : {}),
     failOn: [...(scenario.failOn ?? [])],
     style: { ...scenario.style },
   };
@@ -99,7 +101,12 @@ export async function playRun(
   params.onCall?.(call);
   const callerModel = await testModel({ host, role: "caller", ...(params.callerModel === undefined ? {} : { model: params.callerModel }) });
   const judgeModel = await testModel({ host, role: "judge", ...(params.judgeModel === undefined ? {} : { model: params.judgeModel }) });
-  const caller = scenario.caller ? simulatedCaller(scenario.caller, { model: callerModel }) : scriptedCaller(scenario.turns!);
+  const caller =
+    typeof scenario.caller === "function"
+      ? scenario.caller
+      : scenario.caller
+        ? simulatedCaller(scenario.caller, { model: callerModel })
+        : scriptedCaller(scenario.turns!);
   const played = await converse(call, caller, {
     ...(scenario.maxTurns === undefined ? {} : { maxTurns: scenario.maxTurns }),
     ...(params.onTurn ? { onTurn: params.onTurn } : {}),
@@ -152,13 +159,34 @@ export async function runScenario(
     },
     { concurrency: params.concurrency ?? DEFAULT_CONCURRENCY, host: params.host },
   );
-  return aggregateScenario({
+  return summarizeScenario({
+    scenario: params.scenario,
+    host: params.host,
+    ...(params.judgeModel === undefined ? {} : { judgeModel: params.judgeModel }),
     settings,
     conversations,
     maxErrorRate: params.maxErrorRate ?? DEFAULT_MAX_ERROR_RATE,
     durationMs: Math.round(performance.now() - started),
     notes: uncoveredVariants(declared, params.scenario, conversations.map((conversation) => conversation.experiments)),
   });
+}
+
+/**
+ * A scenario's runs summed up into one result: its checks across all runs first (`expectRuns`,
+ * when the scenario is in the project and has them), on a judge model of their own, then
+ * `aggregateScenario`.
+ */
+export async function summarizeScenario(
+  params: Parameters<typeof aggregateScenario>[0] & { scenario: Scenario | null; host: TestHost; judgeModel?: string },
+): Promise<ScenarioResult> {
+  const { scenario, host, judgeModel, ...rest } = params;
+  let acrossRuns: { checks: ScenarioResult["checks"]; usage: RunUsage | null } | undefined;
+  if (scenario?.expectRuns) {
+    const judge = await testModel({ host, role: "judge", ...(judgeModel === undefined ? {} : { model: judgeModel }) });
+    const checks = await acrossRunsChecks(scenario.expectRuns, rest.conversations, judge);
+    if (checks) acrossRuns = { checks, usage: runUsage({ agent: null, caller: null, judge: judge.usage() }) };
+  }
+  return aggregateScenario({ ...rest, ...(acrossRuns ? { acrossRuns } : {}) });
 }
 
 /**

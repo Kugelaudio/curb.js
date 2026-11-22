@@ -387,7 +387,7 @@ export const FINDINGS: Readonly<Record<JudgeFinding, string>> = JUDGE_FINDINGS;
 export type Finding = { call: string; kind: string; turn: number | null; quote: string; reason: string };
 
 /** A model the judge asks: a `testModel`, or any function of the same shape. */
-type JudgeModel = ((system: string, input: string) => Promise<string>) & { readonly model?: string | null };
+export type JudgeModel = ((system: string, input: string) => Promise<string>) & { readonly model?: string | null };
 
 /** The judge's answers about one conversation, and its yes answers to the findings as findings. */
 export type Judgement = JudgeResult & { findings: Finding[] };

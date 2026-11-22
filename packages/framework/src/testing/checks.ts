@@ -1,4 +1,5 @@
 import { AGENT_LANGUAGES, fallbackReplies } from "../llm/localized.js";
+import { ask, judgeView, type JudgeModel } from "./judge.js";
 import { normalizeLlmPunctuation } from "../llm/punctuation.js";
 import type { CallerEnding, ConversationRecord, EndState } from "./record.js";
 import type { ExpectedCall, ScenarioCheck, ScenarioExpectContext, ScenarioToolCall, ScenarioTurn } from "./scenario.js";
@@ -80,10 +81,42 @@ export function builtInChecks(record: ConversationRecord): ScenarioCheck[] {
 
 /**
  * The helpers an `expect` function receives, over a finished conversation: `called`, `said`,
- * `stateMatches` and the rest make the same checks of `record` as they do in a scenario.
+ * `stateMatches` and the rest make the same checks of `record` as they do in a scenario. `ask`
+ * and `model` ask `options.model`, the judge's model of `curb test`; without one they refuse.
  */
-export function checksOf(record: Pick<ConversationRecord, "turns" | "endState">): ScenarioExpectContext {
-  return expectContext(record.turns, record.endState);
+export function checksOf(
+  record: Pick<ConversationRecord, "turns" | "endState"> & Partial<ConversationRecord>,
+  options: { model?: JudgeModel } = {},
+): ScenarioExpectContext {
+  const judged: ConversationRecord = {
+    format: "curb.conversation",
+    version: 1,
+    source: "call",
+    experiments: {},
+    startedAt: null,
+    durationMs: 0,
+    unusedFakes: [],
+    usage: null,
+    ending: { by: null, unsaid: [], maxTurns: 0, caller: null },
+    ...record,
+    // A question of your own is about what was said, not about a simulated caller's goal.
+    caller: null,
+  };
+  const judgeModel = (helper: string) => {
+    if (options.model) return options.model;
+    throw new Error(`${helper} asks a judge model, and none was given here. Fix: checksOf(record, { model: await testModel() }); in a scenario, curb test gives it the run's judge model.`);
+  };
+  return {
+    ...expectContext(record.turns, record.endState),
+    transcriptText: judgeView({ turns: judged.turns, endedBy: judged.ending.by, caller: null, ...(judged.tools ? { tools: judged.tools } : {}) }).join("\n"),
+    ask: async (question) => {
+      if (typeof question !== "string" || !question.trim()) {
+        throw new Error('ask() takes one sentence about the call that a judge answers with yes or no, e.g. ask("The agent sounds like a person on the phone.").');
+      }
+      return ask(judged, question.trim(), { model: judgeModel("ask()") });
+    },
+    model: async (system, input) => judgeModel("model()")(system, input),
+  };
 }
 
 /** The built-in checks of a conversation, in report order. */
@@ -199,7 +232,10 @@ export function repeatedSentences(text: string): string[] {
 
 /** The helpers an `expect` function receives. `endState` is the agent's state when the call
  * ended; null when it could not be read. */
-export function expectContext(turns: readonly ScenarioTurn[], endState: EndState | null = null): ScenarioExpectContext {
+export function expectContext(
+  turns: readonly ScenarioTurn[],
+  endState: EndState | null = null,
+): Omit<ScenarioExpectContext, "transcriptText" | "ask" | "model"> {
   const calls = turns.flatMap((turn) => turn.toolCalls.map((call) => ({ ...call, at: label(turn) })));
   const ranCalls = (tool: string) => calls.filter((call) => call.name === tool && call.ok);
   const why = (call: (typeof calls)[number]) =>
@@ -282,6 +318,7 @@ export function expectContext(turns: readonly ScenarioTurn[], endState: EndState
         : { name: "the agent ended the call", pass: false, detail: "the agent never called end_call" };
     },
     check: (name, pass, detail) => ({ name, pass, ...(detail === undefined ? {} : { detail }) }),
+    note: (check) => ({ ...check, reportOnly: true }),
   };
 }
 

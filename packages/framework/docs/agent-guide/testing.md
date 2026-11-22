@@ -301,6 +301,12 @@ The report then shows each run and the pass rate
 ([Running a scenario more than once](#running-a-scenario-more-than-once)). The
 rest of this section is reference.
 
+### Build your own
+
+A scenario is the ready-made path, and the functions under it are yours too: a test in vitest
+that drives a call, a script with your own caller and judge, findings of your own that `curb test`
+and `curb review` ask. [Build your own tests](./testing-foundation.md) shows each in a few lines.
+
 ### Scenarios and callers
 
 A scenario may also set `name` (default: the file name, `booking` above),
@@ -397,6 +403,18 @@ an error, not a failure (see [Pass, fail or error](#pass-fail-or-error)). The
 check compares what can be compared by its characters: an email address, a
 number of five or more digits, a reference such as `KV-123`. A made-up name or a
 number spelled out in words is not caught.
+
+### A caller of your own
+
+`caller` may also be a function: from the turns so far to the next line, or `null` to hang up
+(a `Caller`, [Testing API](./testing-api.md#simulatedcaller)). The scenario runs `runs` times as a
+simulated one does, `maxTurns` defaults to 12, and the judge reads every run; there is no goal to
+judge and no invented fact to look for. A caller that throws makes the run an error, not a
+failure. It is called for every run, so derive its line from `turns`, not from state of its own:
+
+```ts
+caller: (turns) => ["Hi, is the shop open on Sunday?", "And on Monday?"][turns.filter((turn) => turn.caller !== null).length] ?? null,
+```
 
 ### How a call ends
 
@@ -571,6 +589,23 @@ transcript. Write sentences a stranger could check:
 Scripted scenarios take `expectations` too. A scripted scenario without them
 calls no judge.
 
+### Asking the judge in `expect`, and notes
+
+`expect` also gets `ask(question)`, one sentence of your own answered by the run's judge model
+with the turn and a quote, as an expectation is; `model(system, input)`, that model itself; and
+`transcriptText`, the call as the judge reads it, to give `model` as the input. `note(check)` makes
+any check report-only: it is shown as `info` with its result and counted across runs, and it fails
+no run and no scenario:
+
+```ts
+expect: async ({ ask, model, note, check, transcriptText }) => {
+  const rating = await model("Does the agent sound warm? Answer yes or no, then why.", transcriptText);
+  return [note(await ask("The agent sounds like a person on the phone.")), note(check("sounds warm", /^yes/i.test(rating), rating))];
+},
+```
+
+Both run again on `--rejudge`. A request of `model` that fails makes the run an error.
+
 ### What the judge looks for
 
 The same judge call answers six questions about every conversation it reads.
@@ -627,6 +662,20 @@ others with `--judge-model` and `--caller-model`: a model of the agent's provide
 `<provider>:<model>` with `openai`, `anthropic` or `kugelaudio`, whose key must
 be in `.env`. Every result names the models and the version of the judge's
 prompt, so answers from different judges are not compared as one.
+
+### Findings of your own
+
+`findings` adds findings of your own, by id (lowercase words joined by underscores), one sentence
+each. The judge asks them in the same request as its own, and they are counted, reported, saved
+and re-judged the same way. They fail nothing unless `failOn` names them. Keep them in one module
+and import it into each scenario that should ask them; `curb review` asks them of real calls too:
+
+```ts
+import { naturalness } from "./naturalness.js"; // { canned_closing: "The agent ends a reply with a stock line." }
+
+findings: naturalness,
+failOn: ["canned_closing"],
+```
 
 ### Running a scenario more than once
 
@@ -691,6 +740,22 @@ PASS books a haircut (flaky: 4/5 run(s) passed, 13.6s)
   `Slowed down by the provider's rate limit: 3 wait(s), 42 s, then 1
   conversation(s) at a time.` A run that is throttled every time needs a lower
   `--concurrency`, or a higher limit at the provider.
+
+### Checks across runs
+
+`expectRuns` is called once after the last run, with every completed run: its `record`, its
+`checks`, its `outcome`, and the helpers of `expect` over its conversation (`called`, `said`,
+`transcript`, `ask`, ...). It returns checks, made with the `check`, `note` and `model` it gets
+as a second argument. They are named `across runs: <name>`, after the scenario's other checks in
+the terminal report and in `checks` of `--json`, and in a table of their own in the Markdown
+report. A failed one fails the scenario, however many runs passed:
+
+```ts
+expectRuns: (runs, { check }) => {
+  const booked = runs.filter((run) => run.called("book_meeting").pass).length;
+  return [check("books on most runs", booked >= runs.length - 1, `${booked} of ${runs.length}`)];
+},
+```
 
 ### Pass, fail or error
 

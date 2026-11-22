@@ -6,7 +6,7 @@ import { routeConsoleToStderr } from "./headless-project.js";
 import { NOT_ASKED, REVIEW_FINDINGS, findingsOf, formatReview, recordsTools, reviewAsks, type ReviewReport } from "./review-report.js";
 import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY } from "./scenarios/run.js";
 import { runUsage } from "./scenarios/usage.js";
-import { parseOptions, throttledBy } from "./test.js";
+import { parseOptions, projectFindings, throttledBy } from "./test.js";
 
 /** Conversations of the `curb dev` store that are reviewed when no path is given. */
 const DEFAULT_LAST = 20;
@@ -16,7 +16,8 @@ export const REVIEW_USAGE = `Usage: curb review [<file or folder>...] [options]
 Reads many calls and reports what goes wrong on them, as patterns: what the agent does wrong
 in one sentence, on how many calls, with quotes from them, and a scenario that would reproduce
 it. The judge of curb test answers its questions about each call, a few calls at a time, and
-one more request sorts the findings into patterns. The agent is not run.
+one more request sorts the findings into patterns. The findings the project's scenarios give
+(findings) are asked too. The agent is not run.
 
 Without a path, the last ${DEFAULT_LAST} conversations of curb dev are reviewed. A path is a file, or a
 folder whose .json, .jsonl, .md and .txt files are read. A file is one of:
@@ -106,6 +107,8 @@ export async function reviewCommand(
 
   const restoreConsole = routeConsoleToStderr();
   try {
+    // The findings the project's scenarios give are asked of every call too.
+    const own = await projectFindings(projectRoot);
     const host = options.host ?? projectHost();
     const before = host.throttle?.stats();
     // One model for every request: a model without a key is refused here, before any call.
@@ -121,7 +124,8 @@ export async function reviewCommand(
       calls,
       async (call): Promise<Finding[] | { call: string; reason: string }> => {
         // A review judges what was said, not a goal written down for a test.
-        const result = await judge({ ...call, caller: null }, { ...reviewAsks(call), model }).then(
+        const asks = reviewAsks(call);
+        const result = await judge({ ...call, caller: null }, { ...asks, findings: { ...asks.findings, ...own.findings }, model }).then(
           (answers) => findingsOf(call, answers),
           (error: unknown) => ({ call: call.id!, reason: error instanceof Error ? error.message : String(error) }),
         );
@@ -136,7 +140,7 @@ export async function reviewCommand(
     const withFindings = judged.filter((ofCall) => ofCall.length > 0).length;
     const found = judged.flat();
     if (found.length > 0) progress(`Sorting ${found.length} finding(s) into patterns.`);
-    const { patterns, notes } = await groupFindings(found, { model, calls: judged.length, kinds: REVIEW_FINDINGS });
+    const { patterns, notes } = await groupFindings(found, { model, calls: judged.length, kinds: { ...REVIEW_FINDINGS, ...own.findings } });
 
     const notAsked = (lacks: (call: ConversationRecord) => boolean, { questions, of }: (typeof NOT_ASKED)[keyof typeof NOT_ASKED]) => {
       const count = calls.filter(lacks).length;
@@ -148,7 +152,7 @@ export async function reviewCommand(
       patterns,
       notAsked: [...notAsked((call) => !recordsTools(call), NOT_ASKED.tools), ...notAsked((call) => call.ending.by === null, NOT_ASKED.ending)],
       notJudged,
-      notes: [...(ignored.length > 0 ? [`Left out ${ignored.length} file(s) that hold no calls in a shape curb review reads: ${ignored.join(", ")}.`] : []), ...notes],
+      notes: [...(ignored.length > 0 ? [`Left out ${ignored.length} file(s) that hold no calls in a shape curb review reads: ${ignored.join(", ")}.`] : []), ...own.notes, ...notes],
       judgeModel,
       judgePromptVersion: judge.promptVersion,
       usage: runUsage({ agent: null, caller: null, judge: model.usage() }),

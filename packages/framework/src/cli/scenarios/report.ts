@@ -1,6 +1,7 @@
 import type { ScenarioCheck, ScenarioConfirmation, ScenarioToolCall, ScenarioTurn } from "../../testing/index.js";
 import { END_CALL_TOOL_NAME, SKIP_TURN_TOOL_NAME } from "../../types.js";
 import type { FindingStats, ScenarioResult, ScenarioRun } from "./aggregate.js";
+import { ACROSS_RUNS } from "./assess.js";
 import { styleLine } from "./style.js";
 import type { RunUsage, TestModels, ThrottleStats } from "./types.js";
 
@@ -102,21 +103,28 @@ function evidenceText(turn: number | null, quote: string | null, earlierTurn?: n
   return [turn === null ? "" : `turn ${turn}`, quote ? JSON.stringify(quote) : "", said].filter(Boolean).join(" ");
 }
 
-/** How a check's line starts: a check the judge never answered is neither passed nor failed. */
-const checkMark = (check: ScenarioCheck) => (check.notJudged ? "skip" : check.pass ? "pass" : "FAIL");
+/** How a check's line starts: a check the judge never answered is neither passed nor failed, and
+ * a report-only one (`note`) fails nothing, as `report` prints them. */
+const checkMark = (check: ScenarioCheck) => (check.notJudged ? "skip" : check.reportOnly ? "info" : check.pass ? "pass" : "FAIL");
+
+/** A check that fails its run. */
+const fails = (check: ScenarioCheck) => !check.pass && !check.notJudged && !check.reportOnly;
+
+/** A check's name as its line shows it: a report-only one that did not pass says so. */
+const shownName = (check: ScenarioCheck) => (check.reportOnly && !check.pass && !check.notJudged ? `${check.name} (did not pass)` : check.name);
 
 function checkLines(checks: readonly ScenarioCheck[]): string[] {
   return checks.flatMap((check) => {
     const [first = "", ...more] = (check.detail ?? "").split("\n");
     const pointed = check.evidence ? evidenceText(check.evidence.turn, check.evidence.quote) : "";
     return [
-      `  ${checkMark(check)}  ${check.name}${first ? `: ${first}` : ""}${pointed ? ` (${pointed})` : ""}`,
+      `  ${checkMark(check)}  ${shownName(check)}${first ? `: ${first}` : ""}${pointed ? ` (${pointed})` : ""}`,
       ...more.map((line) => `        ${line}`),
     ];
   });
 }
 
-/** One line per built-in finding the judge found in a run, with the turn and words that show it. */
+/** One line per finding the judge found in a run, built-in or the scenario's own, with the turn and words that show it. */
 function findingLines(run: Pick<ScenarioRun, "judge">): string[] {
   return (run.judge?.answers ?? [])
     .filter((answer) => answer.kind === "finding" && answer.answer === "yes")
@@ -148,7 +156,7 @@ export function formatRunLine(run: ScenarioRun, runs: number): string {
   const took = `(${callerTurns(run.turns)} caller turn(s), ${seconds(run.durationMs)})`;
   if (run.outcome === "pass") return `${head}  pass   ${took}\n`;
   if (run.error) return `${head}  error  ${run.error.kind}: ${run.error.message} ${took}\n`;
-  const failed = run.checks.filter((check) => !check.pass && !check.notJudged).map((check) => check.name);
+  const failed = run.checks.filter(fails).map((check) => check.name);
   return `${head}  FAIL   ${failed.join("; ")} ${took}\n`;
 }
 
@@ -198,9 +206,10 @@ export function formatRepeated(result: ScenarioResult): string {
     runsLine(result),
     ...result.checkStats.map((check) => {
       const unknown = check.unknown > 0 ? `, ${check.unknown} unknown` : "";
-      return `  ${check.passed === check.total ? "pass" : "FAIL"}  ${check.name}: ${check.passed}/${check.total} (${percent(check.passRate)}${unknown})`;
+      const mark = check.reportOnly ? "info" : check.passed === check.total ? "pass" : "FAIL";
+      return `  ${mark}  ${check.name}: ${check.passed}/${check.total} (${percent(check.passRate)}${unknown})`;
     }),
-    ...checkLines(result.checks.filter((check) => check.name.startsWith("style: "))),
+    ...checkLines(result.checks.filter((check) => check.name.startsWith("style: ") || check.name.startsWith(ACROSS_RUNS))),
     ...result.findings.filter((finding) => finding.found > 0).map(findingStatLine),
     ...(variants.length > 0 ? [`  variants passed  ${variants.join(" · ")}`] : []),
     ...result.notes.map((note) => `  note  ${note}`),
@@ -314,11 +323,21 @@ export function markdownReport(report: TestReport): string {
 
   for (const entry of report.scenarios) {
     if ("error" in entry) lines.push(`### ${entry.name}`, "", entry.error, "");
-    else if (!entry.passed || entry.flaky || entry.findings.some((finding) => finding.found > 0)) {
+    else if (!entry.passed || entry.flaky || entry.findings.some((finding) => finding.found > 0) || entry.checks.some((check) => check.name.startsWith(ACROSS_RUNS))) {
       lines.push(`### ${entry.name}`, "", `\`${entry.file}\`, ${runsLine(entry).replace(/^ {2}runs {2}/, "")}`, "");
       const failing = entry.checkStats.filter((check) => check.passed < check.total);
       if (failing.length > 0) {
-        lines.push("| Check | Runs passed |", "|---|---|", ...failing.map((check) => `| ${cell(check.name)} | ${check.passed}/${check.total} |`), "");
+        const named = (check: (typeof failing)[number]) => (check.reportOnly ? `${check.name} (note, fails nothing)` : check.name);
+        lines.push("| Check | Runs passed |", "|---|---|", ...failing.map((check) => `| ${cell(named(check))} | ${check.passed}/${check.total} |`), "");
+      }
+      const across = entry.checks.filter((check) => check.name.startsWith(ACROSS_RUNS));
+      if (across.length > 0) {
+        lines.push(
+          "| Across runs | Result |",
+          "|---|---|",
+          ...across.map((check) => `| ${cell(check.name.slice(ACROSS_RUNS.length))} | ${cell(`${checkMark(check)}${check.detail ? `: ${check.detail}` : ""}`)} |`),
+          "",
+        );
       }
       const found = entry.findings.filter((finding) => finding.found > 0);
       if (found.length > 0) {

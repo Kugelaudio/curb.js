@@ -74,6 +74,8 @@ A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person
    wrong). After changing an `expect` or an expectation, `npx curb test --rejudge latest`
    checks the saved conversations again without running the agent. Keep one scenario per
    flow that matters, and fake every tool that books, sends or deletes (`testing.md`).
+   When the ready-made checks do not cover what the team needs, build on the same functions
+   (`testing-foundation.md`, "Build your own tests").
 
 4. `npm run dev`: the browser preview with chat and voice on http://127.0.0.1:4000. Open it in the person's own browser yourself (`open http://127.0.0.1:4000` on macOS, `xdg-open` on Linux, `start` on Windows): a browser built into an app, like the Claude app's Browser pane, blocks the microphone, so a call there fails.
 
