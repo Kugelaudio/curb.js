@@ -117,9 +117,10 @@ from what the judge answers differently.
 
 ## What a re-judge applies
 
-A scenario that is still in the project, by its file and name, brings its `expect`, `expectations`,
-`failOn`, `style` and `minPassRate` as they are now. For one that is gone, the settings saved in
-`scenarios` apply, its `expect` is left out, and the report notes it. The judge runs again on every
+A scenario that is still in the project, by its file and name, brings its `expect`, `expectRuns`,
+`expectations`, `findings`, `failOn`, `style` and `minPassRate` as they are now. For one that is
+gone, the settings saved in `scenarios` apply (`findings` among them, when it gave some), its
+`expect` and `expectRuns` are left out, and the report notes it. The judge runs again on every
 conversation it would be asked about, with `--judge-model` when given, as many at a time as
 `--concurrency` allows. The agent and the simulated
 caller are not run: their tokens in `usage` are the ones the first run used, and `--runs` and
@@ -130,6 +131,7 @@ run.
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | A scenario's entry in `scenarios` holds its own `findings`, and `failOn` may name them |
 | v1.25.0 | A run records `agentVersion`; `saveRun` and `loadRun` write and read runs; a conversation record may have another `source`, an `id`, `recordsToolCalls`, a `null` `ending.by` and `startedAt` |
 | v1.25.0 | Saved test runs and `curb test --rejudge` introduced |
 

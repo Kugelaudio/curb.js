@@ -21,6 +21,8 @@ exports `curb test` and `curb review` use, for a test of your own in any test ru
 | 3 | `scenario` | Declares a conversation for `curb test` |
 | 3 | `runHook`, `buildCallEvent` | Run one of the agent's hooks in this process |
 
+[Build your own tests](./testing-foundation.md) shows the three layers in worked examples.
+
 Every function of layers 1 and 2 runs the project's own agent on its own LLM provider, with the
 keys from the project's `.env` or `npx curb login`. Run a script of your own with
 [`npx curb run`](./cli/run.md); in a test runner such as vitest, `startCall` prepares the project
@@ -225,7 +227,7 @@ on it.
 ## `checksOf`
 
 ```ts
-checksOf(record: ConversationRecord): ScenarioExpectContext
+checksOf(record: ConversationRecord, options?: { model? }): ScenarioExpectContext
 ```
 
 ```ts
@@ -235,7 +237,8 @@ const checks = [called("book", { service: "haircut" }), said(/tomorrow/i)];
 
 The helpers of a scenario's [`expect`](#expect) over a finished conversation, with the same
 behaviour: `called`, `calledInOrder`, `notCalled`, `said`, `endedCall`, `stateMatches`, `state`,
-`check`, `context` and `transcript`.
+`check`, `note`, `context`, `transcript` and `transcriptText`. `ask` and `model` ask
+`options.model` (a `testModel`, or any function of its shape); without one they reject, saying so.
 
 ## `judge`
 
@@ -312,7 +315,7 @@ export default scenario({
 | Option | Type | Default | What it does |
 |---|---|---|---|
 | `name` | `string` | the file name | Shown in the report, matched by `curb test <filter>` |
-| `caller` | `{ goal, knows?, language?, persona?, behaviours? }` | | A simulated caller. Give this or `turns` |
+| `caller` | `{ goal, knows?, language?, persona?, behaviours? }` or `Caller` | | A simulated caller, or a caller of your own. Give this or `turns` |
 | `turns` | `string[]` | | Scripted caller lines. Give this or `caller` |
 | `maxTurns` | `number` | 12 for a simulated caller | The most caller turns, at most 100 for a simulated caller |
 | `client` | object | | Page info the call starts with |
@@ -321,9 +324,11 @@ export default scenario({
 | `runs` | `number` | 1 | How often the scenario runs, 1 to 100. `curb test --runs` overrides it for a simulated caller. Its tools without a fake run that many times |
 | `minPassRate` | `number` | 1 | The share of completed runs that must pass, above 0 and at most 1 |
 | `expectations` | `string[]` | | Sentences about the call that a judge answers with yes, no or unknown. A no fails the run. At most 12 |
-| `failOn` | `JudgeFinding[]` | none | Built-in judge findings that fail a run when found |
+| `findings` | `Record<string, string>` | none | Findings of your own, by id, one sentence each, asked with the built-in ones. At most 12 |
+| `failOn` | `(JudgeFinding \| string)[]` | none | Judge findings that fail a run when found: built-in ones and those of `findings` |
 | `style` | `StyleLimits` | none | The highest value accepted per style number, such as `{ wordsP90: 40 }` |
 | `expect` | function | | Your own checks, run on the finished conversation |
+| `expectRuns` | function | | Your own checks across all runs, called once after the last |
 
 ### `caller`
 
@@ -334,6 +339,17 @@ export default scenario({
 | `language` | `string` | The language it speaks. Default: the agent's |
 | `persona` | `string` | Who the caller is and how they talk, in plain words |
 | `behaviours` | `CallerBehaviour[]` | `everything_at_once`, `changes_mind`, `off_topic`, `impatient`, `asks_to_repeat` |
+
+A `Caller` as `caller` is called for every run with the turns so far and returns the next line,
+or `null` to hang up (see [`simulatedCaller`](#simulatedcaller)). The scenario runs `runs` times,
+`maxTurns` defaults to 12, and every run is judged without a goal; nothing is checked for invented
+facts. A caller that throws makes the run an error.
+
+An id of `findings` is lowercase words joined by underscores, such as `canned_closing`, and is not
+a built-in finding, `goal`, `unresolved`, `caller_closed` or `expectation_<n>`. A finding is
+counted and reported as a built-in one is, in every report and in the saved run, and `curb review`
+asks the findings of every scenario of the project; one id with two sentences in two scenarios is
+refused there.
 
 `JudgeFinding` is one of `asked_again`, `claimed_without_tool`, `ignored_caller`, `incoherent`,
 `wrong_tool_use` and `ended_early`. `StyleMetric`, the key of a `StyleLimits`, is one of `wordsP50`,
@@ -353,6 +369,13 @@ export default scenario({
 | `endedCall()` | The agent ended the call itself |
 | `stateMatches(store, expected)` | The store's data at the end of the call has `expected`: an object by the fields it names, a list entry by entry and with the same length |
 | `check(name, pass, detail?)` | `pass` is true |
+| `ask(question)` | The run's judge answers yes to the sentence. A no fails; an unknown is `notJudged`. Returns a promise |
+
+| Helper | What it gives |
+|---|---|
+| `note(check)` | The check, marked `reportOnly`: shown as `info` with its result and counted across runs, failing nothing |
+| `model(system, input)` | The run's judge model ([`testModel`](#testmodel)): its text. A request that fails makes the run an error |
+| `transcriptText` | The call as the judge reads it: the agent's tools and the fenced transcript with every tool call, for `model` |
 
 `state(store)` returns the data of a [`createAgentStore`](./functions/create-agent-store.md) store when
 the call ended, by its key and without its actions; it throws when the agent has no such store.
@@ -360,7 +383,26 @@ the call ended, by its key and without its actions; it throws when the agent has
 `caller`, `reply`, `toolCalls`, `errors`, `skillPath`, `endedCall`, `steps` and more.
 
 A check that a judge answered carries `evidence`: its `answer` (`yes`, `no` or `unknown`), the `turn`
-and a `quote` from it.
+and a `quote` from it. `ask` and `model` run again on `curb test --rejudge`.
+
+## `expectRuns`
+
+```ts
+expectRuns: (runs: ScenarioRunResult[], helpers: { check, note, model }) => ScenarioCheck[] | Promise<ScenarioCheck[]>
+```
+
+```ts
+expectRuns: (runs, { check }) => {
+  const goodbyes = new Set(runs.map((run) => run.transcript.at(-1)?.reply));
+  return [check("the goodbye is not the same in every run", runs.length < 2 || goodbyes.size > 1)];
+},
+```
+
+Called once after the last run, and again on `--rejudge`, with every completed run in order (a run
+that is an error is left out; with none, it is not called). A `ScenarioRunResult` is the run's
+`run` number, `outcome` (`pass` or `fail`), `checks` and `record`, with every helper of
+[`expect`](#expect) over its conversation. Its checks are named `across runs: <name>` in the
+reports; a failed one fails the scenario, and one made with `note` fails nothing.
 
 ## `personas`
 
@@ -415,6 +457,7 @@ a call whose `content` is `not_stored`.
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | `scenario` takes `findings`, `expectRuns` and a `Caller` as `caller`, and `failOn` takes the scenario's own findings. `expect` gets `ask`, `model`, `note` and `transcriptText`; `checksOf` takes `{ model }` for them. `ScenarioRunResult` added |
 | v1.25.0 | Layers 1 and 2 added: `startCall`, `loadCalls`, `loadRun`, `saveRun`, `testModel`, `inParallel`, `report`, `passRate`, `projectHost`, `simulatedCaller`, `scriptedCaller`, `converse`, `builtInChecks`, `checksOf`, `judge`, `ask`, `FINDINGS`, `styleNumbers` and `groupFindings`. A check may be `reportOnly` |
 | v1.25.0 | `personas` added. `scenario` takes `runs`, `minPassRate`, `expectations`, `failOn`, `style`, and `caller.persona` and `caller.behaviours`. `expect` gets `state`, `stateMatches`, `context` and `calledInOrder`, and `called` matches nested input by the fields it names |
 | v1.15.0 | `runHook` and `buildCallEvent` added |
@@ -424,3 +467,4 @@ a call whose `content` is `not_stored`.
 
 - [Testing guide](./testing.md): `curb check`, `curb say` and `curb test`.
 - [Saved test runs](./test-runs.md): the file every `curb test` writes.
+- [Build your own tests](./testing-foundation.md): the layers in worked examples.

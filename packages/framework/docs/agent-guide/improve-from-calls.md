@@ -127,6 +127,9 @@ What a review does and does not do:
   report says of how many calls they were not asked.
 - **A judge can be wrong.** That is why every pattern carries quotes to read, and why a number
   in the report is counted by code, not by the model.
+- **Your own findings are asked too.** The `findings` your scenarios give, such as a stock
+  closing line, are asked of every real call beside the built-in ones
+  ([Build your own tests](./testing-foundation.md#naturalness-on-the-ready-made-path)).
 
 With a coding agent, the whole loop is one request:
 

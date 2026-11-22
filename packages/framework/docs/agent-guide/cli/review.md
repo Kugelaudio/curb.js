@@ -30,6 +30,11 @@ when the agent ended the call, was the caller's last line a goodbye, or that the
 else? When it was not, the finding quotes the agent's last words. A review adds one question,
 `unresolved`: the caller did not get what they called for by the end of the call.
 
+A project's own findings are asked too: every `findings` that its scenarios give
+([Testing](../testing.md#findings-of-your-own)), with the built-in questions in the same request,
+and the patterns know their sentences. One id with two different sentences in two scenarios is
+refused, naming both files. A scenario file that cannot be loaded is named in a note.
+
 ## Options
 
 | Option | What it does |
@@ -125,4 +130,4 @@ npx curb review --last 50 --judge-model openai:gpt-5.2
 
 | Version | Changes |
 |---|---|
-| v1.25.0 | `curb review` introduced |
+| v1.25.0 | `curb review` introduced. It asks the findings of the project's scenarios too |
