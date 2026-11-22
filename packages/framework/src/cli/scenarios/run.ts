@@ -48,11 +48,11 @@ export function notStartedNote(conversations: readonly SavedConversation[], runs
   ];
 }
 
-/** How often a scenario runs: its own `runs`, which `requested` (`curb test --runs`) overrides
- * for a simulated caller. Scripted lines say the same words every time and run once unless the
- * scenario itself asks for more. */
+/** How often a scenario runs: `requested` (`curb test --runs`), else its own `runs`, else once.
+ * Scripted lines say the same words every time, but the agent does not answer them the same way
+ * every time: a fault that shows once in ten runs shows only when they run ten times. */
 export function plannedRuns(scenario: Scenario, requested?: number): number {
-  return (scenario.caller ? requested : undefined) ?? scenario.runs ?? 1;
+  return requested ?? scenario.runs ?? 1;
 }
 
 /** What a scenario asks of its runs, as it is saved beside them. */
@@ -148,7 +148,7 @@ export async function playRun(
  */
 export async function runScenario(
   params: ScenarioRunParams & {
-    /** `curb test --runs`: the runs of a simulated-caller scenario. */
+    /** `curb test --runs`: the runs of the scenario, in place of its own `runs`. */
     runs?: number;
     concurrency?: number;
     maxErrorRate?: number;

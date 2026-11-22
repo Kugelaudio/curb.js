@@ -11,7 +11,7 @@ npx curb test [filter] [options]
 
 | Option | What it does |
 |---|---|
-| `--runs <n>` | Runs every scenario with a simulated caller `n` times, 1 to 100, and reports rates. Scripted scenarios run once unless they set `runs` |
+| `--runs <n>` | Runs every scenario `n` times, 1 to 100, in place of its own `runs`, and reports rates. A scripted scenario must pass every run unless it sets `minPassRate` |
 | `--concurrency <k>` | Conversations at a time, across all scenarios and their runs. Default 4, at most 16. The report keeps the scenarios' order |
 | `--caller-model <id>` | The model that plays the caller: a model of the agent's provider, or `<provider>:<model>` with `openai`, `anthropic` or `kugelaudio`. Default: a small model of the agent's provider |
 | `--judge-model <id>` | The same for the judge |
@@ -39,6 +39,7 @@ npx curb test --rejudge latest --judge-model openai:gpt-5.2
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | `--runs` runs scripted scenarios that many times too |
 | v1.25.0 | A provider that keeps timing out ends the run within about two deadlines, and a scenario with too many errors to be assessed starts no more runs |
 | v1.25.0 | A scenario's own findings, notes, checks across runs (`across runs:`) and a caller function are reported |
 | v1.25.0 | Repeated runs with rates, the judge's findings, style numbers, saved runs and `--rejudge`, a Markdown report, and exit code 2 |

@@ -692,11 +692,11 @@ describe("repeated runs", () => {
     ]);
   });
 
-  it("takes the scenario's own runs, which --runs overrides for a simulated caller only", () => {
+  it("takes the scenario's own runs, which --runs overrides, scripted or simulated", () => {
     const simulated = scenario({ caller: { goal: "Book" }, runs: 3 });
     const scripted = scenario({ turns: ["Hi"] });
-    expect([plannedRuns(simulated), plannedRuns(simulated, 10), plannedRuns(scripted), plannedRuns(scripted, 10)]).toEqual([3, 10, 1, 1]);
-    expect(plannedRuns(scenario({ turns: ["Hi"], runs: 2 }), 10)).toBe(2);
+    expect([plannedRuns(simulated), plannedRuns(simulated, 10), plannedRuns(scripted), plannedRuns(scripted, 10)]).toEqual([3, 10, 1, 10]);
+    expect([plannedRuns(scenario({ turns: ["Hi"], runs: 2 })), plannedRuns(scenario({ turns: ["Hi"], runs: 2 }), 10)]).toEqual([2, 10]);
   });
 
   it("counts the tokens each run used, and all of them together", async () => {

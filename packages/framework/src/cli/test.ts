@@ -74,8 +74,8 @@ waits for it, goes on more slowly, and the report says how long it waited.
 A tool runs for real on every run unless the scenario fakes it (fakes).
 
   <filter>               run only the scenarios whose name or file contains it (ignoring case)
-  --runs <n>             run every simulated-caller scenario n times (1 to 100) and report
-                         rates; scripted scenarios run once unless they set runs themselves
+  --runs <n>             run every scenario n times (1 to 100) and report rates; a scripted
+                         scenario must pass every run unless it sets minPassRate
   --concurrency <k>      conversations at a time, across all scenarios and their runs
                          (default ${DEFAULT_CONCURRENCY}, at most ${MAX_CONCURRENCY}); the report keeps the scenarios' order
   --caller-model <id>    the model that plays the caller: a model of the agent's provider, or

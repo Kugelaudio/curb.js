@@ -321,7 +321,7 @@ export default scenario({
 | `client` | object | | Page info the call starts with |
 | `experiments` | object | | The variant, by experiment name. An experiment left out is covered by repeated runs |
 | `fakes` | object | | Tools that must not run for real, each with the result its calls get, or a function of the input that returns one. A tool without a fake runs for real on every run, so fake one that sends, books or charges |
-| `runs` | `number` | 1 | How often the scenario runs, 1 to 100. `curb test --runs` overrides it for a simulated caller. Its tools without a fake run that many times |
+| `runs` | `number` | 1 | How often the scenario runs, 1 to 100. `curb test --runs` overrides it. Its tools without a fake run that many times |
 | `minPassRate` | `number` | 1 | The share of completed runs that must pass, above 0 and at most 1 |
 | `expectations` | `string[]` | | Sentences about the call that a judge answers with yes, no or unknown. A no fails the run. At most 12 |
 | `findings` | `Record<string, string>` | none | Findings of your own, by id, one sentence each, asked with the built-in ones. At most 12 |

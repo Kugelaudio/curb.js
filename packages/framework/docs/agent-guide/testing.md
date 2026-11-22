@@ -686,10 +686,11 @@ hundred calls. Run it several times and read the rate:
 npx curb test --runs 5
 ```
 
-`--runs` sets the number of runs of every scenario with a simulated caller, and
-wins over a scenario's own `runs`. A scripted scenario says the same words
-every time and runs once, unless it sets `runs` itself. `minPassRate` is the
-scenario's alone, whatever `--runs` says. With `runs: 5, minPassRate: 0.8`:
+`--runs` sets the number of runs of every scenario, and wins over a scenario's
+own `runs`. A scripted scenario says the same words every time, but the agent
+does not answer the same way every time, so it runs that often too and must pass
+every run unless it sets `minPassRate`. `minPassRate` is the scenario's alone,
+whatever `--runs` says. With `runs: 5, minPassRate: 0.8`:
 
 ```text
 --- books a haircut (src/agent/booking.scenario.ts)

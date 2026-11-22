@@ -34,7 +34,7 @@ npx curb test             # the conversations in src/agent/*.scenario.ts, pass o
 
 `src/agent/*.scenario.ts` holds conversations that `npx curb test` plays in text: one with
 scripted caller lines, which must always pass, and one with a simulated caller that a second
-model plays. `npx curb test --runs 3` plays the simulated one three times and reports how often
+model plays. `npx curb test --runs 3` plays each three times and reports how often
 it passed, what a judge found and how the agent talks. Text tests do not cover audio, timing or
 interruptions: listen to a call in `npm run dev` for those.
 

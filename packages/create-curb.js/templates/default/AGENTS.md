@@ -63,9 +63,9 @@ A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person
    each tool call and the context it changed. The next `curb say` continues the
    conversation; `npx curb say --new "<first line>"` starts over (do that after a code change).
 3. `npx curb test --runs 3`: plays every `src/**/*.scenario.ts` conversation headlessly, in
-   text. A scenario with scripted caller lines is a gate: it runs once and must pass. One with
-   a simulated caller runs three times, because a model does not answer the same way twice,
-   so read its pass rate, not one run. The scenarios this project starts with pass when two
+   text, three times each, because a model does not answer the same way twice. A scenario
+   with scripted caller lines is a gate: every run must pass. One with a simulated caller is
+   read by its pass rate, not one run. The scenarios this project starts with pass when two
    of three runs do (`minPassRate: 0.66`); raise that toward 1 once one passes every time. Then read what the report found: each `find` line
    names a turn and quotes it, the transcript of every failed run is printed, and the `Style`
    lines say how long the replies are and how often they repeat. A scenario marked flaky

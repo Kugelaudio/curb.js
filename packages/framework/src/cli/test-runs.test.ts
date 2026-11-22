@@ -205,7 +205,7 @@ describe("curb test, repeated and saved runs", () => {
     expect(printed).not.toContain("FAIL");
   });
 
-  it("runs every run of a simulated scenario also once one failed, and a scripted scenario once whatever --runs says", async () => {
+  it("runs every run of a simulated scenario also once one failed, and a scripted scenario --runs times too", async () => {
     const root = project({ "src/agent/milk.scenario.ts": MILK, "src/agent/hello.scenario.ts": HELLO });
     const { host, stats } = tasksHost({ agent: () => [says("Hello there.")], caller: () => ["[hang up]"], judge: () => ({ goal: "no" }) });
 
@@ -214,9 +214,28 @@ describe("curb test, repeated and saved runs", () => {
     expect(code).toBe(1);
     const report = JSON.parse(printed) as TestReport;
     const [hello, milk] = report.scenarios as ScenarioResult[];
-    expect(hello).toMatchObject({ name: "hello", mode: "scripted", passed: true, stats: { runs: 1, ran: 1 } });
+    expect(hello).toMatchObject({ name: "hello", mode: "scripted", passed: true, stats: { runs: 5, ran: 5, passed: 5, minPassRate: 1 } });
     expect(milk.stats).toMatchObject({ runs: 5, ran: 5, failed: 5 });
-    expect(stats.bundles).toBe(6);
+    expect(stats.bundles).toBe(10);
+  });
+
+  it("fails a scripted scenario that --runs plays more than once on a single failed run, unless it sets minPassRate", async () => {
+    const root = project({
+      "src/agent/hello.scenario.ts": HELLO,
+      "src/agent/lenient.scenario.ts": `import { scenario } from "curb/testing";
+export default scenario({ turns: ["Hi"], minPassRate: 0.5, expect: ({ said }) => [said("hello")] });
+`,
+    });
+    // One answer in three leaves out the word the scenario checks for.
+    let bundle = 0;
+    const { host } = tasksHost({ agent: () => [says((bundle += 1) % 3 === 0 ? "Hi there." : "Hello there.")] });
+
+    const { code, printed } = await run(["--runs", "3", "--concurrency", "1", "--json"], root, host);
+
+    expect(code).toBe(1);
+    const [hello, lenient] = (JSON.parse(printed) as TestReport).scenarios as ScenarioResult[];
+    expect(hello).toMatchObject({ mode: "scripted", outcome: "fail", flaky: true, stats: { runs: 3, passed: 2, failed: 1 } });
+    expect(lenient).toMatchObject({ mode: "scripted", outcome: "pass", flaky: true, stats: { runs: 3, passed: 2, failed: 1 } });
   });
 
   it("keeps every field --json had, with the values a single run always gave, and only adds to them", async () => {
