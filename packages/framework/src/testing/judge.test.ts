@@ -132,6 +132,15 @@ describe("what the judge reads", () => {
 });
 
 describe("the judge's answers", () => {
+  it("takes answers under ids it did not ask for as the unanswered questions', in order, when they are as many", () => {
+    const one = [{ id: "question", kind: "expectation" as const, text: "The agent says the slot is taken." }];
+    const renamed = JSON.stringify({ answers: [{ id: "q1", answer: "yes", turn: 2, quote: "That slot is taken", reason: "It says so." }] });
+    expect(parseJudgeAnswers(renamed, one, call.turns)?.map((answer) => [answer.id, answer.answer, answer.quote])).toEqual([["question", "yes", "That slot is taken"]]);
+    // Two answers under strange ids for one unanswered question: no telling which is which.
+    const two = JSON.stringify({ answers: [{ id: "q1", answer: "yes", turn: 2, quote: "That slot is taken" }, { id: "q2", answer: "no" }] });
+    expect(parseJudgeAnswers(two, one, call.turns)?.[0]).toMatchObject({ id: "question", answer: "unknown", reason: "the judge did not answer this question" });
+  });
+
   it("reads one answer per question, with the turn and quote held to the transcript", () => {
     const answers = answersOf(
       JSON.stringify({
