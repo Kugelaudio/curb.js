@@ -262,9 +262,9 @@ const result = await judge(record, { findings: { ...FINDINGS, canned_closing: "T
 ask(record: ConversationRecord, question: string, options?: { model? }): Promise<ScenarioCheck>
 ```
 
-One question of your own, answered like an expectation: a check that fails on a no and passes on a
-yes or an unknown, with the judge's `evidence`. A model that cannot be asked gives a check that is
-`notJudged`.
+One question of your own: a check that passes on a yes and fails on a no, with the judge's
+`evidence`. An unknown, and a model that cannot be asked, give a check that is `notJudged`: `report`
+shows it as `skip`, and it neither passes nor fails.
 
 ## `FINDINGS`
 

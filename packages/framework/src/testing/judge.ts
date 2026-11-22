@@ -466,7 +466,9 @@ export async function ask(record: ConversationRecord, question: string, options:
     return { name: question, pass: false, detail: `not judged: ${error instanceof Error ? error.message : String(error)}`, notJudged: true };
   }
   const answer = judged.answers.find((candidate) => candidate.id === "question")!;
-  const prefix = answer.answer === "unknown" ? "unknown: " : "";
-  return { name: question, pass: answer.answer !== "no", detail: `${prefix}${answer.reason}`, evidence: { answer: answer.answer, turn: answer.turn, quote: answer.quote } };
+  const evidence = { answer: answer.answer, turn: answer.turn, quote: answer.quote };
+  // An unknown says neither yes nor no: not judged, so it neither passes nor fails.
+  if (answer.answer === "unknown") return { name: question, pass: false, detail: `unknown: ${answer.reason}`, evidence, notJudged: true };
+  return { name: question, pass: answer.answer === "yes", detail: answer.reason, evidence };
 }
 

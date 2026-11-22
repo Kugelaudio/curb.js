@@ -194,6 +194,15 @@ describe("judge and ask", () => {
       evidence: { answer: "no", turn: 2, quote: "Booked." },
     });
     expect(requests[0]!.systemPrompt).not.toContain("- goal:");
+    // No answer is neither a pass nor a fail.
+    const unsure = answering({ question: { answer: "unknown", turn: null, quote: "", reason: "The call does not show it." } });
+    expect(await ask(conversation, "The agent says the time of the booking.", { model: unsure.model })).toEqual({
+      name: "The agent says the time of the booking.",
+      pass: false,
+      detail: "unknown: The call does not show it.",
+      evidence: { answer: "unknown", turn: null, quote: null },
+      notJudged: true,
+    });
     const down = async () => Promise.reject(Object.assign(new Error("down"), { statusCode: 503 }));
     expect(await ask(conversation, "Anything?", { model: down })).toEqual({ name: "Anything?", pass: false, detail: "not judged: HTTP 503: down", notJudged: true });
   });
