@@ -280,6 +280,7 @@
 ./testing ScenarioEvidence
 ./testing ScenarioExpectContext
 ./testing ScenarioFake
+./testing ScenarioRunResult
 ./testing ScenarioToolCall
 ./testing ScenarioTurn
 ./testing ScenarioTurnError

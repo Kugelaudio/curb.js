@@ -17,7 +17,7 @@ import {
   type TestRun,
 } from "../testing/index.js";
 import { routeConsoleToStderr } from "./headless-project.js";
-import { aggregateScenario, scenarioRun, type ScenarioResult } from "./scenarios/aggregate.js";
+import { scenarioRun, type ScenarioResult } from "./scenarios/aggregate.js";
 import { assessConversation, assessmentSettings } from "./scenarios/assess.js";
 import { runsProblem } from "./scenarios/limits.js";
 import {
@@ -33,7 +33,7 @@ import {
   type ScenarioReport,
   type TestReport,
 } from "./scenarios/report.js";
-import { DEFAULT_CONCURRENCY, DEFAULT_MAX_ERROR_RATE, MAX_CONCURRENCY, playRun, scenarioSettings, uncoveredVariants } from "./scenarios/run.js";
+import { DEFAULT_CONCURRENCY, DEFAULT_MAX_ERROR_RATE, MAX_CONCURRENCY, playRun, scenarioSettings, summarizeScenario, uncoveredVariants } from "./scenarios/run.js";
 import type { ExperimentDeclaration, SavedConversation, SavedScenarioSettings, TestModels, ThrottleStats } from "./scenarios/types.js";
 import { runUsage, sumUsage } from "./scenarios/usage.js";
 
@@ -236,6 +236,36 @@ async function loadScenarios(projectRoot: string, file: string): Promise<LoadedS
   });
 }
 
+/**
+ * The findings of their own that the project's scenarios give, by id, and a note for each
+ * scenario file that could not be loaded. Several scenarios may share a finding (one module
+ * imported by each); the same id with two sentences is refused, naming both files.
+ */
+export async function projectFindings(projectRoot: string): Promise<{ findings: Record<string, string>; notes: string[] }> {
+  const findings: Record<string, string> = {};
+  const from = new Map<string, string>();
+  const notes: string[] = [];
+  for (const file of findScenarioFiles(projectRoot)) {
+    for (const entry of await loadScenarios(projectRoot, file)) {
+      if ("error" in entry) {
+        notes.push(`The findings of ${entry.file} were not asked: ${entry.error}`);
+        continue;
+      }
+      for (const [id, sentence] of Object.entries(entry.scenario.findings ?? {})) {
+        if (Object.hasOwn(findings, id) && findings[id] !== sentence) {
+          throw new Error(
+            `[CURB_REVIEW_FINDING_CONFLICT] The finding "${id}" is given two sentences: ${JSON.stringify(findings[id])} in ${from.get(id)}, and ${JSON.stringify(sentence)} in ${file}.\n` +
+              "Fix: give one of them another id, or define the finding once in a module both scenario files import.",
+          );
+        }
+        findings[id] = sentence;
+        if (!from.has(id)) from.set(id, file);
+      }
+    }
+  }
+  return { findings, notes: [...new Set(notes)] };
+}
+
 /** Whether `value` is what `scenario()` returned: it marks each with this registry symbol, so a
  * scenario is recognised whichever copy of `curb/testing` made it. */
 function isScenario(value: unknown): value is Scenario {
@@ -419,7 +449,10 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
       left[index]! -= 1;
       if (left[index]! > 0) return;
 
-      const result = aggregateScenario({
+      const result = await summarizeScenario({
+        scenario: entry.scenario,
+        host,
+        ...(choice.judgeModel === undefined ? {} : { judgeModel: choice.judgeModel }),
         settings,
         conversations: conversationsOf[index]!,
         maxErrorRate: DEFAULT_MAX_ERROR_RATE,
@@ -538,10 +571,13 @@ async function rejudge(session: TestSession, which: string, hostOf: () => TestHo
     const recorded = source.conversations.filter((entry) => entry.scenario.file === was.file && entry.scenario.name === was.name);
     return { was, scenario, settings, recorded, judged: [] as SavedConversation[], left: recorded.length };
   });
-  const report = (index: number) => {
+  const report = async (index: number) => {
     const { was, scenario, settings, judged } = plans[index]!;
     const gone = was.file ? `${was.file} no longer holds a scenario named "${was.name}"` : `"${was.name}" is no scenario of the project`;
-    const result = aggregateScenario({
+    const result = await summarizeScenario({
+      scenario,
+      host,
+      ...(run.judgeModel === undefined ? {} : { judgeModel: run.judgeModel }),
       settings,
       conversations: judged,
       maxErrorRate: DEFAULT_MAX_ERROR_RATE,
@@ -552,7 +588,7 @@ async function rejudge(session: TestSession, which: string, hostOf: () => TestHo
     printed.write(index, `\n--- ${was.name} (${was.file})\n${formatReplayed(result)}`);
     printed.finish(index);
   };
-  for (const [index, plan] of plans.entries()) if (plan.left === 0) report(index);
+  for (const [index, plan] of plans.entries()) if (plan.left === 0) await report(index);
 
   let concurrency = run.concurrency;
   const jobs = plans.flatMap((plan, index) => plan.recorded.map((conversation, at) => ({ index, at, conversation })));
@@ -564,14 +600,22 @@ async function rejudge(session: TestSession, which: string, hostOf: () => TestHo
       const judging = await testModel(judgeOptions);
       const assessment = await assessConversation({
         record: record as Omit<SavedConversation, "assessment">,
-        settings: plan.scenario ? assessmentSettings(plan.scenario) : { expectations: plan.settings.expectations, failOn: plan.settings.failOn },
+        settings: plan.scenario
+          ? assessmentSettings(plan.scenario)
+          : {
+              expectations: plan.settings.expectations,
+              ...(plan.settings.findings ? { findings: plan.settings.findings } : {}),
+              failOn: plan.settings.failOn,
+              // A simulated scenario's conversation without its caller's definition had a caller of its own.
+              ...(plan.settings.mode === "simulated" && record.caller === null ? { judgeAlways: true as const } : {}),
+            },
         judge: judging,
       });
       const usage = runUsage({ agent: record.usage?.agent ?? null, caller: record.usage?.caller ?? null, judge: judging.usage() });
       // In the saved run's order, whichever is judged first.
       plan.judged[at] = { ...(record as Omit<SavedConversation, "assessment">), usage, assessment };
       plan.left -= 1;
-      if (plan.left === 0) report(index);
+      if (plan.left === 0) await report(index);
     },
     { concurrency, host, onSlowDown: (lowered) => void (concurrency = lowered) },
   );

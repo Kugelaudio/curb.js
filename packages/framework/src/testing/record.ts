@@ -156,7 +156,10 @@ export type SavedScenarioSettings = {
   runs: number;
   minPassRate: number;
   expectations: string[];
-  failOn: JudgeFinding[];
+  /** The scenario's own findings, by id; absent when it gives none. */
+  findings?: Record<string, string>;
+  /** Built-in findings and the scenario's own. */
+  failOn: Array<JudgeFinding | (string & {})>;
   style: StyleLimits;
 };
 

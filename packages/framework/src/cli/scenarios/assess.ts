@@ -1,15 +1,16 @@
 import {
+  FINDINGS,
   builtInChecks,
   checksOf,
   judge,
   type ConversationRecord,
-  type JudgeFinding,
   type Scenario,
   type ScenarioCheck,
+  type ScenarioRunResult,
   type ScenarioTurn,
   type TestModel,
 } from "../../testing/index.js";
-import type { Assessment, JudgeAnswer, JudgeResult, RunError } from "./types.js";
+import type { Assessment, JudgeAnswer, JudgeResult, RunError, SavedConversation } from "./types.js";
 
 /** The names of the checks the runner adds to the built-in ones. */
 const BUILT_IN_CHECKS = { goal: "the caller reaches its goal" } as const;
@@ -29,13 +30,30 @@ const sentenceKey = (sentence: string) => sentence.toLowerCase().replace(/[^\p{L
  * gone is assessed with the settings saved beside it, and without `expect`. */
 export type AssessmentSettings = {
   expectations: readonly string[];
-  failOn: readonly JudgeFinding[];
+  /** The scenario's own findings, asked beside the built-in ones. */
+  findings?: Readonly<Record<string, string>>;
+  failOn: readonly string[];
   expect?: Scenario["expect"];
+  /** The scenario checks its runs together too (`expectRuns`): it has checks of its own. */
+  checksRuns?: true;
+  /** Judge every conversation, as for a simulated caller: the scenario's caller is one of its own. */
+  judgeAlways?: true;
 };
 
 export function assessmentSettings(scenario: Scenario): AssessmentSettings {
-  return { expectations: scenario.expectations ?? [], failOn: scenario.failOn ?? [], ...(scenario.expect ? { expect: scenario.expect } : {}) };
+  return {
+    expectations: scenario.expectations ?? [],
+    ...(scenario.findings ? { findings: scenario.findings } : {}),
+    failOn: scenario.failOn ?? [],
+    ...(scenario.expect ? { expect: scenario.expect } : {}),
+    ...(scenario.expectRuns ? { checksRuns: true as const } : {}),
+    ...(typeof scenario.caller === "function" ? { judgeAlways: true as const } : {}),
+  };
 }
+
+/** A check that fails nothing: it passed, or it is report-only (`note`) or not judged. A check
+ * that was not judged fails nothing of its own; why it was not is the run's error. */
+const holds = (check: ScenarioCheck) => check.pass || check.reportOnly === true || check.notJudged === true;
 
 /** A caller line said this often in a row, to an agent that did not repeat itself, is a loop. */
 export const CALLER_LOOP = 3;
@@ -54,10 +72,14 @@ export async function assessConversation(params: {
   let judged: JudgeResult | null = null;
   // A conversation that stopped on an error is not judged: half a call reaches no goal.
   const brokeOff = ending.by === "error" || ending.by === "simulator";
-  const judges = caller !== null || settings.expectations.length > 0;
+  const own = settings.findings ?? {};
+  const hasOwn = Object.keys(own).length > 0;
+  // A caller of your own is judged as a simulated one is, without a goal.
+  const judges = caller !== null || settings.judgeAlways === true || settings.expectations.length > 0 || hasOwn;
   if (judges && !error && !brokeOff) {
     try {
-      const { promptVersion, model, answers } = await judge(record, { expectations: settings.expectations, model: params.judge });
+      const findings = hasOwn ? { findings: { ...FINDINGS, ...own } } : {};
+      const { promptVersion, model, answers } = await judge(record, { ...findings, expectations: settings.expectations, model: params.judge });
       judged = { promptVersion, model, answers };
     } catch (cause) {
       error = { kind: "judge", message: cause instanceof Error ? cause.message : String(cause) };
@@ -85,13 +107,31 @@ export async function assessConversation(params: {
     const answer = answers.find((candidate) => candidate.id === finding);
     if (answer) checks.push(judgedCheck(`no judge finding: ${finding}`, answer, answer.answer !== "yes"));
   }
-  checks.push(...(await authorChecks(settings.expect, record)));
+  if (settings.expect) {
+    // A request of `model` that fails says nothing about the agent: the run is an error, as when
+    // the judge cannot be asked.
+    const context = checksOf(record, { model: params.judge });
+    const failed = new Set<unknown>();
+    const model = async (system: string, input: string) => {
+      try {
+        return await context.model(system, input);
+      } catch (cause) {
+        failed.add(cause);
+        throw cause;
+      }
+    };
+    const { expect } = settings;
+    checks.push(...(await authorChecks("expect", () => expect({ ...context, model }), failed)));
+    const unanswered = [...failed][0];
+    if (unanswered !== undefined && !error) error = { kind: "judge", message: `model() of expect failed: ${describe(unanswered)}` };
+  }
 
   // The turn limit cut the caller off, the goal was not reached, and nothing shows the agent
   // caused it: the limit, not the agent, decided this run.
-  if (!error && ending.by === "max_turns" && caller && !checks.every((check) => check.pass)) {
-    const onlyGoalFailed = checks.every((check) => check.pass || check.name === BUILT_IN_CHECKS.goal);
-    const agentFault = answers.some((answer) => answer.kind === "finding" && answer.answer === "yes");
+  if (!error && ending.by === "max_turns" && caller && !checks.every(holds)) {
+    const onlyGoalFailed = checks.every((check) => holds(check) || check.name === BUILT_IN_CHECKS.goal);
+    // A finding of the scenario's own fails nothing unless failOn names it, and then its check failed.
+    const agentFault = answers.some((answer) => answer.kind === "finding" && answer.answer === "yes" && Object.hasOwn(FINDINGS, answer.id));
     if (onlyGoalFailed && !agentFault) {
       error = {
         kind: "max_turns",
@@ -101,7 +141,7 @@ export async function assessConversation(params: {
   }
 
   return {
-    outcome: error ? "error" : checks.every((check) => check.pass) ? "pass" : "fail",
+    outcome: error ? "error" : checks.every(holds) ? "pass" : "fail",
     ...(error ? { error } : {}),
     checks,
     notes: notesOf(record, settings, answers),
@@ -119,7 +159,8 @@ function judgedCheck(name: string, answer: JudgeAnswer, pass: boolean): Scenario
 function brokenRun(record: ConversationRecord): RunError | undefined {
   const { ending, turns, caller } = record;
   if (ending.by === "simulator") {
-    return { kind: "simulator", message: `the simulated caller could not go on: ${ending.reason ?? "it gave no line"}` };
+    const who = caller ? "the simulated caller" : "the caller";
+    return { kind: "simulator", message: `${who} could not go on: ${ending.reason ?? "it gave no line"}` };
   }
   if (ending.providerError) {
     return { kind: "provider", message: `the agent's LLM provider failed, after the retries: ${ending.reason ?? "no reason given"}` };
@@ -186,7 +227,7 @@ function inventedFact(record: ConversationRecord): string | undefined {
 
 function notesOf(record: ConversationRecord, settings: AssessmentSettings, answers: readonly JudgeAnswer[]): string[] {
   const notes = record.unusedFakes.map((tool) => `the fake for ${tool} was never used: no call of ${tool} ran`);
-  if (!settings.expect && settings.expectations.length === 0) {
+  if (!settings.expect && settings.expectations.length === 0 && !settings.checksRuns) {
     notes.push("this scenario has no checks of its own (expect), so only the built-in checks ran");
   }
   const goal = answers.find((answer) => answer.kind === "goal");
@@ -197,35 +238,89 @@ function notesOf(record: ConversationRecord, settings: AssessmentSettings, answe
   return notes;
 }
 
-/** The author's `expect` checks. Whatever it does wrong becomes a failed check that says so. */
-async function authorChecks(expect: Scenario["expect"], record: ConversationRecord): Promise<ScenarioCheck[]> {
-  if (!expect) return [];
+/** An example of what each of the author's functions returns, for a message that says it returned something else. */
+const EXAMPLE = { expect: 'called("book_meeting")', expectRuns: 'check("books on most runs", booked >= 2)' } as const;
+
+/**
+ * The checks an author's function (`expect`, `expectRuns`) returns. Whatever it does wrong
+ * becomes a failed check that says so; an error that is in `unanswered` (a request of the judge's
+ * model that failed) becomes a check that was not judged.
+ */
+async function authorChecks(hook: keyof typeof EXAMPLE, call: () => unknown, unanswered: ReadonlySet<unknown> = new Set()): Promise<ScenarioCheck[]> {
   let returned: unknown;
   try {
-    returned = await expect(checksOf(record));
+    returned = await call();
   } catch (error) {
-    return [{ name: "expect", pass: false, detail: `expect threw: ${describe(error)}` }];
+    if (unanswered.has(error)) return [{ name: hook, pass: false, detail: `not judged: ${describe(error)}`, notJudged: true }];
+    return [{ name: hook, pass: false, detail: `${hook} threw: ${describe(error)}` }];
   }
   if (!Array.isArray(returned)) {
     return [
       {
-        name: "expect",
+        name: hook,
         pass: false,
-        detail: `expect must return a list of checks, e.g. [called("book_meeting")]; it returned ${preview(returned)}.`,
+        detail: `${hook} must return a list of checks, e.g. [${EXAMPLE[hook]}]; it returned ${preview(returned)}.`,
       },
     ];
   }
   return returned.map((check: unknown, index) => {
     if (isCheck(check)) {
-      const { name, pass, detail } = check;
-      return { name, pass, ...(detail === undefined ? {} : { detail: String(detail) }) };
+      const { name, pass, detail, evidence, notJudged, reportOnly } = check;
+      return {
+        name,
+        pass,
+        ...(detail === undefined ? {} : { detail: String(detail) }),
+        ...(isEvidence(evidence) ? { evidence } : {}),
+        ...(notJudged === true ? { notJudged } : {}),
+        ...(reportOnly === true ? { reportOnly } : {}),
+      };
     }
+    const promise = check instanceof Promise;
     return {
-      name: `expect, entry ${index + 1}`,
+      name: `${hook}, entry ${index + 1}`,
       pass: false,
-      detail: `${preview(check)} is not a check. Return checks such as called("book_meeting"), said("Tuesday") or check("what must hold", condition).`,
+      detail: promise
+        ? `a promise is not a check: await it, as in [note(await ask("..."))].`
+        : `${preview(check)} is not a check. Return checks such as called("book_meeting"), said("Tuesday") or check("what must hold", condition).`,
     };
   });
+}
+
+/**
+ * The scenario's checks across its runs (`expectRuns`), each named "across runs: <name>". It is
+ * called once with every completed run in order; a run that is an error says nothing about the
+ * agent and is left out, and with no completed run it is not called. `judge` is the model its
+ * `model` helper and each run's `ask` and `model` ask.
+ */
+export async function acrossRunsChecks(
+  expectRuns: Scenario["expectRuns"],
+  conversations: readonly SavedConversation[],
+  judgeModel: TestModel,
+): Promise<ScenarioCheck[] | undefined> {
+  if (!expectRuns) return undefined;
+  const runs = [...conversations]
+    .filter((conversation) => conversation.assessment.outcome !== "error")
+    .sort((left, right) => left.scenario.run - right.scenario.run)
+    .map(({ assessment, ...record }): ScenarioRunResult => ({
+      ...checksOf(record, { model: judgeModel }),
+      run: record.scenario.run,
+      outcome: assessment.outcome === "pass" ? "pass" : "fail",
+      checks: assessment.checks,
+      record,
+    }));
+  if (runs.length === 0) return undefined;
+  const { check, note, model } = checksOf({ turns: [], endState: null }, { model: judgeModel });
+  const checks = await authorChecks("expectRuns", () => expectRuns(runs, { check, note, model }));
+  return checks.map((found) => ({ ...found, name: `${ACROSS_RUNS}${found.name}` }));
+}
+
+/** How the name of a check of `expectRuns` starts in every report. */
+export const ACROSS_RUNS = "across runs: ";
+
+function isEvidence(value: unknown): value is NonNullable<ScenarioCheck["evidence"]> {
+  if (typeof value !== "object" || value === null) return false;
+  const answer = (value as Record<string, unknown>).answer;
+  return answer === "yes" || answer === "no" || answer === "unknown";
 }
 
 function isCheck(value: unknown): value is ScenarioCheck {

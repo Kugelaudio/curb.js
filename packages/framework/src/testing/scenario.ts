@@ -1,4 +1,6 @@
 import { declaredNameProblem } from "../goals.js";
+import type { ConversationRecord } from "./record.js";
+import type { Caller } from "./converse.js";
 import type { ConfirmationVerdict } from "../llm/confirmation.js";
 import type { AgentTurnError } from "../llm/types.js";
 import { runsProblem } from "../cli/scenarios/limits.js";
@@ -194,13 +196,36 @@ export type ScenarioExpectContext = {
   endedCall: () => ScenarioCheck;
   /** A check of your own: passes when `pass` is true; `detail` explains a failure. */
   check: (name: string, pass: boolean, detail?: string) => ScenarioCheck;
+  /** The check, marked `reportOnly`: shown with its result and counted across runs, and it never
+   * fails a run or a scenario. */
+  note: (check: ScenarioCheck) => ScenarioCheck;
+  /** The conversation as the judge reads it: the agent's tools, then the transcript with every
+   * tool call, fenced as a recording. Give it to `model` as the input. */
+  transcriptText: string;
+  /** One yes/no question of your own about this conversation, answered by the run's judge model
+   * as `ask` of `curb/testing` answers it: a no fails, a yes passes, an unknown is `notJudged`. */
+  ask: (question: string) => Promise<ScenarioCheck>;
+  /** The run's judge model (`testModel`): a system prompt and an input to its text. */
+  model: (system: string, input: string) => Promise<string>;
+};
+
+/** One completed run of a scenario as `expectRuns` gets it: its record, its checks and outcome,
+ * and the helpers of `expect` over its conversation. */
+export type ScenarioRunResult = ScenarioExpectContext & {
+  /** 1 for the first run. */
+  run: number;
+  outcome: "pass" | "fail";
+  /** Every check of the run, the built-in ones, the judge's and those of `expect`. */
+  checks: readonly ScenarioCheck[];
+  record: ConversationRecord;
 };
 
 export type ScenarioDefinition = {
   /** Shown in the report and matched by `curb test <filter>`. Default: the file name. */
   name?: string;
-  /** A simulated caller. Give this or `turns`. */
-  caller?: ScenarioCaller;
+  /** A simulated caller, or a caller of your own: a function from the turns so far to the next
+   * line, or null to hang up (`Caller`). Give this or `turns`. */
+  caller?: ScenarioCaller | Caller;
   /** Scripted caller lines, one per turn. Give this or `caller`. */
   turns?: readonly string[];
   /** The most caller turns the conversation may take. Default: 12 for a simulated caller, the
@@ -227,12 +252,23 @@ export type ScenarioDefinition = {
   /** What must be true of the call, in plain sentences a judge answers with yes, no or unknown:
    * "The agent reads the booking number back." A no fails the run. */
   expectations?: readonly string[];
-  /** Built-in judge findings that fail a run when found. Default: none, they are only reported. */
-  failOn?: readonly JudgeFinding[];
+  /** Findings of your own, by id (lowercase, with underscores): one sentence each that is true of
+   * a call with that problem. The judge asks them beside the built-in ones; they are counted and
+   * reported the same way, and fail nothing unless `failOn` names them. */
+  findings?: Readonly<Record<string, string>>;
+  /** Judge findings that fail a run when found: built-in ones and the scenario's own. Default:
+   * none, they are only reported. */
+  failOn?: readonly (JudgeFinding | (string & {}))[];
   /** The highest value this scenario accepts for the style numbers it names. Default: none. */
   style?: StyleLimits;
   /** Your own checks, run on the finished conversation. */
   expect?: (context: ScenarioExpectContext) => readonly ScenarioCheck[] | Promise<readonly ScenarioCheck[]>;
+  /** Your own checks across all runs, called once after the last with every completed run. A
+   * failed one fails the scenario; `note` makes one report-only. */
+  expectRuns?: (
+    runs: readonly ScenarioRunResult[],
+    helpers: Pick<ScenarioExpectContext, "check" | "note" | "model">,
+  ) => readonly ScenarioCheck[] | Promise<readonly ScenarioCheck[]>;
 };
 
 /** A definition `scenario()` accepted. */
@@ -244,6 +280,13 @@ export const DEFAULT_MAX_TURNS = 12;
 export const MAX_SIMULATED_TURNS = 100;
 /** The most sentences `expectations` may hold: one judge call answers them all. */
 export const MAX_EXPECTATIONS = 12;
+/** The most findings of its own a scenario may give, for the same reason. */
+export const MAX_FINDINGS = 12;
+
+/** How the id of a finding of your own is written: lowercase words joined by underscores. */
+const FINDING_ID = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
+/** Ids the judge or `curb review` ask questions under themselves. */
+const RESERVED_IDS = ["goal", "unresolved", "caller_closed"];
 
 const FIELDS = [
   "name",
@@ -256,9 +299,11 @@ const FIELDS = [
   "runs",
   "minPassRate",
   "expectations",
+  "findings",
   "failOn",
   "style",
   "expect",
+  "expectRuns",
 ];
 const CALLER_FIELDS = ["goal", "knows", "language", "persona", "behaviours"];
 const RESULT_FIELDS = ["ok", "message", "data"];
@@ -293,7 +338,7 @@ function scenarioProblems(definition: unknown): string[] {
   }
   const problems = unknownFields(definition, FIELDS, "a scenario");
   const { name, caller, turns, maxTurns, client, experiments, fakes, expect } = definition;
-  const { runs, minPassRate, expectations, failOn, style } = definition;
+  const { runs, minPassRate, expectations, findings, failOn, style, expectRuns } = definition;
   if (name !== undefined && (typeof name !== "string" || !name.trim())) {
     problems.push("name must be a non-empty string.");
   }
@@ -302,7 +347,8 @@ function scenarioProblems(definition: unknown): string[] {
   } else if (caller === undefined && turns === undefined) {
     problems.push('Give caller: { goal: "..." } for a simulated caller, or turns: ["...", ...] for scripted caller lines.');
   }
-  if (caller !== undefined) problems.push(...callerProblems(caller));
+  // A caller of your own is any function; what it says is its own.
+  if (caller !== undefined && typeof caller !== "function") problems.push(...callerProblems(caller));
   if (turns !== undefined) problems.push(...turnsProblems(turns));
   if (maxTurns !== undefined) {
     if (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1) {
@@ -321,13 +367,17 @@ function scenarioProblems(definition: unknown): string[] {
     problems.push(`minPassRate must be the share of runs that must pass, above 0 and at most 1 (0.8 for four in five); got ${preview(minPassRate)}.`);
   }
   if (expectations !== undefined) problems.push(...expectationsProblems(expectations));
-  if (failOn !== undefined) problems.push(...failOnProblems(failOn));
+  if (findings !== undefined) problems.push(...findingsProblems(findings));
+  if (failOn !== undefined) problems.push(...failOnProblems(failOn, isRecord(findings) ? Object.keys(findings) : []));
   if (style !== undefined) problems.push(...styleLimitsProblems(style).map((problem) => `style: ${problem}`));
   if (client !== undefined) problems.push(...clientProblems(client));
   if (experiments !== undefined) problems.push(...experimentsProblems(experiments));
   if (fakes !== undefined) problems.push(...fakesProblems(fakes));
   if (expect !== undefined && typeof expect !== "function") {
     problems.push('expect must be a function that returns checks, e.g. ({ called }) => [called("book_meeting")].');
+  }
+  if (expectRuns !== undefined && typeof expectRuns !== "function") {
+    problems.push('expectRuns must be a function of the runs that returns checks, e.g. (runs, { check }) => [check("books on most runs", runs.filter((run) => run.called("book").pass).length >= 2)].');
   }
   return problems;
 }
@@ -379,8 +429,25 @@ function expectationsProblems(expectations: unknown): string[] {
   return [];
 }
 
-function failOnProblems(failOn: unknown): string[] {
-  const known = Object.keys(JUDGE_FINDINGS);
+/** What is wrong with a scenario's own findings, one entry per problem. */
+function findingsProblems(findings: unknown): string[] {
+  const example = 'e.g. { canned_closing: "The agent ends a reply with a stock line." }';
+  if (!isRecord(findings)) return [`findings must be an object of id to one sentence, ${example}.`];
+  const entries = Object.entries(findings);
+  if (entries.length > MAX_FINDINGS) {
+    return [`findings holds ${entries.length} findings; give at most ${MAX_FINDINGS}, and move the rest to a scenario of their own.`];
+  }
+  return entries.flatMap(([id, sentence]) => {
+    if (Object.hasOwn(JUDGE_FINDINGS, id)) return [`findings.${id} is a built-in finding, which the judge already asks; give yours another id.`];
+    if (RESERVED_IDS.includes(id) || /^expectation_\d+$/.test(id)) return [`findings.${id}: the judge asks a question of its own under that id; give yours another one.`];
+    if (!FINDING_ID.test(id)) return [`findings: ${preview(id)} is no finding id; write it in lowercase words joined by underscores, such as canned_closing.`];
+    if (typeof sentence !== "string" || !sentence.trim()) return [`findings.${id} must be one sentence that is true of a call with this problem, ${example}.`];
+    return [];
+  });
+}
+
+function failOnProblems(failOn: unknown, own: readonly string[]): string[] {
+  const known = [...Object.keys(JUDGE_FINDINGS), ...own];
   if (!Array.isArray(failOn)) return [`failOn must be a list of judge findings: ${known.join(", ")}.`];
   const unknown = failOn.filter((finding) => typeof finding !== "string" || !known.includes(finding));
   return unknown.length === 0
