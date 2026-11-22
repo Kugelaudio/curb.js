@@ -195,7 +195,7 @@ describe("judge and ask", () => {
     });
     expect(requests[0]!.systemPrompt).not.toContain("- goal:");
     // No answer is neither a pass nor a fail.
-    const unsure = answering({ question: { answer: "unknown", turn: null, quote: "", reason: "The call does not show it." } });
+    const unsure = answering({ question: { answer: "unknown", quote: "", reason: "The call does not show it." } });
     expect(await ask(conversation, "The agent says the time of the booking.", { model: unsure.model })).toEqual({
       name: "The agent says the time of the booking.",
       pass: false,
