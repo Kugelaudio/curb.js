@@ -81,6 +81,22 @@ describe("a scenario's openings onto curb/testing", () => {
     expect(() => scenario({ caller: () => null, runs: 3 })).not.toThrow();
   });
 
+  it("asks the judge about a scripted scenario whose only judged check is a built-in finding in failOn", async () => {
+    const root = project({
+      "src/agent/milk.scenario.ts": `import { scenario } from "curb/testing";
+export default scenario({ name: "adds milk", turns: ["Put milk on my list."], failOn: ["incoherent"] });
+`,
+    });
+    const said = { answer: "yes" as const, turn: 1, quote: "Milk is on your list", reason: "It says it twice." };
+    const { host: testHost, judged } = host({ agent: milkAgent, judge: () => ({ incoherent: said }) });
+
+    const { code, printed } = await run(["--json"], root, testHost);
+
+    expect(judged()).toHaveLength(1);
+    expect(code).toBe(1);
+    expect(json(printed).scenarios[0]!.checks.at(-1)).toMatchObject({ name: "no judge finding: incoherent", pass: false });
+  });
+
   it("asks a scenario's own findings in the judge's request, counts and reports them like the built-in ones, and fails on the one failOn names", async () => {
     const root = project({
       "src/agent/natural.ts": NATURAL,

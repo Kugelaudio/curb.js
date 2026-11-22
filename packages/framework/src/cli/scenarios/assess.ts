@@ -75,7 +75,8 @@ export async function assessConversation(params: {
   const own = settings.findings ?? {};
   const hasOwn = Object.keys(own).length > 0;
   // A caller of your own is judged as a simulated one is, without a goal.
-  const judges = caller !== null || settings.judgeAlways === true || settings.expectations.length > 0 || hasOwn;
+  // A finding named in failOn is a check, so it is asked even of a scripted scenario with nothing else for the judge.
+  const judges = caller !== null || settings.judgeAlways === true || settings.expectations.length > 0 || settings.failOn.length > 0 || hasOwn;
   if (judges && !error && !brokeOff) {
     try {
       const findings = hasOwn ? { findings: { ...FINDINGS, ...own } } : {};
