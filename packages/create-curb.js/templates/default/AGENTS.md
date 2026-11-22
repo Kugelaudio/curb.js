@@ -120,7 +120,7 @@ src/agent/*.scenario.ts     conversations `curb test` plays: a caller, and what 
 context/*.md                knowledge a skill reads with <Text src="file.md" />
 .env                        other providers' keys, an optional KUGELAUDIO_API_KEY; never commit it
 .data/conversations.jsonl   every preview conversation: tool calls, inputs, results
-.curb/test-runs/            every `curb test` run with its conversations, for --rejudge
+.curb/test-runs/            every `curb test` run with its conversations, for --rejudge (format: test-runs.md)
 .github/workflows/          curb-test.yml runs check and test on each pull request; it needs
                             KUGELAUDIO_API_KEY as a repository secret
 ```
