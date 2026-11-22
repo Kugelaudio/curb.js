@@ -586,6 +586,20 @@ transcript. Write sentences a stranger could check:
 - **One fact per sentence.** A sentence with "and" that is half true has no
   answer.
 
+The same holds for findings and `ask`: write each about one concrete thing a line of the call
+shows, and say it positively. The judge must quote the call, so a broad question ("The agent
+sounds like a person") is often answered unknown, and a negated one ("The agent never reads out
+the booking id") is easy for a judge to get backwards. Write the mistake itself as a finding
+("says X"), and what should happen as an expectation or `ask` ("does Y"):
+
+```ts
+// Before: broad, and negated
+expectations: ["The agent sounds like a person.", "The agent never reads out the internal booking id."],
+// After: one thing each, that a quote shows
+findings: { reads_internal_id: "The agent reads out an internal booking id such as INT-4471." },
+expectations: ["The agent says the booking number after the booking succeeded."],
+```
+
 Scripted scenarios take `expectations` too. A scripted scenario without them
 calls no judge.
 
@@ -600,7 +614,7 @@ no run and no scenario:
 ```ts
 expect: async ({ ask, model, note, check, transcriptText }) => {
   const rating = await model("Does the agent sound warm? Answer yes or no, then why.", transcriptText);
-  return [note(await ask("The agent sounds like a person on the phone.")), note(check("sounds warm", /^yes/i.test(rating), rating))];
+  return [note(await ask("The agent uses the caller's name at least once.")), note(check("sounds warm", /^yes/i.test(rating), rating))];
 },
 ```
 
@@ -666,7 +680,8 @@ prompt, so answers from different judges are not compared as one.
 ### Findings of your own
 
 `findings` adds findings of your own, by id (lowercase words joined by underscores), one sentence
-each. The judge asks them in the same request as its own, and they are counted, reported, saved
+each, about one thing the agent says or does (see [Expectations in plain
+language](#expectations-in-plain-language)). The judge asks them in the same request as its own, and they are counted, reported, saved
 and re-judged the same way. They fail nothing unless `failOn` names them. Keep them in one module
 and import it into each scenario that should ask them; `curb review` asks them of real calls too:
 
@@ -686,10 +701,11 @@ hundred calls. Run it several times and read the rate:
 npx curb test --runs 5
 ```
 
-`--runs` sets the number of runs of every scenario with a simulated caller, and
-wins over a scenario's own `runs`. A scripted scenario says the same words
-every time and runs once, unless it sets `runs` itself. `minPassRate` is the
-scenario's alone, whatever `--runs` says. With `runs: 5, minPassRate: 0.8`:
+`--runs` sets the number of runs of every scenario, and wins over a scenario's
+own `runs`. A scripted scenario says the same words every time, but the agent
+does not answer the same way every time, so it runs that often too and must pass
+every run unless it sets `minPassRate`. `minPassRate` is the scenario's alone,
+whatever `--runs` says. With `runs: 5, minPassRate: 0.8`:
 
 ```text
 --- books a haircut (src/agent/booking.scenario.ts)
@@ -764,7 +780,7 @@ agent, so it is left out of the pass rate:
 
 | Error | What happened |
 | --- | --- |
-| `provider` | a request to the agent's LLM failed after the retries, or timed out |
+| `provider` | a request to the agent's LLM failed after the retries, or got no answer within its deadline (`AGENT_LLM_TIMEOUT_MS`, 60 s, retries included); after two such rounds in a row the next requests fail at once |
 | `simulator` | the simulated caller could not say its next line |
 | `simulator_loop` | the caller said the same line three times in a row while the agent's replies moved on |
 | `invented_fact` | the caller said a fact that is not in `knows` |
@@ -777,7 +793,8 @@ error that is the agent's own (the step limit, an empty reply) is a failure.
 Errors cannot hide a problem: when more than a third of a scenario's runs are
 errors (one run in three is allowed), or none completed,
 the scenario is `ERROR` and `curb test` exits 2. A run that failed still counts: a scenario
-with failures below its `minPassRate` fails, however many errors it has.
+with failures below its `minPassRate` fails, however many errors it has. Once more than a third
+of the runs a scenario plans are errors, its other runs are not started, and its report says so.
 
 ### Style numbers
 
@@ -911,8 +928,9 @@ A scenario file that cannot be loaded is reported as
 ### In CI
 
 A new project ships `.github/workflows/curb-test.yml`: it runs `curb check` and
-`curb test` on every pull request, once the repository has the agent's LLM key
-as a secret (`KUGELAUDIO_API_KEY` by default). Each scenario says how often it
+`curb test` on every pull request, and fails with an error that says so while the
+repository lacks the agent's LLM key as a secret (`KUGELAUDIO_API_KEY` by default);
+a pull request from a fork gets no secrets and runs only `curb check`. Each scenario says how often it
 runs and how many runs must pass (`runs`, `minPassRate`). On GitHub Actions the
 report is also written to the job summary (`GITHUB_STEP_SUMMARY`), and
 `--report <file>` writes the same Markdown to a file anywhere.

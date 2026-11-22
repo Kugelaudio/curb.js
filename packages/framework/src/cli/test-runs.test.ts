@@ -205,7 +205,7 @@ describe("curb test, repeated and saved runs", () => {
     expect(printed).not.toContain("FAIL");
   });
 
-  it("runs every run of a simulated scenario also once one failed, and a scripted scenario once whatever --runs says", async () => {
+  it("runs every run of a simulated scenario also once one failed, and a scripted scenario --runs times too", async () => {
     const root = project({ "src/agent/milk.scenario.ts": MILK, "src/agent/hello.scenario.ts": HELLO });
     const { host, stats } = tasksHost({ agent: () => [says("Hello there.")], caller: () => ["[hang up]"], judge: () => ({ goal: "no" }) });
 
@@ -214,9 +214,28 @@ describe("curb test, repeated and saved runs", () => {
     expect(code).toBe(1);
     const report = JSON.parse(printed) as TestReport;
     const [hello, milk] = report.scenarios as ScenarioResult[];
-    expect(hello).toMatchObject({ name: "hello", mode: "scripted", passed: true, stats: { runs: 1, ran: 1 } });
+    expect(hello).toMatchObject({ name: "hello", mode: "scripted", passed: true, stats: { runs: 5, ran: 5, passed: 5, minPassRate: 1 } });
     expect(milk.stats).toMatchObject({ runs: 5, ran: 5, failed: 5 });
-    expect(stats.bundles).toBe(6);
+    expect(stats.bundles).toBe(10);
+  });
+
+  it("fails a scripted scenario that --runs plays more than once on a single failed run, unless it sets minPassRate", async () => {
+    const root = project({
+      "src/agent/hello.scenario.ts": HELLO,
+      "src/agent/lenient.scenario.ts": `import { scenario } from "curb/testing";
+export default scenario({ turns: ["Hi"], minPassRate: 0.5, expect: ({ said }) => [said("hello")] });
+`,
+    });
+    // One answer in three leaves out the word the scenario checks for.
+    let bundle = 0;
+    const { host } = tasksHost({ agent: () => [says((bundle += 1) % 3 === 0 ? "Hi there." : "Hello there.")] });
+
+    const { code, printed } = await run(["--runs", "3", "--concurrency", "1", "--json"], root, host);
+
+    expect(code).toBe(1);
+    const [hello, lenient] = (JSON.parse(printed) as TestReport).scenarios as ScenarioResult[];
+    expect(hello).toMatchObject({ mode: "scripted", outcome: "fail", flaky: true, stats: { runs: 3, passed: 2, failed: 1 } });
+    expect(lenient).toMatchObject({ mode: "scripted", outcome: "pass", flaky: true, stats: { runs: 3, passed: 2, failed: 1 } });
   });
 
   it("keeps every field --json had, with the values a single run always gave, and only adds to them", async () => {
@@ -274,7 +293,7 @@ describe("curb test, repeated and saved runs", () => {
     });
     expect(typeof result.durationMs).toBe("number");
     // What is new sits beside it.
-    expect(report).toMatchObject({ passed: true, outcome: "pass", exitCode: 0, callerPromptVersion: "2", judgePromptVersion: "3", usage: null });
+    expect(report).toMatchObject({ passed: true, outcome: "pass", exitCode: 0, callerPromptVersion: "3", judgePromptVersion: "3", usage: null });
     expect(report.models).toEqual({ agent: "openai:gpt-5.2", caller: "openai:gpt-5.4-mini", judge: "openai:gpt-5.4-mini" });
     expect(result).toMatchObject({ outcome: "pass", flaky: false, stats: { runs: 1, ran: 1, passed: 1, passRate: 1, reliability: 1 }, findings: [], variants: [] });
     expect(result.runs).toHaveLength(1);
@@ -296,7 +315,7 @@ describe("curb test, repeated and saved runs", () => {
       version: 1,
       complete: true,
       models: { agent: "openai:gpt-5.2", caller: "openai:gpt-5.4-mini", judge: "openai:gpt-5.4-mini" },
-      callerPromptVersion: "2",
+      callerPromptVersion: "3",
       judgePromptVersion: "3",
       scenarios: [{ name: "adds milk", file: "src/agent/milk.scenario.ts", mode: "simulated", runs: 2, minPassRate: 1 }],
     });
@@ -363,6 +382,37 @@ describe("curb test, repeated and saved runs", () => {
     expect(printed).toContain("ERROR hello (1 caller turn(s), ");
     expect(printed).toContain("): provider: the agent's LLM provider failed, after the retries: failed: HTTP 529: overloaded\n");
     expect(printed).toMatch(/\n0 of 1 scenario\(s\) passed in \d+\.\ds\. Not assessed \(too many errors\): hello \(src\/agent\/hello\.scenario\.ts\)\n$/);
+  });
+
+  it("starts no more runs of a scenario that has too many errors to be assessed, and says so", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const root = project({
+      "src/agent/hello.scenario.ts": `import { scenario } from "curb/testing";
+export default scenario({ turns: ["Hi"], runs: 5, expect: ({ said }) => [said("hello")] });
+`,
+    });
+    let gaveUp = 0;
+    const { host, stats } = tasksHost({
+      agent: () => [],
+      agentLlm: () => async () => {
+        gaveUp += 1;
+        throw new Error("The operation was aborted due to timeout (no answer within 60 s)");
+      },
+      providerErrors: () => gaveUp,
+    });
+
+    const { code, printed } = await run(["--concurrency", "1", "--json"], root, host);
+
+    expect(code).toBe(2);
+    const [result] = (JSON.parse(printed) as TestReport).scenarios as ScenarioResult[];
+    // Two errors of five runs are more than the 34% a scenario may have: three runs never start.
+    expect(stats.bundles).toBe(2);
+    expect(result.stats).toMatchObject({ runs: 5, ran: 2, errors: 2 });
+    expect(result.outcome).toBe("error");
+    expect(result.notes).toContain(
+      "3 of 5 run(s) not started: 2 error(s) already, more than the 34% of its runs a scenario may have, so it cannot be assessed",
+    );
+    expect(savedRun(root).conversations).toHaveLength(2);
   });
 
   /** Scripted scenarios that each say one line, and an agent that takes `ms(line)` to answer it. */
@@ -467,7 +517,7 @@ export default scenario({ caller: { goal: "Send my list to Sam" }, runs: 2 });
     expect(markdown).toContain("<summary>Run 1: fail</summary>");
     expect(markdown).toContain("caller: Put milk on my list.");
     expect(markdown).toContain("| adds milk | words per reply p50 1, p90 5");
-    expect(markdown).toContain("models: agent openai:gpt-5.2, caller openai:gpt-5.4-mini, judge openai:gpt-5.4-mini · judge prompt 3, caller prompt 2");
+    expect(markdown).toContain("models: agent openai:gpt-5.2, caller openai:gpt-5.4-mini, judge openai:gpt-5.4-mini · judge prompt 3, caller prompt 3");
 
     // Without either, nothing is written.
     const quiet = project({ "src/agent/hello.scenario.ts": HELLO });

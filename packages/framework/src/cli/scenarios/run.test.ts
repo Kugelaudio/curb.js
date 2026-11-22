@@ -692,11 +692,11 @@ describe("repeated runs", () => {
     ]);
   });
 
-  it("takes the scenario's own runs, which --runs overrides for a simulated caller only", () => {
+  it("takes the scenario's own runs, which --runs overrides, scripted or simulated", () => {
     const simulated = scenario({ caller: { goal: "Book" }, runs: 3 });
     const scripted = scenario({ turns: ["Hi"] });
-    expect([plannedRuns(simulated), plannedRuns(simulated, 10), plannedRuns(scripted), plannedRuns(scripted, 10)]).toEqual([3, 10, 1, 1]);
-    expect(plannedRuns(scenario({ turns: ["Hi"], runs: 2 }), 10)).toBe(2);
+    expect([plannedRuns(simulated), plannedRuns(simulated, 10), plannedRuns(scripted), plannedRuns(scripted, 10)]).toEqual([3, 10, 1, 10]);
+    expect([plannedRuns(scenario({ turns: ["Hi"], runs: 2 })), plannedRuns(scenario({ turns: ["Hi"], runs: 2 }), 10)]).toEqual([2, 10]);
   });
 
   it("counts the tokens each run used, and all of them together", async () => {
@@ -840,6 +840,34 @@ describe("provider errors", () => {
     expect(counted.stats).toMatchObject({ errors: 1, failed: 0, passRate: null });
 
     expect(await play()).toMatchObject({ outcome: "fail", stats: { errors: 0, failed: 1 } });
+    vi.restoreAllMocks();
+  });
+
+  it("leave the other runs of a scenario unstarted once it cannot be assessed", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let bundles = 0;
+    let gaveUp = 0;
+    const result = await runScenario({
+      scenario: scenario({ turns: ["Hi"], runs: 3 }),
+      name: "hello",
+      file: "src/agent/hello.scenario.ts",
+      createBundle: async () => {
+        bundles += 1;
+        const { runtime, session } = tasksBundle(async () => {
+          gaveUp += 1;
+          throw new Error("HTTP 529: overloaded");
+        });
+        return { runtime, session, providerErrors: () => gaveUp };
+      },
+      simulator: unused,
+      slots: new RunSlots(1),
+    });
+
+    expect(bundles).toBe(2);
+    expect(result).toMatchObject({ outcome: "error", stats: { runs: 3, ran: 2, errors: 2 } });
+    expect(result.notes).toContain(
+      "1 of 3 run(s) not started: 2 error(s) already, more than the 34% of its runs a scenario may have, so it cannot be assessed",
+    );
     vi.restoreAllMocks();
   });
 });

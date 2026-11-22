@@ -12,8 +12,14 @@ import type { AgentRunRequest, AgentRunResponse, AgentStreamPart } from "../llm/
  * run, the agent's, the caller's and the judge's alike, and counts the waits for the report.
  *
  * Any other error a second try can get past (a server error, a dropped connection) is tried a
- * few times with a short backoff. A request that still fails is a {@link ProviderError}:
- * short, without the provider's response body, and with nothing in it that looks like a key.
+ * few times with a short backoff, all within the one deadline of the request (`timeoutMs`): a
+ * provider that does not answer fails the request once that is up, however many tries it had.
+ * Only a rate limit gives the next attempt a deadline of its own, since waiting for it is no
+ * time the provider spent answering. A provider that keeps timing out, two rounds of requests in
+ * a row with no answer in between, is not sent more for a deadline's length: every request of the
+ * run fails at once meanwhile, so a run on a provider that is down ends in about two deadlines.
+ * A request that still fails is a {@link ProviderError}: short, without the provider's response
+ * body, and with nothing in it that looks like a key.
  */
 
 /** A provider request that failed for good: after the retries, or with an error no retry helps.
@@ -34,8 +40,9 @@ export type RetryOptions = {
   maxDelayMs?: number;
   /** How long one request keeps waiting for a rate limit to lift before it fails. Default 5 minutes. */
   rateLimitPatienceMs?: number;
-  /** A deadline for each attempt, so that waiting for a rate limit does not use up the time a
-   * request has to answer. Default: none beyond the request's own signal. */
+  /** How long the provider has to answer the request, its retries included; a rate limit starts
+   * it afresh, so that waiting for one does not use up the time a request has to answer.
+   * Default: none beyond the request's own signal. */
   timeoutMs?: number;
   /** The state every request of the run shares. Default: one of this client's own. */
   throttle?: Throttle;
@@ -60,6 +67,8 @@ const FIRST_SPACING_MS = 1000;
 const MAX_SPACING_MS = 4000;
 /** Longest provider message a report shows. */
 const MAX_ERROR_TEXT = 300;
+/** Rounds of requests in a row that got no answer before the provider counts as not answering. */
+const TIMEOUT_ROUNDS = 2;
 
 /** How much a run was slowed down by its provider's rate limit. */
 export type ThrottleStats = {
@@ -83,6 +92,11 @@ export class Throttle {
   private sentAtSlowDown = 0;
   private waits = 0;
   private waitedMs = 0;
+  /** Rounds of requests that ran out of time with no answer since, the newest request when the
+   * last round was counted, and until when no request is sent because of them. */
+  private timeoutRounds = 0;
+  private sentAtTimeout = 0;
+  private notAnswering: { until: number; deadlineMs: number } | null = null;
   private readonly slowDown = new Set<() => void>();
   readonly now: () => number;
 
@@ -126,6 +140,31 @@ export class Throttle {
     for (const listener of [...this.slowDown]) listener();
   }
 
+  /**
+   * Request number `request` got no answer within its deadline of `deadlineMs`. Requests sent
+   * before an earlier one ran out of time are of that one's round, which counts once: they were
+   * all waiting on the same silence. After {@link TIMEOUT_ROUNDS} rounds in a row, no request is
+   * sent for `deadlineMs` ({@link notAnsweringFor}).
+   */
+  timedOut(request: number, deadlineMs: number): void {
+    if (request <= this.sentAtTimeout) return;
+    this.sentAtTimeout = this.sent;
+    this.timeoutRounds += 1;
+    if (this.timeoutRounds >= TIMEOUT_ROUNDS) this.notAnswering = { until: this.now() + deadlineMs, deadlineMs };
+  }
+
+  /** The provider answered a request: its timeouts count afresh. */
+  answered(): void {
+    this.timeoutRounds = 0;
+    this.notAnswering = null;
+  }
+
+  /** The deadline the provider kept running out of, while requests are not sent because of it;
+   * else null. */
+  notAnsweringFor(): number | null {
+    return this.notAnswering && this.now() < this.notAnswering.until ? this.notAnswering.deadlineMs : null;
+  }
+
   /** Milliseconds until the pause is over. */
   remaining(): number {
     return Math.max(0, this.until - this.now());
@@ -152,11 +191,13 @@ export function withRetries(client: AgentLlmClient, options: RetryOptions = {}):
     const call = plan.call(request.signal);
     while (true) {
       const sent = await call.ready();
-      const attempt = plan.attempt(request.signal);
+      const attempt = call.attempt();
       try {
-        return await client(attempt.signal === request.signal ? request : { ...request, signal: attempt.signal });
+        const response = await client(attempt.signal === request.signal ? request : { ...request, signal: attempt.signal });
+        call.answered();
+        return response;
       } catch (error) {
-        await call.failed(error, sent);
+        await call.failed(error, sent, attempt.expired());
       } finally {
         attempt.done();
       }
@@ -174,7 +215,7 @@ export function withStreamRetries(stream: AgentLlmStreamStep, options: RetryOpti
     const call = plan.call(request.signal);
     while (true) {
       const sent = await call.ready();
-      const attempt = plan.attempt(request.signal);
+      const attempt = call.attempt();
       const step = stream(attempt.signal === request.signal ? request : { ...request, signal: attempt.signal });
       let started = false;
       let finished = false;
@@ -183,6 +224,7 @@ export function withStreamRetries(stream: AgentLlmStreamStep, options: RetryOpti
           const next = await step.next();
           if (next.done) {
             finished = true;
+            call.answered();
             return next.value;
           }
           started = true;
@@ -190,8 +232,8 @@ export function withStreamRetries(stream: AgentLlmStreamStep, options: RetryOpti
         }
       } catch (error) {
         finished = true;
-        if (started) throw plan.givenUp(error, request.signal);
-        await call.failed(error, sent);
+        if (started) throw call.stopped(error, sent, attempt.expired());
+        await call.failed(error, sent, attempt.expired());
       } finally {
         attempt.done();
         // The consumer stopped reading (a cancelled turn): close the provider's stream too.
@@ -220,28 +262,58 @@ function retryPlan(options: RetryOptions) {
   };
 
   return {
-    givenUp,
-    /** The signal of one attempt: the request's own, with the attempt's deadline when one is set. */
-    attempt(signal: AbortSignal | undefined): { signal: AbortSignal | undefined; done: () => void } {
-      if (options.timeoutMs === undefined) return { signal, done: () => {} };
-      // A timer of its own rather than AbortSignal.timeout: it is cleared when the attempt is over.
-      const deadline = new AbortController();
-      const timer = setTimeout(() => deadline.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")), options.timeoutMs);
-      return { signal: signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal, done: () => clearTimeout(timer) };
-    },
     /** One request, through all its attempts. */
     call(signal: AbortSignal | undefined) {
+      const { timeoutMs } = options;
       let failures = 0;
       let limits = 0;
       let limitedSince: number | null = null;
+      /** When the provider's time to answer is up; set by the first attempt after a rate limit. */
+      let deadlineAt: number | null = null;
+      /** The request ran out of its time: the provider counts as not answering it. */
+      const outOfTime = (sent: number) => {
+        if (timeoutMs !== undefined) throttle.timedOut(sent, timeoutMs);
+      };
       return {
-        /** Wait for this request's place in line. Returns the number it is sent under. */
+        /** Wait for this request's place in line. Returns the number it is sent under. Throws when
+         * the provider keeps timing out: the request is not sent at all. */
         async ready(): Promise<number> {
           for (let wait = throttle.reserve(); wait > 0; wait = throttle.remaining()) await sleep(wait, signal);
+          const silentFor = throttle.notAnsweringFor();
+          if (silentFor !== null) {
+            throw givenUp(new Error(`not sent: the provider did not answer within ${duration(silentFor)}, ${TIMEOUT_ROUNDS} times in a row`), signal);
+          }
           return throttle.send();
         },
-        /** Pause before the next attempt, or throw what the request fails with for good. */
-        async failed(error: unknown, sent: number): Promise<void> {
+        /** The signal of one attempt: the request's own, with what is left of its deadline. */
+        attempt(): { signal: AbortSignal | undefined; done: () => void; expired: () => boolean } {
+          if (timeoutMs === undefined) return { signal, done: () => {}, expired: () => false };
+          deadlineAt ??= throttle.now() + timeoutMs;
+          // A timer of its own rather than AbortSignal.timeout: it is cleared when the attempt is over.
+          const deadline = new AbortController();
+          const timer = setTimeout(
+            () => deadline.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")),
+            Math.max(0, deadlineAt - throttle.now()),
+          );
+          return {
+            signal: signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal,
+            done: () => clearTimeout(timer),
+            expired: () => deadline.signal.aborted,
+          };
+        },
+        /** The provider answered. */
+        answered(): void {
+          throttle.answered();
+        },
+        /** What a stream that failed after its first part throws: it is not sent again. */
+        stopped(error: unknown, sent: number, expired: boolean): unknown {
+          if (!expired || signal?.aborted) return givenUp(error, signal);
+          outOfTime(sent);
+          return givenUp(error, signal, ` (no answer within ${duration(timeoutMs!)})`);
+        },
+        /** Pause before the next attempt, or throw what the request fails with for good.
+         * `expired`: the attempt ended because the request's deadline was up. */
+        async failed(error: unknown, sent: number, expired: boolean): Promise<void> {
           const facts = providerFacts(error);
           if (signal?.aborted) throw givenUp(error, signal);
           if (facts.rateLimited) {
@@ -253,17 +325,31 @@ function retryPlan(options: RetryOptions) {
               throw givenUp(error, signal, ` (still rate limited after ${Math.round(waited / 1000)} s of waiting)`);
             }
             throttle.limited(delay, sent);
+            // Waiting is no time the provider spent answering: the next attempt has a deadline of its own.
+            deadlineAt = null;
             return;
+          }
+          if (expired) {
+            outOfTime(sent);
+            throw givenUp(error, signal, ` (no answer within ${duration(timeoutMs!)})`);
           }
           failures += 1;
           if (failures >= attempts || !facts.retryable) throw givenUp(error, signal);
           // The provider's own pause when it named one, else doubling with jitter.
-          throttle.pause(Math.min(maxDelayMs, facts.retryAfterMs ?? jittered(baseDelayMs * 2 ** (failures - 1))));
+          const pause = Math.min(maxDelayMs, facts.retryAfterMs ?? jittered(baseDelayMs * 2 ** (failures - 1)));
+          if (deadlineAt !== null && throttle.now() + pause >= deadlineAt) {
+            outOfTime(sent);
+            throw givenUp(error, signal, ` (no answer within ${duration(timeoutMs!)})`);
+          }
+          throttle.pause(pause);
         },
       };
     },
   };
 }
+
+/** A deadline as a message names it. */
+const duration = (ms: number) => (ms >= 1000 ? `${Math.round(ms / 1000)} s` : `${ms} ms`);
 
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise<void>((resolve, reject) => {

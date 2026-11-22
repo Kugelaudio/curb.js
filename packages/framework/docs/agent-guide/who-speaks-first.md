@@ -3,7 +3,7 @@
 | `firstTurn` | How a conversation opens |
 |---|---|
 | `"user"` (default) | The agent waits for the caller. |
-| `"agent"` | A call opens with one short greeting the model writes after the caller joins. The instruction behind it is framework-generated and hidden from the preview transcript. |
+| `"agent"` | A call opens with one short greeting the model writes after the caller joins. The instruction behind it is framework-generated and hidden from the preview transcript. The greeting of an inbound call never hangs up: an `end_call` in it is refused. |
 | `{ say: "..." }` | Every conversation opens with exactly that line, with no model call: a call speaks it, typed chat in the preview shows it, `curb say` and `curb test` start with it. |
 
 Use `{ say }` when the opening words must not vary, for example a notice the

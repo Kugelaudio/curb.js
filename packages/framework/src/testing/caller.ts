@@ -11,7 +11,7 @@ import type { CallerBehaviour, ScenarioCaller, ScenarioTurn } from "./scenario.j
  */
 
 /** Changes whenever the caller's prompt or its markers change, so results can be told apart. */
-export const CALLER_PROMPT_VERSION = "2";
+export const CALLER_PROMPT_VERSION = "3";
 
 /** How long the caller or the judge may take for one answer. The host that sends their
  * requests holds each attempt to it (`host.ts`), so waiting for a rate limit is not
@@ -125,6 +125,7 @@ export function callerPrompt(caller: ScenarioCaller, language: string): string {
     "How the call ends:",
     "- Stay on the call until the agent has confirmed that your goal is done, or it is clear that it cannot be done on this call. A promise to do it later is not a confirmation.",
     "- Then say a short goodbye and end that same line with a marker, which is not spoken: [hang up: met - <why>] when your goal was confirmed done, [hang up: not met - <why>] when it was not.",
+    "- Never hang up in reply to a question of the agent's (\"shall I book it?\"): answer it first, and end the call on a later line.",
     "- If the agent has said goodbye and you have nothing left to say, answer with the marker alone.",
   ].join("\n");
 }

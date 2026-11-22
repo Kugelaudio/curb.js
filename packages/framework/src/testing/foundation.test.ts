@@ -133,7 +133,7 @@ describe("converse", () => {
     expect(model.model).toBe("openai:gpt-5.4-nano");
     expect(model.usage()).toEqual({ inputTokens: 9, outputTokens: 6, cacheReadTokens: 0, cacheWriteTokens: 0 });
     expect(() => simulatedCaller({ goal: "" })).toThrow("simulatedCaller(): caller.goal must say what the caller wants");
-    expect(simulatedCaller.promptVersion).toBe("2");
+    expect(simulatedCaller.promptVersion).toBe("3");
   });
 });
 

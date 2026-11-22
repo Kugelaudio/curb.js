@@ -104,7 +104,8 @@ export function modelLabel(llm: LlmDescriptor): string {
 }
 
 /** How long a test session waits for one LLM request. Far beyond any single answer: the host's
- * retries hold each attempt to the real deadline, and a rate limit may take minutes to lift. */
+ * retries hold each request, its retries included, to the real deadline, a provider that keeps
+ * missing it is not sent more (`resilience.ts`), and a rate limit may take minutes to lift. */
 const SESSION_PATIENCE_MS = 60 * 60_000;
 
 /** The option of `curb test` that picks each part's model, as a refusal names it. */
@@ -190,8 +191,8 @@ function createProjectHost(): TestHost {
       const retry = { throttle, timeoutMs: agentTimeoutMs, onGiveUp: () => void (failed += 1) };
       const { runtime, session, definition } = await createVoiceAgentBundle(undefined, (transports) => {
         const { llm, streamLlm } = transports({ onUsage: tokens.add, maxRetries: 0 });
-        // Each attempt has the session's deadline; the session itself waits as long as a rate
-        // limit takes, which the retries bound.
+        // Each request has the session's deadline, its retries included; the session itself
+        // waits as long as a rate limit takes, which the retries bound.
         return { llm: withRetries(llm, retry), streamLlm: withStreamRetries(streamLlm, retry), llmTimeoutMs: SESSION_PATIENCE_MS };
       });
       return {

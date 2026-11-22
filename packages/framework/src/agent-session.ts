@@ -57,6 +57,10 @@ import { continuesHeardLine, joinHeardLine } from "./heard-line.js";
 
 export { normalizeLlmPunctuation } from "./llm/punctuation.js";
 
+/** The answer to an `end_call` in the greeting of an inbound call, before the caller said a word. */
+export const GREETING_STAYS_OPEN =
+  "Not run: the call has just opened and the caller has not said anything yet. Finish your greeting and let them answer.";
+
 /**
  * Pluggable LLM transport. The preview injects a `fetch("/api/agent")` client;
  * tests inject a mock. The session itself never touches the network or React.
@@ -290,6 +294,17 @@ export class AgentSession {
     this.setMessages([...messages]);
   }
 
+  /**
+   * Whether the next turn opens an inbound call: neither the agent nor the caller has said
+   * anything yet. The model's greeting (`firstTurn: "agent"`) is such a turn, and it never hangs
+   * up: a caller who has not said a word is not done. An outbound call (`call.direction`) may
+   * reach a voicemail, where the agent leaves its message and hangs up.
+   */
+  private inboundOpening(): boolean {
+    if (this.runtime.info.snapshot()["call.direction"] === "outbound") return false;
+    return !this.conversation.some((message) => message.role === "assistant" || (message.role === "user" && !message.kind));
+  }
+
   /** Open the conversation, once, with the agent's fixed line (no model call), after a synthetic note: a transcript starts
    * on the caller's side, and a failing `opening` then throws only once. Every turn opens first. Null if none or begun. */
   open(): string | null {
@@ -498,6 +513,7 @@ export class AgentSession {
     }
     this.unsaid = options.unsaid === true;
     this.blocks.turnStarted();
+    const greets = options.kind === "synthetic" && this.inboundOpening();
     const newest = this.conversation.at(-1);
     const heardAlready = options.heard && newest?.role === "user" && newest.content.endsWith(text);
     let messages: AgentChatMessage[] = heardAlready
@@ -602,7 +618,7 @@ export class AgentSession {
         steps += 1;
 
         const asksCaller = response.toolCalls.some((call) => !call.error && this.runtime.confirms(call.name));
-        const outcome = await this.applyLlmResponse(response, speech.stepText, messages, asksCaller);
+        const outcome = await this.applyLlmResponse(response, speech.stepText, messages, asksCaller, greets);
         messages = outcome.messages;
         for (const executed of outcome.toolCalls) {
           const { skill, ...tool } = executed;
@@ -795,13 +811,14 @@ export class AgentSession {
    * once it ran (refused, it hangs up nothing and the turn goes on). The model's
    * call of a `confirm` tool (`asksCaller`) is held for the caller's yes instead
    * of run, and the turn ends with its read-back; see {@link refusal} for what
-   * such a step refuses.
+   * such a step, and the greeting of an inbound call (`greets`), refuses.
    */
   private async applyLlmResponse(
     response: AgentRunResponse,
     said: string,
     messages: AgentChatMessage[],
     asksCaller: boolean,
+    greets: boolean,
   ): Promise<{
     messages: AgentChatMessage[];
     done: boolean;
@@ -856,7 +873,7 @@ export class AgentSession {
       // An earlier call of this step may have changed the tool surface, so a
       // tool is known or unknown, and asks the caller or not, only now. The
       // record says how the call ended (refused, held, run); rewind reads it.
-      const refusal = toolCall.invalid ? undefined : this.refusal(toolCall.name, asksCaller, held);
+      const refusal = toolCall.invalid ? undefined : this.refusal(toolCall.name, asksCaller, greets, held);
       if (refusal) toolCall = { ...toolCall, invalid: refusal };
       let outcome: ToolCallOutcome;
       let durationMs: number | undefined;
@@ -872,7 +889,8 @@ export class AgentSession {
       }
       if (toolCall !== published) next = withToolCallRecord(next, assistantAt, toolCall);
       const ok = outcome.result.ok !== false;
-      // Refused (invalid input, or CALL_STAYS_OPEN), an end_call hung up nothing and says nothing.
+      // Refused (invalid input, CALL_STAYS_OPEN or GREETING_STAYS_OPEN), an end_call hung up
+      // nothing and says nothing.
       if (ok && toolCall.name === END_CALL_TOOL_NAME) goodbye ??= endCallGoodbye(toolCall.input);
       executed.push({ toolCall, ok, ...(durationMs === undefined ? {} : { durationMs }), ...(skill ? { skill } : {}) });
       next = this.append(next, toolMessage(toolCall, outcome));
@@ -898,10 +916,13 @@ export class AgentSession {
   }
 
   /** Why a call of `name` must not run now, or undefined. `asksCaller`: the step calls a
-   * `confirm` tool, so the call stays open. `held`: the step already holds an action. */
-  private refusal(name: string, asksCaller: boolean, held: HeldCall | undefined): string | undefined {
+   * `confirm` tool, so the call stays open. `greets`: the turn is the greeting of an inbound
+   * call, which the caller has not answered yet, so it stays open too. `held`: the step
+   * already holds an action. */
+  private refusal(name: string, asksCaller: boolean, greets: boolean, held: HeldCall | undefined): string | undefined {
     if (!this.runtime.toolDefinition(name)) return `Unknown tool "${name}". Call only the tools you currently have.`;
     if (asksCaller && name === END_CALL_TOOL_NAME) return CALL_STAYS_OPEN;
+    if (greets && name === END_CALL_TOOL_NAME) return GREETING_STAYS_OPEN;
     if (held && this.runtime.confirms(name)) return oneQuestionAtATime(held);
     return undefined;
   }

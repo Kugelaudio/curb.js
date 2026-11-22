@@ -1574,7 +1574,7 @@
       "caller": "openai:gpt-5.4-mini",
       "judge": "openai:gpt-5.4-mini"
     },
-    "callerPromptVersion": "2",
+    "callerPromptVersion": "3",
     "judgePromptVersion": "3",
     "usage": {
       "agent": {
@@ -1612,7 +1612,7 @@
       "caller": "openai:gpt-5.4-mini",
       "judge": "openai:gpt-5.4-mini"
     },
-    "callerPromptVersion": "2",
+    "callerPromptVersion": "3",
     "judgePromptVersion": "3",
     "maxErrorRate": 0.34,
     "scenarios": [
@@ -2578,13 +2578,13 @@
   },
   "requests": {
     "caller": [
-      "10a815458160a2f6",
-      "10a815458160a2f6",
-      "607a5913ce5f48c8",
-      "6fa6e973f2861874",
-      "f7a62dbb85e54b70",
-      "f7a62dbb85e54b70",
-      "fe1ae4dd161a3b6f"
+      "1ea792f40a3d7c46",
+      "378677c7b690f873",
+      "3acd04778891b14a",
+      "3acd04778891b14a",
+      "60e997c294f0d117",
+      "60e997c294f0d117",
+      "acc3a1d90747fc1b"
     ],
     "judge": [
       "342f251173f758b6",

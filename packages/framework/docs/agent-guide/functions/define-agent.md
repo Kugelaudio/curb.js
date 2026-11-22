@@ -43,6 +43,7 @@ export const agent = defineAgent({ app: App, timeZone: "Europe/Berlin", firstTur
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | With `firstTurn: "agent"`, the greeting of an inbound call cannot hang up: its `end_call` is refused |
 | v1.15.0 | `afterCall`, `afterEvaluation` and `pipeline` added |
 | v1.8.0 | `goals` and `experiments` added |
 | v1.4.33 | `timeZone` added, and `firstTurn` takes `{ say }` |

@@ -160,9 +160,13 @@ describe("the examples of Build your own tests", () => {
     const report = JSON.parse(result.stdout) as { scenarios: Array<{ findings: Array<{ id: string }>; checks: Array<{ name: string; pass: boolean; reportOnly?: true }>; checkStats: Array<{ name: string; reportOnly?: true }> }> };
     const [scenario] = report.scenarios;
     expect(scenario!.findings.map((finding) => finding.id).slice(-2)).toEqual(["canned_closing", "missed_mood"]);
-    expect(scenario!.checkStats.find((check) => check.name.startsWith("The agent sounds like a person"))).toMatchObject({ reportOnly: true });
-    // Juno says the same goodbye on every run here, so the check across runs fails the scenario.
-    expect(scenario!.checks.find((check) => check.name.startsWith("across runs: "))).toMatchObject({ name: "across runs: the goodbye is not the same in every run", pass: false });
-    expect(result.status).toBe(1);
+    expect(scenario!.checkStats.find((check) => check.name.startsWith("The agent says back each task"))).toMatchObject({ reportOnly: true });
+    // Juno puts the milk on the list in the caller's first turn of every run.
+    expect(scenario!.checks.find((check) => check.name.startsWith("across runs: "))).toMatchObject({
+      name: "across runs: a task is on the list within four caller turns",
+      pass: true,
+      detail: "3 of 3 run(s)",
+    });
+    expect(result.status, result.stderr).toBe(0);
   }, 240_000);
 });

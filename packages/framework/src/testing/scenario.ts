@@ -244,8 +244,8 @@ export type ScenarioDefinition = {
    * as on a real call (its schema's rules and transforms included), its success or error line
    * follows the result, and a `confirm` tool still waits for the caller's yes. */
   fakes?: Readonly<Record<string, ScenarioFake>>;
-  /** How often the scenario runs. Default: 1, or what `curb test --runs` says for a simulated
-   * caller. Each run is a conversation of its own. */
+  /** How often the scenario runs. Default: 1; `curb test --runs` overrides it. Each run is a
+   * conversation of its own. */
   runs?: number;
   /** The share of the completed runs that must pass, from 0 to 1. Default: 1, every run. */
   minPassRate?: number;
