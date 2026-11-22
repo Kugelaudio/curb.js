@@ -136,7 +136,10 @@ async function fakeChatEndpoint() {
           { ...head, object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "Hallo." }, finish_reason: null }] },
           { ...head, object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
         ];
-        res.end(`${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`);
+        // The usage chunk comes only when the request asks for it, as on a real endpoint.
+        const asked = (body.stream_options as { include_usage?: boolean } | undefined)?.include_usage === true;
+        const usage = { ...head, object: "chat.completion.chunk", choices: [], usage: { prompt_tokens: 7, completion_tokens: 1, total_tokens: 8, prompt_tokens_details: { cached_tokens: 3 } } };
+        res.end(`${[...chunks, ...(asked ? [usage] : [])].map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`);
         return;
       }
       res.writeHead(200, { "content-type": "application/json" });
@@ -234,6 +237,30 @@ describe("openaiCompatible request body", () => {
       const llm = openaiCompatible({ baseURL: endpoint.baseURL, model: "qwen3.8-27b" });
       await runAiSdkAgent(turn, { llm, maxOutputTokens: 80, onUsage });
       expect(endpoint.bodies[0]).toMatchObject({ max_tokens: 80 });
+      expect(onUsage).toHaveBeenCalledExactlyOnceWith({
+        inputTokens: 4,
+        outputTokens: 1,
+        cacheReadTokens: 3,
+        cacheWriteTokens: undefined,
+      });
+    } finally {
+      await endpoint.close();
+    }
+  });
+
+  it("asks a streamed step for its usage only when someone listens, and reports it once", async () => {
+    vi.stubEnv("AGENT_LLM_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
+    const endpoint = await fakeChatEndpoint();
+    const onUsage = vi.fn();
+    try {
+      const llm = openaiCompatible({ baseURL: endpoint.baseURL, model: "qwen3.8-27b" });
+      await drain(streamAiSdkAgent(turn, { llm }));
+      expect(endpoint.bodies[0]).not.toHaveProperty("stream_options");
+
+      const streamed = await drain(streamAiSdkAgent(turn, { llm, onUsage }));
+      expect(streamed.text).toBe("Hallo.");
+      expect(endpoint.bodies[1]).toMatchObject({ stream: true, stream_options: { include_usage: true } });
       expect(onUsage).toHaveBeenCalledExactlyOnceWith({
         inputTokens: 4,
         outputTokens: 1,

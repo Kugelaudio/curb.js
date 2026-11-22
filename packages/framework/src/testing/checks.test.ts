@@ -15,6 +15,7 @@ function turn(overrides: Partial<ScenarioTurn> & { turn: number }): ScenarioTurn
     skillPath: "/",
     skipped: false,
     endedCall: false,
+    steps: 1,
     ...overrides,
   };
 }

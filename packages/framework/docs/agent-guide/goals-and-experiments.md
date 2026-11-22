@@ -144,7 +144,9 @@ export const casualGreeting = scenario({
 ```
 
 Keep one scenario per variant for every conversation that has to work in each of them, and
-run them with `npx curb test`.
+run them with `npx curb test`. A scenario that pins nothing and runs more than once covers the
+variants instead: each run moves on to the next one, and the report gives the result per variant
+as well as overall ([Testing](./testing.md#experiment-variants-experiment)).
 
 ## See the results
 

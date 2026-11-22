@@ -1,5 +1,7 @@
+import type { AgentLlmClient, AgentLlmStreamStep } from "./agent-session.js";
 import { AgentAuthoringError, type AuthoringDiagnostic } from "./authoring.js";
 import {
+  type AiSdkAgentOptions,
   assertLlmCredential,
   llmCredentialDiagnostic,
   missingLlmCredential,
@@ -30,9 +32,26 @@ export type VoiceAgentBundle = HostedSession;
  * Rejects with an `AgentAuthoringError` naming the variable when the LLM the session starts
  * on has no key in this process: such a session could only apologise on every turn.
  */
-export async function createVoiceAgentBundle(agentId?: string): Promise<VoiceAgentBundle> {
-  return readyForCall(await buildBundle(agentId));
+export async function createVoiceAgentBundle(agentId?: string, wrap?: LlmTransportWrap): Promise<VoiceAgentBundle> {
+  return readyForCall(await buildBundle(agentId, wrap));
 }
+
+/** The two LLM transports a session runs on: one whole step, and one streamed step. */
+export type LlmTransports = { llm: AgentLlmClient; streamLlm: AgentLlmStreamStep };
+
+/** What the transports of a bundle are built with: who hears each request's tokens, and how
+ * often the provider SDK retries by itself (see `AiSdkAgentOptions`). */
+export type LlmTransportOptions = Pick<AiSdkAgentOptions, "onUsage" | "maxRetries">;
+
+/**
+ * What a host puts around a bundle's LLM transports (`curb test` waits out a rate limit and
+ * counts tokens). `transports(options)` builds the pair on the conversation's effective llm;
+ * the wrap returns the pair the session uses. With `llmTimeoutMs` it also says how long the
+ * session waits for one request, when the wrap holds each attempt to a deadline of its own.
+ */
+export type LlmTransportWrap = (
+  transports: (options?: LlmTransportOptions) => LlmTransports,
+) => LlmTransports & { llmTimeoutMs?: number };
 
 /**
  * A hosted runner's warmup: the bundle without the LLM key check. The platform saves its
@@ -76,7 +95,7 @@ export async function createPreviewAgentBundle(
   };
 }
 
-async function buildBundle(agentId: string | undefined): Promise<VoiceAgentBundle> {
+async function buildBundle(agentId: string | undefined, wrap?: LlmTransportWrap): Promise<VoiceAgentBundle> {
   const hosted = await getHostedAgent(agentId);
   // Bound once the session exists; no turn can run before that.
   let runtime: AgentSiteRuntime | null = null;
@@ -84,12 +103,15 @@ async function buildBundle(agentId: string | undefined): Promise<VoiceAgentBundl
     if (!runtime) throw new Error("curb: an LLM turn ran before its runtime was built.");
     return runtime.settings.current().llm;
   };
-  const bundle = await createAgentSession(
-    (request) => runAiSdkAgent(request, { llm: llm() }),
-    (request) => streamAiSdkAgent(request, { llm: llm() }),
-    hosted.id,
-    { spokenStyleSuffix: VOICE_STYLE.join("\n") },
-  );
+  const transports = (options: LlmTransportOptions = {}): LlmTransports => ({
+    llm: (request) => runAiSdkAgent(request, { llm: llm(), ...options }),
+    streamLlm: (request) => streamAiSdkAgent(request, { llm: llm(), ...options }),
+  });
+  const used: ReturnType<LlmTransportWrap> = wrap ? wrap(transports) : transports();
+  const bundle = await createAgentSession(used.llm, used.streamLlm, hosted.id, {
+    spokenStyleSuffix: VOICE_STYLE.join("\n"),
+    llmTimeoutMs: used.llmTimeoutMs,
+  });
   runtime = bundle.runtime;
   // Outside settings changes may switch the LLM; one whose key this process lacks is refused.
   // Only `llm` can change a provider (a voice or language change keeps the props' provider).

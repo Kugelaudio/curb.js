@@ -1,6 +1,8 @@
 import { AGENT_LANGUAGES, fallbackReplies } from "../llm/localized.js";
 import { normalizeLlmPunctuation } from "../llm/punctuation.js";
-import type { ScenarioCheck, ScenarioExpectContext, ScenarioToolCall, ScenarioTurn } from "./scenario.js";
+import type { CallerEnding, EndState } from "./record.js";
+import type { ExpectedCall, ScenarioCheck, ScenarioExpectContext, ScenarioToolCall, ScenarioTurn } from "./scenario.js";
+import { agentWords, sentenceKey, sentences } from "./style.js";
 
 /**
  * The checks every scenario gets, and the helpers an `expect` function builds its own from.
@@ -39,6 +41,7 @@ export const BUILT_IN_CHECKS = {
   fallback: "no fallback line instead of a reply",
   repeated: "no sentence repeated within a turn",
   ends: "the conversation ends cleanly",
+  hangUp: "the agent does not hang up on a caller who still wants something",
   goal: "the caller reaches its goal",
 } as const;
 
@@ -53,11 +56,6 @@ const FALLBACK_LINES = AGENT_LANGUAGES.flatMap((language) =>
 /** The fixed fallback line that ends `reply`, or null. */
 export function fallbackLineIn(reply: string): string | null {
   return FALLBACK_LINES.find((line) => reply.endsWith(line)) ?? null;
-}
-
-/** What the agent itself said in a turn: the reply without the framework's fallback line. */
-function agentWords(turn: ScenarioTurn): string {
-  return (turn.fallback ? turn.reply.slice(0, -turn.fallback.length) : turn.reply).trim();
 }
 
 /** The built-in checks, in report order. The goal check of a simulated caller is added by the
@@ -81,10 +79,20 @@ export function builtInChecks(conversation: Conversation): ScenarioCheck[] {
   ];
 }
 
-/** The goal check from the judge's verdict, or from why there was none. */
-export function goalCheck(verdict: { reached: boolean; reason: string } | { notJudged: string }): ScenarioCheck {
-  if ("notJudged" in verdict) return { name: BUILT_IN_CHECKS.goal, pass: false, detail: `not judged: ${verdict.notJudged}` };
-  return { name: BUILT_IN_CHECKS.goal, pass: verdict.reached, detail: verdict.reason };
+/**
+ * Whether the agent hung up on a simulated caller who was not done, read from who ended the
+ * call and what the caller said about it (its hang-up marker, or its answer when the agent
+ * ended the call first). No word of a goodbye is looked at. A caller that did not say passes:
+ * nothing shows the agent was wrong.
+ */
+export function hangUpCheck(endedBy: ScenarioEndedBy, caller: CallerEnding | null, turns: readonly ScenarioTurn[]): ScenarioCheck {
+  const name = BUILT_IN_CHECKS.hangUp;
+  if (endedBy !== "agent") return { name, pass: true, detail: "the agent did not end the call" };
+  const last = turns[turns.length - 1];
+  const at = last ? ` at ${label(last)}` : "";
+  if (caller === null) return { name, pass: true, detail: `the agent ended the call${at}; the caller did not say whether it was done` };
+  if (caller.done) return { name, pass: true, detail: `the agent ended the call${at}, and the caller was done` };
+  return { name, pass: false, detail: `the agent ended the call${at} while the caller still wanted: ${caller.reason || "something it did not name"}` };
 }
 
 /** Errors the session reported (an empty reply is the empty-reply check's), and refusal loops. */
@@ -151,28 +159,66 @@ function endsCheck({ turns, endedBy, stopReason, unsaid, maxTurns }: Conversatio
 export function repeatedSentences(text: string): string[] {
   const seen = new Map<string, number>();
   const firstForm = new Map<string, string>();
-  for (const sentence of text.split(/(?<=[.!?…]["'”’»)\]]*)\s+|\n+/)) {
-    const key = sentence.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  for (const sentence of sentences(text)) {
+    const key = sentenceKey(sentence);
     if (!key) continue;
     seen.set(key, (seen.get(key) ?? 0) + 1);
-    if (!firstForm.has(key)) firstForm.set(key, sentence.trim());
+    if (!firstForm.has(key)) firstForm.set(key, sentence);
   }
   return [...seen].filter(([, count]) => count > 1).map(([key]) => firstForm.get(key)!);
 }
 
-/** The helpers an `expect` function receives. */
-export function expectContext(turns: readonly ScenarioTurn[]): ScenarioExpectContext {
+/** The helpers an `expect` function receives. `endState` is the agent's state when the call
+ * ended; null when it could not be read. */
+export function expectContext(turns: readonly ScenarioTurn[], endState: EndState | null = null): ScenarioExpectContext {
   const calls = turns.flatMap((turn) => turn.toolCalls.map((call) => ({ ...call, at: label(turn) })));
   const ranCalls = (tool: string) => calls.filter((call) => call.name === tool && call.ok);
   const why = (call: (typeof calls)[number]) =>
     call.heldFor !== undefined ? `held for "${call.heldFor}"` : `refused: ${call.result?.message ?? "no reason given"}`;
+  const state = <T>(store: string): T => {
+    const stores = endState?.stores ?? {};
+    if (Object.hasOwn(stores, store)) return stores[store] as T;
+    const known = Object.keys(stores);
+    throw new Error(
+      `state("${store}"): the agent had no store "${store}" when the call ended. ` +
+        (known.length > 0
+          ? `Its stores are ${known.map((key) => `"${key}"`).join(", ")}.`
+          : "It used no createAgentStore store on this call: a store exists once a component that reads it has rendered."),
+    );
+  };
 
   return {
     transcript: turns,
+    state,
+    context: endState?.context ?? [],
+    stateMatches: (store, expected) => {
+      const name = `state of ${store} has ${expectedValue(expected)}`;
+      const actual = state<Record<string, unknown>>(store);
+      const difference = firstDifference(actual, expected, store);
+      return difference ? { name, pass: false, detail: difference } : { name, pass: true };
+    },
+    calledInOrder: (...expected) => {
+      const wanted = expected.map(expectedCall);
+      const name = `called in order: ${wanted.map((call) => (call.input ? `${call.tool} with ${expectedValue(call.input)}` : call.tool)).join(", ")}`;
+      const ran = calls.filter((call) => call.ok);
+      let from = 0;
+      const found: string[] = [];
+      for (const call of wanted) {
+        const index = ran.findIndex((candidate, at) => at >= from && candidate.name === call.tool && (!call.input || matches(candidate.input, call.input)));
+        if (index < 0) {
+          const order = ran.map((candidate) => `${candidate.name} (${candidate.at})`).join(", ") || "none";
+          const after = found.length > 0 ? ` after ${found[found.length - 1]}` : "";
+          return { name, pass: false, detail: `no call of ${call.tool}${call.input ? ` with ${expectedValue(call.input)}` : ""} ran${after}; the calls that ran, in order: ${order}` };
+        }
+        found.push(`${call.tool} (${ran[index]!.at})`);
+        from = index + 1;
+      }
+      return { name, pass: true, detail: found.join(", ") };
+    },
     called: (tool, input) => {
-      const name = input ? `called ${tool} with ${expectedInput(input)}` : `called ${tool}`;
+      const name = input ? `called ${tool} with ${expectedValue(input)}` : `called ${tool}`;
       const ran = ranCalls(tool);
-      const match = ran.find((call) => !input || inputMatches(call.input, input));
+      const match = ran.find((call) => !input || matches(call.input, input));
       if (match) return { name, pass: true, detail: `${match.at}: ${JSON.stringify(match.input)}` };
       if (ran.length > 0) {
         const inputs = ran.map((call) => `${JSON.stringify(call.input)} (${call.at})`).join(", ");
@@ -210,24 +256,65 @@ export function expectContext(turns: readonly ScenarioTurn[]): ScenarioExpectCon
   };
 }
 
-/** Every expected field is in the call's input with that value; strings match ignoring case and
- * outer spaces, a RegExp matches the field's text (a string as it is, anything else as its JSON),
- * everything else by its JSON. */
-function inputMatches(actual: Record<string, unknown>, expected: Record<string, unknown>): boolean {
-  return Object.entries(expected).every(([key, value]) => {
-    const got = actual[key];
-    if (value instanceof RegExp) return got !== undefined && fresh(value).test(typeof got === "string" ? got : JSON.stringify(got));
-    if (typeof value === "string" && typeof got === "string") return got.trim().toLowerCase() === value.trim().toLowerCase();
-    return JSON.stringify(got) === JSON.stringify(value);
-  });
+/** An expected call as its tool and the input it must have. */
+function expectedCall(call: ExpectedCall): { tool: string; input?: Record<string, unknown> } {
+  return typeof call === "string" ? { tool: call } : { tool: call[0], input: call[1] };
 }
 
-/** The expected input as a check names it: its JSON, with a RegExp written as the pattern. */
-function expectedInput(input: Record<string, unknown>): string {
-  const fields = Object.entries(input).map(
-    ([key, value]) => `${JSON.stringify(key)}:${value instanceof RegExp ? String(value) : JSON.stringify(value)}`,
-  );
-  return `{${fields.join(",")}}`;
+/** Whether `actual` has what `expected` asks for (see {@link firstDifference}). */
+function matches(actual: unknown, expected: unknown): boolean {
+  return firstDifference(actual, expected, "") === null;
+}
+
+/**
+ * Where `actual` first lacks what `expected` asks for, in words, or null when it has it all.
+ * An expected object is matched by the fields it names, so further fields may be there; an
+ * expected list entry by entry and with the same length, so nothing else may be there; a RegExp
+ * against the value's text (a string as it is, anything else as its JSON); strings ignoring
+ * case and outer spaces; everything else by its JSON.
+ */
+function firstDifference(actual: unknown, expected: unknown, path: string): string | null {
+  const at = path || "the value";
+  if (expected instanceof RegExp) {
+    const text = typeof actual === "string" ? actual : actual === undefined ? undefined : JSON.stringify(actual);
+    return text !== undefined && fresh(expected).test(text) ? null : `${at} is ${shown(actual)}, which does not match ${String(expected)}`;
+  }
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual)) return `${at} is ${shown(actual)}, not a list`;
+    if (actual.length !== expected.length) return `${at} has ${actual.length} entries, not ${expected.length}: ${shown(actual)}`;
+    for (const [index, entry] of expected.entries()) {
+      const difference = firstDifference(actual[index], entry, `${path}[${index}]`);
+      if (difference) return difference;
+    }
+    return null;
+  }
+  if (typeof expected === "object" && expected !== null) {
+    if (typeof actual !== "object" || actual === null || Array.isArray(actual)) return `${at} is ${shown(actual)}, not an object`;
+    for (const [key, value] of Object.entries(expected)) {
+      const difference = firstDifference((actual as Record<string, unknown>)[key], value, path ? `${path}.${key}` : key);
+      if (difference) return difference;
+    }
+    return null;
+  }
+  if (typeof expected === "string" && typeof actual === "string") {
+    return actual.trim().toLowerCase() === expected.trim().toLowerCase() ? null : `${at} is ${shown(actual)}, not ${shown(expected)}`;
+  }
+  return JSON.stringify(actual) === JSON.stringify(expected) ? null : `${at} is ${shown(actual)}, not ${shown(expected)}`;
+}
+
+function shown(value: unknown): string {
+  const text = JSON.stringify(value) ?? String(value);
+  return text.length > 160 ? `${text.slice(0, 160)}…` : text;
+}
+
+/** An expected value as a check names it: its JSON, with a RegExp written as the pattern. */
+function expectedValue(value: unknown): string {
+  if (value instanceof RegExp) return String(value);
+  if (Array.isArray(value)) return `[${value.map(expectedValue).join(",")}]`;
+  if (typeof value === "object" && value !== null) {
+    return `{${Object.entries(value).map(([key, field]) => `${JSON.stringify(key)}:${expectedValue(field)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? String(value);
 }
 
 /** `pattern` without the global or sticky flag: those remember where they last matched, and each

@@ -9,6 +9,7 @@ import {
   jsonSchema,
   streamText,
   tool,
+  type LanguageModelUsage,
   type ModelMessage,
   type TextStreamPart,
   type ToolSet,
@@ -37,14 +38,21 @@ export type AgentModelUsage = {
 export type AiSdkAgentOptions = {
   /** The conversation's effective llm, read per turn (`runtime.settings.current().llm`). */
   llm: LlmDescriptor;
+  /** Hears the tokens each request used, as far as the provider reports them. On the streaming
+   * path an OpenAI-compatible endpoint (KugelAudio's included) is asked for them
+   * (`stream_options.include_usage`), which it is not without this. */
+  onUsage?: (usage: AgentModelUsage) => void;
+  /** How often the provider SDK sends a failed request again by itself. Default: the SDK's own.
+   * 0 leaves every retry to the caller, which then sees each rate limit (`curb test`). */
+  maxRetries?: number;
 };
 
 /** The model fields of an AI SDK call: the model, its sampling and its provider options. */
 type ModelCall = Pick<Parameters<typeof streamText>[0], "model" | "providerOptions" | "temperature" | "topP">;
 
 /** The chat model the llm descriptor names, plus the call options that only apply to that
- * provider. */
-function buildModel(options: AiSdkAgentOptions): ModelCall {
+ * provider. `streamUsage` asks an OpenAI-compatible endpoint to end its stream with the usage. */
+function buildModel(options: AiSdkAgentOptions, streamUsage: boolean): ModelCall {
   const config = resolveLlmProvider(options.llm);
   const modelName = config.model;
   switch (config.kind) {
@@ -52,7 +60,12 @@ function buildModel(options: AiSdkAgentOptions): ModelCall {
       // OpenAI Chat Completions at KugelAudio's ingress; thinking is off on its side, so no
       // request option is sent.
       return {
-        model: createOpenAICompatible({ name: "kugelaudio", baseURL: config.baseUrl, apiKey: config.apiKey })(modelName),
+        model: createOpenAICompatible({
+          name: "kugelaudio",
+          baseURL: config.baseUrl,
+          apiKey: config.apiKey,
+          includeUsage: streamUsage,
+        })(modelName),
         providerOptions: undefined,
       };
     case "anthropic":
@@ -73,6 +86,7 @@ function buildModel(options: AiSdkAgentOptions): ModelCall {
           name: "openai-compatible",
           baseURL: config.baseUrl,
           apiKey: config.apiKey,
+          includeUsage: streamUsage,
         })(modelName),
         temperature: config.temperature,
         topP: config.topP,
@@ -96,9 +110,9 @@ function openaiCompatibleProviderOptions(
   return Object.keys(fields).length > 0 ? { openaiCompatible: fields } : undefined;
 }
 
-function buildAgentCallParams(request: AgentRunRequest, options: AiSdkAgentOptions) {
+function buildAgentCallParams(request: AgentRunRequest, options: AiSdkAgentOptions, streamUsage = false) {
   quietSdkWarnings();
-  const { model, providerOptions, temperature, topP } = buildModel(options);
+  const { model, providerOptions, temperature, topP } = buildModel(options, streamUsage);
   const input = serializeLlmInput(request);
 
   return {
@@ -157,21 +171,27 @@ function describeInvalidToolCall(call: SdkToolCall): string {
   return `Invalid input for "${call.toolName}": ${capped} Call it again with input that matches its schema.`;
 }
 
+/** The provider's usage as {@link AgentModelUsage}: uncached input apart from the cache counters. */
+function modelUsage(usage: LanguageModelUsage): AgentModelUsage {
+  return {
+    inputTokens: usage.inputTokenDetails.noCacheTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.inputTokenDetails.cacheReadTokens,
+    cacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens,
+  };
+}
+
 export async function runAiSdkAgent(
   request: AgentRunRequest,
-  options: AiSdkAgentOptions & { maxOutputTokens?: number; onUsage?: (usage: AgentModelUsage) => void },
+  options: AiSdkAgentOptions & { maxOutputTokens?: number },
 ): Promise<AgentRunResponse> {
   const result = await generateText({
     ...buildAgentCallParams(request, options),
     abortSignal: request.signal,
     maxOutputTokens: options.maxOutputTokens,
+    maxRetries: options.maxRetries,
   });
-  options.onUsage?.({
-    inputTokens: result.usage.inputTokenDetails.noCacheTokens,
-    outputTokens: result.usage.outputTokens,
-    cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens,
-    cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens,
-  });
+  options.onUsage?.(modelUsage(result.usage));
   return {
     text: normalizeLlmPunctuation(result.text),
     toolCalls: mapToolCalls(result.toolCalls),
@@ -184,12 +204,13 @@ export async function* streamAiSdkAgent(
   options: AiSdkAgentOptions,
 ): AsyncGenerator<AgentStreamPart, AgentRunResponse> {
   const result = streamText({
-    ...buildAgentCallParams(request, options),
+    ...buildAgentCallParams(request, options, options.onUsage !== undefined),
     abortSignal: request.signal,
+    maxRetries: options.maxRetries,
     // Rethrown from the error part by readAgentStream; the default would log it a second time.
     onError: () => {},
   });
-  return yield* readAgentStream(result.stream, request.signal);
+  return yield* readAgentStream(result.stream, request.signal, options.onUsage);
 }
 
 /**
@@ -197,11 +218,12 @@ export async function* streamAiSdkAgent(
  * tool call starts (Anthropic and OpenAI name the tool as soon as its block opens, before
  * its input streams; the session silences the step there). Reads the full stream rather
  * than `textStream`, which drops error parts: a provider error must fail the step, not end
- * it looking like an empty reply.
+ * it looking like an empty reply. `onUsage` hears the step's usage once, when the stream ends.
  */
 export async function* readAgentStream(
   parts: AsyncIterable<TextStreamPart<ToolSet>>,
   signal?: AbortSignal,
+  onUsage?: (usage: AgentModelUsage) => void,
 ): AsyncGenerator<AgentStreamPart, AgentRunResponse> {
   let raw = "";
   const toolCalls: SdkToolCall[] = [];
@@ -219,6 +241,9 @@ export async function* readAgentStream(
         break;
       case "tool-call":
         toolCalls.push(part);
+        break;
+      case "finish":
+        onUsage?.(modelUsage(part.totalUsage));
         break;
       case "error":
         throw part.error;

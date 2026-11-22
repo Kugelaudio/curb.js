@@ -23,9 +23,10 @@ Commands:
   say        Run one caller turn headlessly and print the reply, tool calls and context
              change; successive calls continue one conversation (--new, --client key=value,
              --json; see curb say --help).
-  test       Run the conversation scenarios in src/**/*.scenario.ts headlessly and print each
-             transcript with pass or fail per check; exits 1 when one fails (<filter>, --json;
-             see curb test --help).
+  test       Run the conversation scenarios in src/**/*.scenario.ts headlessly, in text, and
+             print each transcript with pass or fail per check; exits 1 when one fails
+             (<filter>, --runs <n> for rates over repeated runs, --rejudge <run>, --json; see
+             curb test --help).
   hook       Run the agent's afterCall or afterEvaluation once, on a call from a fixture file,
              with the project's .env; nothing else fires them on this machine (see curb hook --help).
   conversations

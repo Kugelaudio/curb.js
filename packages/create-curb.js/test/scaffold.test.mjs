@@ -326,6 +326,93 @@ test("the project has no npm config file, which hosted builds refuse", (t) => {
   assert.ok(!existsSync(join(template, "npmrc")) && !existsSync(join(template, ".npmrc")));
 });
 
+// Every template shows the three kinds of test a project should keep: a simulated caller with a
+// persona and judged expectations, a scripted gate, and a check of the agent's state at the end.
+for (const name of ["default", ...Object.keys(BUSINESS_TEMPLATES)]) {
+  test(`--template ${name} ships a simulated scenario, a scripted gate and an end-state check`, (t) => {
+    const project = scaffold(t, ["--template", name]);
+    const agentDir = join(project, "src/agent");
+    const scenarios = readdirSync(agentDir).filter((file) => file.endsWith(".scenario.ts")).map((file) => readFileSync(join(agentDir, file), "utf8"));
+    assert.ok(scenarios.length >= 2 && scenarios.length <= 3, `${scenarios.length} scenario file(s)`);
+    const simulated = scenarios.filter((source) => /\bcaller: \{/.test(source));
+    const scripted = scenarios.filter((source) => /\bturns: \[/.test(source));
+    assert.equal(simulated.length, 1);
+    assert.ok(scripted.length >= 1);
+    for (const source of simulated) {
+      assert.match(source, /\.\.\.personas\.\w+/);
+      assert.match(source, /\bexpectations: \[/);
+    }
+    for (const source of scenarios) assert.match(source, /\bstate(Matches)?[(<]/);
+    // A store a scenario reads is one the agent defines.
+    const agent = readFileSync(join(agentDir, "agent.tsx"), "utf8");
+    const stores = [...agent.matchAll(/createAgentStore<[\s\S]*?>\("([a-z]+)"/g)].map((match) => match[1]);
+    const read = scenarios.flatMap((source) => [...source.matchAll(/\bstate(?:Matches)?(?:<[^>]*>)?\("([a-z]+)"/g)].map((match) => match[1]));
+    assert.ok(read.length > 0);
+    assert.deepEqual(read.filter((store) => !stores.includes(store)), []);
+  });
+}
+
+// The workflow is what a new repository runs on its first pull request, with a secret in reach:
+// it is held to the rules this repository's own workflows follow.
+test("every project ships a workflow that runs curb check and curb test on pull requests", (t) => {
+  for (const name of ["default", ...Object.keys(BUSINESS_TEMPLATES)]) {
+    const project = scaffold(t, ["--template", name]);
+    const workflow = readFileSync(join(project, ".github/workflows/curb-test.yml"), "utf8");
+    assert.match(workflow, /^on:\n {2}pull_request:\n/m);
+    assert.doesNotMatch(workflow, /pull_request_target/);
+    assert.match(workflow, /^permissions:\n {2}contents: read\n/m);
+    assert.match(workflow, /KUGELAUDIO_API_KEY: \$\{\{ secrets\.KUGELAUDIO_API_KEY \}\}/);
+    assert.match(workflow, /run: npx curb check\n/);
+    assert.match(workflow, /run: npx curb test\n/);
+    // Third-party actions are pinned to a commit, and no checkout leaves its token behind.
+    const uses = [...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]);
+    assert.ok(uses.length >= 2);
+    assert.deepEqual(uses.filter((action) => !/@[0-9a-f]{40}$/.test(action)), []);
+    assert.match(workflow, /persist-credentials: false/);
+  }
+});
+
+test("AGENTS.md sends a coding agent through check, say and repeated test runs, and to the findings", () => {
+  const agents = readFileSync(join(template, "AGENTS.md"), "utf8");
+  const steps = ["`npx curb check`", "`npx curb say", "`npx curb test --runs 3`"].map((step) => agents.indexOf(step));
+  assert.ok(steps.every((at) => at > 0), "a step is missing");
+  assert.deepEqual([...steps].sort((a, b) => a - b), steps);
+  assert.match(agents, /each `find` line\s+names a turn and quotes it/);
+  assert.match(agents, /`npx curb test --rejudge latest`/);
+});
+
+// A model that never asked for the name books under "Caller". The booking tool refuses that, so
+// the calendar never holds a booking nobody can be greeted by.
+test("the booking agent refuses a placeholder where the caller's name belongs", () => {
+  const module = new URL("../templates/booking/src/agent/calendar.ts", import.meta.url).href;
+  const names = ["Alex Example", "Zoë", "O'Brien", "Caller", " the caller ", "CUSTOMER", "user", "Unknown", "guest", "N/A", "n.a.", "-", "  ", "???"];
+  const script = `
+    import { isPersonName } from ${JSON.stringify(module)};
+    console.log(JSON.stringify(${JSON.stringify(names)}.map((name) => isPersonName(name))));
+  `;
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", "--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [true, true, true, false, false, false, false, false, false, false, false, false, false, false]);
+  const agent = readFileSync(join(templates, "booking/src/agent/agent.tsx"), "utf8");
+  assert.match(agent, /if \(!isPersonName\(input\.name\)\) \{\s+return \{ ok: false, message: `"\$\{input\.name\}" is not a name\. Ask the caller for their name, then book with it\.` \};/);
+});
+
+// A simulated caller's scenario that needs every one of three runs fails a pull request now and
+// then on an agent that is right nine times in ten. The shipped ones need two of three.
+test("each template's simulated scenario runs three times and needs two of them, and its scripted one stays a gate", () => {
+  for (const dir of ALL_TEMPLATES) {
+    const agentDir = join(dir, "src/agent");
+    for (const file of readdirSync(agentDir).filter((name) => name.endsWith(".scenario.ts"))) {
+      const source = readFileSync(join(agentDir, file), "utf8");
+      if (/\bcaller: \{/.test(source)) {
+        assert.match(source, /\n {2}runs: 3,\n {2}minPassRate: 0\.66,\n/, file);
+      } else {
+        assert.doesNotMatch(source, /\b(runs|minPassRate):/, file);
+      }
+    }
+  }
+});
+
 /** Runs this package as npm installs it at `version`: no framework checkout beside it. */
 function scaffoldFromPublishedCopy(t, version, flags = []) {
   const root = mkdtempSync(join(tmpdir(), "create-curb-js-published-"));

@@ -62,9 +62,18 @@ A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person
 2. `npx curb say "<what the caller says>"`: one spoken turn, headless. It prints the reply,
    each tool call and the context it changed. The next `curb say` continues the
    conversation; `npx curb say --new "<first line>"` starts over (do that after a code change).
-3. `npx curb test`: runs every `src/**/*.scenario.ts` conversation headlessly, with scripted
-   caller lines or a simulated caller pursuing a goal, and fails on turn errors, repeated
-   sentences or a goal not reached. Keep one scenario per flow that matters (`testing.md`).
+3. `npx curb test --runs 3`: plays every `src/**/*.scenario.ts` conversation headlessly, in
+   text. A scenario with scripted caller lines is a gate: it runs once and must pass. One with
+   a simulated caller runs three times, because a model does not answer the same way twice,
+   so read its pass rate, not one run. The scenarios this project starts with pass when two
+   of three runs do (`minPassRate: 0.66`); raise that toward 1 once one passes every time. Then read what the report found: each `find` line
+   names a turn and quotes it, the transcript of every failed run is printed, and the `Style`
+   lines say how long the replies are and how often they repeat. A scenario marked flaky
+   passed on some runs only: fix the agent, do not rerun until it passes. A run marked
+   `error` says nothing about the agent (the provider failed, or the simulated caller went
+   wrong). After changing an `expect` or an expectation, `npx curb test --rejudge latest`
+   checks the saved conversations again without running the agent. Keep one scenario per
+   flow that matters, and fake every tool that books, sends or deletes (`testing.md`).
 
 4. `npm run dev`: the browser preview with chat and voice on http://127.0.0.1:4000. Open it in the person's own browser yourself (`open http://127.0.0.1:4000` on macOS, `xdg-open` on Linux, `start` on Windows): a browser built into an app, like the Claude app's Browser pane, blocks the microphone, so a call there fails.
 
@@ -89,9 +98,13 @@ what really happened.
 src/agent/agent.tsx         the agent, where every conversation starts: <Agent llm stt tts>,
                             system prompt, skills index, tools every skill has, store
 src/agent/<name>/skill.tsx  one folder per skill, opened when needed; nested folders are sub-skills
+src/agent/*.scenario.ts     conversations `curb test` plays: a caller, and what must hold afterwards
 context/*.md                knowledge a skill reads with <Text src="file.md" />
 .env                        other providers' keys, an optional KUGELAUDIO_API_KEY; never commit it
 .data/conversations.jsonl   every preview conversation: tool calls, inputs, results
+.curb/test-runs/            every `curb test` run with its conversations, for --rejudge
+.github/workflows/          curb-test.yml runs check and test on each pull request; it needs
+                            KUGELAUDIO_API_KEY as a repository secret
 ```
 
 ## Rules

@@ -14,6 +14,7 @@ npx curb login            # sign in in the browser; Curb uses your login
 npm run dev               # preview, chat and voice on http://127.0.0.1:4000
 npx curb check            # types, render and warnings
 npx curb say "Hello"      # one caller turn in the terminal, no browser
+npx curb test             # the conversations in src/agent/*.scenario.ts, pass or fail
 ```
 
 ## Try it
@@ -28,6 +29,17 @@ npx curb say "Hello"      # one caller turn in the terminal, no browser
   (`<Agent llm stt tts>`), system prompt, skills index, and its tools.
 - `src/agent/<name>/skill.tsx`: one folder per skill, opened only when the conversation needs it.
 - `context/`: markdown the skills read. Edit it and the agent's answers change live.
+
+## Test it
+
+`src/agent/*.scenario.ts` holds conversations that `npx curb test` plays in text: one with
+scripted caller lines, which must always pass, and one with a simulated caller that a second
+model plays. `npx curb test --runs 3` plays the simulated one three times and reports how often
+it passed, what a judge found and how the agent talks. Text tests do not cover audio, timing or
+interruptions: listen to a call in `npm run dev` for those.
+
+`.github/workflows/curb-test.yml` runs `curb check` and `curb test` on every pull request once
+the repository has `KUGELAUDIO_API_KEY` as a secret (Settings > Secrets and variables > Actions).
 
 ## Deploy to KugelAudio
 

@@ -10,7 +10,7 @@ options, an example and its version history.
 | [Functions](./functions.md) | [`defineAgent`](./functions/define-agent.md), [`createAgentStore`](./functions/create-agent-store.md), [`defineTool`](./functions/define-tool.md), the [errors](./functions/errors.md), what programs built on Curb use | `curb` |
 | [Providers](./providers.md) | The LLM, speech-to-text and text-to-speech providers | `curb/providers` |
 | [Client](./client.md) | The browser side of a call | `curb/client` |
-| [Testing](./testing-api.md) | `scenario` | `curb/testing` |
+| [Testing](./testing-api.md) | `scenario`, `personas` | `curb/testing` |
 | [Orchestration](./orchestration-api.md) | Server-only exports for scripts | `curb/orchestration` |
 | [Configuration](./configuration.md) | Every environment variable, and `package.json` | |
 | [CLI](./cli.md) | Every command | |

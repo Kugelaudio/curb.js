@@ -68,6 +68,14 @@ Key seams:
   `src/layout.ts` tells the two apart. Check the compiled form with
   `node scripts/npm-package.mjs <version> <out-dir>` and
   `node scripts/release-install-test.mjs <out-dir>`.
+- `curb test` (`src/cli/test.ts`) plays each run of a scenario into a `ConversationRecord`
+  (`src/testing/record.ts`), and everything after that reads the record alone: the checks
+  and the judge (`assess.ts`, `judge.ts`), the style numbers (`style.ts`) and the rates
+  (`aggregate.ts`). So `--rejudge` assesses a saved conversation with the code that assessed
+  it live, and a conversation from another source needs only a loader into that record.
+  The simulated caller's and the judge's prompt carry a version (`CALLER_PROMPT_VERSION`,
+  `JUDGE_PROMPT_VERSION`): raise it with every change to the prompt, because saved results
+  are compared by it.
 - The bin shim generates `.curb/tsx.tsconfig.json` spanning the project's
   sources and, in a checkout, the framework's: tsx applies its tsconfig only
   to include-matched files; a single-tree config silently classic-transforms
