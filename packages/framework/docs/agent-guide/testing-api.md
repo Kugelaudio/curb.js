@@ -393,8 +393,8 @@ expectRuns: (runs: ScenarioRunResult[], helpers: { check, note, model }) => Scen
 
 ```ts
 expectRuns: (runs, { check }) => {
-  const goodbyes = new Set(runs.map((run) => run.transcript.at(-1)?.reply));
-  return [check("the goodbye is not the same in every run", runs.length < 2 || goodbyes.size > 1)];
+  const booked = runs.filter((run) => run.record.turns.some((turn) => turn.turn <= 4 && turn.toolCalls.some((call) => call.name === "book_appointment" && call.ok)));
+  return [check("books within four caller turns in two of three runs", booked.length >= 2, `${booked.length} of ${runs.length}`)];
 },
 ```
 

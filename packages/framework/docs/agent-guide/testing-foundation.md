@@ -106,15 +106,18 @@ On GitHub Actions `report` also writes its Markdown to the job summary.
 ## Naturalness on the ready-made path
 
 A scenario uses the same building blocks: findings of your own, `ask`, `model` and `note` in
-`expect`, and `expectRuns` for checks across all runs. Keep the findings in one module, so every
-scenario that imports it asks the same:
+`expect`, and `expectRuns` for checks across all runs. Write each finding and `ask` question about
+one concrete thing a line of the call shows, and say it positively: the judge must quote the call,
+so "sounds like a person" is often answered unknown, and "never says X" is easy for a judge to get
+backwards. Ask "says X" as a finding, "does Y" as a question. Keep the findings in one module, so
+every scenario that imports it asks the same:
 
 ```ts
 // src/agent/naturalness.ts
 /** What sounds unnatural on a call, as findings the judge asks of every call. */
 export const naturalness = {
   canned_closing: 'The agent ends a reply with a stock line such as "Is there anything else I can help you with?"',
-  missed_mood: "The caller sounded annoyed or rushed, and the agent carried on as if they had not.",
+  missed_mood: "The caller says they are in a hurry, and the agent's next reply is three or more sentences long.",
 };
 ```
 
@@ -136,12 +139,15 @@ export default scenario({
   findings: naturalness,
   failOn: ["canned_closing"],
   // One question of our own, reported and counted, failing nothing.
-  expect: async ({ ask, note }) => [note(await ask("The agent sounds like a person on the phone, not like a form being read out."))],
-  // A number across all runs: the agent does not say goodbye the same way every time.
+  expect: async ({ ask, note }) => [note(await ask("The agent says back each task it put on the list."))],
+  // A number across all runs that no built-in one counts: how soon the first task is on the list,
+  // read from each run's record. Within four caller turns, in at least two of three runs.
   expectRuns: (runs, { check }) => {
-    const goodbyes = runs.flatMap((run) => run.transcript.filter((turn) => turn.endedCall).map((turn) => turn.reply.trim()));
-    const different = new Set(goodbyes).size;
-    return [check("the goodbye is not the same in every run", goodbyes.length < 2 || different > 1, `${different} different goodbye(s) in ${goodbyes.length} run(s) the agent ended`)];
+    const quick = runs.filter((run) => {
+      const added = run.record.turns.find((turn) => turn.toolCalls.some((call) => call.name === "add_task" && call.ok));
+      return added !== undefined && added.turn <= 4;
+    }).length;
+    return [check("a task is on the list within four caller turns", quick >= 2, `${quick} of ${runs.length} run(s)`)];
   },
 });
 ```
@@ -154,9 +160,9 @@ npx curb review
 `curb test` reports `canned_closing` and `missed_mood` on `find` lines with their rate, as it
 reports its own findings, the noted question as `info` with how many runs said yes, and the check
 of `expectRuns` under `across runs:`. `curb review` asks the project's own findings of real calls
-too, so the same two questions run over the calls of `curb dev` or a Calls export. The style number
-`sameGoodbyeShare` counts goodbyes too; `expectRuns` is how a number of your own is made, from
-anything the runs hold.
+too, so the same two questions run over the calls of `curb dev` or a Calls export. The style
+numbers already count replies, questions, repeats and goodbyes; `expectRuns` is how a number of
+your own is made, from anything the runs hold.
 
 ## Replace any piece
 

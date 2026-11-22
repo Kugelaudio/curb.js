@@ -586,6 +586,20 @@ transcript. Write sentences a stranger could check:
 - **One fact per sentence.** A sentence with "and" that is half true has no
   answer.
 
+The same holds for findings and `ask`: write each about one concrete thing a line of the call
+shows, and say it positively. The judge must quote the call, so a broad question ("The agent
+sounds like a person") is often answered unknown, and a negated one ("The agent never reads out
+the booking id") is easy for a judge to get backwards. Write the mistake itself as a finding
+("says X"), and what should happen as an expectation or `ask` ("does Y"):
+
+```ts
+// Before: broad, and negated
+expectations: ["The agent sounds like a person.", "The agent never reads out the internal booking id."],
+// After: one thing each, that a quote shows
+findings: { reads_internal_id: "The agent reads out an internal booking id such as INT-4471." },
+expectations: ["The agent says the booking number after the booking succeeded."],
+```
+
 Scripted scenarios take `expectations` too. A scripted scenario without them
 calls no judge.
 
@@ -600,7 +614,7 @@ no run and no scenario:
 ```ts
 expect: async ({ ask, model, note, check, transcriptText }) => {
   const rating = await model("Does the agent sound warm? Answer yes or no, then why.", transcriptText);
-  return [note(await ask("The agent sounds like a person on the phone.")), note(check("sounds warm", /^yes/i.test(rating), rating))];
+  return [note(await ask("The agent uses the caller's name at least once.")), note(check("sounds warm", /^yes/i.test(rating), rating))];
 },
 ```
 
@@ -666,7 +680,8 @@ prompt, so answers from different judges are not compared as one.
 ### Findings of your own
 
 `findings` adds findings of your own, by id (lowercase words joined by underscores), one sentence
-each. The judge asks them in the same request as its own, and they are counted, reported, saved
+each, about one thing the agent says or does (see [Expectations in plain
+language](#expectations-in-plain-language)). The judge asks them in the same request as its own, and they are counted, reported, saved
 and re-judged the same way. They fail nothing unless `failOn` names them. Keep them in one module
 and import it into each scenario that should ask them; `curb review` asks them of real calls too:
 
