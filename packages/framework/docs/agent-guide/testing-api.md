@@ -94,7 +94,8 @@ newest). A folder's `.json`, `.jsonl`, `.md` and `.txt` files are read; a relati
 `root`, the project by default. `skipped` counts calls without a transcript, `ignored` names files in
 a folder that hold none of the shapes. A record says what its source does not know: `ending.by` is
 `null` when the source does not say who ended the call, and `recordsToolCalls: false` when it holds
-no tool calls.
+no tool calls. A Calls export line that carries `toolCalls` holds them: each is read into the agent
+turn it happened in, by its time in the call ([the fields](./cli/review.md#calls-of-a-hosted-agent)).
 
 ## `saveRun` and `loadRun`
 

@@ -159,14 +159,78 @@ function speaker(label: unknown): Line["by"] | null {
   return CALLER_LABELS.includes(name) ? "caller" : AGENT_LABELS.includes(name) ? "agent" : null;
 }
 
-/** One line of a Calls export. It holds what was said, and no tool calls. */
+/** The outcomes of a tool call that ran and succeeded, as an exported call's `toolCalls` word them. */
+const OK_OUTCOMES = new Set(["ok", "success", "succeeded", "completed"]);
+
+/** A line's `error`: its words, whether it is a string or an object with a message. */
+function errorText(error: unknown): string | undefined {
+  if (typeof error === "string" && error.trim()) return error;
+  if (isRecord(error) && typeof error.message === "string" && error.message.trim()) return error.message;
+  return undefined;
+}
+
+/** One entry of an exported call's `toolCalls` (`{ name, offsetMs, outcome, input | arguments,
+ * result, error }`) as the tool call a turn holds; null for an entry without a name. `ok`, when
+ * the entry has it, says whether the call succeeded; otherwise its `outcome` does, and without
+ * either it succeeded when it has no error. */
+function exportedToolCall(entry: Record<string, unknown>): ScenarioToolCall | null {
+  if (typeof entry.name !== "string" || !entry.name.trim()) return null;
+  const input = isRecord(entry.input) ? entry.input : isRecord(entry.arguments) ? entry.arguments : {};
+  const outcome = typeof entry.outcome === "string" ? entry.outcome.trim().toLowerCase() : undefined;
+  const error = errorText(entry.error);
+  const heldFor = typeof entry.heldFor === "string" ? entry.heldFor : undefined;
+  const ok = typeof entry.ok === "boolean" ? entry.ok : outcome !== undefined ? OK_OUTCOMES.has(outcome) : error === undefined && heldFor === undefined;
+  let result: ToolResult | null = null;
+  if (isRecord(entry.result) && typeof entry.result.ok === "boolean") {
+    result = { ...(entry.result as ToolResult), ...(error && typeof entry.result.message !== "string" ? { message: error } : {}) };
+  } else if (entry.result !== undefined || error !== undefined) {
+    result = { ok, ...(error !== undefined ? { message: error } : {}), ...(entry.result !== undefined ? { data: entry.result } : {}) };
+  }
+  return { name: entry.name, input, ok, result, ...(heldFor !== undefined ? { heldFor } : {}) };
+}
+
+/**
+ * What was said and what the agent called in an exported call, in the order it happened: each
+ * line at the time it was said (`startOffsetMs`), each tool call at its `offsetMs`. At the same
+ * time a caller's line comes first, then the tool call, then the agent's words, so a tool call
+ * goes with the agent turn that answers the caller. A line or a tool call without a time goes
+ * where the one before it was.
+ */
+function inCallOrder(spoken: readonly Line[], times: readonly unknown[], calls: ReadonlyArray<{ call: ScenarioToolCall; at: unknown }>): Line[] {
+  const timed: Array<{ line: Line; at: number; rank: number; index: number }> = [];
+  const place = (line: Line, at: unknown, rank: number, previous: number) => {
+    const when = typeof at === "number" && Number.isFinite(at) ? at : previous;
+    timed.push({ line, at: when, rank, index: timed.length });
+    return when;
+  };
+  let previous = 0;
+  spoken.forEach((line, index) => {
+    previous = place(line, times[index], line.by === "caller" ? 0 : 2, previous);
+  });
+  previous = 0;
+  for (const { call, at } of calls) previous = place({ by: "agent", text: "", toolCalls: [call] }, at, 1, previous);
+  return timed.sort((a, b) => a.at - b.at || a.rank - b.rank || a.index - b.index).map((entry) => entry.line);
+}
+
+/** One line of a Calls export: what was said, and, where the line carries `toolCalls`, what the
+ * agent called and when, each tool call in the agent turn it happened in. A line without
+ * `toolCalls` holds no tool calls, so the record says it does not record them. */
 function exportedCall(call: Record<string, unknown>): ReviewCall {
   const spoken = isRecord(call.transcript) && Array.isArray(call.transcript.turns) ? call.transcript.turns.filter(isRecord) : [];
-  const lines = spoken.flatMap((turn): Line[] => {
+  const said = spoken.flatMap((turn) => {
     const by = speaker(turn.speaker);
-    return by && typeof turn.text === "string" ? [{ by, text: turn.text }] : [];
+    return by && typeof turn.text === "string" ? [{ line: { by, text: turn.text } as Line, at: turn.startOffsetMs }] : [];
   });
-  const endedBy = typeof call.endReason === "string" && Object.hasOwn(ENDED_BY, call.endReason) ? ENDED_BY[call.endReason]! : null;
+  const recordsTools = Array.isArray(call.toolCalls);
+  const toolCalls = (recordsTools ? (call.toolCalls as unknown[]) : []).filter(isRecord).flatMap((entry) => {
+    const toolCall = exportedToolCall(entry);
+    return toolCall ? [{ call: toolCall, at: entry.offsetMs }] : [];
+  });
+  const lines = recordsTools ? inCallOrder(said.map((entry) => entry.line), said.map((entry) => entry.at), toolCalls) : said.map((entry) => entry.line);
+  // The end reason says who ended the call; where it does not, an end_call that ran says the agent did.
+  const endedBy = typeof call.endReason === "string" && Object.hasOwn(ENDED_BY, call.endReason)
+    ? ENDED_BY[call.endReason]!
+    : toolCalls.some(({ call: toolCall }) => toolCall.name === END_CALL_TOOL_NAME && toolCall.ok) ? "agent" : null;
   return {
     id: String(call.callId),
     source: "calls-export",
@@ -174,7 +238,7 @@ function exportedCall(call: Record<string, unknown>): ReviewCall {
     ...(typeof call.durationMs === "number" ? { durationMs: call.durationMs } : {}),
     turns: turnsOf(lines),
     endedBy,
-    recordsTools: false,
+    recordsTools,
   };
 }
 

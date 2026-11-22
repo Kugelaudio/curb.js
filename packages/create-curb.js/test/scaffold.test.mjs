@@ -110,7 +110,7 @@ test(".mcp.json registers the KugelAudio MCP servers, and AGENTS.md points at it
 // file may name: add to it after checking the name on the live server.
 const MCP_TOOLS_IN_AGENTS_MD = new Set([
   "agent_add_dependency", "agent_check", "agent_create", "agent_create_upload", "agent_delete_file",
-  "agent_deploy", "agent_edit_file", "agent_get_call", "agent_get_call_timeline", "agent_get_logs",
+  "agent_deploy", "agent_edit_file", "agent_export_calls", "agent_get_call", "agent_get_call_timeline", "agent_get_logs",
   "agent_get_preview_conversation", "agent_get_preview_log", "agent_list", "agent_list_calls",
   "agent_list_files", "agent_list_preview_conversations", "agent_open", "agent_overview",
   "agent_publish", "agent_read_file", "agent_remove_dependency", "agent_request_secret",

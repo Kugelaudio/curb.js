@@ -100,8 +100,8 @@ export type ConversationRecord = {
   unusedFakes: string[];
   /** Tokens the agent and the caller used; the judge's are added when it has answered. */
   usage: RunUsage | null;
-  /** False when the source does not record the agent's tool calls (a Calls export, a written
-   * transcript): a turn without one says nothing about the tools. */
+  /** False when the source does not record the agent's tool calls (a Calls export line without
+   * `toolCalls`, a written transcript): a turn without one says nothing about the tools. */
   recordsToolCalls?: false;
 };
 

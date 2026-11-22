@@ -69,6 +69,86 @@ describe("the calls curb review reads", () => {
     expect(callsIn("bare.jsonl", `${JSON.stringify(one)}\n${JSON.stringify({ callId: "call-h" })}\n`)).toMatchObject({ calls: [{ id: "call-g" }], skipped: 1 });
   });
 
+  it("reads a Calls export line's tool calls into the agent turn each happened in, by its time in the call", () => {
+    const said = (speaker: string, text: string, startOffsetMs: number) => ({ speaker, text, startOffsetMs, endOffsetMs: startOffsetMs + 900 });
+    const line = {
+      callId: "call-t",
+      startedAt: "2030-03-04T09:00:00+01:00",
+      endReason: "error",
+      caller: "+15550100",
+      transcript: {
+        final: true,
+        complete: true,
+        turns: [
+          said("agent", "Birch Street Studio.", 0),
+          said("caller", "Is Saturday free?", 2_000),
+          said("agent", "Saturday at ten is free.", 4_000),
+          said("caller", "Book it, please.", 6_000),
+          said("agent", "You are booked.", 9_000),
+          said("caller", "Thanks, bye.", 11_000),
+          said("agent", "Goodbye!", 12_500),
+        ],
+      },
+      // Out of order on purpose: the time in the call places each one.
+      toolCalls: [
+        { name: "book_appointment", offsetMs: 7_500, outcome: "failed", arguments: { day: "saturday" }, error: "slot taken" },
+        { name: "lookup_slots", offsetMs: 3_100, outcome: "ok", input: { day: "saturday" }, result: { slots: ["10:00"] } },
+        { name: "book_appointment", offsetMs: 8_200, ok: true, arguments: { day: "saturday", time: "10:00" }, result: { ok: true, message: "booked" } },
+        // At the same time as the agent's words, the tool call comes first.
+        { name: "end_call", offsetMs: 12_500, outcome: "succeeded" },
+        { offsetMs: 13_000, outcome: "ok" },
+      ],
+    };
+
+    const call = callsIn("export.jsonl", `${JSON.stringify(line)}\n`)!.calls[0]!;
+
+    // The end reason does not say who ended it; the end_call that ran does.
+    expect(call).toMatchObject({ id: "call-t", recordsTools: true, endedBy: "agent" });
+    expect(call.turns.map((turn) => [turn.turn, turn.caller, turn.reply, turn.toolCalls.map((toolCall) => toolCall.name), turn.endedCall])).toEqual([
+      [0, null, "Birch Street Studio.", [], false],
+      [1, "Is Saturday free?", "Saturday at ten is free.", ["lookup_slots"], false],
+      [2, "Book it, please.", "You are booked.", ["book_appointment", "book_appointment"], false],
+      [3, "Thanks, bye.", "Goodbye!", ["end_call"], true],
+    ]);
+    expect(call.turns[1]!.toolCalls).toEqual([{ name: "lookup_slots", input: { day: "saturday" }, ok: true, result: { ok: true, data: { slots: ["10:00"] } } }]);
+    expect(call.turns[2]!.toolCalls).toEqual([
+      { name: "book_appointment", input: { day: "saturday" }, ok: false, result: { ok: false, message: "slot taken" } },
+      { name: "book_appointment", input: { day: "saturday", time: "10:00" }, ok: true, result: { ok: true, message: "booked" } },
+    ]);
+    expect(call.turns[3]!.toolCalls).toEqual([{ name: "end_call", input: {}, ok: true, result: null }]);
+
+    // An empty list says the call recorded its tool calls and made none.
+    const none = callsIn("none.jsonl", JSON.stringify({ ...line, toolCalls: [] }))!.calls[0]!;
+    expect(none).toMatchObject({ recordsTools: true, endedBy: null });
+    expect(none.turns.flatMap((turn) => turn.toolCalls)).toEqual([]);
+    // Without the field the line reads as before: no tool calls, and not recorded.
+    const { toolCalls: _dropped, ...older } = line;
+    const before = callsIn("older.jsonl", JSON.stringify(older))!.calls[0]!;
+    expect(before).toMatchObject({ recordsTools: false, endedBy: null });
+    expect(before.turns.map((turn) => [turn.caller, turn.reply])).toEqual(none.turns.map((turn) => [turn.caller, turn.reply]));
+  });
+
+  it("places a Calls export's tool call before any words, and one without a time where the one before it was", () => {
+    const line = {
+      callId: "call-u",
+      endReason: "caller_ended",
+      transcript: { turns: [{ speaker: "agent", text: "Hello, Anna.", startOffsetMs: 1_000 }, { speaker: "caller", text: "Hi.", startOffsetMs: 3_000 }, { speaker: "agent", text: "Your order shipped.", startOffsetMs: 5_000 }] },
+      toolCalls: [
+        { name: "lookup_caller", offsetMs: 200, outcome: "ok" },
+        { name: "lookup_order", offsetMs: 4_000, outcome: "ok" },
+        { name: "track_parcel", outcome: "ok" },
+      ],
+    };
+
+    const call = callsIn("export.jsonl", JSON.stringify(line))!.calls[0]!;
+
+    expect(call.turns.map((turn) => [turn.caller, turn.reply, turn.toolCalls.map((toolCall) => toolCall.name)])).toEqual([
+      [null, "Hello, Anna.", ["lookup_caller"]],
+      ["Hi.", "Your order shipped.", ["lookup_order", "track_parcel"]],
+    ]);
+    expect(call.endedBy).toBe("caller");
+  });
+
   it("reads the output of curb conversations --json, with each tool call and its result", () => {
     const message = (role: string, content: string, more: Record<string, unknown> = {}) => ({ seq: 0, role, content, tool_calls: null, tool_name: null, tool_result: null, created_at: "2030-03-04T09:00:00.000Z", ...more });
     const conversations = [

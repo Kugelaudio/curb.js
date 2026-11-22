@@ -24,7 +24,7 @@ git commit -am "Keep the task list open until the caller is done"   # 7. and aga
    |---|---|
    | No recorded calls yet (a new agent) | 20 simulated calls it plays itself: callers written from the agent's prompt, skills and tools by [`callersFor`](./testing-api.md#callersfor), most wanting what the agent is for, a few hard to serve, and two or three wanting what it cannot do. They are saved as a run, and the report's first line says so |
    | Conversations in the `curb dev` preview | The last 20 (`--last <n>` for more) |
-   | Calls of the hosted agent | `npx curb review calls.jsonl`: an export of the dashboard's **Calls** page |
+   | Calls of the hosted agent | `npx curb review <file>`, on the calls exported as a file: with the KugelAudio MCP tool `agent_export_calls`, or from the dashboard's **Calls** page ([Many calls](#many-calls-find-what-to-fix-first)) |
 
    The report lists the patterns, the one on the most calls first, each with quotes and a scenario
    to add ([Many calls](#many-calls-find-what-to-fix-first)).
@@ -141,12 +141,15 @@ agent once. Then put it live with `npx curb deploy` ([Deploying](./deploying.md)
 
 ## Many calls: find what to fix first
 
-One call shows one fault. To see which faults come back, hand Curb all the calls:
+One call shows one fault. To see which faults come back, hand Curb all the calls. For a hosted
+agent, a coding agent asked to "analyse our calls, find the failures and make it better" exports
+them as a file and reviews that file:
 
 | Where the calls are | What to run |
 |---|---|
+| Hosted agent, coding agent connected | Export the calls as a file with the KugelAudio MCP tool `agent_export_calls`, then `npx curb review <file>` |
+| Hosted agent, dashboard | On the **Calls** page, export a date range as JSONL, then `npx curb review <file>` |
 | Nowhere yet: a new agent | `npx curb review`: 20 simulated calls, played, saved as a run and reviewed |
-| Hosted agent, dashboard | On the **Calls** page, export a date range as JSONL, then `npx curb review calls.jsonl` |
 | `curb dev` preview | `npx curb review`: the last 20 conversations, with no file (`--last <n>` for more) |
 | Transcripts as text or Markdown | `npx curb review transcripts/`: one call per file, lines starting with `Caller:` and `Agent:` |
 | A [saved test run](./test-runs.md) | `npx curb review .curb/test-runs/<id>.json` |
@@ -192,8 +195,14 @@ What a review does and does not do:
   data.** People's names, phone numbers, email addresses and street addresses are replaced; a
   model wrote it, so check it for real data before you commit it. A replayed call holds the
   caller's real words: treat it like the export.
-- **An export without tool calls cannot show `claimed_without_tool` or `wrong_tool_use`.** The
-  report says of how many calls they were not asked.
+- **An exported call is asked about its tools only when its line carries them.** A line may hold
+  the call's tool calls as `toolCalls` (`[{ name, offsetMs, outcome, input, result, error }]`);
+  then each one is read into the agent turn it happened in, and `claimed_without_tool` and
+  `wrong_tool_use` are asked ([the fields](./cli/review.md#calls-of-a-hosted-agent)). A line
+  without them cannot show those two, and the report says of how many calls they were not asked.
+- **An export holds personal data**: the caller's phone number and everything that was said. Keep
+  the file out of git (add its name to `.gitignore`), do not share it, and delete it when the
+  review is done.
 - **A judge can be wrong.** That is why every pattern carries quotes to read, and why a number
   in the report is counted by code, not by the model.
 - **Your own findings are asked too.** The `findings` your scenarios give, such as a stock
