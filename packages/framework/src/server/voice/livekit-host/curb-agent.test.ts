@@ -15,14 +15,15 @@ function userSaid(text: string): llm.ChatContext {
 }
 
 describe("hosted tool outcome reporting", () => {
-  it.each([true, false])("preserves tool success=%s and its run time without reporting its result data", async (ok) => {
+  it.each([true, false])("preserves tool success=%s, its run time and what it answered", async (ok) => {
+    const message = ok ? "Added: Buy milk." : "The list is full.";
     const event = vi.fn();
     const reporter: CallReporter = { event, turn: vi.fn(), async finish() {}, undelivered: 0 };
     const agent = new CurbVoiceAgent({
       instructions: "Test agent",
       reporter,
       async *runTurn(): AsyncGenerator<AgentTurnStreamEvent> {
-        yield { type: "tool", toolCall: { id: "tool-1", name: "add_task", input: { title: "Buy milk" }, skillPath: "/tasks" }, ok, durationMs: 41 };
+        yield { type: "tool", toolCall: { id: "tool-1", name: "add_task", input: { title: "Buy milk" }, skillPath: "/tasks" }, ok, durationMs: 41, result: { ok, message } };
         yield { type: "delta", delta: "Done.", text: "Done." };
       },
     });
@@ -33,7 +34,7 @@ describe("hosted tool outcome reporting", () => {
     const reader = stream!.getReader();
     while (!(await reader.read()).done) { /* Drain the real reporting path. */ }
     expect(event).toHaveBeenCalledExactlyOnceWith("tool", {
-      name: "add_task", arguments: { title: "Buy milk" }, skillPath: "/tasks", ok,
+      name: "add_task", arguments: { title: "Buy milk" }, skillPath: "/tasks", ok, result: { message },
     }, 41);
     expect(reporter.turn).toHaveBeenCalledExactlyOnceWith({ speaker: "agent", text: "Done.", final: true });
   });

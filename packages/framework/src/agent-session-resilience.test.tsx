@@ -125,7 +125,26 @@ describe("tool failures reach the model as tool results", () => {
       ok: false,
       message: 'Invalid input for "request_callback": phone is required.',
     });
+    // The tool event says why the call did not run, in the words the model read.
+    expect(events.flatMap((event) => (event.type === "tool" ? [event.result] : []))).toEqual([
+      { ok: false, message: 'Invalid input for "request_callback": phone is required.' },
+    ]);
     expect(events.at(-1)).toEqual({ type: "done", reply: "What number should we call?" });
+  });
+
+  it("a tool event carries the result the model read, for a tool that ran", async () => {
+    const { llm, requests } = scripted([
+      { text: "", toolCalls: [{ id: "t1", name: "request_callback", input: { name: "Ada", phone: "+15550100", topic: "Coverage" } }] },
+      { text: "An advisor will call you back.", toolCalls: [] },
+    ]);
+    const session = new AgentSession(createInsuranceDemoRuntime(), llm);
+
+    const events = await drain(session.runTurnStream("call me back"));
+
+    const toolMessage = requests[1]?.messages.find((message) => message.role === "tool");
+    const read = toolMessage?.role === "tool" ? toolMessage.result : undefined;
+    expect(read).toMatchObject({ ok: true });
+    expect(events.flatMap((event) => (event.type === "tool" ? [event.result] : []))).toEqual([read]);
   });
 });
 

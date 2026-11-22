@@ -321,6 +321,30 @@ export const ConversationEvent = z.object({
   payload,
 });
 
+/**
+ * The `payload` of the event `curb.tool`: one tool call, when it ended. `ok: false` means it
+ * failed, was refused, or (with `heldFor`, the read-back) is held for the caller's yes.
+ *
+ * `result` is what the model was answered: the tool's `message`, cut to 2 KiB of UTF-8 and then
+ * ending in "… [truncated]", and its `data` while that is at most 1 KiB of JSON. `truncated`
+ * says the message was cut or the data left out. Absent when the result had neither, and from a
+ * runner older than this field. Like `arguments`, it can hold the caller's personal data.
+ */
+export const ToolEventPayload = z.object({
+  name: nonEmpty,
+  arguments: payload,
+  ok: z.boolean(),
+  skillPath: z.string().optional(),
+  heldFor: z.string().optional(),
+  result: z
+    .object({
+      message: z.string().optional(),
+      data: z.unknown().optional(),
+      truncated: z.boolean().optional(),
+    })
+    .optional(),
+});
+
 export const ConversationBody = z.discriminatedUnion("type", [ConversationTurn, ConversationEvent]);
 
 /** Agent to host. `seq` comes from the same per-call counter as the conversation. */
@@ -450,6 +474,7 @@ export type HookRunRequest = z.infer<typeof HookRunRequest>;
 export type HookRunResponse = z.infer<typeof HookRunResponse>;
 export type HookRunState = z.infer<typeof HookRunState>;
 export type HookRunStatus = z.infer<typeof HookRunStatus>;
+export type ToolEventPayload = z.infer<typeof ToolEventPayload>;
 export type ConversationBody = z.infer<typeof ConversationBody>;
 export type HostRecordBody = z.infer<typeof HostRecordBody>;
 export type LifecycleBody = z.infer<typeof LifecycleBody>;
@@ -489,6 +514,7 @@ export const PROTOCOL_SCHEMAS = {
   HookRunStatus,
   ConversationTurn,
   ConversationEvent,
+  ToolEventPayload,
   ConversationBody,
   HostRecordBody,
   LifecycleReady,

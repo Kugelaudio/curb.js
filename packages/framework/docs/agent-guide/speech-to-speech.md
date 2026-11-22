@@ -91,8 +91,8 @@ A cascaded call reads both, as before.
   caller said, however the model sent it in parts. A back-office reply is not in it, and on Realtime
   the model's request to the back office is marked as not the caller's.
 - The call's record has the same entries as a cascaded call's: one turn per line of the caller's and
-  the model's, and every tool the back office ran, with its arguments, its skill and whether it ran
-  or was held for the caller's yes.
+  the model's, and every tool the back office ran, with its arguments, what it answered, its skill
+  and whether it ran or was held for the caller's yes.
 - When the caller is done, the model hands that over and the agent runs `end_call`. A model may answer
   a goodbye by itself, so after a quiet spell following its line (`VOICE_SILENCE_FOLLOWUP_MS`, 6
   seconds by default), `llm` reads the transcript once and ends the call if it is over. That is one

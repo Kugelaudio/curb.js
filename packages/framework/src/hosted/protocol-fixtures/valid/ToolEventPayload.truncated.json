@@ -1,0 +1,1 @@
+{ "name": "list_appointments", "arguments": { "month": "2030-03" }, "ok": true, "result": { "message": "31 appointments: Mon 4 March 09:00 haircut, Mon 4 March 09:30 colour, … [truncated]", "truncated": true } }
