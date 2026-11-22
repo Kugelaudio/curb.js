@@ -1,6 +1,7 @@
 import { declaredNameProblem } from "../goals.js";
 import type { ConfirmationVerdict } from "../llm/confirmation.js";
 import type { AgentTurnError } from "../llm/types.js";
+import { runsProblem } from "../cli/scenarios/limits.js";
 import { clientInfoProblem } from "../server/protocol.js";
 import { END_CALL_TOOL_NAME, SKIP_TURN_TOOL_NAME, type ToolResult } from "../types.js";
 
@@ -241,8 +242,6 @@ export type Scenario = Readonly<ScenarioDefinition>;
 export const DEFAULT_MAX_TURNS = 12;
 /** The most caller turns a simulated conversation may be given. */
 export const MAX_SIMULATED_TURNS = 100;
-/** The most runs one scenario may ask for. */
-export const MAX_RUNS = 100;
 /** The most sentences `expectations` may hold: one judge call answers them all. */
 export const MAX_EXPECTATIONS = 12;
 
@@ -366,13 +365,6 @@ function fakesProblems(fakes: unknown): string[] {
           : `give the result its calls get, such as { ok: true, message: "Done." }, or a function of the input that returns one; got ${preview(fake)}`);
     return problem ? [`fakes.${tool}: ${problem}.`] : [];
   });
-}
-
-/** What is wrong with `value` as a number of runs, or undefined. */
-export function runsProblem(value: unknown): string | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_RUNS
-    ? undefined
-    : `must be a whole number of runs from 1 to ${MAX_RUNS}; got ${preview(value)}.`;
 }
 
 function expectationsProblems(expectations: unknown): string[] {

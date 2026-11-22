@@ -1605,6 +1605,7 @@
     "id": "<id>",
     "createdAt": "<createdAt>",
     "curb": "<curb>",
+    "agentVersion": null,
     "complete": true,
     "models": {
       "agent": "openai:gpt-5.2",

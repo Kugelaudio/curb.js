@@ -14,7 +14,7 @@ import type { CallerBehaviour, ScenarioCaller, ScenarioTurn } from "./scenario.j
 export const CALLER_PROMPT_VERSION = "2";
 
 /** How long the caller or the judge may take for one answer. The host that sends their
- * requests holds each attempt to it (`cli/test.ts`), so waiting for a rate limit is not
+ * requests holds each attempt to it (`host.ts`), so waiting for a rate limit is not
  * counted against it. */
 export const ANSWER_TIMEOUT_MS = 60_000;
 

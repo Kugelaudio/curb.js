@@ -1,16 +1,68 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentSession, type AgentLlmClient } from "../agent-session.js";
-import { fallbackReplies } from "../llm/localized.js";
-import type { AgentRunRequest, AgentRunResponse } from "../llm/types.js";
-import { createAgentSession } from "../server/bootstrap.js";
-import { LISA, bookingRuntime, booked, callsBook, readBackOf, says, scripted, scriptedStream, type Booking } from "../test-fixtures/booking.js";
-import { END_CALL_TOOL_NAME, type ToolResult } from "../types.js";
-import { experimentDeclarations } from "../experiments.js";
-import { assignExperiments } from "../experiments.node.js";
-import { isJudgeRequest, judge } from "../test-fixtures/conversations.js";
-import { addTask, calls, hangUp, says as taskSays, sendSummary, steps, tasksBundle } from "../test-fixtures/tasks.js";
-import { RunSlots, plannedRuns, runScenario, runVariants, scenarioSessionId, scenarioVariants, type ScenarioResult } from "./run.js";
-import { scenario, type ScenarioCheck, type ScenarioDefinition } from "./scenario.js";
+import { AgentSession, type AgentLlmClient } from "../../agent-session.js";
+import type { AgentModelUsage } from "../../llm/ai-sdk.js";
+import { fallbackReplies } from "../../llm/localized.js";
+import type { AgentRunRequest, AgentRunResponse } from "../../llm/types.js";
+import { createAgentSession } from "../../server/bootstrap.js";
+import { LISA, bookingRuntime, booked, callsBook, readBackOf, says, scripted, scriptedStream, type Booking } from "../../test-fixtures/booking.js";
+import { END_CALL_TOOL_NAME, type ToolResult } from "../../types.js";
+import { experimentDeclarations } from "../../experiments.js";
+import { assignExperiments } from "../../experiments.node.js";
+import { isJudgeRequest, judge } from "../../test-fixtures/conversations.js";
+import { addTask, calls, hangUp, says as taskSays, sendSummary, steps, tasksBundle } from "../../test-fixtures/tasks.js";
+import type { CallBundle, TestHost } from "../../testing/host.js";
+import { RunSlots } from "../../testing/parallel.js";
+import { scenario, type ScenarioCheck, type ScenarioDefinition, type ScenarioTurn } from "../../testing/scenario.js";
+import type { ScenarioRun } from "./aggregate.js";
+import { plannedRuns, runScenario as runOnHost, runVariants, scenarioSessionId, scenarioVariants, type ScenarioResult } from "./run.js";
+import type { SavedConversation } from "./types.js";
+
+type RunLlms = { caller: AgentLlmClient; judge: AgentLlmClient };
+
+/**
+ * A scenario run on a host made of what a test has at hand: one bundle or a bundle per run, and
+ * one LLM for the caller and the judge or a pair per run (`llms`, asked once per run: the caller
+ * takes the pair when it first speaks, the judge the pair the caller took, or a new one).
+ */
+function runScenario(params: {
+  scenario: ReturnType<typeof scenario>;
+  name: string;
+  file: string;
+  bundle?: CallBundle;
+  createBundle?: () => Promise<CallBundle>;
+  simulator?: AgentLlmClient;
+  llms?: (onUsage: (role: "caller" | "judge", usage: AgentModelUsage) => void) => RunLlms;
+  runs?: number;
+  slots?: RunSlots;
+  onTurn?: (turn: ScenarioTurn) => void;
+  onRun?: (run: ScenarioRun, conversation: SavedConversation) => void;
+}): Promise<ScenarioResult> {
+  let taken: { llms: RunLlms; usage: Record<"caller" | "judge", (usage: AgentModelUsage) => void> } | null = null;
+  const host: TestHost = {
+    createBundle: params.createBundle ?? (() => Promise.resolve(params.bundle!)),
+    simulator(_llm, role, onUsage) {
+      if (!params.llms) return params.simulator!;
+      if (role === "caller" || !taken) {
+        const usage = { caller: (_: AgentModelUsage) => {}, judge: (_: AgentModelUsage) => {} };
+        taken = { llms: params.llms((which, used) => usage[which](used)), usage };
+      }
+      const pair = taken;
+      if (role === "judge") taken = null;
+      pair.usage[role] = onUsage;
+      return pair.llms[role];
+    },
+  };
+  return runOnHost({
+    scenario: params.scenario,
+    name: params.name,
+    file: params.file,
+    host,
+    ...(params.runs === undefined ? {} : { runs: params.runs }),
+    ...(params.slots ? { concurrency: params.slots.limit } : {}),
+    ...(params.onTurn ? { onTurn: params.onTurn } : {}),
+    ...(params.onRun ? { onRun: params.onRun } : {}),
+  });
+}
 
 /** The fixture project's agent (AGENT_PROJECT_DIR in vitest.config.ts) on `llm`. */
 async function fixtureBundle(llm: AgentLlmClient) {

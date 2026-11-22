@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { AgentLlmClient } from "../agent-session.js";
-import { judge, ran, record, turn } from "../test-fixtures/conversations.js";
+import type { AgentLlmClient } from "../../agent-session.js";
+import { judge, ran, record, turn } from "../../test-fixtures/conversations.js";
+import { modelOn } from "../../testing/model.js";
+import type { ConversationRecord } from "../../testing/record.js";
 import { assessConversation, type AssessmentSettings } from "./assess.js";
-import type { ConversationRecord } from "./record.js";
 
 const NONE: AssessmentSettings = { expectations: [], failOn: [] };
 const unused: AgentLlmClient = async () => {
@@ -10,7 +11,7 @@ const unused: AgentLlmClient = async () => {
 };
 
 const assess = (conversation: ConversationRecord, judgeLlm: AgentLlmClient = judge(), settings: AssessmentSettings = NONE) =>
-  assessConversation({ record: conversation, settings, judge: judgeLlm, judgeModel: "openai:gpt-5.4-mini" });
+  assessConversation({ record: conversation, settings, judge: modelOn(judgeLlm, "openai:gpt-5.4-mini") });
 
 const booked = [
   turn({ turn: 1, caller: "Hi, I'd like a haircut.", reply: "Sure. What is your name?" }),

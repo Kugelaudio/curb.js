@@ -68,15 +68,25 @@ Key seams:
   `src/layout.ts` tells the two apart. Check the compiled form with
   `node scripts/npm-package.mjs <version> <out-dir>` and
   `node scripts/release-install-test.mjs <out-dir>`.
-- `curb test` (`src/cli/test.ts`) plays each run of a scenario into a `ConversationRecord`
-  (`src/testing/record.ts`), and everything after that reads the record alone: the checks
-  and the judge (`assess.ts`, `judge.ts`), the style numbers (`style.ts`) and the rates
-  (`aggregate.ts`). So `--rejudge` assesses a saved conversation with the code that assessed
-  it live, and a conversation from another source needs only a loader into that record.
-  `curb review` (`src/cli/review.ts`) is the first such reader: `testing/review-calls.ts` turns a
-  saved run, a Calls export, the `curb dev` store or a text transcript into the turns the judge
-  reads, and `testing/review.ts` asks the judge what each source can answer, has one more request
-  sort the findings into patterns, and counts them in code.
+- `curb/testing` (`src/testing/index.ts`) is three layers, and `curb test` and `curb review` are
+  built on the first two with the public exports only: `src/cli/built-on-curb-testing.test.ts`
+  fails when `src/cli/test.ts`, `src/cli/review.ts` or a CLI module they import reaches testing
+  code past `index.ts`. If a command needs something the entry does not export, the foundation
+  is missing it: add the export (with `testing-api.md` and `public-api.txt`), never a deep import.
+  Layer 1: `startCall` (`testing/call.ts`) plays a call in text into a `ConversationRecord`
+  (`testing/record.ts`, with `saveRun` and `loadRun`), `loadCalls` (`testing/load-calls.ts`) reads
+  real calls into the same record, `testModel` (`model.ts`), `inParallel` (`parallel.ts`),
+  `report` and `passRate` (`results.ts`), all on a `TestHost` (`host.ts`; `projectHost()` is the
+  project's agent and provider, and prepares the project when no command did). Layer 2: callers
+  and `converse` (`converse.ts`, `caller.ts`), `builtInChecks` and `checksOf` (`checks.ts`),
+  `judge`, `ask` and `FINDINGS` (`judge.ts`), `styleNumbers` (`style.ts`), `groupFindings`
+  (`review.ts`). Layer 3 lives in the CLI: `src/cli/scenarios/` plays a scenario's runs
+  (`run.ts`: `startCall`, `converse`, then `assess.ts`), sums them up (`aggregate.ts`) and formats
+  the report (`report.ts`); `src/cli/review-report.ts` is what `curb review` asks and prints.
+  Everything after a conversation reads the record alone, so `--rejudge` assesses a saved
+  conversation with the code that assessed it live, and a conversation from another source needs
+  only a loader into that record. `src/cli/verdicts.test.ts` pins the verdicts and every caller,
+  judge and grouping request on fixed conversations.
   The simulated caller's and the judge's prompt carry a version (`CALLER_PROMPT_VERSION`,
   `JUDGE_PROMPT_VERSION`): raise it with every change to the prompt, because saved results
   are compared by it.

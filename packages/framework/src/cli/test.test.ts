@@ -10,9 +10,10 @@ import { LISA, bookingRuntime, booked, callsBook, readBackOf, says as booking, s
 import { END_CALL_TOOL_NAME } from "../types.js";
 import { END_CALL_VOICE_STYLE } from "../voice-style.js";
 import { isJudgeRequest, judgeAnswer } from "../test-fixtures/conversations.js";
-import type { ScenarioResult } from "../testing/run.js";
+import type { ScenarioResult } from "./scenarios/run.js";
 import { createTestProject } from "./test-project.js";
-import { parseTestArgs, simulationLlm, testCommand, type ScenarioReport, type TestHost } from "./test.js";
+import { simulationLlm } from "../testing/host.js";
+import { parseTestArgs, testCommand, type ScenarioReport, type TestHost } from "./test.js";
 import { typeCheckProject } from "./typecheck.js";
 
 const SPOKEN_RULES = "## Spoken-reply rules (test)";

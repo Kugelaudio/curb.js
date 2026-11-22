@@ -2647,7 +2647,9 @@
     "id": "<id>",
     "createdAt": "<createdAt>",
     "curb": "<curb>",
+    "agentVersion": null,
     "complete": true,
+    "rejudgedFrom": "<rejudgedFrom>",
     "models": {
       "agent": "openai:gpt-5.2",
       "caller": "openai:gpt-5.4-mini",
@@ -4583,8 +4585,7 @@
           }
         }
       }
-    ],
-    "rejudgedFrom": "<rejudgedFrom>"
+    ]
   },
   "requests": {
     "caller": [],

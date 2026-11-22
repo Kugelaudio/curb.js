@@ -1,14 +1,12 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
-import { JUDGE_PROMPT_VERSION, judgeConversation } from "../testing/judge.js";
-import { REVIEW_SHAPES, callsIn, storedCall, type ReadCalls, type ReviewCall } from "../testing/load-calls.js";
-import { NOT_ASKED, findingsOf, formatReview, groupFindingsWith, reviewQuestions, type ReviewFinding, type ReviewReport } from "../testing/review.js";
-import { describeProviderError } from "../testing/resilience.js";
-import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY } from "../testing/run.js";
-import { TokenCounter, runUsage } from "../testing/usage.js";
-import { conversationsFile, recordedConversations } from "./conversations.js";
+import { existsSync, statSync } from "node:fs";
+import { resolve } from "node:path";
+import { groupFindings, inParallel, judge, loadCalls, projectHost, testModel, type ConversationRecord, type Finding, type TestHost } from "../testing/index.js";
+import { conversationsFile } from "./conversations.js";
 import { routeConsoleToStderr } from "./headless-project.js";
-import { agentLlm, hostSlots, parseOptions, projectHost, throttledBy, type TestHost } from "./test.js";
+import { NOT_ASKED, REVIEW_FINDINGS, findingsOf, formatReview, recordsTools, reviewAsks, type ReviewReport } from "./review-report.js";
+import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY } from "./scenarios/run.js";
+import { runUsage } from "./scenarios/usage.js";
+import { parseOptions, throttledBy } from "./test.js";
 
 /** Conversations of the `curb dev` store that are reviewed when no path is given. */
 const DEFAULT_LAST = 20;
@@ -59,40 +57,19 @@ export function parseReviewArgs(args: readonly string[]): ReviewArgs {
   return { paths: words, json: flags.has("--json"), last, judgeModel: values.get("--judge-model"), concurrency: concurrency() };
 }
 
-const READ_EXTENSIONS = [".json", ".jsonl", ".md", ".txt"];
-
-/** The calls of every path: a file, or a folder's files of the extensions a call comes in.
- * Throws, naming the file and the shapes there are, on a file given by name that holds no
- * calls. In a folder, such a file (a README beside the exports) is left out and named in
- * `ignored`. */
-export function readCallFiles(projectRoot: string, paths: readonly string[]): ReadCalls & { ignored: string[] } {
-  const read = { calls: [] as ReviewCall[], skipped: 0, ignored: [] as string[] };
-  for (const given of paths) {
-    const path = resolve(projectRoot, given);
-    if (!existsSync(path)) throw new Error(`[CURB_REVIEW_NOT_FOUND] No file or folder at ${given}.\nFix: pass ${REVIEW_SHAPES}; or a folder of such files.`);
-    const isCallFile = (name: string) => READ_EXTENSIONS.some((extension) => name.toLowerCase().endsWith(extension));
-    const folder = statSync(path).isDirectory();
-    // Each file as a refusal or a note names it: the way it was given.
-    const files = folder ? readdirSync(path).filter(isCallFile).sort().map((name) => join(given, name)) : [given];
-    for (const file of files) {
-      const found = callsIn(basename(file), readFileSync(resolve(projectRoot, file), "utf8"));
-      if (!found && folder) read.ignored.push(file);
-      else if (!found) throw new Error(`[CURB_REVIEW_UNREADABLE] ${file} holds no calls in a shape curb review reads.\nFix: pass ${REVIEW_SHAPES}.`);
-      else {
-        read.calls.push(...found.calls);
-        read.skipped += found.skipped;
-      }
-    }
-  }
-  return read;
+/** The calls of what `paths` name, files or folders, as `loadCalls` reads them. */
+export function readCallFiles(projectRoot: string, paths: readonly string[]) {
+  return loadCalls(paths, { root: projectRoot });
 }
 
-/** The last `last` conversations of the project's `curb dev` store. */
-function readStoredCalls(projectRoot: string, last: number, env: NodeJS.ProcessEnv): ReadCalls & { ignored?: string[] } {
+/** The last `last` conversations of the project's `curb dev` store; none when it records none. */
+function readStoredCalls(projectRoot: string, last: number, env: NodeJS.ProcessEnv): { calls: ConversationRecord[]; skipped: number; ignored?: string[] } {
   const file = conversationsFile(env);
-  const found = file === null ? [] : recordedConversations(projectRoot, file, { last, id: null, json: false }).map((conversation) => storedCall(conversation)!);
-  const calls = found.filter((call) => call.turns.length > 0);
-  return { calls, skipped: found.length - calls.length };
+  const path = file === null ? null : resolve(projectRoot, file);
+  // A project that never talked has no store yet, or an empty one.
+  if (path === null || !existsSync(path) || statSync(path).size === 0) return { calls: [], skipped: 0 };
+  const { calls, skipped } = loadCalls(path, { last, root: projectRoot });
+  return { calls, skipped };
 }
 
 /**
@@ -114,67 +91,67 @@ export async function reviewCommand(
   // Two sources may name a call alike, and the report counts calls by their id.
   const named = new Map<string, number>();
   for (const call of calls) {
-    const times = (named.get(call.id) ?? 0) + 1;
-    named.set(call.id, times);
-    if (times > 1) call.id = `${call.id} (${times})`;
+    const id = call.id ?? "call";
+    const times = (named.get(id) ?? 0) + 1;
+    named.set(id, times);
+    call.id = times > 1 ? `${id} (${times})` : id;
   }
   if (calls.length === 0) {
     const where = given ? `${run.paths.join(", ")} hold${run.paths.length === 1 ? "s" : ""} no call with a transcript` : "curb dev has recorded no conversation here yet";
     throw new Error(
       `[CURB_REVIEW_NO_CALLS] Nothing to review: ${where}.\n` +
-        `Fix: npx curb review <file or folder>, with ${REVIEW_SHAPES}. Without a path, talk to the agent in the preview first (npm run dev).`,
+        `Fix: npx curb review <file or folder>, with ${loadCalls.shapes}. Without a path, talk to the agent in the preview first (npm run dev).`,
     );
   }
 
   const restoreConsole = routeConsoleToStderr();
   try {
-    const host = options.host ?? (await projectHost({ judgeModel: run.judgeModel }));
-    const llm = await agentLlm(host);
-    const judgeModel = host.models?.(llm).judge ?? null;
-    const tokens = new TokenCounter();
-    // One client for every request: a model without a key is refused here, before any call.
-    const judge = host.simulator(llm, "judge", tokens.add);
-    const slots = hostSlots(host, run.concurrency ?? DEFAULT_CONCURRENCY);
-    progress(`Judging ${calls.length} call(s)${judgeModel ? ` on ${judgeModel}` : ""}, ${slots.limit} at a time.`);
+    const host = options.host ?? projectHost();
+    const before = host.throttle?.stats();
+    // One model for every request: a model without a key is refused here, before any call.
+    const model = await testModel({ host, role: "judge", ...(run.judgeModel === undefined ? {} : { model: run.judgeModel }) });
+    const judgeModel = model.model;
+    let concurrency = run.concurrency ?? DEFAULT_CONCURRENCY;
+    progress(`Judging ${calls.length} call(s)${judgeModel ? ` on ${judgeModel}` : ""}, ${concurrency} at a time.`);
 
     let done = 0;
     const every = Math.max(1, Math.ceil(calls.length / 10));
     // Per call: its findings, or why it could not be judged. A call that could not is no reason to stop.
-    const results = await Promise.all(
-      calls.map((call) =>
-        slots.run(async (): Promise<ReviewFinding[] | { call: string; reason: string }> => {
-          const conversation = { turns: call.turns, endedBy: call.endedBy, caller: null, tools: call.tools };
-          const result = await judgeConversation({ llm: judge, conversation, questions: reviewQuestions(call), model: judgeModel }).then(
-            (answers) => findingsOf(call, answers),
-            (error: unknown) => ({ call: call.id, reason: describeProviderError(error) }),
-          );
-          done += 1;
-          if (done % every === 0 && done < calls.length) progress(`Judged ${done} of ${calls.length} call(s).`);
-          return result;
-        }),
-      ),
+    const results = await inParallel(
+      calls,
+      async (call): Promise<Finding[] | { call: string; reason: string }> => {
+        // A review judges what was said, not a goal written down for a test.
+        const result = await judge({ ...call, caller: null }, { ...reviewAsks(call), model }).then(
+          (answers) => findingsOf(call, answers),
+          (error: unknown) => ({ call: call.id!, reason: error instanceof Error ? error.message : String(error) }),
+        );
+        done += 1;
+        if (done % every === 0 && done < calls.length) progress(`Judged ${done} of ${calls.length} call(s).`);
+        return result;
+      },
+      { concurrency, host, onSlowDown: (lowered) => void (concurrency = lowered) },
     );
-    const judged = results.filter((result): result is ReviewFinding[] => Array.isArray(result));
+    const judged = results.filter((result): result is Finding[] => Array.isArray(result));
     const notJudged = results.flatMap((result) => (Array.isArray(result) ? [] : [result]));
     const withFindings = judged.filter((ofCall) => ofCall.length > 0).length;
     const found = judged.flat();
     if (found.length > 0) progress(`Sorting ${found.length} finding(s) into patterns.`);
-    const { patterns, notes } = await groupFindingsWith({ llm: judge, findings: found, judged: judged.length });
+    const { patterns, notes } = await groupFindings(found, { model, calls: judged.length, kinds: REVIEW_FINDINGS });
 
-    const notAsked = (lacks: (call: ReviewCall) => boolean, { questions, of }: (typeof NOT_ASKED)[keyof typeof NOT_ASKED]) => {
+    const notAsked = (lacks: (call: ConversationRecord) => boolean, { questions, of }: (typeof NOT_ASKED)[keyof typeof NOT_ASKED]) => {
       const count = calls.filter(lacks).length;
       return count > 0 ? [{ questions: [...questions], calls: count, why: of }] : [];
     };
-    const throttled = throttledBy(host, slots);
+    const throttled = throttledBy(host, before, concurrency);
     const report: ReviewReport = {
       calls: { reviewed: calls.length, withoutFindings: judged.length - withFindings, withFindings, notJudged: notJudged.length, skipped },
       patterns,
-      notAsked: [...notAsked((call) => !call.recordsTools, NOT_ASKED.tools), ...notAsked((call) => call.endedBy === null, NOT_ASKED.ending)],
+      notAsked: [...notAsked((call) => !recordsTools(call), NOT_ASKED.tools), ...notAsked((call) => call.ending.by === null, NOT_ASKED.ending)],
       notJudged,
       notes: [...(ignored.length > 0 ? [`Left out ${ignored.length} file(s) that hold no calls in a shape curb review reads: ${ignored.join(", ")}.`] : []), ...notes],
       judgeModel,
-      judgePromptVersion: JUDGE_PROMPT_VERSION,
-      usage: runUsage({ agent: null, caller: null, judge: tokens.total() }),
+      judgePromptVersion: judge.promptVersion,
+      usage: runUsage({ agent: null, caller: null, judge: model.usage() }),
       ...(throttled ? { throttled } : {}),
       exitCode: judged.length > 0 ? 0 : 1,
     };

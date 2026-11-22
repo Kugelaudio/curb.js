@@ -1,9 +1,18 @@
-import type { ScenarioEndedBy } from "./checks.js";
-import type { JudgeResult } from "./judge.js";
-import type { ConversationEnding, EndState, RunError, RunOutcome, SavedConversation, SavedScenarioSettings } from "./record.js";
-import { JUDGE_FINDINGS, type JudgeFinding, type ScenarioCheck, type ScenarioTurn } from "./scenario.js";
-import { styleLimitLine, styleReport, type StyleReport } from "./style.js";
-import { sumUsage, type RunUsage } from "./usage.js";
+import { FINDINGS, passRate as rateOf, styleNumbers, type JudgeFinding, type ScenarioCheck, type ScenarioTurn } from "../../testing/index.js";
+import { styleLimitLine } from "./style.js";
+import type {
+  ConversationEnding,
+  EndState,
+  JudgeResult,
+  RunError,
+  RunOutcome,
+  RunUsage,
+  SavedConversation,
+  SavedScenarioSettings,
+  ScenarioEndedBy,
+  StyleReport,
+} from "./types.js";
+import { sumUsage } from "./usage.js";
 
 /**
  * A scenario's runs as one result: how many passed, how reliable that makes it, which checks
@@ -142,12 +151,8 @@ export function aggregateScenario(params: {
 }): ScenarioResult {
   const { settings, maxErrorRate } = params;
   const runs = [...params.conversations].sort((left, right) => left.scenario.run - right.scenario.run).map(scenarioRun);
-  const passed = runs.filter((run) => run.outcome === "pass").length;
-  const failed = runs.filter((run) => run.outcome === "fail").length;
-  const errors = runs.length - passed - failed;
-  const completed = passed + failed;
-  const passRate = completed === 0 ? null : rate(passed, completed);
-  const style = styleReport(runs, settings.style);
+  const { passed, failed, errors, passRate, errorRate } = rateOf(runs.map((run) => run.outcome));
+  const style = styleNumbers(runs, settings.style);
   const styleChecks: ScenarioCheck[] = style.limits.map((limit) => ({
     name: `style: ${limit.metric} at most ${limit.limit}`,
     pass: limit.pass,
@@ -161,7 +166,7 @@ export function aggregateScenario(params: {
     errors,
     passRate,
     reliability: passRate === null ? null : rate(passRate ** settings.runs, 1),
-    errorRate: runs.length === 0 ? 0 : rate(errors, runs.length),
+    errorRate,
     minPassRate: settings.minPassRate,
     maxErrorRate,
   };
@@ -222,12 +227,12 @@ const MAX_EXAMPLES = 3;
 function findingStats(runs: readonly ScenarioRun[]): FindingStats[] {
   const judged = runs.filter((run) => run.judge !== null);
   if (judged.length === 0) return [];
-  return (Object.keys(JUDGE_FINDINGS) as JudgeFinding[]).map((id) => {
+  return (Object.keys(FINDINGS) as JudgeFinding[]).map((id) => {
     const answers = judged.flatMap((run) => (run.judge?.answers ?? []).filter((answer) => answer.id === id).map((answer) => ({ run: run.run, ...answer })));
     const found = answers.filter((answer) => answer.answer === "yes");
     return {
       id,
-      question: JUDGE_FINDINGS[id],
+      question: FINDINGS[id],
       found: found.length,
       unknown: answers.filter((answer) => answer.answer === "unknown").length,
       total: judged.length,
