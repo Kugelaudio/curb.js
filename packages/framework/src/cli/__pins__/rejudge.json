@@ -1,0 +1,4600 @@
+{
+  "code": 1,
+  "report": {
+    "passed": false,
+    "scenarios": [
+      {
+        "name": "books",
+        "file": "src/agent/books.scenario.ts",
+        "mode": "simulated",
+        "passed": false,
+        "endedBy": "agent",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Hi, I'd like a haircut. I'm Alex Example.",
+            "reply": "Sure. Tuesday at 10 is free.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "list_slots",
+                "input": {
+                  "day": "tuesday"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true,
+                  "message": "Free: 10:00."
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          },
+          {
+            "caller": "Tuesday at 10, please.",
+            "reply": "Your booking is Tuesday at 10 for a haircut.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "book",
+                "input": {
+                  "service": "Haircut",
+                  "time": "10:00"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true,
+                  "message": "Booked."
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 2
+          },
+          {
+            "caller": "Great, that's all. Bye.",
+            "reply": "Bye! Bye!",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Bye! Bye!"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1,
+            "turn": 3
+          }
+        ],
+        "checks": [
+          {
+            "name": "no turn errors",
+            "pass": true
+          },
+          {
+            "name": "no empty agent reply",
+            "pass": true
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "pass": true
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "pass": false,
+            "detail": "turn 3 says \"Bye!\" more than once"
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "pass": true,
+            "detail": "the agent ended the call (end_call) at turn 3"
+          },
+          {
+            "name": "the agent does not hang up on a caller who still wants something",
+            "pass": true,
+            "detail": "the agent ended the call at turn 3, and the caller was done"
+          },
+          {
+            "name": "the caller reaches its goal",
+            "pass": true,
+            "detail": "goal: yes",
+            "evidence": {
+              "answer": "yes",
+              "turn": null,
+              "quote": null
+            }
+          },
+          {
+            "name": "expectation: The agent reads the booking back.",
+            "pass": true,
+            "detail": "expectation_1: yes",
+            "evidence": {
+              "answer": "yes",
+              "turn": null,
+              "quote": null
+            }
+          },
+          {
+            "name": "no judge finding: incoherent",
+            "pass": false,
+            "detail": "It says bye twice.",
+            "evidence": {
+              "answer": "yes",
+              "turn": 3,
+              "quote": "Bye! Bye!"
+            }
+          },
+          {
+            "name": "called book with {\"service\":\"haircut\"}",
+            "pass": true,
+            "detail": "turn 2: {\"service\":\"Haircut\",\"time\":\"10:00\"}"
+          },
+          {
+            "name": "called in order: list_slots, book",
+            "pass": true,
+            "detail": "list_slots (turn 1), book (turn 2)"
+          },
+          {
+            "name": "did not call cancel",
+            "pass": true
+          },
+          {
+            "name": "said /booking is/i",
+            "pass": true,
+            "detail": "turn 2"
+          },
+          {
+            "name": "the agent ended the call",
+            "pass": true,
+            "detail": "turn 3"
+          },
+          {
+            "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+            "pass": true
+          },
+          {
+            "name": "one appointment",
+            "pass": true
+          },
+          {
+            "name": "context says booked",
+            "pass": true
+          }
+        ],
+        "notes": [],
+        "outcome": "fail",
+        "flaky": true,
+        "stats": {
+          "runs": 5,
+          "ran": 5,
+          "passed": 1,
+          "failed": 2,
+          "errors": 2,
+          "passRate": 0.333,
+          "reliability": 0.004,
+          "errorRate": 0.4,
+          "minPassRate": 0.5,
+          "maxErrorRate": 0.34
+        },
+        "checkStats": [
+          {
+            "name": "no turn errors",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no empty agent reply",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "passed": 2,
+            "total": 3,
+            "passRate": 0.667,
+            "unknown": 0
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the agent does not hang up on a caller who still wants something",
+            "passed": 2,
+            "total": 3,
+            "passRate": 0.667,
+            "unknown": 0
+          },
+          {
+            "name": "the caller reaches its goal",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "expectation: The agent reads the booking back.",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no judge finding: incoherent",
+            "passed": 2,
+            "total": 3,
+            "passRate": 0.667,
+            "unknown": 0
+          },
+          {
+            "name": "called book with {\"service\":\"haircut\"}",
+            "passed": 2,
+            "total": 3,
+            "passRate": 0.667,
+            "unknown": 0
+          },
+          {
+            "name": "called in order: list_slots, book",
+            "passed": 2,
+            "total": 3,
+            "passRate": 0.667,
+            "unknown": 0
+          },
+          {
+            "name": "did not call cancel",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "said /booking is/i",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the agent ended the call",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "one appointment",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "context says booked",
+            "passed": 3,
+            "total": 3,
+            "passRate": 1,
+            "unknown": 0
+          }
+        ],
+        "findings": [
+          {
+            "id": "<id>",
+            "question": "The agent asked the caller for a piece of information the caller had already stated.",
+            "found": 1,
+            "unknown": 0,
+            "total": 3,
+            "rate": 0.333,
+            "examples": [
+              {
+                "run": 4,
+                "turn": 2,
+                "quote": "What was your name again?",
+                "reason": "The caller gave the name in turn 1.",
+                "earlierTurn": 1
+              }
+            ]
+          },
+          {
+            "id": "<id>",
+            "question": "The agent told the caller it did or recorded something that no successful tool call did.",
+            "found": 0,
+            "unknown": 0,
+            "total": 3,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent ignored or misread something the caller said.",
+            "found": 0,
+            "unknown": 0,
+            "total": 3,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent repeated itself, contradicted itself, or said something that does not follow from the call.",
+            "found": 1,
+            "unknown": 0,
+            "total": 3,
+            "rate": 0.333,
+            "examples": [
+              {
+                "run": 2,
+                "turn": 3,
+                "quote": "Bye! Bye!",
+                "reason": "It says bye twice."
+              }
+            ]
+          },
+          {
+            "id": "<id>",
+            "question": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense.",
+            "found": 0,
+            "unknown": 0,
+            "total": 3,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent ended the call although the caller had not said goodbye or that they needed nothing else.",
+            "found": 0,
+            "unknown": 0,
+            "total": 3,
+            "rate": 0,
+            "examples": []
+          }
+        ],
+        "variants": [],
+        "style": {
+          "replies": 12,
+          "wordsP50": 4,
+          "wordsP90": 9,
+          "questionShare": 0.17,
+          "repeatedOpeningShare": 0,
+          "repeatedClosingShare": 0,
+          "sameGoodbyeShare": 0.33,
+          "stepsPerTurn": 1,
+          "stepsPerTurnMax": 1,
+          "refusedToolCallsPerRun": 0,
+          "limits": []
+        },
+        "usage": {
+          "agent": null,
+          "caller": null,
+          "judge": {
+            "inputTokens": 21,
+            "outputTokens": 9,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 30
+        },
+        "runs": [
+          {
+            "run": 1,
+            "outcome": "pass",
+            "passed": true,
+            "endedBy": "agent",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "caller": "Hi, I'd like a haircut. I'm Alex Example.",
+                "reply": "Sure. Tuesday at 10 is free.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "list_slots",
+                    "input": {
+                      "day": "tuesday"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true,
+                      "message": "Free: 10:00."
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 1
+              },
+              {
+                "caller": "Tuesday at 10, please.",
+                "reply": "Your booking is Tuesday at 10 for a haircut.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "book",
+                    "input": {
+                      "service": "Haircut",
+                      "time": "10:00"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true,
+                      "message": "Booked."
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 2
+              },
+              {
+                "caller": "Great, that's all. Bye.",
+                "reply": "Thanks for calling, goodbye.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "end_call",
+                    "input": {
+                      "goodbye": "Thanks for calling, goodbye."
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": true,
+                "steps": 1,
+                "turn": 3
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the agent ended the call (end_call) at turn 3"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": true,
+                "detail": "the agent ended the call at turn 3, and the caller was done"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": true,
+                "detail": "goal: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "expectation: The agent reads the booking back.",
+                "pass": true,
+                "detail": "expectation_1: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "no judge finding: incoherent",
+                "pass": true,
+                "detail": "incoherent: no",
+                "evidence": {
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "called book with {\"service\":\"haircut\"}",
+                "pass": true,
+                "detail": "turn 2: {\"service\":\"Haircut\",\"time\":\"10:00\"}"
+              },
+              {
+                "name": "called in order: list_slots, book",
+                "pass": true,
+                "detail": "list_slots (turn 1), book (turn 2)"
+              },
+              {
+                "name": "did not call cancel",
+                "pass": true
+              },
+              {
+                "name": "said /booking is/i",
+                "pass": true,
+                "detail": "turn 2"
+              },
+              {
+                "name": "the agent ended the call",
+                "pass": true,
+                "detail": "turn 3"
+              },
+              {
+                "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+                "pass": true
+              },
+              {
+                "name": "one appointment",
+                "pass": true
+              },
+              {
+                "name": "context says booked",
+                "pass": true
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "agent",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": {
+                "done": true,
+                "goalMet": true,
+                "reason": "booked"
+              }
+            },
+            "endState": {
+              "stores": {
+                "calendar": {
+                  "appointments": [
+                    {
+                      "service": "haircut"
+                    }
+                  ]
+                }
+              },
+              "context": [
+                "content: booked for Tuesday"
+              ],
+              "skillPath": ""
+            },
+            "judge": {
+              "promptVersion": "3",
+              "model": "openai:gpt-5.4-mini",
+              "answers": [
+                {
+                  "id": "<id>",
+                  "kind": "goal",
+                  "text": "Did the caller reach this goal by the end of the call: Book a haircut",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "goal: yes"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "asked_again: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "claimed_without_tool: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ignored_caller: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "incoherent: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "wrong_tool_use: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ended_early: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "expectation",
+                  "text": "The agent reads the booking back.",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "expectation_1: yes"
+                }
+              ]
+            },
+            "usage": {
+              "agent": null,
+              "caller": null,
+              "judge": {
+                "inputTokens": 7,
+                "outputTokens": 3,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "totalTokens": 10
+            }
+          },
+          {
+            "run": 2,
+            "outcome": "fail",
+            "passed": false,
+            "endedBy": "agent",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "caller": "Hi, I'd like a haircut. I'm Alex Example.",
+                "reply": "Sure. Tuesday at 10 is free.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "list_slots",
+                    "input": {
+                      "day": "tuesday"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true,
+                      "message": "Free: 10:00."
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 1
+              },
+              {
+                "caller": "Tuesday at 10, please.",
+                "reply": "Your booking is Tuesday at 10 for a haircut.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "book",
+                    "input": {
+                      "service": "Haircut",
+                      "time": "10:00"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true,
+                      "message": "Booked."
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 2
+              },
+              {
+                "caller": "Great, that's all. Bye.",
+                "reply": "Bye! Bye!",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "end_call",
+                    "input": {
+                      "goodbye": "Bye! Bye!"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": true,
+                "steps": 1,
+                "turn": 3
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": false,
+                "detail": "turn 3 says \"Bye!\" more than once"
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the agent ended the call (end_call) at turn 3"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": true,
+                "detail": "the agent ended the call at turn 3, and the caller was done"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": true,
+                "detail": "goal: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "expectation: The agent reads the booking back.",
+                "pass": true,
+                "detail": "expectation_1: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "no judge finding: incoherent",
+                "pass": false,
+                "detail": "It says bye twice.",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": 3,
+                  "quote": "Bye! Bye!"
+                }
+              },
+              {
+                "name": "called book with {\"service\":\"haircut\"}",
+                "pass": true,
+                "detail": "turn 2: {\"service\":\"Haircut\",\"time\":\"10:00\"}"
+              },
+              {
+                "name": "called in order: list_slots, book",
+                "pass": true,
+                "detail": "list_slots (turn 1), book (turn 2)"
+              },
+              {
+                "name": "did not call cancel",
+                "pass": true
+              },
+              {
+                "name": "said /booking is/i",
+                "pass": true,
+                "detail": "turn 2"
+              },
+              {
+                "name": "the agent ended the call",
+                "pass": true,
+                "detail": "turn 3"
+              },
+              {
+                "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+                "pass": true
+              },
+              {
+                "name": "one appointment",
+                "pass": true
+              },
+              {
+                "name": "context says booked",
+                "pass": true
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "agent",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": {
+                "done": true,
+                "goalMet": true,
+                "reason": "booked"
+              }
+            },
+            "endState": {
+              "stores": {
+                "calendar": {
+                  "appointments": [
+                    {
+                      "service": "haircut"
+                    }
+                  ]
+                }
+              },
+              "context": [
+                "content: booked for Tuesday"
+              ],
+              "skillPath": ""
+            },
+            "judge": {
+              "promptVersion": "3",
+              "model": "openai:gpt-5.4-mini",
+              "answers": [
+                {
+                  "id": "<id>",
+                  "kind": "goal",
+                  "text": "Did the caller reach this goal by the end of the call: Book a haircut",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "goal: yes"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "asked_again: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "claimed_without_tool: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ignored_caller: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                  "answer": "yes",
+                  "turn": 3,
+                  "quote": "Bye! Bye!",
+                  "reason": "It says bye twice."
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "wrong_tool_use: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ended_early: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "expectation",
+                  "text": "The agent reads the booking back.",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "expectation_1: yes"
+                }
+              ]
+            },
+            "usage": {
+              "agent": null,
+              "caller": null,
+              "judge": {
+                "inputTokens": 7,
+                "outputTokens": 3,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "totalTokens": 10
+            }
+          },
+          {
+            "run": 3,
+            "outcome": "error",
+            "error": {
+              "kind": "simulator_loop",
+              "message": "the simulated caller said \"Book me in.\" 3 times in a row from turn 1, while the agent's replies moved on."
+            },
+            "passed": false,
+            "endedBy": "caller",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "caller": "Book me in.",
+                "reply": "Which day?",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 1
+              },
+              {
+                "caller": "Book me in.",
+                "reply": "Tuesday or Wednesday?",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 2
+              },
+              {
+                "caller": "Book me in.",
+                "reply": "I can do Tuesday.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 3
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the caller hung up after turn 3"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": true,
+                "detail": "the agent did not end the call"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": false,
+                "detail": "not judged: the simulated caller said \"Book me in.\" 3 times in a row from turn 1, while the agent's replies moved on.",
+                "notJudged": true
+              },
+              {
+                "name": "expectation: The agent reads the booking back.",
+                "pass": false,
+                "detail": "not judged: the simulated caller said \"Book me in.\" 3 times in a row from turn 1, while the agent's replies moved on.",
+                "notJudged": true
+              },
+              {
+                "name": "called book with {\"service\":\"haircut\"}",
+                "pass": false,
+                "detail": "book was never called; tools that ran: none"
+              },
+              {
+                "name": "called in order: list_slots, book",
+                "pass": false,
+                "detail": "no call of list_slots ran; the calls that ran, in order: none"
+              },
+              {
+                "name": "did not call cancel",
+                "pass": true
+              },
+              {
+                "name": "said /booking is/i",
+                "pass": false,
+                "detail": "no agent reply says it"
+              },
+              {
+                "name": "the agent ended the call",
+                "pass": false,
+                "detail": "the agent never called end_call"
+              },
+              {
+                "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+                "pass": true
+              },
+              {
+                "name": "one appointment",
+                "pass": true
+              },
+              {
+                "name": "context says booked",
+                "pass": true
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "caller",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": {
+                "done": true,
+                "goalMet": true,
+                "reason": "booked"
+              }
+            },
+            "endState": {
+              "stores": {
+                "calendar": {
+                  "appointments": [
+                    {
+                      "service": "haircut"
+                    }
+                  ]
+                }
+              },
+              "context": [
+                "content: booked for Tuesday"
+              ],
+              "skillPath": ""
+            },
+            "judge": null,
+            "usage": null
+          },
+          {
+            "run": 4,
+            "outcome": "fail",
+            "passed": false,
+            "endedBy": "agent",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "caller": "Alex Example here, a haircut please. [early]",
+                "reply": "Sure.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 1
+              },
+              {
+                "caller": "One more thing, can you text me?",
+                "reply": "What was your name again? Your booking is Tuesday.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": true,
+                "steps": 1,
+                "turn": 2
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the agent ended the call (end_call) at turn 2"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": false,
+                "detail": "the agent ended the call at turn 2 while the caller still wanted: a reminder text"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": true,
+                "detail": "goal: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "expectation: The agent reads the booking back.",
+                "pass": true,
+                "detail": "expectation_1: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "no judge finding: incoherent",
+                "pass": true,
+                "detail": "incoherent: no",
+                "evidence": {
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "called book with {\"service\":\"haircut\"}",
+                "pass": false,
+                "detail": "book was never called; tools that ran: none"
+              },
+              {
+                "name": "called in order: list_slots, book",
+                "pass": false,
+                "detail": "no call of list_slots ran; the calls that ran, in order: none"
+              },
+              {
+                "name": "did not call cancel",
+                "pass": true
+              },
+              {
+                "name": "said /booking is/i",
+                "pass": true,
+                "detail": "turn 2"
+              },
+              {
+                "name": "the agent ended the call",
+                "pass": true,
+                "detail": "turn 2"
+              },
+              {
+                "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+                "pass": true
+              },
+              {
+                "name": "one appointment",
+                "pass": true
+              },
+              {
+                "name": "context says booked",
+                "pass": true
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "agent",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": {
+                "done": false,
+                "goalMet": null,
+                "reason": "a reminder text"
+              }
+            },
+            "endState": {
+              "stores": {
+                "calendar": {
+                  "appointments": [
+                    {
+                      "service": "haircut"
+                    }
+                  ]
+                }
+              },
+              "context": [
+                "content: booked for Tuesday"
+              ],
+              "skillPath": ""
+            },
+            "judge": {
+              "promptVersion": "3",
+              "model": "openai:gpt-5.4-mini",
+              "answers": [
+                {
+                  "id": "<id>",
+                  "kind": "goal",
+                  "text": "Did the caller reach this goal by the end of the call: Book a haircut",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "goal: yes"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                  "answer": "yes",
+                  "turn": 2,
+                  "quote": "What was your name again?",
+                  "reason": "The caller gave the name in turn 1.",
+                  "earlierTurn": 1
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "claimed_without_tool: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ignored_caller: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "incoherent: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "wrong_tool_use: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ended_early: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "expectation",
+                  "text": "The agent reads the booking back.",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "expectation_1: yes"
+                }
+              ]
+            },
+            "usage": {
+              "agent": null,
+              "caller": null,
+              "judge": {
+                "inputTokens": 7,
+                "outputTokens": 3,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "totalTokens": 10
+            }
+          },
+          {
+            "run": 5,
+            "outcome": "error",
+            "error": {
+              "kind": "invented_fact",
+              "message": "turn 1: the simulated caller said \"0170 9999999\", which is not in caller.knows. Add it to caller.knows if the caller should know it; otherwise the caller made it up."
+            },
+            "passed": false,
+            "endedBy": "caller",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "caller": "Call me on 0170 9999999. [unreadable]",
+                "reply": "I've noted that.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 1
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the caller hung up after turn 1"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": true,
+                "detail": "the agent did not end the call"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": false,
+                "detail": "not judged: turn 1: the simulated caller said \"0170 9999999\", which is not in caller.knows. Add it to caller.knows if the caller should know it; otherwise the caller made it up.",
+                "notJudged": true
+              },
+              {
+                "name": "expectation: The agent reads the booking back.",
+                "pass": false,
+                "detail": "not judged: turn 1: the simulated caller said \"0170 9999999\", which is not in caller.knows. Add it to caller.knows if the caller should know it; otherwise the caller made it up.",
+                "notJudged": true
+              },
+              {
+                "name": "called book with {\"service\":\"haircut\"}",
+                "pass": false,
+                "detail": "book was never called; tools that ran: none"
+              },
+              {
+                "name": "called in order: list_slots, book",
+                "pass": false,
+                "detail": "no call of list_slots ran; the calls that ran, in order: none"
+              },
+              {
+                "name": "did not call cancel",
+                "pass": true
+              },
+              {
+                "name": "said /booking is/i",
+                "pass": false,
+                "detail": "no agent reply says it"
+              },
+              {
+                "name": "the agent ended the call",
+                "pass": false,
+                "detail": "the agent never called end_call"
+              },
+              {
+                "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+                "pass": true
+              },
+              {
+                "name": "one appointment",
+                "pass": true
+              },
+              {
+                "name": "context says booked",
+                "pass": true
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "caller",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": {
+                "done": true,
+                "goalMet": true,
+                "reason": "booked"
+              }
+            },
+            "endState": {
+              "stores": {
+                "calendar": {
+                  "appointments": [
+                    {
+                      "service": "haircut"
+                    }
+                  ]
+                }
+              },
+              "context": [
+                "content: booked for Tuesday"
+              ],
+              "skillPath": ""
+            },
+            "judge": null,
+            "usage": null
+          }
+        ]
+      },
+      {
+        "name": "hello",
+        "file": "src/agent/hello.scenario.ts",
+        "mode": "scripted",
+        "passed": false,
+        "endedBy": "agent",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Hi",
+            "reply": "Hello there.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          },
+          {
+            "caller": "Thanks",
+            "reply": "Sorry, something went wrong on my side.",
+            "fallback": "Sorry, something went wrong on my side.",
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "cancel",
+                "input": {},
+                "ok": false,
+                "result": {
+                  "ok": false,
+                  "message": "Not allowed."
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1,
+            "turn": 2
+          }
+        ],
+        "checks": [
+          {
+            "name": "no turn errors",
+            "pass": true
+          },
+          {
+            "name": "no empty agent reply",
+            "pass": false,
+            "detail": "turn 2: the agent said nothing"
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "pass": false,
+            "detail": "turn 2: the caller heard the fixed line \"Sorry, something went wrong on my side.\""
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "pass": true
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "pass": false,
+            "detail": "the agent hung up at turn 2 with 1 scripted caller line(s) never said: \"Bye\""
+          },
+          {
+            "name": "said \"hello\"",
+            "pass": true,
+            "detail": "turn 1"
+          }
+        ],
+        "notes": [],
+        "outcome": "fail",
+        "flaky": false,
+        "stats": {
+          "runs": 1,
+          "ran": 1,
+          "passed": 0,
+          "failed": 1,
+          "errors": 0,
+          "passRate": 0,
+          "reliability": 0,
+          "errorRate": 0,
+          "minPassRate": 1,
+          "maxErrorRate": 0.34
+        },
+        "checkStats": [
+          {
+            "name": "no turn errors",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no empty agent reply",
+            "passed": 0,
+            "total": 1,
+            "passRate": 0,
+            "unknown": 0
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "passed": 0,
+            "total": 1,
+            "passRate": 0,
+            "unknown": 0
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "passed": 0,
+            "total": 1,
+            "passRate": 0,
+            "unknown": 0
+          },
+          {
+            "name": "said \"hello\"",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          }
+        ],
+        "findings": [],
+        "variants": [],
+        "style": {
+          "replies": 1,
+          "wordsP50": 2,
+          "wordsP90": 2,
+          "questionShare": 0,
+          "repeatedOpeningShare": 0,
+          "repeatedClosingShare": 0,
+          "sameGoodbyeShare": null,
+          "stepsPerTurn": 1,
+          "stepsPerTurnMax": 1,
+          "refusedToolCallsPerRun": 1,
+          "limits": []
+        },
+        "usage": null,
+        "runs": [
+          {
+            "run": 1,
+            "outcome": "fail",
+            "passed": false,
+            "endedBy": "agent",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "caller": "Hi",
+                "reply": "Hello there.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 1
+              },
+              {
+                "caller": "Thanks",
+                "reply": "Sorry, something went wrong on my side.",
+                "fallback": "Sorry, something went wrong on my side.",
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "cancel",
+                    "input": {},
+                    "ok": false,
+                    "result": {
+                      "ok": false,
+                      "message": "Not allowed."
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": true,
+                "steps": 1,
+                "turn": 2
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": false,
+                "detail": "turn 2: the agent said nothing"
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": false,
+                "detail": "turn 2: the caller heard the fixed line \"Sorry, something went wrong on my side.\""
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": false,
+                "detail": "the agent hung up at turn 2 with 1 scripted caller line(s) never said: \"Bye\""
+              },
+              {
+                "name": "said \"hello\"",
+                "pass": true,
+                "detail": "turn 1"
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "agent",
+              "unsaid": [
+                "Bye"
+              ],
+              "maxTurns": 3,
+              "caller": null
+            },
+            "endState": null,
+            "judge": null,
+            "usage": null
+          }
+        ]
+      },
+      {
+        "name": "gone",
+        "file": "src/agent/gone.scenario.ts",
+        "mode": "simulated",
+        "passed": false,
+        "endedBy": "max_turns",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Hello, I'm Alex. [unknown] [ignored]",
+            "reply": "Hello! How can I help you today with your account?",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          },
+          {
+            "caller": "My booking.",
+            "reply": "What was your name again?",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 2
+          }
+        ],
+        "checks": [
+          {
+            "name": "no turn errors",
+            "pass": true
+          },
+          {
+            "name": "no empty agent reply",
+            "pass": true
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "pass": true
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "pass": true
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "pass": true,
+            "detail": "maxTurns (2) was reached before anyone hung up"
+          },
+          {
+            "name": "the agent does not hang up on a caller who still wants something",
+            "pass": true,
+            "detail": "the agent did not end the call"
+          },
+          {
+            "name": "the caller reaches its goal",
+            "pass": false,
+            "detail": "goal: no",
+            "evidence": {
+              "answer": "no",
+              "turn": null,
+              "quote": null
+            }
+          },
+          {
+            "name": "expectation: The agent knows the booking is open.",
+            "pass": true,
+            "detail": "unknown: expectation_1: unknown",
+            "evidence": {
+              "answer": "unknown",
+              "turn": null,
+              "quote": null
+            }
+          },
+          {
+            "name": "expectation: The agent greets the caller.",
+            "pass": true,
+            "detail": "It greets.",
+            "evidence": {
+              "answer": "yes",
+              "turn": 1,
+              "quote": "Hello"
+            }
+          },
+          {
+            "name": "no judge finding: asked_again",
+            "pass": false,
+            "detail": "The caller gave the name in turn 1.",
+            "evidence": {
+              "answer": "yes",
+              "turn": 2,
+              "quote": "What was your name again?"
+            }
+          },
+          {
+            "name": "style: wordsP90 at most 6",
+            "pass": false,
+            "detail": "wordsP90 is 10, above the limit of 6"
+          },
+          {
+            "name": "style: questionShare at most 0.4",
+            "pass": false,
+            "detail": "questionShare is 0.5, above the limit of 0.4"
+          }
+        ],
+        "notes": [
+          "src/agent/gone.scenario.ts no longer holds a scenario named \"gone\": its saved settings were applied, and its expect was not"
+        ],
+        "outcome": "fail",
+        "flaky": false,
+        "stats": {
+          "runs": 3,
+          "ran": 3,
+          "passed": 0,
+          "failed": 2,
+          "errors": 1,
+          "passRate": 0,
+          "reliability": 0,
+          "errorRate": 0.333,
+          "minPassRate": 1,
+          "maxErrorRate": 0.34
+        },
+        "checkStats": [
+          {
+            "name": "no turn errors",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no empty agent reply",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the agent does not hang up on a caller who still wants something",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the caller reaches its goal",
+            "passed": 1,
+            "total": 2,
+            "passRate": 0.5,
+            "unknown": 0
+          },
+          {
+            "name": "expectation: The agent knows the booking is open.",
+            "passed": 1,
+            "total": 2,
+            "passRate": 0.5,
+            "unknown": 1
+          },
+          {
+            "name": "expectation: The agent greets the caller.",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no judge finding: asked_again",
+            "passed": 1,
+            "total": 2,
+            "passRate": 0.5,
+            "unknown": 0
+          }
+        ],
+        "findings": [
+          {
+            "id": "<id>",
+            "question": "The agent asked the caller for a piece of information the caller had already stated.",
+            "found": 1,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0.5,
+            "examples": [
+              {
+                "run": 1,
+                "turn": 2,
+                "quote": "What was your name again?",
+                "reason": "The caller gave the name in turn 1.",
+                "earlierTurn": 1
+              }
+            ]
+          },
+          {
+            "id": "<id>",
+            "question": "The agent told the caller it did or recorded something that no successful tool call did.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent ignored or misread something the caller said.",
+            "found": 0,
+            "unknown": 1,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent repeated itself, contradicted itself, or said something that does not follow from the call.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent ended the call although the caller had not said goodbye or that they needed nothing else.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          }
+        ],
+        "variants": [],
+        "style": {
+          "replies": 4,
+          "wordsP50": 5,
+          "wordsP90": 10,
+          "questionShare": 0.5,
+          "repeatedOpeningShare": 0,
+          "repeatedClosingShare": 0,
+          "sameGoodbyeShare": null,
+          "stepsPerTurn": 1,
+          "stepsPerTurnMax": 1,
+          "refusedToolCallsPerRun": 0,
+          "limits": [
+            {
+              "metric": "wordsP90",
+              "limit": 6,
+              "value": 10,
+              "pass": false
+            },
+            {
+              "metric": "questionShare",
+              "limit": 0.4,
+              "value": 0.5,
+              "pass": false
+            }
+          ]
+        },
+        "usage": {
+          "agent": null,
+          "caller": null,
+          "judge": {
+            "inputTokens": 14,
+            "outputTokens": 6,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 20
+        },
+        "runs": [
+          {
+            "run": 1,
+            "outcome": "fail",
+            "passed": false,
+            "endedBy": "max_turns",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "caller": "Hello, I'm Alex. [unknown] [ignored]",
+                "reply": "Hello! How can I help you today with your account?",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 1
+              },
+              {
+                "caller": "My booking.",
+                "reply": "What was your name again?",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 2
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "maxTurns (2) was reached before anyone hung up"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": true,
+                "detail": "the agent did not end the call"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": false,
+                "detail": "goal: no",
+                "evidence": {
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "expectation: The agent knows the booking is open.",
+                "pass": true,
+                "detail": "unknown: expectation_1: unknown",
+                "evidence": {
+                  "answer": "unknown",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "expectation: The agent greets the caller.",
+                "pass": true,
+                "detail": "It greets.",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": 1,
+                  "quote": "Hello"
+                }
+              },
+              {
+                "name": "no judge finding: asked_again",
+                "pass": false,
+                "detail": "The caller gave the name in turn 1.",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": 2,
+                  "quote": "What was your name again?"
+                }
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "max_turns",
+              "unsaid": [],
+              "maxTurns": 2,
+              "caller": null
+            },
+            "endState": null,
+            "judge": {
+              "promptVersion": "3",
+              "model": "openai:gpt-5.4-mini",
+              "answers": [
+                {
+                  "id": "<id>",
+                  "kind": "goal",
+                  "text": "Did the caller reach this goal by the end of the call: Ask about a booking [nogoal]",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "goal: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                  "answer": "yes",
+                  "turn": 2,
+                  "quote": "What was your name again?",
+                  "reason": "The caller gave the name in turn 1.",
+                  "earlierTurn": 1
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "claimed_without_tool: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                  "answer": "unknown",
+                  "turn": 1,
+                  "quote": null,
+                  "reason": "the judge found this but quoted the caller, not the agent: It quotes the caller."
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "incoherent: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "wrong_tool_use: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ended_early: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "expectation",
+                  "text": "The agent knows the booking is open.",
+                  "answer": "unknown",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "expectation_1: unknown"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "expectation",
+                  "text": "The agent greets the caller.",
+                  "answer": "yes",
+                  "turn": 1,
+                  "quote": "Hello",
+                  "reason": "It greets."
+                }
+              ]
+            },
+            "usage": {
+              "agent": null,
+              "caller": null,
+              "judge": {
+                "inputTokens": 7,
+                "outputTokens": 3,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "totalTokens": 10
+            }
+          },
+          {
+            "run": 2,
+            "outcome": "error",
+            "error": {
+              "kind": "provider",
+              "message": "the agent's LLM provider failed, after the retries: failed: HTTP 529: overloaded"
+            },
+            "passed": false,
+            "endedBy": "error",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "caller": "Hi",
+                "reply": "Sorry, something went wrong.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [
+                  {
+                    "kind": "failed",
+                    "message": "HTTP 529: overloaded"
+                  }
+                ],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 1
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": false,
+                "detail": "turn 1: failed: HTTP 529: overloaded"
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": false,
+                "detail": "the conversation stopped at turn 1: failed: HTTP 529: overloaded"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": true,
+                "detail": "the agent did not end the call"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": false,
+                "detail": "not judged: the conversation broke off before it ended",
+                "notJudged": true
+              },
+              {
+                "name": "expectation: The agent knows the booking is open.",
+                "pass": false,
+                "detail": "not judged: the conversation broke off before it ended",
+                "notJudged": true
+              },
+              {
+                "name": "expectation: The agent greets the caller.",
+                "pass": false,
+                "detail": "not judged: the conversation broke off before it ended",
+                "notJudged": true
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "error",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": null,
+              "reason": "failed: HTTP 529: overloaded",
+              "providerError": true
+            },
+            "endState": null,
+            "judge": null,
+            "usage": null
+          },
+          {
+            "run": 3,
+            "outcome": "fail",
+            "passed": false,
+            "endedBy": "caller",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "caller": "Can you move my booking? [open]",
+                "reply": "I will check and call you back.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1,
+                "turn": 1
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the caller hung up after turn 1"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": true,
+                "detail": "the agent did not end the call"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": true,
+                "detail": "goal: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "expectation: The agent knows the booking is open.",
+                "pass": false,
+                "detail": "expectation_1: no",
+                "evidence": {
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "expectation: The agent greets the caller.",
+                "pass": true,
+                "detail": "It greets.",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": 1,
+                  "quote": null
+                }
+              },
+              {
+                "name": "no judge finding: asked_again",
+                "pass": true,
+                "detail": "asked_again: no",
+                "evidence": {
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null
+                }
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "caller",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": {
+                "done": true,
+                "goalMet": true,
+                "reason": "booked"
+              }
+            },
+            "endState": null,
+            "judge": {
+              "promptVersion": "3",
+              "model": "openai:gpt-5.4-mini",
+              "answers": [
+                {
+                  "id": "<id>",
+                  "kind": "goal",
+                  "text": "Did the caller reach this goal by the end of the call: Move a booking",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "goal: yes"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "asked_again: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "claimed_without_tool: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ignored_caller: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "incoherent: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "wrong_tool_use: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ended_early: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "expectation",
+                  "text": "The agent knows the booking is open.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "expectation_1: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "expectation",
+                  "text": "The agent greets the caller.",
+                  "answer": "yes",
+                  "turn": 1,
+                  "quote": null,
+                  "reason": "It greets."
+                }
+              ]
+            },
+            "usage": {
+              "agent": null,
+              "caller": null,
+              "judge": {
+                "inputTokens": 7,
+                "outputTokens": 3,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "totalTokens": 10
+            }
+          }
+        ]
+      }
+    ],
+    "outcome": "fail",
+    "exitCode": 1,
+    "durationMs": "<durationMs>",
+    "models": {
+      "agent": "openai:gpt-5.2",
+      "caller": "openai:gpt-5.4-mini",
+      "judge": "openai:gpt-5.4-mini"
+    },
+    "callerPromptVersion": "2",
+    "judgePromptVersion": "3",
+    "usage": {
+      "agent": null,
+      "caller": null,
+      "judge": {
+        "inputTokens": 35,
+        "outputTokens": 15,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "totalTokens": 50
+    },
+    "savedTo": "<savedTo>",
+    "rejudgedFrom": "<rejudgedFrom>"
+  },
+  "rejudged": {
+    "format": "curb.test-run",
+    "version": 1,
+    "id": "<id>",
+    "createdAt": "<createdAt>",
+    "curb": "<curb>",
+    "complete": true,
+    "models": {
+      "agent": "openai:gpt-5.2",
+      "caller": "openai:gpt-5.4-mini",
+      "judge": "openai:gpt-5.4-mini"
+    },
+    "callerPromptVersion": "2",
+    "judgePromptVersion": "3",
+    "maxErrorRate": 0.34,
+    "scenarios": [
+      {
+        "name": "books",
+        "file": "src/agent/books.scenario.ts",
+        "mode": "simulated",
+        "runs": 5,
+        "minPassRate": 0.5,
+        "expectations": [
+          "The agent reads the booking back."
+        ],
+        "failOn": [
+          "incoherent"
+        ],
+        "style": {}
+      },
+      {
+        "name": "hello",
+        "file": "src/agent/hello.scenario.ts",
+        "mode": "scripted",
+        "runs": 1,
+        "minPassRate": 1,
+        "expectations": [],
+        "failOn": [],
+        "style": {}
+      },
+      {
+        "name": "gone",
+        "file": "src/agent/gone.scenario.ts",
+        "mode": "simulated",
+        "runs": 3,
+        "minPassRate": 1,
+        "expectations": [
+          "The agent knows the booking is open.",
+          "The agent greets the caller."
+        ],
+        "failOn": [
+          "asked_again"
+        ],
+        "style": {
+          "wordsP90": 6,
+          "questionShare": 0.4
+        }
+      }
+    ],
+    "conversations": [
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "books",
+          "file": "src/agent/books.scenario.ts",
+          "mode": "simulated",
+          "run": 1
+        },
+        "caller": {
+          "goal": "Book a haircut",
+          "knows": "Name Alex Example, phone 0151 2345678"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Hi, I'd like a haircut. I'm Alex Example.",
+            "reply": "Sure. Tuesday at 10 is free.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "list_slots",
+                "input": {
+                  "day": "tuesday"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true,
+                  "message": "Free: 10:00."
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          },
+          {
+            "caller": "Tuesday at 10, please.",
+            "reply": "Your booking is Tuesday at 10 for a haircut.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "book",
+                "input": {
+                  "service": "Haircut",
+                  "time": "10:00"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true,
+                  "message": "Booked."
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 2
+          },
+          {
+            "caller": "Great, that's all. Bye.",
+            "reply": "Thanks for calling, goodbye.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Thanks for calling, goodbye."
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1,
+            "turn": 3
+          }
+        ],
+        "ending": {
+          "by": "agent",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": {
+            "done": true,
+            "goalMet": true,
+            "reason": "booked"
+          }
+        },
+        "endState": {
+          "stores": {
+            "calendar": {
+              "appointments": [
+                {
+                  "service": "haircut"
+                }
+              ]
+            }
+          },
+          "context": [
+            "content: booked for Tuesday"
+          ],
+          "skillPath": ""
+        },
+        "unusedFakes": [],
+        "usage": {
+          "agent": null,
+          "caller": null,
+          "judge": {
+            "inputTokens": 7,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 10
+        },
+        "tools": [
+          {
+            "name": "book",
+            "description": "Book a slot."
+          }
+        ],
+        "assessment": {
+          "outcome": "pass",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the agent ended the call (end_call) at turn 3"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": true,
+              "detail": "the agent ended the call at turn 3, and the caller was done"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": true,
+              "detail": "goal: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "expectation: The agent reads the booking back.",
+              "pass": true,
+              "detail": "expectation_1: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "no judge finding: incoherent",
+              "pass": true,
+              "detail": "incoherent: no",
+              "evidence": {
+                "answer": "no",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "called book with {\"service\":\"haircut\"}",
+              "pass": true,
+              "detail": "turn 2: {\"service\":\"Haircut\",\"time\":\"10:00\"}"
+            },
+            {
+              "name": "called in order: list_slots, book",
+              "pass": true,
+              "detail": "list_slots (turn 1), book (turn 2)"
+            },
+            {
+              "name": "did not call cancel",
+              "pass": true
+            },
+            {
+              "name": "said /booking is/i",
+              "pass": true,
+              "detail": "turn 2"
+            },
+            {
+              "name": "the agent ended the call",
+              "pass": true,
+              "detail": "turn 3"
+            },
+            {
+              "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+              "pass": true
+            },
+            {
+              "name": "one appointment",
+              "pass": true
+            },
+            {
+              "name": "context says booked",
+              "pass": true
+            }
+          ],
+          "notes": [],
+          "judge": {
+            "promptVersion": "3",
+            "model": "openai:gpt-5.4-mini",
+            "answers": [
+              {
+                "id": "<id>",
+                "kind": "goal",
+                "text": "Did the caller reach this goal by the end of the call: Book a haircut",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "goal: yes"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "asked_again: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "claimed_without_tool: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ignored_caller: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "incoherent: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "wrong_tool_use: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ended_early: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "expectation",
+                "text": "The agent reads the booking back.",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "expectation_1: yes"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "books",
+          "file": "src/agent/books.scenario.ts",
+          "mode": "simulated",
+          "run": 2
+        },
+        "caller": {
+          "goal": "Book a haircut",
+          "knows": "Name Alex Example, phone 0151 2345678"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Hi, I'd like a haircut. I'm Alex Example.",
+            "reply": "Sure. Tuesday at 10 is free.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "list_slots",
+                "input": {
+                  "day": "tuesday"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true,
+                  "message": "Free: 10:00."
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          },
+          {
+            "caller": "Tuesday at 10, please.",
+            "reply": "Your booking is Tuesday at 10 for a haircut.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "book",
+                "input": {
+                  "service": "Haircut",
+                  "time": "10:00"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true,
+                  "message": "Booked."
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 2
+          },
+          {
+            "caller": "Great, that's all. Bye.",
+            "reply": "Bye! Bye!",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Bye! Bye!"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1,
+            "turn": 3
+          }
+        ],
+        "ending": {
+          "by": "agent",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": {
+            "done": true,
+            "goalMet": true,
+            "reason": "booked"
+          }
+        },
+        "endState": {
+          "stores": {
+            "calendar": {
+              "appointments": [
+                {
+                  "service": "haircut"
+                }
+              ]
+            }
+          },
+          "context": [
+            "content: booked for Tuesday"
+          ],
+          "skillPath": ""
+        },
+        "unusedFakes": [],
+        "usage": {
+          "agent": null,
+          "caller": null,
+          "judge": {
+            "inputTokens": 7,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 10
+        },
+        "tools": [
+          {
+            "name": "book",
+            "description": "Book a slot."
+          }
+        ],
+        "assessment": {
+          "outcome": "fail",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": false,
+              "detail": "turn 3 says \"Bye!\" more than once"
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the agent ended the call (end_call) at turn 3"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": true,
+              "detail": "the agent ended the call at turn 3, and the caller was done"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": true,
+              "detail": "goal: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "expectation: The agent reads the booking back.",
+              "pass": true,
+              "detail": "expectation_1: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "no judge finding: incoherent",
+              "pass": false,
+              "detail": "It says bye twice.",
+              "evidence": {
+                "answer": "yes",
+                "turn": 3,
+                "quote": "Bye! Bye!"
+              }
+            },
+            {
+              "name": "called book with {\"service\":\"haircut\"}",
+              "pass": true,
+              "detail": "turn 2: {\"service\":\"Haircut\",\"time\":\"10:00\"}"
+            },
+            {
+              "name": "called in order: list_slots, book",
+              "pass": true,
+              "detail": "list_slots (turn 1), book (turn 2)"
+            },
+            {
+              "name": "did not call cancel",
+              "pass": true
+            },
+            {
+              "name": "said /booking is/i",
+              "pass": true,
+              "detail": "turn 2"
+            },
+            {
+              "name": "the agent ended the call",
+              "pass": true,
+              "detail": "turn 3"
+            },
+            {
+              "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+              "pass": true
+            },
+            {
+              "name": "one appointment",
+              "pass": true
+            },
+            {
+              "name": "context says booked",
+              "pass": true
+            }
+          ],
+          "notes": [],
+          "judge": {
+            "promptVersion": "3",
+            "model": "openai:gpt-5.4-mini",
+            "answers": [
+              {
+                "id": "<id>",
+                "kind": "goal",
+                "text": "Did the caller reach this goal by the end of the call: Book a haircut",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "goal: yes"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "asked_again: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "claimed_without_tool: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ignored_caller: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                "answer": "yes",
+                "turn": 3,
+                "quote": "Bye! Bye!",
+                "reason": "It says bye twice."
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "wrong_tool_use: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ended_early: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "expectation",
+                "text": "The agent reads the booking back.",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "expectation_1: yes"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "books",
+          "file": "src/agent/books.scenario.ts",
+          "mode": "simulated",
+          "run": 3
+        },
+        "caller": {
+          "goal": "Book a haircut",
+          "knows": "Name Alex Example, phone 0151 2345678"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Book me in.",
+            "reply": "Which day?",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          },
+          {
+            "caller": "Book me in.",
+            "reply": "Tuesday or Wednesday?",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 2
+          },
+          {
+            "caller": "Book me in.",
+            "reply": "I can do Tuesday.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 3
+          }
+        ],
+        "ending": {
+          "by": "caller",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": {
+            "done": true,
+            "goalMet": true,
+            "reason": "booked"
+          }
+        },
+        "endState": {
+          "stores": {
+            "calendar": {
+              "appointments": [
+                {
+                  "service": "haircut"
+                }
+              ]
+            }
+          },
+          "context": [
+            "content: booked for Tuesday"
+          ],
+          "skillPath": ""
+        },
+        "unusedFakes": [],
+        "usage": null,
+        "tools": [
+          {
+            "name": "book",
+            "description": "Book a slot."
+          }
+        ],
+        "assessment": {
+          "outcome": "error",
+          "error": {
+            "kind": "simulator_loop",
+            "message": "the simulated caller said \"Book me in.\" 3 times in a row from turn 1, while the agent's replies moved on."
+          },
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the caller hung up after turn 3"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": true,
+              "detail": "the agent did not end the call"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": false,
+              "detail": "not judged: the simulated caller said \"Book me in.\" 3 times in a row from turn 1, while the agent's replies moved on.",
+              "notJudged": true
+            },
+            {
+              "name": "expectation: The agent reads the booking back.",
+              "pass": false,
+              "detail": "not judged: the simulated caller said \"Book me in.\" 3 times in a row from turn 1, while the agent's replies moved on.",
+              "notJudged": true
+            },
+            {
+              "name": "called book with {\"service\":\"haircut\"}",
+              "pass": false,
+              "detail": "book was never called; tools that ran: none"
+            },
+            {
+              "name": "called in order: list_slots, book",
+              "pass": false,
+              "detail": "no call of list_slots ran; the calls that ran, in order: none"
+            },
+            {
+              "name": "did not call cancel",
+              "pass": true
+            },
+            {
+              "name": "said /booking is/i",
+              "pass": false,
+              "detail": "no agent reply says it"
+            },
+            {
+              "name": "the agent ended the call",
+              "pass": false,
+              "detail": "the agent never called end_call"
+            },
+            {
+              "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+              "pass": true
+            },
+            {
+              "name": "one appointment",
+              "pass": true
+            },
+            {
+              "name": "context says booked",
+              "pass": true
+            }
+          ],
+          "notes": [],
+          "judge": null
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "books",
+          "file": "src/agent/books.scenario.ts",
+          "mode": "simulated",
+          "run": 4
+        },
+        "caller": {
+          "goal": "Book a haircut",
+          "knows": "Name Alex Example, phone 0151 2345678"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Alex Example here, a haircut please. [early]",
+            "reply": "Sure.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          },
+          {
+            "caller": "One more thing, can you text me?",
+            "reply": "What was your name again? Your booking is Tuesday.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1,
+            "turn": 2
+          }
+        ],
+        "ending": {
+          "by": "agent",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": {
+            "done": false,
+            "goalMet": null,
+            "reason": "a reminder text"
+          }
+        },
+        "endState": {
+          "stores": {
+            "calendar": {
+              "appointments": [
+                {
+                  "service": "haircut"
+                }
+              ]
+            }
+          },
+          "context": [
+            "content: booked for Tuesday"
+          ],
+          "skillPath": ""
+        },
+        "unusedFakes": [],
+        "usage": {
+          "agent": null,
+          "caller": null,
+          "judge": {
+            "inputTokens": 7,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 10
+        },
+        "tools": [
+          {
+            "name": "book",
+            "description": "Book a slot."
+          }
+        ],
+        "assessment": {
+          "outcome": "fail",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the agent ended the call (end_call) at turn 2"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": false,
+              "detail": "the agent ended the call at turn 2 while the caller still wanted: a reminder text"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": true,
+              "detail": "goal: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "expectation: The agent reads the booking back.",
+              "pass": true,
+              "detail": "expectation_1: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "no judge finding: incoherent",
+              "pass": true,
+              "detail": "incoherent: no",
+              "evidence": {
+                "answer": "no",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "called book with {\"service\":\"haircut\"}",
+              "pass": false,
+              "detail": "book was never called; tools that ran: none"
+            },
+            {
+              "name": "called in order: list_slots, book",
+              "pass": false,
+              "detail": "no call of list_slots ran; the calls that ran, in order: none"
+            },
+            {
+              "name": "did not call cancel",
+              "pass": true
+            },
+            {
+              "name": "said /booking is/i",
+              "pass": true,
+              "detail": "turn 2"
+            },
+            {
+              "name": "the agent ended the call",
+              "pass": true,
+              "detail": "turn 2"
+            },
+            {
+              "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+              "pass": true
+            },
+            {
+              "name": "one appointment",
+              "pass": true
+            },
+            {
+              "name": "context says booked",
+              "pass": true
+            }
+          ],
+          "notes": [],
+          "judge": {
+            "promptVersion": "3",
+            "model": "openai:gpt-5.4-mini",
+            "answers": [
+              {
+                "id": "<id>",
+                "kind": "goal",
+                "text": "Did the caller reach this goal by the end of the call: Book a haircut",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "goal: yes"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                "answer": "yes",
+                "turn": 2,
+                "quote": "What was your name again?",
+                "reason": "The caller gave the name in turn 1.",
+                "earlierTurn": 1
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "claimed_without_tool: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ignored_caller: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "incoherent: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "wrong_tool_use: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ended_early: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "expectation",
+                "text": "The agent reads the booking back.",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "expectation_1: yes"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "books",
+          "file": "src/agent/books.scenario.ts",
+          "mode": "simulated",
+          "run": 5
+        },
+        "caller": {
+          "goal": "Book a haircut",
+          "knows": "Name Alex Example, phone 0151 2345678"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Call me on 0170 9999999. [unreadable]",
+            "reply": "I've noted that.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          }
+        ],
+        "ending": {
+          "by": "caller",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": {
+            "done": true,
+            "goalMet": true,
+            "reason": "booked"
+          }
+        },
+        "endState": {
+          "stores": {
+            "calendar": {
+              "appointments": [
+                {
+                  "service": "haircut"
+                }
+              ]
+            }
+          },
+          "context": [
+            "content: booked for Tuesday"
+          ],
+          "skillPath": ""
+        },
+        "unusedFakes": [],
+        "usage": null,
+        "tools": [
+          {
+            "name": "book",
+            "description": "Book a slot."
+          }
+        ],
+        "assessment": {
+          "outcome": "error",
+          "error": {
+            "kind": "invented_fact",
+            "message": "turn 1: the simulated caller said \"0170 9999999\", which is not in caller.knows. Add it to caller.knows if the caller should know it; otherwise the caller made it up."
+          },
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the caller hung up after turn 1"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": true,
+              "detail": "the agent did not end the call"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": false,
+              "detail": "not judged: turn 1: the simulated caller said \"0170 9999999\", which is not in caller.knows. Add it to caller.knows if the caller should know it; otherwise the caller made it up.",
+              "notJudged": true
+            },
+            {
+              "name": "expectation: The agent reads the booking back.",
+              "pass": false,
+              "detail": "not judged: turn 1: the simulated caller said \"0170 9999999\", which is not in caller.knows. Add it to caller.knows if the caller should know it; otherwise the caller made it up.",
+              "notJudged": true
+            },
+            {
+              "name": "called book with {\"service\":\"haircut\"}",
+              "pass": false,
+              "detail": "book was never called; tools that ran: none"
+            },
+            {
+              "name": "called in order: list_slots, book",
+              "pass": false,
+              "detail": "no call of list_slots ran; the calls that ran, in order: none"
+            },
+            {
+              "name": "did not call cancel",
+              "pass": true
+            },
+            {
+              "name": "said /booking is/i",
+              "pass": false,
+              "detail": "no agent reply says it"
+            },
+            {
+              "name": "the agent ended the call",
+              "pass": false,
+              "detail": "the agent never called end_call"
+            },
+            {
+              "name": "state of calendar has {\"appointments\":[{\"service\":\"Haircut\"}]}",
+              "pass": true
+            },
+            {
+              "name": "one appointment",
+              "pass": true
+            },
+            {
+              "name": "context says booked",
+              "pass": true
+            }
+          ],
+          "notes": [],
+          "judge": null
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "hello",
+          "file": "src/agent/hello.scenario.ts",
+          "mode": "scripted",
+          "run": 1
+        },
+        "caller": null,
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Hi",
+            "reply": "Hello there.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          },
+          {
+            "caller": "Thanks",
+            "reply": "Sorry, something went wrong on my side.",
+            "fallback": "Sorry, something went wrong on my side.",
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "cancel",
+                "input": {},
+                "ok": false,
+                "result": {
+                  "ok": false,
+                  "message": "Not allowed."
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1,
+            "turn": 2
+          }
+        ],
+        "ending": {
+          "by": "agent",
+          "unsaid": [
+            "Bye"
+          ],
+          "maxTurns": 3,
+          "caller": null
+        },
+        "endState": null,
+        "unusedFakes": [],
+        "usage": null,
+        "assessment": {
+          "outcome": "fail",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": false,
+              "detail": "turn 2: the agent said nothing"
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": false,
+              "detail": "turn 2: the caller heard the fixed line \"Sorry, something went wrong on my side.\""
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": false,
+              "detail": "the agent hung up at turn 2 with 1 scripted caller line(s) never said: \"Bye\""
+            },
+            {
+              "name": "said \"hello\"",
+              "pass": true,
+              "detail": "turn 1"
+            }
+          ],
+          "notes": [],
+          "judge": null
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "gone",
+          "file": "src/agent/gone.scenario.ts",
+          "mode": "simulated",
+          "run": 1
+        },
+        "caller": {
+          "goal": "Ask about a booking [nogoal]"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Hello, I'm Alex. [unknown] [ignored]",
+            "reply": "Hello! How can I help you today with your account?",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          },
+          {
+            "caller": "My booking.",
+            "reply": "What was your name again?",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 2
+          }
+        ],
+        "ending": {
+          "by": "max_turns",
+          "unsaid": [],
+          "maxTurns": 2,
+          "caller": null
+        },
+        "endState": null,
+        "unusedFakes": [],
+        "usage": {
+          "agent": null,
+          "caller": null,
+          "judge": {
+            "inputTokens": 7,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 10
+        },
+        "assessment": {
+          "outcome": "fail",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "maxTurns (2) was reached before anyone hung up"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": true,
+              "detail": "the agent did not end the call"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": false,
+              "detail": "goal: no",
+              "evidence": {
+                "answer": "no",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "expectation: The agent knows the booking is open.",
+              "pass": true,
+              "detail": "unknown: expectation_1: unknown",
+              "evidence": {
+                "answer": "unknown",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "expectation: The agent greets the caller.",
+              "pass": true,
+              "detail": "It greets.",
+              "evidence": {
+                "answer": "yes",
+                "turn": 1,
+                "quote": "Hello"
+              }
+            },
+            {
+              "name": "no judge finding: asked_again",
+              "pass": false,
+              "detail": "The caller gave the name in turn 1.",
+              "evidence": {
+                "answer": "yes",
+                "turn": 2,
+                "quote": "What was your name again?"
+              }
+            }
+          ],
+          "notes": [],
+          "judge": {
+            "promptVersion": "3",
+            "model": "openai:gpt-5.4-mini",
+            "answers": [
+              {
+                "id": "<id>",
+                "kind": "goal",
+                "text": "Did the caller reach this goal by the end of the call: Ask about a booking [nogoal]",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "goal: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                "answer": "yes",
+                "turn": 2,
+                "quote": "What was your name again?",
+                "reason": "The caller gave the name in turn 1.",
+                "earlierTurn": 1
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "claimed_without_tool: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                "answer": "unknown",
+                "turn": 1,
+                "quote": null,
+                "reason": "the judge found this but quoted the caller, not the agent: It quotes the caller."
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "incoherent: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "wrong_tool_use: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ended_early: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "expectation",
+                "text": "The agent knows the booking is open.",
+                "answer": "unknown",
+                "turn": null,
+                "quote": null,
+                "reason": "expectation_1: unknown"
+              },
+              {
+                "id": "<id>",
+                "kind": "expectation",
+                "text": "The agent greets the caller.",
+                "answer": "yes",
+                "turn": 1,
+                "quote": "Hello",
+                "reason": "It greets."
+              }
+            ]
+          }
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "gone",
+          "file": "src/agent/gone.scenario.ts",
+          "mode": "simulated",
+          "run": 2
+        },
+        "caller": {
+          "goal": "Ask about a booking"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Hi",
+            "reply": "Sorry, something went wrong.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [
+              {
+                "kind": "failed",
+                "message": "HTTP 529: overloaded"
+              }
+            ],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          }
+        ],
+        "ending": {
+          "by": "error",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": null,
+          "reason": "failed: HTTP 529: overloaded",
+          "providerError": true
+        },
+        "endState": null,
+        "unusedFakes": [],
+        "usage": null,
+        "assessment": {
+          "outcome": "error",
+          "error": {
+            "kind": "provider",
+            "message": "the agent's LLM provider failed, after the retries: failed: HTTP 529: overloaded"
+          },
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": false,
+              "detail": "turn 1: failed: HTTP 529: overloaded"
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": false,
+              "detail": "the conversation stopped at turn 1: failed: HTTP 529: overloaded"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": true,
+              "detail": "the agent did not end the call"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": false,
+              "detail": "not judged: the conversation broke off before it ended",
+              "notJudged": true
+            },
+            {
+              "name": "expectation: The agent knows the booking is open.",
+              "pass": false,
+              "detail": "not judged: the conversation broke off before it ended",
+              "notJudged": true
+            },
+            {
+              "name": "expectation: The agent greets the caller.",
+              "pass": false,
+              "detail": "not judged: the conversation broke off before it ended",
+              "notJudged": true
+            }
+          ],
+          "notes": [],
+          "judge": null
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "gone",
+          "file": "src/agent/gone.scenario.ts",
+          "mode": "simulated",
+          "run": 3
+        },
+        "caller": {
+          "goal": "Move a booking"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "caller": "Can you move my booking? [open]",
+            "reply": "I will check and call you back.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1,
+            "turn": 1
+          }
+        ],
+        "ending": {
+          "by": "caller",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": {
+            "done": true,
+            "goalMet": true,
+            "reason": "booked"
+          }
+        },
+        "endState": null,
+        "unusedFakes": [],
+        "usage": {
+          "agent": null,
+          "caller": null,
+          "judge": {
+            "inputTokens": 7,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 10
+        },
+        "assessment": {
+          "outcome": "fail",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the caller hung up after turn 1"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": true,
+              "detail": "the agent did not end the call"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": true,
+              "detail": "goal: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "expectation: The agent knows the booking is open.",
+              "pass": false,
+              "detail": "expectation_1: no",
+              "evidence": {
+                "answer": "no",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "expectation: The agent greets the caller.",
+              "pass": true,
+              "detail": "It greets.",
+              "evidence": {
+                "answer": "yes",
+                "turn": 1,
+                "quote": null
+              }
+            },
+            {
+              "name": "no judge finding: asked_again",
+              "pass": true,
+              "detail": "asked_again: no",
+              "evidence": {
+                "answer": "no",
+                "turn": null,
+                "quote": null
+              }
+            }
+          ],
+          "notes": [],
+          "judge": {
+            "promptVersion": "3",
+            "model": "openai:gpt-5.4-mini",
+            "answers": [
+              {
+                "id": "<id>",
+                "kind": "goal",
+                "text": "Did the caller reach this goal by the end of the call: Move a booking",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "goal: yes"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "asked_again: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "claimed_without_tool: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ignored_caller: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "incoherent: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "wrong_tool_use: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ended_early: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "expectation",
+                "text": "The agent knows the booking is open.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "expectation_1: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "expectation",
+                "text": "The agent greets the caller.",
+                "answer": "yes",
+                "turn": 1,
+                "quote": null,
+                "reason": "It greets."
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rejudgedFrom": "<rejudgedFrom>"
+  },
+  "requests": {
+    "caller": [],
+    "judge": [
+      "394a19ebd3d57d33",
+      "3a26bdd96b1327d4",
+      "559b9f450b664a57",
+      "d93dd63b055f71c4",
+      "e315bbbdcf097043"
+    ],
+    "grouping": []
+  }
+}

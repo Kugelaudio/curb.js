@@ -1,0 +1,196 @@
+{
+  "code": 0,
+  "report": {
+    "calls": {
+      "reviewed": 10,
+      "withoutFindings": 4,
+      "withFindings": 5,
+      "notJudged": 1,
+      "skipped": 0
+    },
+    "patterns": [
+      {
+        "title": "Says goodbye twice at the end of the call",
+        "calls": 2,
+        "share": 0.2222222222222222,
+        "findings": 2,
+        "kinds": [
+          "asked_again",
+          "incoherent"
+        ],
+        "examples": [
+          {
+            "call": "books run 2",
+            "kind": "incoherent",
+            "turn": 3,
+            "quote": "Bye! Bye!",
+            "reason": "It says bye twice."
+          },
+          {
+            "call": "books run 4",
+            "kind": "asked_again",
+            "turn": 2,
+            "quote": "What was your name again?",
+            "reason": "The caller gave the name in turn 1."
+          }
+        ],
+        "scenario": {
+          "caller": {
+            "goal": "Book a haircut",
+            "knows": "Name Alex Example"
+          },
+          "expectations": [
+            "The agent says goodbye once."
+          ]
+        }
+      },
+      {
+        "title": "The caller did not get what they called for by the end of the call.",
+        "calls": 2,
+        "share": 0.2222222222222222,
+        "findings": 2,
+        "kinds": [
+          "unresolved"
+        ],
+        "examples": [
+          {
+            "call": "gone run 3",
+            "kind": "unresolved",
+            "turn": 1,
+            "quote": "I will check",
+            "reason": "Moving the booking: it was only promised."
+          },
+          {
+            "call": "notes.md",
+            "kind": "unresolved",
+            "turn": 1,
+            "quote": "I will check",
+            "reason": "Moving the booking: it was only promised."
+          }
+        ],
+        "scenario": null
+      },
+      {
+        "title": "Leaves the caller's request open",
+        "calls": 1,
+        "share": 0.1111111111111111,
+        "findings": 1,
+        "kinds": [
+          "ended_early"
+        ],
+        "examples": [
+          {
+            "call": "books run 4",
+            "kind": "ended_early",
+            "turn": 2,
+            "quote": "What was your name again? Your booking is Tuesday.",
+            "reason": "The caller was not done."
+          }
+        ],
+        "scenario": {
+          "caller": {
+            "goal": "Move a booking"
+          },
+          "failOn": [
+            "ended_early"
+          ]
+        }
+      },
+      {
+        "title": "The agent asked the caller for a piece of information the caller had already stated.",
+        "calls": 1,
+        "share": 0.1111111111111111,
+        "findings": 1,
+        "kinds": [
+          "asked_again"
+        ],
+        "examples": [
+          {
+            "call": "gone run 1",
+            "kind": "asked_again",
+            "turn": 2,
+            "quote": "What was your name again?",
+            "reason": "The caller gave the name in turn 1."
+          }
+        ],
+        "scenario": null
+      },
+      {
+        "title": "The agent repeated itself, contradicted itself, or said something that does not follow from the call.",
+        "calls": 1,
+        "share": 0.1111111111111111,
+        "findings": 1,
+        "kinds": [
+          "incoherent"
+        ],
+        "examples": [
+          {
+            "call": "notes.md",
+            "kind": "incoherent",
+            "turn": 2,
+            "quote": "Bye! Bye!",
+            "reason": "It says bye twice."
+          }
+        ],
+        "scenario": null
+      }
+    ],
+    "notAsked": [
+      {
+        "questions": [
+          "claimed_without_tool",
+          "wrong_tool_use"
+        ],
+        "calls": 1,
+        "why": "without recorded tool calls"
+      },
+      {
+        "questions": [
+          "ended_early"
+        ],
+        "calls": 1,
+        "why": "whose record does not say who ended the call"
+      }
+    ],
+    "notJudged": [
+      {
+        "call": "books run 5",
+        "reason": "the judge's answer could not be read: \"I cannot say.\""
+      }
+    ],
+    "notes": [],
+    "judgeModel": "openai:gpt-5.4-mini",
+    "judgePromptVersion": "3",
+    "usage": {
+      "agent": null,
+      "caller": null,
+      "judge": {
+        "inputTokens": 84,
+        "outputTokens": 36,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "totalTokens": 120
+    },
+    "exitCode": 0
+  },
+  "requests": {
+    "caller": [],
+    "judge": [
+      "008f3a04a21ba786",
+      "08b6f2cd1d5e2e57",
+      "1b388a81d4098081",
+      "2322f6578e08c5bb",
+      "289f942f90495c64",
+      "511a1c716133d0ab",
+      "5e5d6fa16b54db6b",
+      "6b8409d8517ca172",
+      "7db623c53142b637",
+      "7db623c53142b637",
+      "9e0def57cea88b40"
+    ],
+    "grouping": [
+      "96f1d77b44653358"
+    ]
+  }
+}
