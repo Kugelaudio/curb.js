@@ -85,14 +85,29 @@ function evidence(turn: number | null | undefined, quote: string | null | undefi
   return [turn === null || turn === undefined ? "" : `turn ${turn}`, quote ? JSON.stringify(quote) : ""].filter(Boolean).join(" ");
 }
 
+/**
+ * `text` on one line: each line break, with the spaces around it, becomes one space. Split and
+ * trimmed rather than matched with one pattern, which could take long on text that holds very
+ * many spaces in a row.
+ */
+export function onOneLine(text: string): string {
+  const parts = text.split("\n");
+  if (parts.length === 1) return text;
+  const last = parts.length - 1;
+  return parts
+    .map((part, index) => (index === 0 ? part.trimEnd() : index === last ? part.trimStart() : part.trim()))
+    .filter((part, index) => index === 0 || index === last || part !== "")
+    .join(" ");
+}
+
 function checkLine(check: ScenarioCheck): string {
   const shown = evidence(check.evidence?.turn, check.evidence?.quote);
-  return `${check.name}${check.detail ? `: ${check.detail.replace(/\s*\n\s*/g, " ")}` : ""}${shown ? ` (${shown})` : ""}`;
+  return `${check.name}${check.detail ? `: ${onOneLine(check.detail)}` : ""}${shown ? ` (${shown})` : ""}`;
 }
 
 const findingLine = (finding: Finding) => `${finding.kind}: call ${finding.call}${evidence(finding.turn, finding.quote) ? ` ${evidence(finding.turn, finding.quote)}` : ""} (${finding.reason})`;
 
-const cell = (text: string) => text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
+const cell = (text: string) => onOneLine(text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|"));
 
 function markdownOf(groups: readonly ReportGroup[], title: string, outcome: Outcome): string {
   const lines = [
