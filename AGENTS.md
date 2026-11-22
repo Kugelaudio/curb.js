@@ -73,6 +73,10 @@ Key seams:
   and the judge (`assess.ts`, `judge.ts`), the style numbers (`style.ts`) and the rates
   (`aggregate.ts`). So `--rejudge` assesses a saved conversation with the code that assessed
   it live, and a conversation from another source needs only a loader into that record.
+  `curb review` (`src/cli/review.ts`) is the first such reader: `testing/review-calls.ts` turns a
+  saved run, a Calls export, the `curb dev` store or a text transcript into the turns the judge
+  reads, and `testing/review.ts` asks the judge what each source can answer, has one more request
+  sort the findings into patterns, and counts them in code.
   The simulated caller's and the judge's prompt carry a version (`CALLER_PROMPT_VERSION`,
   `JUDGE_PROMPT_VERSION`): raise it with every change to the prompt, because saved results
   are compared by it.

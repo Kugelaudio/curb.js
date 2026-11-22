@@ -27,6 +27,9 @@ Commands:
              print each transcript with pass or fail per check; exits 1 when one fails
              (<filter>, --runs <n> for rates over repeated runs, --rejudge <run>, --json; see
              curb test --help).
+  review     Read many calls (files, folders, or the last conversations of curb dev) and
+             report what goes wrong on them as patterns, each with quotes and a scenario
+             that would reproduce it (--last <n>, --judge-model <id>, --json; see curb review --help).
   hook       Run the agent's afterCall or afterEvaluation once, on a call from a fixture file,
              with the project's .env; nothing else fires them on this machine (see curb hook --help).
   conversations
@@ -81,11 +84,13 @@ if (process.argv[2] === "help" || wantsHelp(process.argv.slice(2))) {
         ? (await import("./conversations.js")).CONVERSATIONS_USAGE
         : process.argv[2] === "test"
           ? (await import("./test.js")).TEST_USAGE
-          : process.argv[2] === "hook"
-            ? (await import("./hook.js")).HOOK_USAGE
-            : process.argv[2] === "voices"
-              ? (await import("./voices.js")).VOICES_USAGE
-              : USAGE;
+          : process.argv[2] === "review"
+            ? (await import("./review.js")).REVIEW_USAGE
+            : process.argv[2] === "hook"
+              ? (await import("./hook.js")).HOOK_USAGE
+              : process.argv[2] === "voices"
+                ? (await import("./voices.js")).VOICES_USAGE
+                : USAGE;
   process.stdout.write(`${usage}\n`, () => process.exit(0));
   await new Promise(() => {});
 }
@@ -156,6 +161,15 @@ async function test(): Promise<void> {
   const { projectRoot } = prepareProject();
   const { testCommand } = await import("./test.js");
   const code = await testCommand(process.argv.slice(3), projectRoot);
+  // As for say: open MCP clients and LLM sockets must not keep a finished run alive.
+  process.stdout.write("", () => process.exit(code));
+  await new Promise(() => {});
+}
+
+async function review(): Promise<void> {
+  const { projectRoot } = prepareProject();
+  const { reviewCommand } = await import("./review.js");
+  const code = await reviewCommand(process.argv.slice(3), projectRoot);
   // As for say: open MCP clients and LLM sockets must not keep a finished run alive.
   process.stdout.write("", () => process.exit(code));
   await new Promise(() => {});
@@ -368,6 +382,7 @@ const commands: Record<string, () => Promise<void>> = {
   check,
   say,
   test,
+  review,
   hook,
   start,
   server,

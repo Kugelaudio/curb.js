@@ -83,6 +83,9 @@ result (`--last <n>`, `--id <id>`, `--json`). Calls to the hosted agent are
 read with the `kugelaudio` MCP server's `agent_list_calls`, `agent_get_call` and
 `agent_get_call_timeline` where it is signed in. Find where the agent went wrong, fix that,
 and turn the conversation into a scenario so it stays fixed.
+With many calls, `npx curb review` (the preview's last 20) or `npx curb review <calls.jsonl>`
+(an export of the dashboard's Calls page) says what to fix first: the patterns that come
+back, each with quotes and a scenario to add (`improve-from-calls.md`).
 
 ## The preview
 

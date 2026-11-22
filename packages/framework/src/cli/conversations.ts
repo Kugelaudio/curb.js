@@ -45,10 +45,11 @@ export function parseConversationsArgs(args: readonly string[]): Options | Error
 }
 
 type Message = ReturnType<ConversationStore["listMessages"]>[number];
-type Conversation = { id: number; agentId: string; startedAt: string; messages: Message[] };
+/** A recorded conversation as `--json` prints it. */
+export type RecordedConversation = { id: number; agentId: string; startedAt: string; messages: Message[] };
 
 /** The conversations the options select, oldest first. */
-export function readConversations(store: ConversationStore, options: Options): Conversation[] {
+export function readConversations(store: ConversationStore, options: Options): RecordedConversation[] {
   const heads = options.id !== null
     ? store.listConversations(Number.MAX_SAFE_INTEGER).filter((head) => head.id === options.id)
     : store.listConversations(options.last).reverse();
@@ -60,8 +61,29 @@ export function readConversations(store: ConversationStore, options: Options): C
   }));
 }
 
+/** Where conversations are recorded, as configured: a path, relative to the project unless it
+ * is absolute. Null when recording is off. */
+export function conversationsFile(env: NodeJS.ProcessEnv): string | null {
+  const configured = env.KUGEL_CONVERSATIONS_DB;
+  return configured === "off" || configured === "0" ? null : (configured ?? DEFAULT_CONVERSATIONS_PATH);
+}
+
+/** The conversations of the store at `file` that the options select, oldest first; none when
+ * the project never talked. */
+export function recordedConversations(projectRoot: string, file: string, options: Options): RecordedConversation[] {
+  const path = isAbsolute(file) ? file : join(projectRoot, file);
+  // A project that never talked has no file yet, and reading must not create one.
+  if (!existsSync(path)) return [];
+  const store = new ConversationStore(path);
+  try {
+    return readConversations(store, options);
+  } finally {
+    store.close();
+  }
+}
+
 /** The conversations as `curb conversations` prints them. */
-export function formatConversations(conversations: readonly Conversation[]): string[] {
+export function formatConversations(conversations: readonly RecordedConversation[]): string[] {
   const lines: string[] = [];
   for (const conversation of conversations) {
     lines.push("", `=== conversation ${conversation.id}, agent ${conversation.agentId}, started ${conversation.startedAt} ===`);
@@ -95,35 +117,27 @@ export function conversationsCommand(
     process.stderr.write(`${options.message}\n`);
     return 2;
   }
-  const configured = env.KUGEL_CONVERSATIONS_DB;
-  if (configured === "off" || configured === "0") {
+  const relative = conversationsFile(env);
+  if (relative === null) {
     out("Conversations are not recorded here (KUGEL_CONVERSATIONS_DB is off).");
     return 0;
   }
-  const relative = configured ?? DEFAULT_CONVERSATIONS_PATH;
-  const path = isAbsolute(relative) ? relative : join(projectRoot, relative);
-  // A project that never talked has no file yet, and reading must not create one.
-  const store = existsSync(path) ? new ConversationStore(path) : null;
   // On stderr, so --json stays one JSON object on stdout.
-  const notice = legacyHistoryNotice(path);
+  const notice = legacyHistoryNotice(isAbsolute(relative) ? relative : join(projectRoot, relative));
   if (notice) process.stderr.write(`${notice}\n`);
-  try {
-    const conversations = store ? readConversations(store, options) : [];
-    if (options.json) {
-      out(JSON.stringify({ conversations }));
-      return 0;
-    }
-    if (conversations.length === 0) {
-      out(options.id !== null
-        ? `No conversation ${options.id} in ${relative}.`
-        : `No conversations recorded yet in ${relative}: talk to the agent in the preview (npm run dev). curb say and curb test are not recorded.`);
-      return options.id !== null ? 1 : 0;
-    }
-    for (const line of formatConversations(conversations)) out(line);
+  const conversations = recordedConversations(projectRoot, relative, options);
+  if (options.json) {
+    out(JSON.stringify({ conversations }));
     return 0;
-  } finally {
-    store?.close();
   }
+  if (conversations.length === 0) {
+    out(options.id !== null
+      ? `No conversation ${options.id} in ${relative}.`
+      : `No conversations recorded yet in ${relative}: talk to the agent in the preview (npm run dev). curb say and curb test are not recorded.`);
+    return options.id !== null ? 1 : 0;
+  }
+  for (const line of formatConversations(conversations)) out(line);
+  return 0;
 }
 
 function clip(text: string, max: number): string {

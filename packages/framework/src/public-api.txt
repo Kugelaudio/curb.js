@@ -292,6 +292,11 @@ curb hook
 curb info
 curb login
 curb logout
+curb review
+curb review --concurrency
+curb review --json
+curb review --judge-model
+curb review --last
 curb say
 curb secrets
 curb server

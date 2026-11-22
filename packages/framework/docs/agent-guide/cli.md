@@ -8,6 +8,7 @@ Run `npx curb <command>` from the project root. `--help` prints the usage and ru
 | [`curb check`](./cli/check.md) | Type-checks the project and runs the authoring checks |
 | [`curb say`](./cli/say.md) | One caller turn, headless |
 | [`curb test`](./cli/test.md) | Runs the conversation scenarios |
+| [`curb review`](./cli/review.md) | Reads many calls and reports what goes wrong as patterns |
 | [`curb hook`](./cli/hook.md) | Runs an after-call hook once |
 | [`curb conversations`](./cli/conversations.md) | Prints recorded conversations |
 | [`curb start`](./cli/start.md) | Runs the LiveKit voice worker |

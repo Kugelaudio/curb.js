@@ -59,7 +59,8 @@ export type JudgeResult = {
 /** The conversation as the judge needs it. */
 export type JudgedConversation = {
   turns: readonly ScenarioTurn[];
-  endedBy: ScenarioEndedBy;
+  /** Null when the record does not say who ended the call. */
+  endedBy: ScenarioEndedBy | null;
   /** The simulated caller, when there was one: its goal is judged. */
   caller: ScenarioCaller | null;
   /** Every tool the agent was offered during the call; undefined when that was not recorded. */
@@ -178,7 +179,7 @@ const ENDINGS: Record<ScenarioEndedBy, string> = {
 };
 
 /** Recorded text as one transcript line: on one line, and unable to write the closing fence. */
-function recorded(text: string): string {
+export function recorded(text: string): string {
   return text.replace(/\s+/g, " ").replace(/<<<|>>>/g, (fence) => fence.split("").join(" ")).trim();
 }
 
@@ -224,7 +225,7 @@ export function judgeView(conversation: JudgedConversation): string[] {
     TOOLS_CLOSE,
     FENCE_OPEN,
     ...turns.flatMap((turn) => turnLines(turn).map((line) => `[turn ${turn.turn}] ${line}`)),
-    `(${ENDINGS[endedBy]})`,
+    `(${endedBy === null ? "The record does not say who ended the call." : ENDINGS[endedBy]})`,
     FENCE_CLOSE,
   ];
 }
@@ -249,11 +250,13 @@ export async function judgeConversation(params: {
   llm: AgentLlmClient;
   conversation: JudgedConversation;
   expectations?: readonly string[];
+  /** The questions to ask, in place of those `curb test` asks ({@link judgeQuestions}). */
+  questions?: readonly JudgeQuestion[];
   /** Stamped into the result. */
   model?: string | null;
 }): Promise<JudgeResult> {
   const { conversation } = params;
-  const questions = judgeQuestions(conversation.caller, params.expectations ?? []);
+  const questions = params.questions ?? judgeQuestions(conversation.caller, params.expectations ?? []);
   let failure: unknown;
   for (let attempt = 1; attempt <= JUDGE_ATTEMPTS; attempt += 1) {
     let text: string;
@@ -292,7 +295,8 @@ export function parseJudgeAnswers(
     const reason = typeof raw.reason === "string" && raw.reason.trim() ? raw.reason.trim() : "(the judge gave no reason)";
     if (question.kind !== "finding" || answer !== "yes") return { ...question, answer, ...evidenceIn(turns, raw.turn, raw.quote, "turn"), reason };
 
-    const { evidence: from } = FINDING_QUESTIONS[question.id as JudgeFinding];
+    // A finding that is not built in, like the one `curb review` adds, may quote any line of the turn.
+    const from = Object.hasOwn(FINDING_QUESTIONS, question.id) ? FINDING_QUESTIONS[question.id as JudgeFinding].evidence : "turn";
     const evidence = evidenceIn(turns, raw.turn, raw.quote, from);
     const unknown = (why: string): JudgeAnswer => ({ ...question, answer: "unknown", turn: evidence.turn, quote: null, reason: `${why}: ${reason}` });
     if (evidence.quote === null) {

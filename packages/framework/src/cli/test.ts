@@ -156,26 +156,35 @@ const VALUES: Readonly<Record<string, string>> = {
 /** The options `curb test` takes, as public-api.txt lists them. */
 export const TEST_OPTIONS: readonly string[] = [...FLAGS, ...Object.keys(VALUES)];
 
-/** `curb test` arguments: options anywhere (`--runs 5` or `--runs=5`), every other argument is
- * the filter. Throws, naming the option and what it takes, on one that is unknown or wrong. */
-export function parseTestArgs(args: readonly string[]): TestArgs {
+/**
+ * A command line as `curb test` and `curb review` read it: options anywhere (`--runs 5` or
+ * `--runs=5`), every other argument a word. Throws, naming the option and what it takes, on one
+ * that is unknown or has no value.
+ */
+export function parseOptions(
+  command: string,
+  usage: string,
+  args: readonly string[],
+  flagNames: readonly string[],
+  valueNames: Readonly<Record<string, string>>,
+) {
   const words: string[] = [];
   const values = new Map<string, string>();
   const flags = new Set<string>();
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
     const name = arg.includes("=") ? arg.slice(0, arg.indexOf("=")) : arg;
-    if (FLAGS.includes(arg)) flags.add(arg);
-    else if (Object.hasOwn(VALUES, name)) {
+    if (flagNames.includes(arg)) flags.add(arg);
+    else if (Object.hasOwn(valueNames, name)) {
       const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : args[(index += 1)];
       if (value === undefined || value === "" || value.startsWith("--")) {
-        throw new Error(`curb test: ${name} needs a value: ${name} ${VALUES[name]}.\n\n${TEST_USAGE}`);
+        throw new Error(`${command}: ${name} needs a value: ${name} ${valueNames[name]}.\n\n${usage}`);
       }
       values.set(name, value);
-    } else if (arg.startsWith("--")) throw new Error(`curb test: unknown option ${arg}.\n\n${TEST_USAGE}`);
+    } else if (arg.startsWith("--")) throw new Error(`${command}: unknown option ${arg}.\n\n${usage}`);
     else words.push(arg);
   }
-  const wrong = (option: string, problem: string) => new Error(`curb test: ${option} ${problem}`);
+  const wrong = (option: string, problem: string) => new Error(`${command}: ${option} ${problem}`);
   const number = (option: string, ok: (value: number) => boolean, takes: string): number | undefined => {
     const given = values.get(option);
     if (given === undefined) return undefined;
@@ -183,13 +192,22 @@ export function parseTestArgs(args: readonly string[]): TestArgs {
     if (!Number.isFinite(value) || !ok(value)) throw wrong(option, `must be ${takes}; got ${JSON.stringify(given)}.`);
     return value;
   };
+  /** `--concurrency <k>`, which means the same wherever it is taken. */
+  const concurrency = () =>
+    number("--concurrency", (value) => Number.isInteger(value) && value >= 1 && value <= MAX_CONCURRENCY, `a whole number from 1 to ${MAX_CONCURRENCY}`);
+  return { words, values, flags, wrong, number, concurrency };
+}
+
+/** `curb test` arguments: every argument that is no option is the filter. */
+export function parseTestArgs(args: readonly string[]): TestArgs {
+  const { words, values, flags, wrong, number, concurrency } = parseOptions("curb test", TEST_USAGE, args, FLAGS, VALUES);
   const runs = number("--runs", () => true, "a whole number");
   if (runs !== undefined && runsProblem(runs)) throw wrong("--runs", runsProblem(runs)!);
   return {
     filter: words.join(" ").trim(),
     json: flags.has("--json"),
     runs,
-    concurrency: number("--concurrency", (value) => Number.isInteger(value) && value >= 1 && value <= MAX_CONCURRENCY, `a whole number from 1 to ${MAX_CONCURRENCY}`),
+    concurrency: concurrency(),
     callerModel: values.get("--caller-model"),
     judgeModel: values.get("--judge-model"),
     report: values.get("--report"),
@@ -404,8 +422,7 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost | Promi
   }
 
   const host = await hostOf();
-  const slots = new RunSlots(run.concurrency);
-  host.throttle?.onSlowDown(() => void slots.lower());
+  const slots = hostSlots(host, run.concurrency);
   const saved = newSavedRun();
   const printed = inOrder(run.json ? () => {} : out, selected.length);
   const reports: ScenarioReport[] = [];
@@ -470,8 +487,22 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost | Promi
   return finish(session, { ...saved, scenarios: inScenarioOrder(settingsOf), conversations: inScenarioOrder(conversationsOf).flat() }, reports, throttledBy(host, slots));
 }
 
+/** The slots of a run on `host`: as many conversations at a time as `concurrency` says, halved
+ * each time the host's provider rate limits the run. */
+export function hostSlots(host: TestHost, concurrency: number): RunSlots {
+  const slots = new RunSlots(concurrency);
+  host.throttle?.onSlowDown(() => void slots.lower());
+  return slots;
+}
+
+/** The LLM of the project's agent, for a command that plays no turn: the judge runs on the
+ * agent's provider, which only a bundle knows. */
+export async function agentLlm(host: TestHost): Promise<LlmDescriptor> {
+  return (await host.createBundle()).runtime.settings.current().llm;
+}
+
 /** How the provider's rate limit slowed the run down; undefined when it did not. */
-function throttledBy(host: TestHost, slots: RunSlots): TestReport["throttled"] {
+export function throttledBy(host: TestHost, slots: RunSlots): TestReport["throttled"] {
   const stats = host.throttle?.stats();
   return stats && stats.waits > 0 ? { ...stats, concurrency: slots.limit } : undefined;
 }
@@ -546,12 +577,10 @@ async function rejudge(session: TestSession, which: string, hostOf: () => TestHo
   }
 
   const host = await hostOf();
-  // The judge runs on the agent's provider, which only a bundle knows; no turn is played on it.
-  const llm = (await host.createBundle()).runtime.settings.current().llm;
+  const llm = await agentLlm(host);
   const models = { ...(host.models?.(llm) ?? NO_MODELS), agent: source.models.agent, caller: source.models.caller };
   const saved: SavedTestRun = { ...newSavedRun(), rejudgedFrom: source.id, models, callerPromptVersion: source.callerPromptVersion };
-  const slots = new RunSlots(run.concurrency);
-  host.throttle?.onSlowDown(() => void slots.lower());
+  const slots = hostSlots(host, run.concurrency);
   const printed = inOrder(run.json ? () => {} : out, selected.length);
   const reports: ScenarioReport[] = [];
   const settingsOf: Array<SavedScenarioSettings | undefined> = [];
@@ -620,7 +649,7 @@ function formatReplayed(result: ScenarioResult): string {
  * Loading the agent logs every authoring diagnostic, as a server boot does. That is curb
  * check's report and would bury the transcripts, so it becomes one note pointing there.
  */
-async function projectHost(run: Pick<TestArgs, "callerModel" | "judgeModel">): Promise<TestHost> {
+export async function projectHost(run: Pick<TestArgs, "callerModel" | "judgeModel">): Promise<TestHost> {
   await disableConversationRecording();
   const { getHostedAgent } = await import("../server/bootstrap.js");
   const restoreConsole = dropDiagnosticLogs();
