@@ -36,12 +36,13 @@
         ],
         "scenario": {
           "caller": {
-            "goal": "Book a haircut",
-            "knows": "Name Alex Example"
+            "goal": "Ask: Hi, I'd like a haircut. I'm Alex Example.",
+            "knows": "Name Sam Example"
           },
           "expectations": [
             "The agent says goodbye once."
-          ]
+          ],
+          "from": "books run 2"
         }
       },
       {
@@ -89,11 +90,13 @@
         ],
         "scenario": {
           "caller": {
-            "goal": "Move a booking"
+            "goal": "Ask: Alex Example here, a haircut please.",
+            "knows": "Name Sam Example"
           },
           "failOn": [
             "ended_early"
-          ]
+          ],
+          "from": "books run 4"
         }
       },
       {
@@ -135,6 +138,25 @@
         "scenario": null
       }
     ],
+    "coverage": {
+      "topics": [
+        {
+          "topic": "Book a haircut",
+          "calls": 3,
+          "share": 0.3333333333333333,
+          "scenarios": [
+            "books"
+          ]
+        },
+        {
+          "topic": "Move a booking",
+          "calls": 2,
+          "share": 0.2222222222222222,
+          "scenarios": []
+        }
+      ],
+      "unclear": 4
+    },
     "notAsked": [
       {
         "questions": [
@@ -165,32 +187,39 @@
       "agent": null,
       "caller": null,
       "judge": {
-        "inputTokens": 84,
-        "outputTokens": 36,
+        "inputTokens": 105,
+        "outputTokens": 45,
         "cacheReadTokens": 0,
         "cacheWriteTokens": 0
       },
-      "totalTokens": 120
+      "totalTokens": 150
     },
     "exitCode": 0
   },
   "requests": {
     "caller": [],
     "judge": [
-      "008f3a04a21ba786",
-      "08b6f2cd1d5e2e57",
-      "1b388a81d4098081",
-      "2322f6578e08c5bb",
-      "289f942f90495c64",
-      "511a1c716133d0ab",
-      "5e5d6fa16b54db6b",
-      "6b8409d8517ca172",
-      "7db623c53142b637",
-      "7db623c53142b637",
-      "9e0def57cea88b40"
+      "36771199431b29bf",
+      "3f2d9afe5fe58a1c",
+      "4e921b67e1d80d45",
+      "60ccbc5f741c1cf6",
+      "60ccbc5f741c1cf6",
+      "70a9c5fb1c6b546b",
+      "75051046eca917a0",
+      "838f36b804c615e4",
+      "cdc5a9453bce3f7f",
+      "d1e73a062092ab34",
+      "dbab94f20be0979d"
     ],
     "grouping": [
-      "96f1d77b44653358"
+      "b18b8d1c0c092c12"
+    ],
+    "drafts": [
+      "8897f95aa9cf2a28",
+      "917e73fdaa7c54c8"
+    ],
+    "topics": [
+      "08eacee44b3990d8"
     ]
   }
 }

@@ -14,10 +14,13 @@ exports `curb test` and `curb review` use, for a test of your own in any test ru
 | 1 | [`report`](#report), [`passRate`](#passrate) | Results for the terminal, Markdown, CI and JSON, and the exit code |
 | 1 | [`projectHost`](#projecthost) | What all of them run on |
 | 2 | [`simulatedCaller`](#simulatedcaller), [`scriptedCaller`](#scriptedcaller), [`personas`](#personas) | Callers |
+| 2 | [`callerFromCall`](#callerfromcall), [`replayCall`](#replaycall) | A real call as a test |
 | 2 | [`converse`](#converse) | A whole conversation between a caller and the agent |
 | 2 | [`builtInChecks`](#builtinchecks), [`checksOf`](#checksof) | Checks of one conversation |
 | 2 | [`judge`](#judge), [`ask`](#ask), [`FINDINGS`](#findings) | The judge, with a turn and a quote checked against the call |
+| 2 | [`judgeAgreement`](#judgeagreement) | How far to trust the judge on your findings |
 | 2 | [`styleNumbers`](#stylenumbers), [`groupFindings`](#groupfindings) | Numbers and patterns across many conversations |
+| 2 | [`compareRuns`](#compareruns), [`compare`](#compare) | Did a change help: two runs, or two sets of calls side by side |
 | 3 | `scenario` | Declares a conversation for `curb test` |
 | 3 | `runHook`, `buildCallEvent` | Run one of the agent's hooks in this process |
 
@@ -106,8 +109,9 @@ const { path } = saveRun(records, { name: "nightly", checks });
 `curb test --rejudge` checks again and `curb review` reads. Conversations without a scenario are
 saved under `name` (default `conversations`); `checks`, one list per conversation, is saved as each
 one's assessment. Any other field of the run file can be given, and an earlier run's `id` replaces
-its file. The run records the agent's version, the project's git commit and whether its files
-differed from it. `loadRun` reads one back: `latest` (the default), a run's id, or a file.
+its file. The run records the agent's version: the project's git commit, whether its files
+differed from it, and a hash of the agent's sources. `loadRun` reads one back: `latest` (the
+default), a run's id, or a file.
 
 ## `testModel`
 
@@ -200,6 +204,35 @@ scriptedCaller(lines: string[]): Caller
 
 Says `lines`, one per turn, as a scenario's `turns` does.
 
+## `callerFromCall`
+
+```ts
+callerFromCall(record: ConversationRecord, options?: { model? }): Promise<{ goal: string; knows: string; persona?: string }>
+```
+
+```ts
+const { calls } = loadCalls("exports/calls.jsonl");
+const caller = await callerFromCall(calls[0]!);
+// { goal: "Find out where order 10422 is and have it sent to the office", knows: "Order 10422. Name Sam Example, phone 0151 0000000." }
+```
+
+A simulated caller who wants what the caller of a recorded call wanted, for a scenario's `caller` or
+`simulatedCaller`, from one request to `model` (default `testModel()`). It keeps the details the
+agent's data needs to find what the caller meant: order, booking and ticket numbers, product names,
+dates and times. It replaces personal data with invented data: people's names, phone numbers, email
+addresses and street addresses. A model can miss one, so read the caller before you commit it. An
+answer that cannot be read is asked for once more; a second one rejects.
+
+## `replayCall`
+
+```ts
+replayCall(record: ConversationRecord): Caller
+```
+
+The caller of a recorded call again, word for word: a [`scriptedCaller`](#scriptedcaller) of its
+caller lines, for a test where the exact words matter. These are the real caller's words, names and
+numbers included: a scenario that holds them needs the same care as the export it came from.
+
 ## `converse`
 
 ```ts
@@ -269,6 +302,26 @@ One question of your own: a check that passes on a yes and fails on a no, with t
 `evidence`. An unknown, and a model that cannot be asked, give a check that is `notJudged`: `report`
 shows it as `skip`, and it neither passes nor fails.
 
+## `judgeAgreement`
+
+```ts
+judgeAgreement(params: { records, labels, findings?, model? }): Promise<JudgeAgreement>
+```
+
+```ts
+const result = await judgeAgreement({ records: calls, labels: { "c-104": { canned_closing: true }, "c-221": { canned_closing: false } }, findings: { ...FINDINGS, ...naturalness } });
+// { findings: [{ id: "canned_closing", withIt: { caught: 1, calls: 1 }, withoutIt: { flagged: 0, calls: 1 }, disagreements: [] }], notJudged: [], model }
+```
+
+How far the judge agrees with a person. `labels` maps a record's id (as a report names it: its `id`,
+else `<scenario> run <n>`) to findings by id: `true` when the call has it, `false` when it does not.
+Every labelled record is judged with `findings` (default [`FINDINGS`](#findings)), which must hold
+each labelled finding. Per finding it returns how many calls with it the judge caught, how many
+without it it flagged, and the ids of the calls where it disagreed with the label; `notJudged` names
+the calls the judge could not be asked about. A label for a record that is not given, or for a
+finding that is not asked, throws before any request. The recipe is in
+[Build your own tests](./testing-foundation.md#how-far-to-trust-the-judge).
+
 ## `FINDINGS`
 
 What the built-in judge looks for, by id, in one sentence each: `asked_again`,
@@ -289,13 +342,60 @@ whether it held.
 ## `groupFindings`
 
 ```ts
-groupFindings(findings: Finding[], options: { calls: number; model?; kinds? }): Promise<{ patterns; notes }>
+groupFindings(findings: Finding[], options: { calls: number; model?; kinds?; records? }): Promise<{ patterns; notes }>
 ```
 
 What `curb review` does with the findings of many calls: one request sorts them into patterns, and
 code counts them. Each pattern has a `title`, the distinct `calls` and their `share` of `calls`,
 `kinds`, up to three `examples` from different calls, and a `scenario` draft that reproduces it.
 `kinds` says what each kind means; default `FINDINGS`.
+
+The model is told to merge one mistake that was found as different kinds. Two patterns it still
+split are merged in code when at least four in five calls of the one with fewer calls are calls of
+the other, and at least half the words of the shorter title (words of four letters or more, other
+than words like "agent", "caller" and "call") are in the other title; the pattern with more calls
+keeps its title. With `records`, the calls the findings are about, each draft's caller is written
+from the pattern's first example call by [`callerFromCall`](#callerfromcall), one request per
+pattern, and the draft names that call as `from`. Without them the model invents the caller.
+
+## `compareRuns`
+
+```ts
+compareRuns(before: TestRun, after: TestRun): RunComparison
+```
+
+```ts
+const comparison = compareRuns(loadRun("20261027T101502118Z-k3f9"), loadRun("latest"));
+// { before, after, scenarios: [{ name, file, before: { passed: 1, completed: 5, passRate: 0.2 }, after: { passed: 5, completed: 5, passRate: 1 }, verdict: "better", p: 0.0476 }] }
+```
+
+Two saved runs side by side, for every scenario both played (by file and name): its passed and
+completed runs in each (errors are left out, as in a pass rate) and a verdict. `curb test` prints it
+on its own after a run ([`curb test`](./cli/test.md#since-the-last-version)). The verdict says no
+more than the counts carry:
+
+| `verdict` | When |
+|---|---|
+| `too_few_runs` | Even every run failing before and passing after would not be a clear difference, as with three runs a side or a side with no completed run |
+| `better`, `worse` | Fisher's exact test (two-sided) puts the difference below p = 0.1: chance makes one as large less than one time in ten |
+| `no_clear_change` | Anything else. `p` is the test's p-value, `null` with too few runs |
+
+## `compare`
+
+```ts
+compare(recordsA: ConversationRecord[], recordsB: ConversationRecord[], question: string, options?: { model? }): Promise<SideBySide>
+```
+
+```ts
+const result = await compare(before, after, "Which agent sounds more like a person on the phone?");
+// { a: 1, b: 6, ties: 1, pairs: [{ a: "...", b: "...", winner: "b", reason: "..." }, ...] }
+```
+
+A blind side-by-side judgement: for each pair `recordsA[i]` and `recordsB[i]` (as many pairs as the
+shorter list holds), one request asks `model` (default `testModel()`) the question, with the two calls
+shown in a random order, so the judge cannot learn which side is which. It returns the wins of A and
+of B, the ties, and every pair's winner with the model's reason. An answer that cannot be read is
+asked for once more; a second one rejects.
 
 ## `scenario`
 
@@ -457,6 +557,7 @@ a call whose `content` is `not_stored`.
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | `callerFromCall`, `replayCall`, `judgeAgreement`, `compareRuns` and `compare` added. `groupFindings` takes `records`, writes each draft's caller from a call of its pattern, and merges near-duplicate patterns. A saved run's `agentVersion` holds a hash of the agent's sources |
 | v1.25.0 | `scenario` takes `findings`, `expectRuns` and a `Caller` as `caller`, and `failOn` takes the scenario's own findings. `expect` gets `ask`, `model`, `note` and `transcriptText`; `checksOf` takes `{ model }` for them. `ScenarioRunResult` added |
 | v1.25.0 | Layers 1 and 2 added: `startCall`, `loadCalls`, `loadRun`, `saveRun`, `testModel`, `inParallel`, `report`, `passRate`, `projectHost`, `simulatedCaller`, `scriptedCaller`, `converse`, `builtInChecks`, `checksOf`, `judge`, `ask`, `FINDINGS`, `styleNumbers` and `groupFindings`. A check may be `reportOnly` |
 | v1.25.0 | `personas` added. `scenario` takes `runs`, `minPassRate`, `expectations`, `failOn`, `style`, and `caller.persona` and `caller.behaviours`. `expect` gets `state`, `stateMatches`, `context` and `calledInOrder`, and `called` matches nested input by the fields it names |

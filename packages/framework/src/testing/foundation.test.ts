@@ -1,12 +1,13 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentRunRequest } from "../llm/types.js";
 import { ConversationStore } from "../server/conversation-store.js";
 import { judgeAnswer, ran, record, turn } from "../test-fixtures/conversations.js";
 import { addTask, calls, hangUp, says, steps, tasksBundle } from "../test-fixtures/tasks.js";
+import { agentSourcesHash } from "./record.js";
 import { Throttle } from "./resilience.js";
 import {
   FINDINGS,
@@ -328,9 +329,41 @@ describe("saveRun, loadRun and loadCalls", () => {
     git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "v1");
     const commit = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
-    expect(saveRun([], { root }).run.agentVersion).toEqual({ commit, dirty: false });
+    const clean = saveRun([], { root }).run.agentVersion;
+    expect(clean).toEqual({ commit, dirty: false, sources: expect.stringMatching(/^[0-9a-f]{16}$/) });
     writeFileSync(join(root, "agent.txt"), "v2");
-    expect(saveRun([], { root }).run.agentVersion).toEqual({ commit, dirty: true });
+    expect(saveRun([], { root }).run.agentVersion).toEqual({ commit, dirty: true, sources: clean!.sources });
+  });
+
+  it("hashes the agent's sources under src/ and context/, and leaves scenarios and tests out of it", () => {
+    const root = temp();
+    const write = (path: string, text: string) => {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), text);
+    };
+    write("src/agent/agent.tsx", "export const v = 1;");
+    write("context/faq.md", "Open from nine.");
+    const first = agentSourcesHash(root);
+
+    // A scenario, a test, a dependency, a dot file and a file outside src/ and context/ change nothing.
+    write("src/agent/books.scenario.ts", "export default {};");
+    write("src/agent/tools.test.ts", "it();");
+    write("src/agent/tools.spec.tsx", "it();");
+    write("src/node_modules/x/index.js", "x");
+    write("src/.cache/state", "x");
+    write("README.md", "Hello");
+    expect(agentSourcesHash(root)).toBe(first);
+    write("src/agent/books.scenario.ts", "export default { runs: 5 };");
+    expect(agentSourcesHash(root)).toBe(first);
+
+    // An edit of the agent, its context, or a new file of it does.
+    write("src/agent/agent.tsx", "export const v = 2;");
+    const edited = agentSourcesHash(root);
+    expect(edited).not.toBe(first);
+    write("context/faq.md", "Open from ten.");
+    expect(agentSourcesHash(root)).not.toBe(edited);
+    write("src/agent/helpers.ts", "export {};");
+    expect(new Set([first, edited, agentSourcesHash(root)]).size).toBe(3);
   });
 
   it("reads the curb dev store as records, the newest `last` of them", async () => {

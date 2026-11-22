@@ -1,7 +1,8 @@
-import type { ScenarioCheck, ScenarioConfirmation, ScenarioToolCall, ScenarioTurn } from "../../testing/index.js";
+import type { RunComparison, ScenarioCheck, ScenarioConfirmation, ScenarioToolCall, ScenarioTurn } from "../../testing/index.js";
 import { END_CALL_TOOL_NAME, SKIP_TURN_TOOL_NAME } from "../../types.js";
 import type { FindingStats, ScenarioResult, ScenarioRun } from "./aggregate.js";
 import { ACROSS_RUNS } from "./assess.js";
+import { formatSince, markdownSince } from "./since.js";
 import { styleLine } from "./style.js";
 import type { RunUsage, TestModels, ThrottleStats } from "./types.js";
 
@@ -48,6 +49,9 @@ export type TestReport = {
   /** Set when the provider's rate limit slowed the run down: how often and how long it waited,
    * and how many conversations at a time it ended on. */
   throttled?: ThrottleStats & { concurrency: number };
+  /** This run against the newest earlier run of another version of the agent that played its
+   * scenarios: absent when there is none, and on a re-judge. */
+  since?: RunComparison;
 };
 
 export const isResult = (report: ScenarioReport): report is ScenarioResult => "runs" in report;
@@ -252,6 +256,7 @@ export function formatSummary(report: TestReport): string {
   if (tokens) lines.push(`Tokens: ${tokens}`);
   if (report.throttled) lines.push(throttledLine(report.throttled));
   if (report.savedTo) lines.push(`Saved: ${report.savedTo} (check it again without running the agent: npx curb test --rejudge latest)`);
+  if (report.since) lines.push(...formatSince(report.since));
   if (lines.length > 1) lines.push("");
 
   // A flaky scenario is listed as flaky whether its rate was enough to pass or not.
@@ -356,6 +361,7 @@ export function markdownReport(report: TestReport): string {
     }
   }
 
+  if (report.since) lines.push(...markdownSince(report.since, cell));
   if (results.some((result) => result.style.replies > 0)) {
     lines.push("### Style", "", "| Scenario | Counted from the agent's replies |", "|---|---|", ...results.map((result) => `| ${cell(result.name)} | ${cell(styleLine(result.style))} |`), "");
   }

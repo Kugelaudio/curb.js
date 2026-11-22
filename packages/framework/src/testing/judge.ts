@@ -199,7 +199,7 @@ function toolLine(call: ScenarioToolCall): string {
 
 /** The transcript lines of one turn, as the judge reads them, or only those a quote may come
  * from (`from`). */
-function turnLines(turn: ScenarioTurn, from: EvidenceFrom = "turn"): string[] {
+export function turnLines(turn: ScenarioTurn, from: EvidenceFrom = "turn"): string[] {
   return [
     ...(turn.caller === null || from !== "turn" ? [] : [`Caller: ${recorded(turn.caller)}`]),
     ...(from === "agent" ? [] : turn.toolCalls.map(toolLine)),

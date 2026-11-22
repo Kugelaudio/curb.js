@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { AgentRunRequest, AgentRunResponse } from "curb";
 import {
   checksOf,
+  compare,
   converse,
   groupFindings,
   inParallel,
@@ -136,24 +137,22 @@ describe("harness 3: a blind side-by-side comparison of two versions of an agent
     const stiff = hermeticHost({ agent: () => says("Your request has been registered. Is there anything else I can help you with?") });
     const warm = hermeticHost({ agent: () => says("Oh no, I'm sorry. Let's get that sorted.") });
     const lines = ["My kitchen is flooded.", "What do I do now?"];
-    // The judge: picks the reply without the stock closing line, whichever side it is shown on.
-    const judgeHost = hermeticHost({ agent: () => says(""), model: (_system, input) => (input.split("\nB:")[0]!.includes("anything else") ? "B" : "A") });
+    // The judge: picks the call without the stock closing line, whichever side it is shown on.
+    const judgeHost = hermeticHost({
+      agent: () => says(""),
+      model: (_system, input) => JSON.stringify({ better: input.split("<<<CALL 2")[0]!.includes("anything else") ? "2" : "1", reason: "It sounds like a person." }),
+    });
     const model = await testModel({ host: judgeHost });
 
     const play = (host: ReturnType<typeof hermeticHost>) => inParallel(lines, async (line) => converse(await startCall({ host }), scriptedCaller([line])), { concurrency: 2, host });
     const [before, after] = [await play(stiff), await play(warm)];
-    const wins = { before: 0, after: 0 };
-    for (const [index, line] of lines.entries()) {
-      const flip = index % 2 === 1; // which side each version is shown on, so the judge cannot learn it
-      const [a, b] = flip ? [after[index]!, before[index]!] : [before[index]!, after[index]!];
-      const picked = await model(
-        "Two agents answered the same caller. Which one sounds more like a person on the phone? Answer A or B.",
-        `Caller: ${line}\nA: ${a.turns.at(-1)!.reply}\nB: ${b.turns.at(-1)!.reply}`,
-      );
-      wins[(picked.trim() === "A") === !flip ? "before" : "after"] += 1;
-    }
+    const result = await compare(before, after, "Which agent sounds more like a person on the phone?", { model });
 
-    expect(wins).toEqual({ before: 0, after: 2 });
+    expect([result.a, result.b, result.ties]).toEqual([0, 2, 0]);
+    expect(result.pairs.map((pair) => [pair.winner, pair.reason])).toEqual([
+      ["b", "It sounds like a person."],
+      ["b", "It sounds like a person."],
+    ]);
   });
 });
 

@@ -23,7 +23,7 @@ A run's id is the time it started and four random characters, so ids sort by tim
   "id": "20261027T101502118Z-k3f9",
   "createdAt": "2026-10-27T10:15:02.118Z",
   "curb": "1.25.0",
-  "agentVersion": { "commit": "3f9c2a1d8e7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a", "dirty": false },
+  "agentVersion": { "commit": "3f9c2a1d8e7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a", "dirty": false, "sources": "9b1e4c07a2d35f68" },
   "complete": true,
   "models": { "agent": "kugelaudio:qwen3.8-27b", "caller": "kugelaudio:qwen3.8-27b", "judge": "kugelaudio:qwen3.8-27b" },
   "callerPromptVersion": "2",
@@ -48,7 +48,7 @@ A run's id is the time it started and four random characters, so ids sort by tim
 | Field | What it holds |
 |---|---|
 | `format`, `version` | `"curb.test-run"` and `1`. A file of another format or version is refused with what it is |
-| `agentVersion` | The version of the agent the run played: the project's git `commit`, and whether the project's files differed from it (`dirty`). `null` outside a git repository; absent in runs saved before it was recorded |
+| `agentVersion` | The version of the agent the run played: the project's git `commit`, whether the project's files differed from it (`dirty`), and `sources`, a hash of every file under `src/` and `context/` but scenarios (`*.scenario.ts`) and tests (`*.test.*`, `*.spec.*`), which tells two runs on one commit with different edits apart. `curb test` compares a run with the last one of another `sources` ([`curb test`](./cli/test.md#since-the-last-version)). `null` outside a git repository; absent in runs saved before it was recorded, and `sources` in runs saved before it was |
 | `complete` | `false` while scenarios are still running |
 | `rejudgedFrom` | The id of the run whose conversations these are, on a re-judged run |
 | `models` | The model that played each part, as `provider:model` |
@@ -131,6 +131,7 @@ run.
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | `agentVersion` holds `sources`, a hash of the agent's sources |
 | v1.25.0 | A scenario's entry in `scenarios` holds its own `findings`, and `failOn` may name them |
 | v1.25.0 | A run records `agentVersion`; `saveRun` and `loadRun` write and read runs; a conversation record may have another `source`, an `id`, `recordsToolCalls`, a `null` `ending.by` and `startedAt` |
 | v1.25.0 | Saved test runs and `curb test --rejudge` introduced |

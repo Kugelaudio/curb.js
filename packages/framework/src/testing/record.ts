@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { resolveProjectRoot } from "../project.node.js";
 import { curbVersion } from "../version.js";
@@ -163,9 +164,11 @@ export type SavedScenarioSettings = {
   style: StyleLimits;
 };
 
-/** The version of the agent a run played: the project's git commit, and whether the files of
- * the project differed from it. */
-export type AgentVersion = { commit: string; dirty: boolean };
+/** The version of the agent a run played: the project's git commit, whether the files of the
+ * project differed from it, and a hash of the agent's sources ({@link agentSourcesHash}), which
+ * tells apart two runs on one commit with different edits. `sources` is absent in runs saved
+ * before it was recorded. */
+export type AgentVersion = { commit: string; dirty: boolean; sources?: string };
 
 /** One `curb test` invocation, or one `saveRun`, on disk. */
 export type SavedTestRun = {
@@ -288,9 +291,34 @@ export function loadTestRun(projectRoot: string, which: string): SavedTestRun {
   return run as SavedTestRun;
 }
 
+/** A file of the agent's: not a scenario and not a test. */
+const agentSource = (name: string) => !name.endsWith(".scenario.ts") && !/\.(test|spec)\.[cm]?[jt]sx?$/.test(name);
+
 /**
- * The version of the agent in `projectRoot`: the git commit checked out, and whether the
- * project's files differ from it. Null outside a git repository, and where git cannot tell.
+ * A hash of the agent's sources in `projectRoot`: every file under `src/` and `context/` (by its
+ * path and its bytes), without scenario files (`*.scenario.ts`), tests (`*.test.*`, `*.spec.*`),
+ * `node_modules` and dot entries. So adding or editing a scenario leaves it as it is, and any
+ * edit of the agent changes it. 16 hex characters of a SHA-256.
+ */
+export function agentSourcesHash(projectRoot: string): string {
+  const hash = createHash("sha256");
+  const walk = (dir: string, shown: string) => {
+    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path, `${shown}/${entry.name}`);
+      else if (entry.isFile() && agentSource(entry.name)) hash.update(`${shown}/${entry.name}\0`).update(readFileSync(path)).update("\0");
+    }
+  };
+  for (const top of ["src", "context"]) if (existsSync(join(projectRoot, top))) walk(join(projectRoot, top), top);
+  return hash.digest("hex").slice(0, 16);
+}
+
+/**
+ * The version of the agent in `projectRoot`: the git commit checked out, whether the project's
+ * files differ from it, and the hash of its sources. Null outside a git repository, and where
+ * git cannot tell.
  */
 export function agentVersionOf(projectRoot: string): AgentVersion | null {
   const git = (...args: string[]) => execFileSync("git", ["-C", projectRoot, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
@@ -298,7 +326,7 @@ export function agentVersionOf(projectRoot: string): AgentVersion | null {
     const commit = git("rev-parse", "HEAD").trim();
     if (!/^[0-9a-f]{7,64}$/.test(commit)) return null;
     // The project's own files: a change elsewhere in a larger repository is another agent's.
-    return { commit, dirty: git("status", "--porcelain", "--", ".").trim() !== "" };
+    return { commit, dirty: git("status", "--porcelain", "--", ".").trim() !== "", sources: agentSourcesHash(projectRoot) };
   } catch {
     // KEEP-JUSTIFIED: no repository, no commit or no git IS the answer "no version"; the run says null.
     return null;

@@ -6,7 +6,7 @@
 | Layer | What is in it | Use it for |
 |---|---|---|
 | 1. The foundation | `startCall`, the conversation record (`loadCalls`, `loadRun`, `saveRun`), `testModel`, `inParallel`, `report`, `passRate`, `projectHost`, and `npx curb run` | A call of the agent from any code, a model to think with, many at once, results for CI |
-| 2. Building blocks | `simulatedCaller`, `scriptedCaller`, `personas`, `converse`, `builtInChecks`, `checksOf`, `judge`, `ask`, `FINDINGS`, `styleNumbers`, `groupFindings` | Curb's own caller, checks and judge, one at a time |
+| 2. Building blocks | `simulatedCaller`, `scriptedCaller`, `personas`, `callerFromCall`, `replayCall`, `converse`, `builtInChecks`, `checksOf`, `judge`, `ask`, `FINDINGS`, `judgeAgreement`, `styleNumbers`, `groupFindings`, `compareRuns`, `compare` | Curb's own caller, checks and judge, one at a time |
 | 3. The ready-made path | `scenario()` files that `npx curb test` runs, and `npx curb review` | Testing that works with no code beyond a scenario |
 
 Each example below runs as written in a project from `npm create curb.js`, on its agent Juno and
@@ -163,6 +163,75 @@ of `expectRuns` under `across runs:`. `curb review` asks the project's own findi
 too, so the same two questions run over the calls of `curb dev` or a Calls export. The style
 numbers already count replies, questions, repeats and goodbyes; `expectRuns` is how a number of
 your own is made, from anything the runs hold.
+
+## Did my change help?
+
+`curb test` answers on its own. After a run it looks for the newest saved run of another version of
+the agent (another hash of the files under `src/` and `context/`, scenarios and tests left out) that
+played the same scenarios, and prints the pass rates then and now:
+
+```text
+Since 20261027T101502118Z-k3f9 (uncommitted changes, 2 hours ago):
+  asks for the order once  1/5 (20%) -> 5/5 (100%)  better
+  reads the hours          1/1 (100%) -> 1/1 (100%)  too few runs to tell
+```
+
+So run `npx curb test` before the fix and after it; nothing needs stashing. `better` and `worse` are
+said only when chance makes such a difference less than one time in ten (Fisher's exact test); give
+a scenario `runs: 5` or more, or run `npx curb test --runs 5`, for a verdict. The same comparison is
+`compareRuns(before, after)` on any two saved runs ([Testing API](./testing-api.md#compareruns)).
+
+For a question no check answers, such as which version sounds more natural, put the calls of two
+runs side by side. `compare` shows each pair to a model in a random order, so it cannot learn which
+is which:
+
+```ts
+// scripts/side-by-side.ts
+import { compare, loadRun } from "curb/testing";
+
+const of = (run: string) => loadRun(run).conversations.filter((call) => call.scenario.name === "plans the day naturally");
+const { a, b, ties } = await compare(of(process.argv[2]!), of("latest"), "Which agent sounds more like a person on the phone?");
+console.log(`before ${a}, after ${b}, the same ${ties}`);
+```
+
+```bash
+npx curb run scripts/side-by-side.ts 20261027T101502118Z-k3f9
+```
+
+## How far to trust the judge
+
+Before a finding of your own fails runs, or before you pick a cheaper judge model, measure the judge
+against a person. Label a few saved calls, with `true` where the call has the finding:
+
+```json
+{
+  "plans the day naturally run 1": { "canned_closing": true, "missed_mood": false },
+  "plans the day naturally run 2": { "canned_closing": false },
+  "plans the day naturally run 3": { "canned_closing": true, "missed_mood": true }
+}
+```
+
+```ts
+// scripts/agreement.ts
+import { readFileSync } from "node:fs";
+import { FINDINGS, judgeAgreement, loadRun, testModel } from "curb/testing";
+import { naturalness } from "../src/agent/naturalness.js";
+
+const labels = JSON.parse(readFileSync("labels.json", "utf8"));
+const model = await testModel({ model: process.argv[2] });
+const { findings, notJudged } = await judgeAgreement({ records: loadRun().conversations, labels, findings: { ...FINDINGS, ...naturalness }, model });
+console.table(findings.map(({ id, withIt, withoutIt, disagreements }) => ({ id, caught: `${withIt.caught}/${withIt.calls}`, "flagged wrongly": `${withoutIt.flagged}/${withoutIt.calls}`, disagreements: disagreements.join(", ") })));
+if (notJudged.length > 0) console.log("not judged:", notJudged);
+```
+
+```bash
+npx curb run scripts/agreement.ts                    # the default judge model
+npx curb run scripts/agreement.ts openai:gpt-5.2     # another one
+```
+
+Pick the cheapest model that catches the calls with the finding and flags few without it. Where it
+disagrees, read those calls: a finding the judge reads differently than you do usually needs a
+sharper sentence, such as what counts and what does not.
 
 ## Replace any piece
 

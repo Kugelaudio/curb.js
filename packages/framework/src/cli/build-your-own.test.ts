@@ -42,6 +42,7 @@ function answer(messages: Message[]): { content?: string; toolCall?: { name: str
     return { content: JSON.stringify({ answers: ids.map((id) => ({ id, answer: id === "goal" ? "yes" : "no", turn: null, quote: "", reason: `${id} answered` })) }) };
   }
   if (system.startsWith("You sort findings")) return { content: JSON.stringify({ patterns: [] }) };
+  if (system.startsWith("You compare two recorded phone calls")) return { content: JSON.stringify({ better: "same", reason: "They sound alike." }) };
   if (all.includes("You are calling a planning assistant")) return { content: "bye" };
   if (all.includes("Did the agent confirm each task")) return { content: "yes, it said each one is on the list." };
   if (all.includes("Your goal for this call")) {
@@ -122,8 +123,8 @@ describe("the examples of Build your own tests", () => {
     if (root) rmSync(root, { recursive: true, force: true });
   });
 
-  it("are the four files the page shows", () => {
-    expect(Object.keys(files)).toEqual(["test/tasks.test.ts", "scripts/harness.ts", "src/agent/naturalness.ts", "src/agent/natural-planning.scenario.ts"]);
+  it("are the six files the page shows", () => {
+    expect(Object.keys(files)).toEqual(["test/tasks.test.ts", "scripts/harness.ts", "src/agent/naturalness.ts", "src/agent/natural-planning.scenario.ts", "scripts/side-by-side.ts", "scripts/agreement.ts"]);
   });
 
   it("type-check against the public API, in a project of the default template", () => {
@@ -168,5 +169,24 @@ describe("the examples of Build your own tests", () => {
       detail: "3 of 3 run(s)",
     });
     expect(result.status, result.stderr).toBe(0);
+  }, 240_000);
+
+  it("(d) measures the judge against the labels of the page, with npx curb run", async () => {
+    // The labels are the page's own, for the runs of the scenario that (c) saved.
+    const labels = /## How far to trust the judge[\s\S]*?```json\n([\s\S]*?)```/.exec(readFileSync(page, "utf8"))![1]!;
+    writeFileSync(join(root, "labels.json"), labels);
+    const result = await run(root, bin, ["run", "scripts/agreement.ts"]);
+    expect(result.status, result.stderr).toBe(0);
+    // The judge here finds nothing: it misses both calls a person found a canned closing on.
+    expect(result.stdout).toMatch(/canned_closing'\s*│\s*'0\/2'\s*│\s*'0\/1'/);
+    expect(result.stdout).toMatch(/missed_mood'\s*│\s*'0\/1'\s*│\s*'0\/1'/);
+  }, 240_000);
+
+  it("(e) compares the calls of two runs side by side, with npx curb run", async () => {
+    const before = readdirSync(join(root, ".curb/test-runs")).sort().at(-1)!.replace(/\.json$/, "");
+    await run(root, bin, ["test", "natural"]);
+    const result = await run(root, bin, ["run", "scripts/side-by-side.ts", before]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("before 0, after 0, the same 3");
   }, 240_000);
 });
