@@ -28,6 +28,9 @@ Commands:
   review     Read many calls (files, folders, or the last conversations of curb dev) and
              report what goes wrong on them as patterns, each with quotes and a scenario
              that would reproduce it (--last <n>, --judge-model <id>, --json; see curb review --help).
+  run        Run a script of your own with the project loaded (TypeScript, JSX, .env, the login
+             key), such as a test harness built on curb/testing; its exit code is the
+             command's (curb run <script> [args...]; see curb run --help).
   hook       Run the agent's afterCall or afterEvaluation once, on a call from a fixture file,
              with the project's .env; nothing else fires them on this machine (see curb hook --help).
   conversations
@@ -73,22 +76,21 @@ if (process.argv[2] === "--version" || process.argv[2] === "-v" || process.argv[
   process.exit(0);
 }
 
-// Help runs nothing, wherever it is asked for: `curb dev --help` must not start a server.
-if (process.argv[2] === "help" || wantsHelp(process.argv.slice(2))) {
-  const usage =
-    process.argv[2] === "say"
-      ? (await import("./say.js")).SAY_USAGE
-      : process.argv[2] === "conversations"
-        ? (await import("./conversations.js")).CONVERSATIONS_USAGE
-        : process.argv[2] === "test"
-          ? (await import("./test.js")).TEST_USAGE
-          : process.argv[2] === "review"
-            ? (await import("./review.js")).REVIEW_USAGE
-            : process.argv[2] === "hook"
-              ? (await import("./hook.js")).HOOK_USAGE
-              : process.argv[2] === "voices"
-                ? (await import("./voices.js")).VOICES_USAGE
-                : USAGE;
+// Help runs nothing, wherever it is asked for: `curb dev --help` must not start a server. What
+// follows `curb run <script>` is the script's own, its --help included.
+const helpArgs = process.argv[2] === "run" ? process.argv.slice(2, 4) : process.argv.slice(2);
+if (process.argv[2] === "help" || wantsHelp(helpArgs)) {
+  const usages: Record<string, () => Promise<string>> = {
+    say: async () => (await import("./say.js")).SAY_USAGE,
+    conversations: async () => (await import("./conversations.js")).CONVERSATIONS_USAGE,
+    test: async () => (await import("./test.js")).TEST_USAGE,
+    review: async () => (await import("./review.js")).REVIEW_USAGE,
+    run: async () => (await import("./run.js")).RUN_USAGE,
+    hook: async () => (await import("./hook.js")).HOOK_USAGE,
+    voices: async () => (await import("./voices.js")).VOICES_USAGE,
+  };
+  const command = process.argv[2] ?? "";
+  const usage = Object.hasOwn(usages, command) ? await usages[command]!() : USAGE;
   process.stdout.write(`${usage}\n`, () => process.exit(0));
   await new Promise(() => {});
 }
@@ -148,6 +150,17 @@ async function review(): Promise<void> {
   const { reviewCommand } = await import("./review.js");
   const code = await reviewCommand(process.argv.slice(3), projectRoot);
   // As for say: open MCP clients and LLM sockets must not keep a finished run alive.
+  process.stdout.write("", () => process.exit(code));
+  await new Promise(() => {});
+}
+
+async function runCommand(): Promise<void> {
+  const [script, ...args] = process.argv.slice(3);
+  const { RUN_USAGE, runScript } = await import("./run.js");
+  if (!script) throw new Error(`curb run: give the script to run.\n\n${RUN_USAGE}`);
+  const { projectRoot } = prepareProject();
+  const code = await runScript(script, args, projectRoot);
+  // As for say: the agent's MCP clients and the LLM's sockets must not keep a finished script alive.
   process.stdout.write("", () => process.exit(code));
   await new Promise(() => {});
 }
@@ -360,6 +373,7 @@ const commands: Record<string, () => Promise<void>> = {
   say,
   test,
   review,
+  run: runCommand,
   hook,
   start,
   server,

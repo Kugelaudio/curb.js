@@ -22,14 +22,20 @@ if (!process.env.TSX_TSCONFIG_PATH) {
   const projectRoot = process.cwd();
   if (existsSync(join(projectRoot, "src", "agent"))) {
     const generatedDir = join(projectRoot, ".curb");
-    const generatedPath = join(generatedDir, "tsx.tsconfig.json");
     const toPosix = (path) => path.split("\\").join("/");
+    // `curb run <script>`: the script and the files beside it are the project's TypeScript too,
+    // wherever it keeps them. A config of its own, so a running `curb dev` keeps its own.
+    const script = process.argv[2] === "run" && process.argv[3] ? resolve(projectRoot, process.argv[3]) : null;
+    const scriptDir = script ? relative(generatedDir, dirname(script)) : null;
+    const besideScript = scriptDir === null ? [] : scriptDir === ".." ? ["../*"] : [toPosix(join(scriptDir, "**/*"))];
+    const generatedPath = join(generatedDir, script ? "tsx.run.tsconfig.json" : "tsx.tsconfig.json");
     const config = `${JSON.stringify(
       {
         compilerOptions: { jsx: "react-jsx" },
         include: [
           ...(fromSource ? [toPosix(join(relative(generatedDir, packageRoot), "src/**/*"))] : []),
           "../src/**/*",
+          ...besideScript.filter((entry) => entry !== "../src/**/*"),
         ],
       },
       null,

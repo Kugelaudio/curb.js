@@ -324,6 +324,7 @@ curb review --concurrency
 curb review --json
 curb review --judge-model
 curb review --last
+curb run
 curb say
 curb secrets
 curb server
