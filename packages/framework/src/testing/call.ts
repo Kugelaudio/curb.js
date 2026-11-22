@@ -48,8 +48,12 @@ export type Call = {
   /** The data of the agent's store `store` (the key of its `createAgentStore`) now, without its
    * actions. Throws, naming the stores there are, when the agent has none by that key. */
   state<T = Record<string, unknown>>(store: string): T;
-  /** The agent's rendered context now, line by line. */
+  /** The agent's rendered context now, line by line: its knowledge, the skills it can open
+   * (`available_skill: ...`) and its tools. */
   readonly context: readonly string[];
+  /** The system prompt the agent's model receives on the caller's next turn: the agent's
+   * `<SystemPrompt>` and the framework's spoken-reply rules. */
+  readonly systemPrompt: string;
   /** The agent hung up (`end_call`), or the call was closed. */
   readonly ended: boolean;
   /** The variant the call has in each of the agent's experiments. */
@@ -176,6 +180,9 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     state: <T,>(store: string) => expectContext(turns, endState()).state<T>(store),
     get context() {
       return endState()?.context ?? [];
+    },
+    get systemPrompt() {
+      return session.systemPromptFor(!runtime.settings.s2s());
     },
     get ended() {
       return hungUp || closed;

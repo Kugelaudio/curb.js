@@ -176,7 +176,7 @@ export function parseCallerAfterHangUp(text: string): CallerAfterHangUp {
 }
 
 /** "German" for "de"; the code itself when the runtime does not know the language. */
-function languageName(code: string): string {
+export function languageName(code: string): string {
   try {
     return new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code;
   } catch {

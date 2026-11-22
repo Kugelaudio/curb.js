@@ -7,10 +7,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentRunRequest } from "../llm/types.js";
 import { ConversationStore } from "../server/conversation-store.js";
 import { isJudgeRequest, judgeAnswer, record, turn } from "../test-fixtures/conversations.js";
-import { steps, tasksBundle } from "../test-fixtures/tasks.js";
+import { says, steps, tasksBundle } from "../test-fixtures/tasks.js";
+import { loadRun } from "../testing/index.js";
 import type { ReviewReport } from "./review-report.js";
 import { REVIEW_OPTIONS, parseReviewArgs, reviewCommand } from "./review.js";
 import { createTestProject } from "./test-project.js";
+import { testCommand } from "./test.js";
 import type { TestHost } from "./test.js";
 
 type Answers = NonNullable<Parameters<typeof judgeAnswer>[1]>;
@@ -334,10 +336,173 @@ describe("curb review", () => {
     const last = await review(["--last", "2", "--json"], root, host);
 
     expect((JSON.parse(all.printed) as ReviewReport).calls.reviewed).toBe(3);
+    // Recorded conversations are reviewed as they are: nothing is simulated.
+    expect((JSON.parse(all.printed) as ReviewReport).simulated).toBeUndefined();
+    expect(all.progress[0]).toBe("Judging 3 call(s) on openai:gpt-5.4-mini, 4 at a time.");
     const report = JSON.parse(last.printed) as ReviewReport;
     expect(report.calls).toMatchObject({ reviewed: 2, withFindings: 1 });
     expect(report.patterns[0]?.examples).toEqual([{ call: "conversation 3", kind: "incoherent", turn: 1, quote: "From nine to one", reason: "It says the hours twice." }]);
     expect(stats.judged.at(-1)!.stateSnapshot).toContain('[turn 1] (The agent called the tool lookup_hours: ok. Input: {"day":"saturday"}. Result: 9 to 13)');
+  });
+
+  /**
+   * A host for a project with no recorded conversation: the task agent says "Added." to every
+   * line; the callers request gets 20 callers, c1 to c20; each caller says one line and hangs up,
+   * but c5 never hangs up and c20 cannot answer; the judge finds c1 to c3 unresolved; the grouping
+   * puts those three into one pattern. `events` is the order caller and judge requests came in.
+   */
+  function newAgentHost() {
+    const stats = { bundles: 0, callers: [] as AgentRunRequest[], judged: [] as AgentRunRequest[], grouped: [] as AgentRunRequest[], drafted: [] as AgentRunRequest[], topics: [] as AgentRunRequest[], events: [] as string[] };
+    const said = new Map<string, number>();
+    const host: TestHost = {
+      async createBundle() {
+        stats.bundles += 1;
+        const { runtime, session } = tasksBundle(async () => says("Added."));
+        return { runtime, session };
+      },
+      simulator: () => async (request) => {
+        const text = (() => {
+          if (request.systemPrompt.startsWith("You write test callers")) {
+            stats.callers.push(request);
+            return JSON.stringify({ callers: Array.from({ length: 20 }, (_, index) => ({ goal: `[c${index + 1}] Add a task`, knows: "Name Alex Example", persona: index === 3 ? "In a hurry" : "", behaviours: index === 3 ? ["impatient"] : [] })) });
+          }
+          if (request.systemPrompt.startsWith("You are the caller")) {
+            const tag = /\[(c\d+)\]/.exec(request.systemPrompt)![1]!;
+            stats.events.push(`caller ${tag}`);
+            const times = (said.get(tag) ?? 0) + 1;
+            said.set(tag, times);
+            if (tag === "c20") return "";
+            return times === 1 || tag === "c5" ? `[${tag}] Please add a task.` : "Thanks, bye. [hang up: met - the task was added]";
+          }
+          if (isDraftRequest(request)) {
+            stats.drafted.push(request);
+            return draftAnswer(request);
+          }
+          if (isTopicRequest(request)) {
+            stats.topics.push(request);
+            return JSON.stringify({ topics: [{ topic: "Add a task", reasons: Array.from({ length: 19 }, (_, index) => index + 1), scenarios: [] }] });
+          }
+          if (isJudgeRequest(request)) {
+            stats.judged.push(request);
+            const call = callOf(request);
+            stats.events.push(`judge ${call}`);
+            const wants: Answers = { called_for: { answer: "yes", turn: 1, quote: "Please add a task", reason: "Add a task." } };
+            return judgeAnswer(request, ["c1", "c2", "c3"].includes(call) ? { ...wants, unresolved: { answer: "yes", turn: 1, quote: "Added.", reason: "Adding a task: the agent said so, and no task was added." } } : wants);
+          }
+          stats.grouped.push(request);
+          return JSON.stringify({ patterns: [{ title: "Promises a task instead of adding it", findings: [1, 2, 3], scenario: { expectation: "The agent adds the task during the call." } }] });
+        })();
+        return { text, toolCalls: [] };
+      },
+      models: () => ({ agent: "openai:gpt-5.2", caller: "openai:gpt-5.4-mini", judge: "openai:gpt-5.4-mini" }),
+    };
+    return { host, stats };
+  }
+
+  it("simulates calls when curb dev has recorded none: plays them, judges each as it ends, saves them as a run and reviews them as real calls", async () => {
+    const root = project();
+    const { host, stats } = newAgentHost();
+
+    const { code, printed, progress } = await review([], root, host);
+
+    expect(code).toBe(0);
+    const savedTo = /Saved to (\.curb\/test-runs\/[\w-]+\.json)/.exec(printed)?.[1] ?? "";
+    expect(savedTo).not.toBe("");
+    expect(printed).toBe(
+      [
+        `These are 20 simulated call(s), because curb dev has recorded no conversation here yet. Saved to ${savedTo} (npx curb review ${savedTo} reads them again).`,
+        "Reviewed 20 call(s): 16 with no finding, 3 with findings, 1 not judged.",
+        "",
+        "1. Promises a task instead of adding it",
+        "   3 of 19 judged call(s), 16% · unresolved",
+        '   call simulated run 1, turn 1: "Added." (Adding a task: the agent said so, and no task was added.)',
+        '   call simulated run 2, turn 1: "Added." (Adding a task: the agent said so, and no task was added.)',
+        '   call simulated run 3, turn 1: "Added." (Adding a task: the agent said so, and no task was added.)',
+        "   Scenario to add (its caller from call simulated run 1):",
+        '     caller: { goal: "[c1] Add a task", knows: "Name Alex Example" },',
+        '     expectations: ["The agent adds the task during the call."],',
+        "",
+        "What callers called about:",
+        "  Topic       Calls  Share  Covered by",
+        "  Add a task     19   100%  no scenario",
+        "",
+        "Not asked of 1 call(s) simulated and cut off at the turn limit: unresolved.",
+        "Not judged: call simulated run 20: the call broke off: the simulated caller answered with no line: \"\"",
+        "Next: add a pattern's scenario under src/agent/, run `npx curb test` to see it fail, fix the agent, run it again.",
+        "",
+      ].join("\n"),
+    );
+    // One request for the callers, one agent per call (the first also told the models which provider).
+    expect(stats.callers).toHaveLength(1);
+    expect(stats.callers[0]!.stateSnapshot.join("\n")).toContain("- add_task: Add a task to the list.");
+    expect(stats.bundles).toBe(21);
+    // After the calls: one judge request per call that did not break off, one grouping, one
+    // coverage request, and no request to write a draft's caller: a simulated call has its caller.
+    expect(stats.judged).toHaveLength(19);
+    expect(stats.grouped).toHaveLength(1);
+    expect(stats.topics).toHaveLength(1);
+    expect(stats.drafted).toEqual([]);
+    // A call cut off at the turn limit is not asked whether the caller got what they called for.
+    const asked5 = asked(stats.judged.find((request) => callOf(request) === "c5")!);
+    expect(asked5).not.toContain("unresolved");
+    expect(asked(stats.judged.find((request) => callOf(request) === "c4")!)).toContain("unresolved");
+    // The judge starts on the first calls while the others still play.
+    expect(stats.events.findIndex((event) => event.startsWith("judge"))).toBeLessThan(stats.events.findLastIndex((event) => event.startsWith("caller")));
+    expect(progress).toEqual([
+      "curb dev has recorded no conversation here yet, so 20 calls are simulated instead.",
+      "Writing 20 callers from what the agent offers on openai:gpt-5.4-mini.",
+      "Playing 20 simulated call(s), 4 at a time, at most 8 caller turns each; each is judged as soon as it ends.",
+      ...[2, 4, 6, 8, 10, 12, 14, 16, 18].map((done) => `Played ${done} of 20 call(s).`),
+      `Saved the 20 simulated call(s) to ${savedTo}.`,
+      "Sorting 3 finding(s) into patterns.",
+    ]);
+
+    // The saved run holds every call, as curb review and curb test --rejudge read it.
+    const saved = loadRun(savedTo, { root });
+    expect(saved.conversations).toHaveLength(20);
+    expect(saved.models).toEqual({ agent: "openai:gpt-5.2", caller: "openai:gpt-5.4-mini", judge: "openai:gpt-5.4-mini" });
+    expect(saved.conversations[3]).toMatchObject({ source: "call", scenario: { name: "simulated", run: 4, mode: "simulated" }, caller: { goal: "[c4] Add a task", knows: "Name Alex Example", persona: "In a hurry", behaviours: ["impatient"] } });
+    const cut = saved.conversations[4]!;
+    expect(cut.ending).toMatchObject({ by: "max_turns", maxTurns: 8 });
+    expect(cut.turns.filter((turn) => turn.caller !== null)).toHaveLength(8);
+    expect(saved.conversations[0]!.ending.by).toBe("caller");
+
+    // Reviewed again from the run, the calls are the same and nothing is simulated.
+    const again = newAgentHost();
+    const rereview = JSON.parse((await review([savedTo, "--json"], root, again.host)).printed) as ReviewReport;
+    expect(rereview.simulated).toBeUndefined();
+    // The call whose caller never spoke has no transcript, so it is left out and counted.
+    expect(rereview.calls).toMatchObject({ reviewed: 19, withFindings: 3, skipped: 1 });
+    expect(rereview.patterns[0]!.scenario).toEqual({ caller: { goal: "[c1] Add a task", knows: "Name Alex Example" }, expectations: ["The agent adds the task during the call."], from: "simulated run 1" });
+    expect(again.stats.callers).toEqual([]);
+    expect(again.stats.drafted).toEqual([]);
+
+    // curb test --rejudge reads the run too, and judges each call against its caller's goal.
+    const rejudged: string[] = [];
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await testCommand(["--rejudge", savedTo, "--json"], root, { host: newAgentHost().host, out: (text) => void rejudged.push(text), env: {} });
+    const rejudge = JSON.parse(rejudged.join("")) as { scenarios: Array<{ name: string; runs: unknown[] }> };
+    expect(rejudge.scenarios.map((scenario) => [scenario.name, scenario.runs.length])).toEqual([["simulated", 20]]);
+  });
+
+  it("says in --json that the calls were simulated, and where they were saved", async () => {
+    const root = project();
+    const { host } = newAgentHost();
+
+    const report = JSON.parse((await review(["--json"], root, host)).printed) as ReviewReport;
+
+    expect(report.simulated).toEqual({ calls: 20, maxTurns: 8, savedTo: expect.stringMatching(/^\.curb\/test-runs\/[\w-]+\.json$/) });
+    expect(report.calls).toEqual({ reviewed: 20, withoutFindings: 16, withFindings: 3, notJudged: 1, skipped: 0 });
+    // The agent's and the callers' tokens are this review's too: here no provider reported any.
+    expect(report.usage).toBeNull();
+  });
+
+  it("refuses when no callers can be written, saying what to do instead", async () => {
+    const root = project();
+    const { host } = reviewHost();
+    await expect(review([], root, host)).rejects.toThrow(
+      "[CURB_REVIEW_NO_CALLERS] curb dev has recorded no conversation here yet, and no callers could be written to simulate calls: callersFor(): the model's answer held no caller that can run: \"\"\nFix: run npx curb review again; or talk to the agent in the preview (npm run dev), or pass a file of calls: npx curb review <file or folder>.",
+    );
   });
 
   it("counts two calls of the same id as two calls", async () => {
@@ -386,9 +551,8 @@ describe("curb review", () => {
     await expect(review(["march.jsonl"], root, host)).rejects.toThrow("[CURB_REVIEW_NOT_FOUND] No file or folder at march.jsonl.");
     // A folder without call files, an export without transcripts, and a project that never talked.
     await expect(review(["empty"], root, host)).rejects.toThrow("[CURB_REVIEW_NO_CALLS] Nothing to review: empty holds no call with a transcript.");
-    await expect(review(["only-missing.jsonl"], root, host)).rejects.toThrow("[CURB_REVIEW_NO_CALLS]");
-    await expect(review([], root, host)).rejects.toThrow(
-      `[CURB_REVIEW_NO_CALLS] Nothing to review: curb dev has recorded no conversation here yet.\nFix: npx curb review <file or folder>, with ${shapes}. Without a path, talk to the agent in the preview first (npm run dev).`,
+    await expect(review(["only-missing.jsonl"], root, host)).rejects.toThrow(
+      `[CURB_REVIEW_NO_CALLS] Nothing to review: only-missing.jsonl holds no call with a transcript.\nFix: npx curb review <file or folder>, with ${shapes}. Without a path, curb review reviews the conversations of the preview (npm run dev), or simulates calls when there are none.`,
     );
     expect(stats.bundles).toBe(0);
   });

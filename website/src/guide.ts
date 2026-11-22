@@ -33,7 +33,7 @@ const ALL_PAGES = [
   { id: 'tracing', file: 'tracing.md', title: 'Tracing', group: 'Guides', description: "Send how long each tool took, and the rest of a call's spans, to any OpenTelemetry backend." },
   { id: 'outbound-calls', file: 'outbound-calls.md', title: 'Outbound calls', group: 'Guides', description: "The agent's side of a call it places: what it knows, and how it opens." },
   { id: 'web-calls', file: 'web-calls.md', title: 'Calls from your website', group: 'Guides', description: "Start a call from a page, and tell the agent where it came from." },
-  { id: 'improve-from-calls', file: 'improve-from-calls.md', title: 'Improve from real calls', group: 'Guides', description: "Fix an agent from a real call's transcript and test the fix, or review many calls to find what to fix first." },
+  { id: 'improve-from-calls', file: 'improve-from-calls.md', title: 'Make the agent better', group: 'Guides', description: "The loop that makes an agent better: review simulated or real calls, reproduce the top problem as a scenario, fix it and see the test say better." },
   { id: 'testing-foundation', file: 'testing-foundation.md', title: 'Build your own tests', group: 'Guides', description: "Test an agent your own way with curb/testing: a vitest test, a harness with your own caller and judge, and findings of your own in scenarios." },
   { id: 'coding-agents', file: 'coding-agents.md', title: 'Working with a coding agent', group: 'Guides', description: "Build a Curb agent with a coding agent: the loop, the rules and connecting KugelAudio." },
   { id: 'reporting-a-bug', file: 'reporting-a-bug.md', title: 'Reporting a bug', group: 'Guides', description: "What a bug report holds and how to file it, for people and coding agents." },

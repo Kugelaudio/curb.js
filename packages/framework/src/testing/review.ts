@@ -15,7 +15,7 @@ import { JUDGE_FINDINGS } from "./scenario.js";
 
 /** A scenario that would reproduce a pattern, as the fields to put into `scenario({ ... })`, and
  * the call its caller was written from (`from`), when it was written from one. */
-export type ScenarioDraft = { caller: { goal: string; knows?: string; persona?: string }; failOn?: string[]; expectations?: string[]; from?: string };
+export type ScenarioDraft = { caller: { goal: string; knows?: string; persona?: string; behaviours?: string[] }; failOn?: string[]; expectations?: string[]; from?: string };
 
 export type ReviewPattern = {
   /** What the agent does wrong, in one sentence. */
@@ -234,6 +234,14 @@ async function draftFromCall(
 ): Promise<{ draft: ScenarioDraft | null; note?: string }> {
   // Without what the scenario checks, a caller is no draft: nothing is asked of the model.
   if (!checks || !record) return { draft: null };
+  // A call a simulated caller played (`startCall`, `converse`) already has its caller, which no
+  // scenario of the project holds yet: the draft takes it as it is, and nothing is asked.
+  const played = record.source === "call" ? record.caller : null;
+  if (played) {
+    const { goal, knows, persona, behaviours } = played;
+    const caller = { goal, ...(knows ? { knows } : {}), ...(persona ? { persona } : {}), ...(behaviours?.length ? { behaviours: [...behaviours] } : {}) };
+    return { draft: { caller, ...checks, from: callName(record) } };
+  }
   try {
     const { goal, knows, persona } = await callerFromCall(record, { model });
     return { draft: { caller: { goal, ...(knows ? { knows } : {}), ...(persona ? { persona } : {}) }, ...checks, from: callName(record) } };
@@ -254,7 +262,9 @@ async function draftFromCall(
  * `kinds` says what each kind means (default: {@link FINDINGS}, and every other kind the findings
  * name, by its name). With `records`, the calls the findings are about, each draft's caller is
  * written from the pattern's first example call by `callerFromCall` (one request per pattern), and
- * the draft names that call (`from`); without them the grouping model invents one.
+ * the draft names that call (`from`); without them the grouping model invents one. A call a
+ * simulated caller played (`source: "call"`, with its `caller`) gives that caller as it is, with
+ * no request.
  */
 export async function groupFindings(
   findings: readonly Finding[],

@@ -15,6 +15,7 @@ exports `curb test` and `curb review` use, for a test of your own in any test ru
 | 1 | [`projectHost`](#projecthost) | What all of them run on |
 | 2 | [`simulatedCaller`](#simulatedcaller), [`scriptedCaller`](#scriptedcaller), [`personas`](#personas) | Callers |
 | 2 | [`callerFromCall`](#callerfromcall), [`replayCall`](#replaycall) | A real call as a test |
+| 2 | [`callersFor`](#callersfor) | Callers for an agent that has had no calls yet |
 | 2 | [`converse`](#converse) | A whole conversation between a caller and the agent |
 | 2 | [`builtInChecks`](#builtinchecks), [`checksOf`](#checksof) | Checks of one conversation |
 | 2 | [`judge`](#judge), [`ask`](#ask), [`FINDINGS`](#findings) | The judge, with a turn and a quote checked against the call |
@@ -69,7 +70,8 @@ Conversation recording is off, and the framework's own log lines go to stderr.
 | `say(text)` | Plays one caller line and resolves with the turn: `reply`, `toolCalls` (each with `input`, `ok`, `result`, `faked`), `errors`, `endedCall` and the rest of a `ScenarioTurn`. Rejects once the call has ended |
 | `turns` | Every turn so far |
 | `state(store)` | The data of a `createAgentStore` store now, by its key |
-| `context` | The agent's rendered context now, line by line |
+| `context` | The agent's rendered context now, line by line: its knowledge, the skills it can open (`available_skill: ...`) and its tools |
+| `systemPrompt` | The system prompt the agent's model receives on the caller's next turn: the agent's `<SystemPrompt>` and the framework's spoken-reply rules |
 | `ended` | The agent hung up, or the call was closed |
 | `experiments`, `language`, `model` | The call's variants, the agent's language, the agent's model as `provider:model` |
 | `record()` | The call as a [conversation record](./test-runs.md#a-conversation-record), `source: "call"` |
@@ -233,6 +235,40 @@ The caller of a recorded call again, word for word: a [`scriptedCaller`](#script
 caller lines, for a test where the exact words matter. These are the real caller's words, names and
 numbers included: a scenario that holds them needs the same care as the export it came from.
 
+## `callersFor`
+
+```ts
+callersFor(options?: { count?: number; model?; host? }): Promise<ScenarioCaller[]>
+```
+
+```ts
+import { callersFor, converse, inParallel, simulatedCaller, startCall } from "curb/testing";
+
+const callers = await callersFor({ count: 10 });
+// [{ goal: "Move my appointment on Friday to next week", knows: "Name Alex Example, appointment 4471" },
+//  { goal: "Book a haircut, then change it to a beard trim", knows: "Name Sam Example", persona: "Not sure what they want", behaviours: ["changes_mind"] }, ...]
+const records = await inParallel(callers, async (caller) => converse(await startCall(), simulatedCaller(caller), { maxTurns: 8 }), { concurrency: 4 });
+```
+
+Simulated callers for an agent that has had no calls yet, each `{ goal, knows, persona?, behaviours? }`
+for [`simulatedCaller`](#simulatedcaller) or a scenario's `caller`. A call ([`startCall`](#startcall),
+closed again) shows what the agent offers on its first turn: its `systemPrompt`, its opening, its
+`context` with the skills it can open, and its tools with their descriptions. Then one request to
+`model` (default `testModel()`) writes `count` callers (default 20, at most 50):
+
+- most want what the agent is for, spread across its skills and tools;
+- about one in five wants that too but is hard to serve: in a hurry, unclear, telling everything at
+  once or changing their mind, with a `persona` and `behaviours` to match;
+- two or three (one below eight callers) want something the agent cannot do, to see that it says so
+  instead of pretending.
+
+Names, phone numbers and addresses are invented; order numbers, services and the like come from the
+agent's own demo data where its prompt or tools show it, so its tools find them. They are written in
+the language the agent speaks. An entry that cannot run (no goal) is left out and an unknown
+behaviour dropped, so fewer than `count` may come back. An answer that holds no caller is asked for
+once more; a second one rejects. [`curb review`](./cli/review.md#a-new-agent-simulated-calls) plays
+these callers on an agent with no recorded calls.
+
 ## `converse`
 
 ```ts
@@ -356,7 +392,9 @@ the other, and at least half the words of the shorter title (words of four lette
 than words like "agent", "caller" and "call") are in the other title; the pattern with more calls
 keeps its title. With `records`, the calls the findings are about, each draft's caller is written
 from the pattern's first example call by [`callerFromCall`](#callerfromcall), one request per
-pattern, and the draft names that call as `from`. Without them the model invents the caller.
+pattern, and the draft names that call as `from`. A call a simulated caller played (`source: "call"`,
+with its `caller`, as `converse` returns it) gives that caller as it is, with no request. Without
+`records` the model invents the caller.
 
 ## `compareRuns`
 
@@ -557,6 +595,7 @@ a call whose `content` is `not_stored`.
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | `callersFor` added, and `Call.systemPrompt`. `groupFindings` takes a played simulated call's caller as its draft's caller, with its `behaviours` |
 | v1.25.0 | `callerFromCall`, `replayCall`, `judgeAgreement`, `compareRuns` and `compare` added. `groupFindings` takes `records`, writes each draft's caller from a call of its pattern, and merges near-duplicate patterns. A saved run's `agentVersion` holds a hash of the agent's sources |
 | v1.25.0 | `scenario` takes `findings`, `expectRuns` and a `Caller` as `caller`, and `failOn` takes the scenario's own findings. `expect` gets `ask`, `model`, `note` and `transcriptText`; `checksOf` takes `{ model }` for them. `ScenarioRunResult` added |
 | v1.25.0 | Layers 1 and 2 added: `startCall`, `loadCalls`, `loadRun`, `saveRun`, `testModel`, `inParallel`, `report`, `passRate`, `projectHost`, `simulatedCaller`, `scriptedCaller`, `converse`, `builtInChecks`, `checksOf`, `judge`, `ask`, `FINDINGS`, `styleNumbers` and `groupFindings`. A check may be `reportOnly` |

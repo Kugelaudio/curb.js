@@ -246,5 +246,5 @@ Every signature is in the [Testing API](./testing-api.md).
 ## Next steps
 
 - [Testing](./testing.md): `curb check`, `curb say` and `curb test`.
-- [Improve from real calls](./improve-from-calls.md): `curb review` on many calls.
+- [Make the agent better](./improve-from-calls.md): `curb review` on many calls, or on simulated ones.
 - [`curb run`](./cli/run.md): a script with the project loaded.

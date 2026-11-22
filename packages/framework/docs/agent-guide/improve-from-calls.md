@@ -1,9 +1,68 @@
-# Improve an agent from real calls
+# Make the agent better
 
-The fastest way to improve an agent is to hand a coding agent a call that went wrong, let it
-fix the cause, and let it prove the fix by talking to the agent itself. You need no test
-script to start: the call is the test. With many calls, first find out which fault comes back
-most often: [Many calls](#many-calls-find-what-to-fix-first).
+One short loop makes an agent better, for a brand-new agent and after it went live, and a coding
+agent can run it on its own: find the problems that come back most, reproduce the top one as a
+scenario, fix it, and see `curb test` say whether the fix helped. One call that went wrong is a
+shortcut into the same loop: [Improve from one call](#improve-from-one-call).
+
+## The loop
+
+```bash
+npx curb review                      # 1. the problems that come back most
+# 2. take the top pattern
+# 3. add its scenario as src/agent/<name>.scenario.ts
+npx curb test <name> --runs 5        # 4. see it fail
+# 5. fix the agent
+npx curb test <name> --runs 5        # 6. better, or no clear change?
+npx curb test                        #    and nothing else broke
+git commit -am "Keep the task list open until the caller is done"   # 7. and again from 1
+```
+
+1. **`npx curb review`** finds the problems. What it reads depends on what there is:
+
+   | The agent has | `curb review` reads |
+   |---|---|
+   | No recorded calls yet (a new agent) | 20 simulated calls it plays itself: callers written from the agent's prompt, skills and tools by [`callersFor`](./testing-api.md#callersfor), most wanting what the agent is for, a few hard to serve, and two or three wanting what it cannot do. They are saved as a run, and the report's first line says so |
+   | Conversations in the `curb dev` preview | The last 20 (`--last <n>` for more) |
+   | Calls of the hosted agent | `npx curb review calls.jsonl`: an export of the dashboard's **Calls** page |
+
+   The report lists the patterns, the one on the most calls first, each with quotes and a scenario
+   to add ([Many calls](#many-calls-find-what-to-fix-first)).
+2. **Take the top pattern.** Open one of its quoted calls and read the turn before you believe the
+   title.
+3. **Add its scenario** as `src/agent/<name>.scenario.ts`, the drafted fields inside
+   `scenario({ ... })` from `"curb/testing"`.
+4. **`npx curb test <name> --runs 5`, and see it fail.** A scenario that passes does not reproduce
+   the pattern: sharpen its caller until it fails. Five runs, because a model does not answer the
+   same way twice, and because step 6 can only call a change `better` from enough runs.
+5. **Fix the agent**, not the scenario: the table in [section 2](#2-have-the-coding-agent-improve-it)
+   names the usual causes.
+6. **`npx curb test <name> --runs 5` again**, and read the `Since` lines at the end: they compare
+   the pass rate with the run before the fix and say `better` only when that is more than chance,
+   or `no clear change` ([`curb test`](./cli/test.md#since-the-last-version)). Then `npx curb test`
+   checks that nothing else broke.
+7. **Commit**, and start again at 1. After the fix is live, review the newer calls: the pattern's
+   share should drop.
+
+**What a round costs.** A review of 20 simulated calls is one request for the callers, the calls
+themselves (up to 8 caller turns each: one request of the simulated caller and one or more of the
+agent per turn, some 300 to 400 requests in all), one judge request per call, and one request each
+to sort the findings and what the callers called about ([`curb review`](./cli/review.md#what-a-round-costs)).
+It takes a few minutes. `curb test <name> --runs 5` is five conversations and five judge requests.
+
+A coding agent takes the whole loop as one request:
+
+```text
+Make the agent better: run `npx curb review`, take the top pattern, add its scenario, make it fail
+with `npx curb test <name> --runs 5`, fix the agent, and run the test again until the Since lines
+say better. Commit, then do the next pattern.
+```
+
+## Improve from one call
+
+The fastest way to fix one call that went wrong is to hand a coding agent that call, let it fix the
+cause, and let it prove the fix by talking to the agent itself. You need no test script to start:
+the call is the test.
 
 ## 1. Copy the transcript
 
@@ -86,6 +145,7 @@ One call shows one fault. To see which faults come back, hand Curb all the calls
 
 | Where the calls are | What to run |
 |---|---|
+| Nowhere yet: a new agent | `npx curb review`: 20 simulated calls, played, saved as a run and reviewed |
 | Hosted agent, dashboard | On the **Calls** page, export a date range as JSONL, then `npx curb review calls.jsonl` |
 | `curb dev` preview | `npx curb review`: the last 20 conversations, with no file (`--last <n>` for more) |
 | Transcripts as text or Markdown | `npx curb review transcripts/`: one call per file, lines starting with `Caller:` and `Agent:` |
@@ -114,17 +174,9 @@ Read a pattern from top to bottom: what the agent does wrong, on how many of the
 the words of up to three calls that show it. Open one of those calls and read the turn before you
 believe the title. The table after the patterns says what callers called about and which scenario
 tests each topic: a topic with many calls and `no scenario` is untested. Then work through the
-patterns one at a time:
-
-1. Put the pattern's scenario into a file under `src/agent/`, inside `scenario({ ... })`. Its
-   caller was written from the call the report names and wants what that caller wanted, with the
-   same order numbers, dates and products, so the agent's data finds them.
-2. Run `npx curb test` with `--runs 5` and see it fail. A scenario that passes does not reproduce
-   the pattern: change its caller until it does.
-3. Fix the agent (the table in section 2 names the usual causes) and run `npx curb test --runs 5`
-   again. The report ends with the pass rates since the run before the fix, and says `better` only
-   when that is more than chance ([`curb test`](./cli/test.md#since-the-last-version)).
-4. After the fix is live, export the newer calls and review them: the pattern's share should drop.
+patterns one at a time with [the loop](#the-loop), from step 2. A draft's caller was written from
+the call the report names and wants what that caller wanted, with the same order numbers, dates and
+products, so the agent's data finds them; on a simulated call it is the caller that played it.
 
 When the exact words of a call matter, replay them: `replayCall(record)` from
 [`curb/testing`](./testing-api.md#replaycall) is a scripted caller of that call's caller lines, and
@@ -147,14 +199,10 @@ What a review does and does not do:
 - **Your own findings are asked too.** The `findings` your scenarios give, such as a stock
   closing line, are asked of every real call beside the built-in ones
   ([Build your own tests](./testing-foundation.md#naturalness-on-the-ready-made-path)).
-
-With a coding agent, the whole loop is one request:
-
-```text
-Run `npx curb review calls.jsonl --json`. Take the pattern on the most calls, add its scenario,
-make it fail with `npx curb test --runs 5`, fix the agent and run the test again until the report
-says it is better since the run before the fix.
-```
+- **Simulated calls are not real callers.** They are more patient and more cooperative than
+  people, and a caller who wanted what the agent cannot do may show as `unresolved` although the
+  agent said so plainly: read the quotes. A simulated call that the turn limit cut off is not asked
+  `unresolved`. Once the preview has conversations or the hosted agent has calls, review those.
 
 ## Next steps
 
