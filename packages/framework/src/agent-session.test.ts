@@ -606,6 +606,67 @@ describe("AgentSession", () => {
     });
   });
 
+  describe("the greeting of a call (firstTurn: agent)", () => {
+    const GREETING = "(The voice call has just connected. Greet the caller.)";
+    const goodbye = "Glad I could help. Take care.";
+
+    async function greet(direction?: "inbound" | "outbound") {
+      const runtime = createInsuranceDemoRuntime();
+      const hangUp = vi.fn();
+      runtime.setEndCallRequest(hangUp);
+      const { streamLlm, requests } = scriptedStream([
+        { text: "Hi, I'm Lisa. I can help you with your policy.", toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye } }] },
+        { text: "What can I do for you?" },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm });
+      if (direction) session.updateInfo({ "call.direction": direction });
+      const events: AgentTurnStreamEvent[] = [];
+      for await (const event of session.runTurnStream(GREETING, { spoken: true, kind: "synthetic" })) events.push(event);
+      const done = events.at(-1);
+      return { hangUp, requests, session, reply: done?.type === "done" ? done.reply : undefined };
+    }
+
+    it("never hangs up an inbound call: the end_call is refused, and the greeting goes on", async () => {
+      for (const direction of [undefined, "inbound"] as const) {
+        const { hangUp, requests, session, reply } = await greet(direction);
+
+        expect(hangUp).not.toHaveBeenCalled();
+        expect(requests).toHaveLength(2);
+        expect(reply).toBe("Hi, I'm Lisa. What can I do for you?");
+        expect(session.messages.find((message) => message.role === "tool")).toMatchObject({
+          toolName: END_CALL_TOOL_NAME,
+          result: {
+            ok: false,
+            message: "Not run: the call has just opened and the caller has not said anything yet. Finish your greeting and let them answer.",
+          },
+        });
+      }
+    });
+
+    it("lets an outbound call hang up in its opening: it may have reached a voicemail", async () => {
+      const { hangUp, requests, reply } = await greet("outbound");
+
+      expect(hangUp).toHaveBeenCalledTimes(1);
+      expect(requests).toHaveLength(1);
+      expect(reply).toBe(`Hi, I'm Lisa. ${goodbye}`);
+    });
+
+    it("lets a later turn hang up once the agent greeted, even if the caller stays silent", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const hangUp = vi.fn();
+      runtime.setEndCallRequest(hangUp);
+      const { streamLlm } = scriptedStream([
+        { text: "Hi, I'm Lisa. How can I help?" },
+        { toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye: "I can't hear you, so I'll hang up. Goodbye." } }] },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm });
+      for await (const _event of session.runTurnStream(GREETING, { spoken: true, kind: "synthetic" })) void _event;
+      for await (const _event of session.runTurnStream("(The caller has been silent.)", { spoken: true, kind: "synthetic" })) void _event;
+
+      expect(hangUp).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("answers a failed LLM call with a fixed apology and reports the real error (no silent failure)", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const runtime = createInsuranceDemoRuntime();

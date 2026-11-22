@@ -275,7 +275,10 @@ Its one input, `goodbye`, is the closing line: the session says it once the
 call ran, and the transcript records it as the agent's reply. As before any
 tool call, Curb holds back the newest sentence the model writes in that step
 and drops it; sentences before that one were already said. An empty `goodbye`
-is refused like any invalid input, and the call stays up. The
+is refused like any invalid input, and the call stays up. So is an `end_call` in the
+greeting of an inbound call (`firstTurn: "agent"`), before the caller has said a word: the
+model is told the call has just opened, and the greeting is said. An outbound call
+(`call.direction` is `outbound`) may hang up in its opening, to leave a message. The
 call disconnects the moment the goodbye has finished playing, so it is never
 cut off mid-word. It is absent from typed chat sessions, where there is no call to
 hang up, and the framework's spoken-style rules teach it only while it is

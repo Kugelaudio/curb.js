@@ -256,6 +256,29 @@ export default scenario({ turns: ["Hi"] });
     expect(greeting).toMatchObject({ role: "user", content: AGENT_FIRST_TURN_PROMPT, kind: "synthetic" });
   });
 
+  it("keeps the call open when the agent tries to hang up in its own greeting", async () => {
+    const root = project({
+      "src/agent/hello.scenario.ts": `import { scenario } from "curb/testing";
+export default scenario({ turns: ["Hi, I'd like to book a haircut"] });
+`,
+    });
+    const agent = scriptedLlm([
+      say("Hi, this is the salon. I can help you book a haircut.", [{ name: END_CALL_TOOL_NAME, input: { goodbye: "Glad I could help. Take care." } }]),
+      say("What day would suit you?"),
+      say("Sure, which day?"),
+    ]);
+
+    const { code, printed } = await run(["--json"], root, fixtureHost({ llm: agent.llm, firstTurn: "agent" }));
+
+    expect(code).toBe(0);
+    const [result] = (JSON.parse(printed) as { scenarios: Array<Extract<ScenarioReport, { mode: string }>> }).scenarios;
+    expect(result).toMatchObject({ passed: true, endedBy: "script" });
+    expect(result.turns.map((turn) => [turn.caller, turn.reply, turn.toolCalls.map((call) => `${call.name}:${call.ok}`)])).toEqual([
+      [null, "What day would suit you?", [`${END_CALL_TOOL_NAME}:false`]],
+      ["Hi, I'd like to book a haircut", "Sure, which day?", []],
+    ]);
+  });
+
   it("opens with the agent's fixed line at turn 0, written from the scenario's page info, with no model call", async () => {
     const root = project({
       "src/agent/webinar.scenario.ts": `import { scenario } from "curb/testing";
