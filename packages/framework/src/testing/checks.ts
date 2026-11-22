@@ -1,6 +1,6 @@
 import { AGENT_LANGUAGES, fallbackReplies } from "../llm/localized.js";
 import { normalizeLlmPunctuation } from "../llm/punctuation.js";
-import type { CallerEnding, EndState } from "./record.js";
+import type { CallerEnding, ConversationRecord, EndState } from "./record.js";
 import type { ExpectedCall, ScenarioCheck, ScenarioExpectContext, ScenarioToolCall, ScenarioTurn } from "./scenario.js";
 import { agentWords, sentenceKey, sentences } from "./style.js";
 
@@ -27,7 +27,8 @@ export type ScenarioEndedBy =
 /** A finished conversation, as the checks read it. */
 export type Conversation = {
   turns: readonly ScenarioTurn[];
-  endedBy: ScenarioEndedBy;
+  /** Null when the record does not say who ended the call. */
+  endedBy: ScenarioEndedBy | null;
   /** Why it stopped, for `error` and `simulator`. */
   stopReason?: string;
   /** Scripted caller lines that were never said. */
@@ -58,9 +59,35 @@ export function fallbackLineIn(reply: string): string | null {
   return FALLBACK_LINES.find((line) => reply.endsWith(line)) ?? null;
 }
 
-/** The built-in checks, in report order. The goal check of a simulated caller is added by the
- * runner, which asks the judge. */
-export function builtInChecks(conversation: Conversation): ScenarioCheck[] {
+/**
+ * The fixed checks of one conversation, in report order: no turn errors, no empty agent reply,
+ * no fallback line instead of a reply, no sentence repeated within a turn, a clean end, and, for
+ * a caller that says whether it was done (a simulated one), that the agent did not hang up on it
+ * while it still wanted something. Pure: no model is asked.
+ */
+export function builtInChecks(record: ConversationRecord): ScenarioCheck[] {
+  const { turns, ending } = record;
+  const checks = conversationChecks({
+    turns,
+    endedBy: ending.by,
+    ...(ending.reason === undefined ? {} : { stopReason: ending.reason }),
+    unsaid: ending.unsaid,
+    maxTurns: ending.maxTurns,
+  });
+  if (record.caller !== null || ending.caller !== null) checks.push(hangUpCheck(ending.by, ending.caller, turns));
+  return checks;
+}
+
+/**
+ * The helpers an `expect` function receives, over a finished conversation: `called`, `said`,
+ * `stateMatches` and the rest make the same checks of `record` as they do in a scenario.
+ */
+export function checksOf(record: Pick<ConversationRecord, "turns" | "endState">): ScenarioExpectContext {
+  return expectContext(record.turns, record.endState);
+}
+
+/** The built-in checks of a conversation, in report order. */
+export function conversationChecks(conversation: Conversation): ScenarioCheck[] {
   const { turns } = conversation;
   return [
     outcome(BUILT_IN_CHECKS.errors, turns.flatMap(turnErrors)),
@@ -85,7 +112,7 @@ export function builtInChecks(conversation: Conversation): ScenarioCheck[] {
  * ended the call first). No word of a goodbye is looked at. A caller that did not say passes:
  * nothing shows the agent was wrong.
  */
-export function hangUpCheck(endedBy: ScenarioEndedBy, caller: CallerEnding | null, turns: readonly ScenarioTurn[]): ScenarioCheck {
+export function hangUpCheck(endedBy: ScenarioEndedBy | null, caller: CallerEnding | null, turns: readonly ScenarioTurn[]): ScenarioCheck {
   const name = BUILT_IN_CHECKS.hangUp;
   if (endedBy !== "agent") return { name, pass: true, detail: "the agent did not end the call" };
   const last = turns[turns.length - 1];
@@ -149,6 +176,8 @@ function endsCheck({ turns, endedBy, stopReason, unsaid, maxTurns }: Conversatio
       return fails(`the conversation stopped${at}: ${stopReason ?? "the turn reported an error"}`);
     case "simulator":
       return fails(`the simulated caller could not go on: ${stopReason ?? "it gave no line"}`);
+    case null:
+      return passes(`the record does not say how the call ended${at}`);
   }
 }
 

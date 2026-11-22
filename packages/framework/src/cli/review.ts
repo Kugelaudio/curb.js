@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { JUDGE_PROMPT_VERSION, judgeConversation } from "../testing/judge.js";
-import { REVIEW_SHAPES, callsIn, storedCall, type ReadCalls, type ReviewCall } from "../testing/review-calls.js";
-import { NOT_ASKED, findingsOf, formatReview, groupFindings, reviewQuestions, type ReviewFinding, type ReviewReport } from "../testing/review.js";
+import { REVIEW_SHAPES, callsIn, storedCall, type ReadCalls, type ReviewCall } from "../testing/load-calls.js";
+import { NOT_ASKED, findingsOf, formatReview, groupFindingsWith, reviewQuestions, type ReviewFinding, type ReviewReport } from "../testing/review.js";
 import { describeProviderError } from "../testing/resilience.js";
 import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY } from "../testing/run.js";
 import { TokenCounter, runUsage } from "../testing/usage.js";
@@ -159,7 +159,7 @@ export async function reviewCommand(
     const withFindings = judged.filter((ofCall) => ofCall.length > 0).length;
     const found = judged.flat();
     if (found.length > 0) progress(`Sorting ${found.length} finding(s) into patterns.`);
-    const { patterns, notes } = await groupFindings({ llm: judge, findings: found, judged: judged.length });
+    const { patterns, notes } = await groupFindingsWith({ llm: judge, findings: found, judged: judged.length });
 
     const notAsked = (lacks: (call: ReviewCall) => boolean, { questions, of }: (typeof NOT_ASKED)[keyof typeof NOT_ASKED]) => {
       const count = calls.filter(lacks).length;

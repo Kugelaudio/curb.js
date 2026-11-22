@@ -1,5 +1,5 @@
 import type { AgentLlmClient } from "../agent-session.js";
-import { BUILT_IN_CHECKS, builtInChecks, expectContext, hangUpCheck } from "./checks.js";
+import { BUILT_IN_CHECKS, builtInChecks, expectContext } from "./checks.js";
 import { judgeConversation, type JudgeAnswer, type JudgeResult } from "./judge.js";
 import type { Assessment, ConversationRecord, RunError } from "./record.js";
 import { describeProviderError } from "./resilience.js";
@@ -38,14 +38,7 @@ export async function assessConversation(params: {
 }): Promise<Assessment> {
   const { record, settings } = params;
   const { turns, ending, caller } = record;
-  const checks = builtInChecks({
-    turns,
-    endedBy: ending.by,
-    ...(ending.reason === undefined ? {} : { stopReason: ending.reason }),
-    unsaid: ending.unsaid,
-    maxTurns: ending.maxTurns,
-  });
-  if (caller) checks.push(hangUpCheck(ending.by, ending.caller, turns));
+  const checks = builtInChecks(record);
 
   let error = brokenRun(record);
   let judged: JudgeResult | null = null;

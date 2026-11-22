@@ -83,7 +83,7 @@ const ALL_PAGES = [
   { id: 'providers/elevenlabs', file: 'providers/elevenlabs.md', title: 'elevenlabs', group: 'API Reference', parent: 'providers', description: "Use ElevenLabs speech-to-text and text-to-speech on your own servers." },
   { id: 'providers/cartesia', file: 'providers/cartesia.md', title: 'cartesia', group: 'API Reference', parent: 'providers', description: "Use Cartesia text-to-speech, with its key in CARTESIA_API_KEY." },
   { id: 'client', file: 'client.md', title: 'Client', group: 'API Reference', description: "curb/client: the browser side of a call, for your own page." },
-  { id: 'testing-api', file: 'testing-api.md', title: 'Testing', group: 'API Reference', description: "curb/testing: the scenario function, its checks and the caller personas." },
+  { id: 'testing-api', file: 'testing-api.md', title: 'Testing', group: 'API Reference', description: "curb/testing: scenarios, and the functions they are built from: startCall, testModel, judge, report and the rest." },
   { id: 'test-runs', file: 'test-runs.md', title: 'Saved test runs', group: 'API Reference', description: "The file every curb test writes: its conversations as JSON, and how curb test --rejudge checks them again." },
   { id: 'orchestration-api', file: 'orchestration-api.md', title: 'Orchestration', group: 'API Reference', description: "curb/orchestration: server-only exports for scripts." },
   { id: 'configuration', file: 'configuration.md', title: 'Configuration', group: 'API Reference', description: "Every environment variable Curb reads, and the package.json settings." },

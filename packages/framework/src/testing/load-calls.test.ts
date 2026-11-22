@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { record, ran, turn } from "../test-fixtures/conversations.js";
-import { callsIn } from "./review-calls.js";
+import { callsIn } from "./load-calls.js";
 
 const spoken = (text: string) => callsIn("call.md", text)!.calls[0]!.turns.map((entry) => [entry.turn, entry.caller, entry.reply]);
 

@@ -83,7 +83,7 @@ export class Throttle {
   private sentAtSlowDown = 0;
   private waits = 0;
   private waitedMs = 0;
-  private slowDown: (() => void) | null = null;
+  private readonly slowDown = new Set<() => void>();
   readonly now: () => number;
 
   /** `now` stands in for the clock in tests. */
@@ -91,9 +91,11 @@ export class Throttle {
     this.now = now;
   }
 
-  /** Have `listener` called each time the run should do less at once: once per burst of rate limits. */
-  onSlowDown(listener: () => void): void {
-    this.slowDown = listener;
+  /** Have `listener` called each time the run should do less at once: once per burst of rate
+   * limits. Returns the function that stops it. */
+  onSlowDown(listener: () => void): () => void {
+    this.slowDown.add(listener);
+    return () => void this.slowDown.delete(listener);
   }
 
   /** No request is sent for `ms` from now: the backoff after an error that is no rate limit. */
@@ -121,7 +123,7 @@ export class Throttle {
     this.sentAtSlowDown = this.sent;
     this.waits += 1;
     this.spacingMs = Math.min(MAX_SPACING_MS, Math.max(FIRST_SPACING_MS, this.spacingMs * 2));
-    this.slowDown?.();
+    for (const listener of [...this.slowDown]) listener();
   }
 
   /** Milliseconds until the pause is over. */

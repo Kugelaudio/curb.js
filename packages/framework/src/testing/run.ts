@@ -14,8 +14,13 @@ import { aggregateScenario, scenarioRun, type ScenarioResult, type ScenarioRun }
 import { assessConversation, assessmentSettings } from "./assess.js";
 import { askCallerAfterHangUp, nextCallerLine } from "./caller.js";
 import { fallbackLineIn, type ScenarioEndedBy } from "./checks.js";
-import type { CallerEnding, ConversationRecord, EndState, RecordedTool, SavedConversation, SavedScenarioSettings, TestModels } from "./record.js";
+import type { CallerEnding, ScenarioRecord, EndState, RecordedTool, SavedConversation, SavedScenarioSettings, TestModels } from "./record.js";
 import { describeProviderError } from "./resilience.js";
+import { installFakes, playOpening, playTurn, scenarioTurn, endStateOf, type PlayedTurn } from "./call.js";
+import { RunSlots } from "./parallel.js";
+
+export { installFakes, playOpening, playTurn, toolCallsOf, type InstalledFakes, type PlayedTurn } from "./call.js";
+export { RunSlots } from "./parallel.js";
 import {
   DEFAULT_MAX_TURNS,
   toolResultProblem,
@@ -123,103 +128,6 @@ export function scenarioSessionId(file: string, name: string): string {
   return `scenario:${file}:${name}`;
 }
 
-/** What one turn of a call did on a text route: the words the caller heard, the errors, the
- * transcript messages it added, and how the caller's words answered an action waiting for
- * their yes (null when none waited). */
-export type PlayedTurn = {
-  reply: string;
-  errors: ScenarioTurnError[];
-  messages: AgentChatMessage[];
-  confirmation: ScenarioConfirmation | null;
-  /** The LLM steps the turn took. */
-  steps: number;
-};
-
-/** One spoken turn on the session, as a call runs it: the caller's line, or (`synthetic`) the
- * framework's own input. */
-export async function playTurn(session: AgentSession, text: string, kind?: "synthetic", spoken = true): Promise<PlayedTurn> {
-  const before = session.messages.length;
-  const stepsBefore = session.llmTrace.length;
-  // The caller's line answers the action waiting for their yes, if one waits; framework input never does.
-  const pending = kind ? null : session.pendingConfirmation;
-  const errors: ScenarioTurnError[] = [];
-  let reply = "";
-  for await (const event of session.runTurnStream(text, { spoken, ...(kind ? { kind } : {}) })) {
-    if (event.type === "error") errors.push({ kind: event.error.kind, message: event.error.message });
-    else if (event.type === "done") reply = event.reply;
-  }
-  const messages = session.messages.slice(before);
-  return {
-    reply,
-    errors,
-    messages,
-    confirmation: pending && confirmationIn(messages, pending, text.trim()),
-    steps: session.llmTrace.length - stepsBefore,
-  };
-}
-
-/**
- * How the session took `answer` as the caller's answer to `pending`, read from what it recorded:
- * the call a yes made, or the note a no or an unclear answer left the model. Null when it did
- * not take it as one (the turn was cancelled before the check).
- */
-function confirmationIn(
-  messages: readonly AgentChatMessage[],
-  pending: PendingConfirmation,
-  answer: string,
-): ScenarioConfirmation | null {
-  const taken = (verdict: ConfirmationVerdict, ran = false): ScenarioConfirmation => ({
-    tool: pending.toolName,
-    readBack: pending.readBack,
-    answer,
-    verdict,
-    ran,
-  });
-  for (const message of messages) {
-    if (message.role === "assistant") {
-      const yes = message.toolCalls?.find((call) => call.confirmedBy !== undefined);
-      // A yes to a tool that left the context meanwhile runs nothing.
-      if (yes) return taken("yes", yes.invalid === undefined);
-    } else if (message.role === "user" && message.kind === "context_event") {
-      if (message.content === declinedNote(pending, answer)) return taken("no");
-      if (message.content === unclearNote(pending, answer)) return taken("unclear");
-    }
-  }
-  return null;
-}
-
-/** Fakes in place of their tools on a runtime (see {@link installFakes}). */
-export type InstalledFakes = {
-  /** Whether a fake, not the tool, gave `result`. */
-  gave: (result: ToolResult | null) => boolean;
-  /** The faked tools no call reached: none got past the input check. */
-  unused: () => string[];
-};
-
-/**
- * Put `fakes` in place of their tools on `runtime` (`AgentSiteRuntime.fakeTools`). Each result a
- * fake gives is a copy of its own, so a transcript can tell a faked call from a real one. A
- * function fake that returns no tool result fails the call, as a tool's own bug does.
- */
-export function installFakes(runtime: AgentSiteRuntime, fakes: Readonly<Record<string, ScenarioFake>>): InstalledFakes {
-  const given = new WeakSet<ToolResult>();
-  const used = new Set<string>();
-  const fake = (tool: string, answer: ScenarioFake): ToolFake => async (input) => {
-    used.add(tool);
-    const returned: unknown = typeof answer === "function" ? await answer(input) : answer;
-    const problem = toolResultProblem(returned);
-    if (problem) throw new Error(`The fake for ${tool} returned no tool result: ${problem}.`);
-    const result = { ...(returned as ToolResult) };
-    given.add(result);
-    return result;
-  };
-  runtime.fakeTools(Object.fromEntries(Object.entries(fakes).map(([tool, answer]) => [tool, fake(tool, answer)])));
-  return {
-    gave: (result) => result !== null && given.has(result),
-    unused: () => Object.keys(fakes).filter((tool) => !used.has(tool)),
-  };
-}
-
 /** A tool call as `curb test` and `curb say` print it: held, faked, ok, or refused with the reason. */
 export function toolCallLine(call: ScenarioToolCall): string {
   const input = JSON.stringify(call.input);
@@ -235,38 +143,6 @@ export function confirmationLine({ tool, answer, verdict, ran }: ScenarioConfirm
   return `[confirmation ${verdict}] ${JSON.stringify(answer)}: ${tool} ${outcome}`;
 }
 
-/**
- * What a call does before the caller's first words, on a text route (`curb test`, `curb say`), as
- * the voice host does it (`call-opening.ts`): the greeting the model writes for `firstTurn:
- * "agent"`, else the session's fixed line (`firstTurn: { say }`), with no model call. Null when
- * the caller speaks first. Set the session info (`client.*`) first: the opening reads it.
- */
-export async function playOpening(
-  session: AgentSession,
-  firstTurn: AgentFirstTurn | undefined,
-): Promise<PlayedTurn | null> {
-  if (firstTurn === "agent") {
-    // The prompt a call opens with; loaded only here, its module brings in LiveKit's runtime.
-    const { AGENT_FIRST_TURN_PROMPT } = await import("../server/voice/livekit-host/call-opening.js");
-    return playTurn(session, AGENT_FIRST_TURN_PROMPT, "synthetic");
-  }
-  const before = session.messages.length;
-  let line: string | null;
-  try {
-    line = session.open();
-  } catch (error) {
-    // A `say` function that returned no line: the call goes on without it, as a voice call does.
-    return {
-      reply: "",
-      errors: [{ kind: "failed", message: describe(error) }],
-      messages: session.messages.slice(before),
-      confirmation: null,
-      steps: 0,
-    };
-  }
-  return line === null ? null : { reply: line, errors: [], messages: session.messages.slice(before), confirmation: null, steps: 0 };
-}
-
 export type { ScenarioResult, ScenarioRun } from "./aggregate.js";
 
 /** Conversations in flight at once when nothing says otherwise, and the most that may be asked for. */
@@ -275,50 +151,6 @@ export const MAX_CONCURRENCY = 16;
 /** The share of a scenario's runs that may be errors before the scenario itself is one: one run
  * in three, so that a single provider hiccup does not void a scenario that runs three times. */
 export const DEFAULT_MAX_ERROR_RATE = 0.34;
-
-/**
- * How many conversations may be in flight at once. One is shared by every scenario of a
- * `curb test`, so `--concurrency` bounds the whole run: scenarios wait for a slot like the
- * runs of one scenario do, first come first served.
- */
-export class RunSlots {
-  private slots: number;
-  private taken = 0;
-  private readonly waiting: Array<() => void> = [];
-
-  constructor(limit: number = DEFAULT_CONCURRENCY) {
-    this.slots = limit;
-  }
-
-  /** How many conversations may be in flight now. */
-  get limit(): number {
-    return this.slots;
-  }
-
-  /** Halve the slots, down to one, for the rest of the run: the provider said to slow down.
-   * Conversations in flight go on; the next ones wait until there is room under the new limit. */
-  lower(): number {
-    this.slots = Math.max(1, Math.floor(this.slots / 2));
-    return this.slots;
-  }
-
-  /** Run `task` once a slot is free, and free the slot when it settles. */
-  async run<T>(task: () => Promise<T>): Promise<T> {
-    // Behind whoever waits already; a waiting task is handed its slot by the one that frees it.
-    if (this.taken < this.slots && this.waiting.length === 0) this.taken += 1;
-    else await new Promise<void>((resolve) => this.waiting.push(resolve));
-    try {
-      return await task();
-    } finally {
-      this.taken -= 1;
-      // Not while more are in flight than the limit, lowered meanwhile, allows.
-      while (this.taken < this.slots && this.waiting.length > 0) {
-        this.taken += 1;
-        this.waiting.shift()!();
-      }
-    }
-  }
-}
 
 /** The LLMs that play the caller and judge one run. */
 export type RunLlms = { caller: AgentLlmClient; judge: AgentLlmClient };
@@ -395,7 +227,7 @@ export async function runScenario(params: {
   const { scenario } = params;
   const settings = scenarioSettings(params);
   const maxErrorRate = params.maxErrorRate ?? DEFAULT_MAX_ERROR_RATE;
-  const slots = params.slots ?? new RunSlots();
+  const slots = params.slots ?? new RunSlots(DEFAULT_CONCURRENCY);
   const createBundle = params.createBundle ?? (() => Promise.resolve(params.bundle!));
   if (!params.createBundle && settings.runs > 1) {
     throw new Error(`curb: scenario "${params.name}" runs ${settings.runs} times and needs a bundle for each: pass createBundle.`);
@@ -461,7 +293,7 @@ async function playConversation(params: {
   bundle: ScenarioBundle;
   caller: AgentLlmClient;
   onTurn?: (turn: ScenarioTurn) => void;
-}): Promise<ConversationRecord> {
+}): Promise<ScenarioRecord> {
   const started = performance.now();
   const startedAt = new Date().toISOString();
   const { scenario, bundle } = params;
@@ -602,72 +434,6 @@ async function callerAfterHangUp(
     // KEEP-JUSTIFIED: no answer IS the answer "the caller did not say"; the hang-up check reports it.
     return null;
   }
-}
-
-/** The agent's state as the conversation left it; null when the runtime cannot show it. */
-function endStateOf(runtime: AgentSiteRuntime): EndState | null {
-  try {
-    const { context, stateSnapshot } = runtime.snapshot();
-    const stores = Object.fromEntries(Object.entries(snapshotAgentStores(runtime).stores).map(([key, saved]) => [key, saved.values]));
-    return { stores, context: stateSnapshot, skillPath: context.path };
-  } catch {
-    // KEEP-JUSTIFIED: a runtime with no context IS the answer "no state"; state() says so when asked.
-    return null;
-  }
-}
-
-/** One turn as the report shows it: the reply as the caller heard it, the tool calls, the errors. */
-function scenarioTurn(
-  runtime: AgentSiteRuntime,
-  played: PlayedTurn,
-  caller: string | null,
-  number: number,
-  fakes: InstalledFakes | null,
-): ScenarioTurn {
-  const { reply, errors, messages, confirmation } = played;
-  const toolCalls = toolCallsOf(messages, fakes?.gave);
-  return {
-    turn: number,
-    caller,
-    reply,
-    fallback: fallbackLineIn(reply),
-    confirmation,
-    toolCalls,
-    errors,
-    contextDiff: messages.flatMap((message) => (message.role === "tool" ? message.contextDiff : [])),
-    skillPath: runtime.snapshot().context.path,
-    skipped: toolCalls.some((call) => call.name === SKIP_TURN_TOOL_NAME && call.ok),
-    endedCall: false,
-    steps: played.steps,
-  };
-}
-
-/** The tool calls among a turn's messages, each with its result; `faked` tells which results a
- * fake gave (see {@link installFakes}). */
-export function toolCallsOf(
-  messages: readonly AgentChatMessage[],
-  faked?: (result: ToolResult | null) => boolean,
-): ScenarioToolCall[] {
-  const results = new Map<string, ToolResult>();
-  for (const message of messages) {
-    if (message.role === "tool") results.set(message.toolCallId, message.result);
-  }
-  return messages.flatMap((message) =>
-    message.role === "assistant"
-      ? (message.toolCalls ?? []).map((call) => {
-          const result = results.get(call.id) ?? null;
-          return {
-            name: call.name,
-            input: call.input,
-            ok: result?.ok === true,
-            result,
-            // A `<Tool confirm>` call held for the caller's yes carries its read-back.
-            ...(call.heldFor === undefined ? {} : { heldFor: call.heldFor }),
-            ...(faked?.(result) ? { faked: true as const } : {}),
-          };
-        })
-      : [],
-  );
 }
 
 function describe(error: unknown): string {

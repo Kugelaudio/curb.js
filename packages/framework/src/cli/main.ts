@@ -1,13 +1,11 @@
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { DECLARATIONS_COMMAND, runDeclarationsChild } from "../bundler/declarations-child.js";
 import { isLayerEscapeError, LAYER_ESCAPE_EXIT_CODE, layerEscapeLine } from "../bundler/layer-escape.js";
 import { resolveAgentDir, resolveProjectRoot } from "../project.node.js";
 import { curbVersion } from "../version.js";
 import { applyPortFlag, wantsHelp } from "./args.js";
-import type { StoredProjectKey } from "./cloud/credentials.js";
-import { keepHostModelKeyFresh, useHostModelKey } from "./cloud/host-model-key.js";
-import { PROJECT_KEY_VARIABLE, useLoginKey } from "./cloud/project-key.js";
+import { PROJECT_KEY_VARIABLE } from "./cloud/project-key.js";
+import { prepareProject } from "./prepare-project.js";
 import { runUpgrade } from "./upgrade.js";
 
 const USAGE = `Usage: curb <command>
@@ -93,27 +91,6 @@ if (process.argv[2] === "help" || wantsHelp(process.argv.slice(2))) {
                 : USAGE;
   process.stdout.write(`${usage}\n`, () => process.exit(0));
   await new Promise(() => {});
-}
-
-/**
- * Validate the working directory as a project, load its .env, and export the
- * root to every framework host started in this process (server, preview). With no
- * KUGELAUDIO_API_KEY in the environment or .env, the project runs on the key `curb login`
- * stored for it (`loginKey`, the stored key when it did), else on the model key a host
- * supplies beside its platform token (a hosted workspace), kept current while it runs.
- */
-function prepareProject(): { projectRoot: string; loginKey: StoredProjectKey | null } {
-  const projectRoot = resolveProjectRoot();
-  process.env.AGENT_PROJECT_DIR = projectRoot;
-  resolveAgentDir(projectRoot);
-  const envFile = join(projectRoot, ".env");
-  if (existsSync(envFile)) process.loadEnvFile(envFile);
-  const loginKey = useLoginKey(projectRoot);
-  if (!loginKey) {
-    useHostModelKey();
-    keepHostModelKeyFresh();
-  }
-  return { projectRoot, loginKey };
 }
 
 async function dev(): Promise<void> {

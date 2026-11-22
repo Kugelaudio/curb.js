@@ -128,3 +128,14 @@ export function styleLine(style: StyleReport): string {
 export function styleLimitLine(result: StyleLimitResult): string {
   return `${result.metric} is ${plain(result.value)}, ${result.pass ? "within" : "above"} the limit of ${result.limit}`;
 }
+
+/**
+ * How the agent talks across conversations, counted from their transcripts: words per reply
+ * (p50, p90), the share of replies that end on a question or open or close with a sentence the
+ * agent already used, whether every call ends on the same goodbye, model steps per turn and
+ * refused tool calls per conversation. `limits` holds the highest value accepted per number;
+ * each one set is in `limits` of the result with whether it held. No model is asked.
+ */
+export function styleNumbers(records: readonly StyledConversation[], limits: StyleLimits = {}): StyleReport {
+  return styleReport(records, limits);
+}

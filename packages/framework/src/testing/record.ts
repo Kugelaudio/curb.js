@@ -1,9 +1,16 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { resolveProjectRoot } from "../project.node.js";
+import { curbVersion } from "../version.js";
+import { CALLER_PROMPT_VERSION } from "./caller.js";
 import type { ScenarioEndedBy } from "./checks.js";
-import type { JudgeResult } from "./judge.js";
+import type { TestModels } from "./host.js";
+import { JUDGE_PROMPT_VERSION, type JudgeResult } from "./judge.js";
 import type { JudgeFinding, ScenarioCaller, ScenarioCheck, ScenarioTurn, StyleLimits } from "./scenario.js";
 import type { RunUsage } from "./usage.js";
+
+export type { TestModels } from "./host.js";
 
 /**
  * The conversation record: everything about one finished conversation that a check, the judge
@@ -13,8 +20,9 @@ import type { RunUsage } from "./usage.js";
  *
  * Nothing in a record's `turns`, `ending` or `endState` is specific to a scenario: a turn is
  * the caller's words, what the agent said and the tool calls with their inputs and results.
- * A conversation from the preview or a hosted call's transcript fits the same shape, with a
- * `source` of its own, which is how they can be checked by the same code later.
+ * A call `startCall` played, a conversation of the preview and a hosted call's transcript fit
+ * the same shape, each with a `source` of its own (`loadCalls` reads them), so every check and
+ * judge reads them all.
  */
 
 /** What the simulated caller said about the end of the call (see `caller.ts`). */
@@ -29,7 +37,8 @@ export type CallerEnding = {
 
 /** How a conversation ended, as code: who ended it, at which point, and what the caller said. */
 export type ConversationEnding = {
-  by: ScenarioEndedBy;
+  /** Null when the source does not say who ended the call. */
+  by: ScenarioEndedBy | null;
   /** Why it stopped, for `error` and `simulator`. */
   reason?: string;
   /** Scripted caller lines that were never said. */
@@ -56,17 +65,28 @@ export type EndState = {
 /** A tool the agent was offered during the conversation, as the judge needs it. */
 export type RecordedTool = { name: string; description: string };
 
+/** Where a conversation comes from: a scenario of `curb test`, a call `startCall` played, or a
+ * source `loadCalls` read (the `curb dev` store, a Calls export, a written transcript). */
+export type ConversationSource = "scenario" | "call" | "dev" | "calls-export" | "transcript";
+
+/** The scenario a conversation of `curb test` ran, and which of its runs it is, from 1. */
+export type ScenarioRef = { name: string; file: string; mode: "scripted" | "simulated"; run: number };
+
 export type ConversationRecord = {
   format: "curb.conversation";
   version: 1;
-  /** Where the conversation comes from. `curb test` writes "scenario". */
-  source: "scenario";
-  scenario: { name: string; file: string; mode: "scripted" | "simulated"; run: number };
-  /** The simulated caller as the scenario defined it; null for a scripted one. */
+  source: ConversationSource;
+  /** How a report names the call, where its source names it: a Calls export's call id, a
+   * conversation of the `curb dev` store, a saved run's scenario and run. */
+  id?: string;
+  /** The scenario, on a conversation of `curb test`. */
+  scenario?: ScenarioRef;
+  /** The simulated caller as it was defined; null for scripted lines and any other caller. */
   caller: ScenarioCaller | null;
   /** The variant the call had in each of the agent's experiments. */
   experiments: Record<string, string>;
-  startedAt: string;
+  /** Null when the source does not say. */
+  startedAt: string | null;
   durationMs: number;
   turns: ScenarioTurn[];
   /** Every tool of the agent's that the model was offered at some point of the conversation,
@@ -79,6 +99,9 @@ export type ConversationRecord = {
   unusedFakes: string[];
   /** Tokens the agent and the caller used; the judge's are added when it has answered. */
   usage: RunUsage | null;
+  /** False when the source does not record the agent's tool calls (a Calls export, a written
+   * transcript): a turn without one says nothing about the tools. */
+  recordsToolCalls?: false;
 };
 
 /** What a run came to. An error is a run that says nothing about the agent: it is left out of
@@ -114,8 +137,16 @@ export type Assessment = {
   judge: JudgeResult | null;
 };
 
-/** A conversation as a run file holds it: the record, and what was made of it when it was saved. */
-export type SavedConversation = ConversationRecord & { assessment: Assessment };
+/** A conversation of `curb test` as a run file holds it: the record of a scenario's run, and what
+ * was made of it when it was saved. */
+export type SavedConversation = ScenarioRecord & { assessment: Assessment };
+
+/** The record of one run of a scenario: its scenario, its start and who ended it always known. */
+export type ScenarioRecord = ConversationRecord & {
+  scenario: ScenarioRef;
+  startedAt: string;
+  ending: ConversationEnding & { by: ScenarioEndedBy };
+};
 
 /** What a scenario asked of its runs, saved with them so a re-judge can apply the same. */
 export type SavedScenarioSettings = {
@@ -129,10 +160,11 @@ export type SavedScenarioSettings = {
   style: StyleLimits;
 };
 
-/** Which model played each part, as `provider:model`; null where the host did not say. */
-export type TestModels = { agent: string | null; caller: string | null; judge: string | null };
+/** The version of the agent a run played: the project's git commit, and whether the files of
+ * the project differed from it. */
+export type AgentVersion = { commit: string; dirty: boolean };
 
-/** One `curb test` invocation on disk. */
+/** One `curb test` invocation, or one `saveRun`, on disk. */
 export type SavedTestRun = {
   format: "curb.test-run";
   version: 1;
@@ -140,6 +172,9 @@ export type SavedTestRun = {
   createdAt: string;
   /** The curb version that wrote it. */
   curb: string;
+  /** The version of the agent it played; null outside a git repository. Absent in runs saved
+   * before it was recorded. */
+  agentVersion?: AgentVersion | null;
   /** False while scenarios are still running, or when the run was cut short. */
   complete: boolean;
   /** The run whose conversations these are, when this is a re-judge of it. */
@@ -147,10 +182,19 @@ export type SavedTestRun = {
   models: TestModels;
   callerPromptVersion: string;
   judgePromptVersion: string;
-  maxErrorRate: number;
+  /** The share of a scenario's runs that may be errors (`curb test`); null for a run that
+   * `saveRun` wrote without one. */
+  maxErrorRate: number | null;
   scenarios: SavedScenarioSettings[];
   conversations: SavedConversation[];
 };
+
+/** A conversation as a run file holds it, under the scenario it belongs to. `curb test` saves each
+ * with its assessment; `saveRun` saves one only when it is given the checks. */
+export type RunConversation = ConversationRecord & { scenario: ScenarioRef; assessment?: Assessment };
+
+/** A saved run, `curb.test-run`, of `curb test` or of `saveRun`. */
+export type TestRun = Omit<SavedTestRun, "conversations"> & { conversations: RunConversation[] };
 
 /** Saved runs kept per project; older ones are deleted when a new one is written. */
 export const KEPT_TEST_RUNS = 20;
@@ -177,7 +221,7 @@ export function testRunPath(id: string): string {
  * delete all but the newest {@link KEPT_TEST_RUNS}. The file is written beside its place and
  * moved in, so a reader never finds half of one.
  */
-export function saveTestRun(projectRoot: string, run: SavedTestRun): void {
+export function saveTestRun(projectRoot: string, run: TestRun): void {
   const directory = join(projectRoot, TEST_RUNS_DIR);
   mkdirSync(directory, { recursive: true });
   const file = runFile(projectRoot, run.id);
@@ -239,4 +283,103 @@ export function loadTestRun(projectRoot: string, which: string): SavedTestRun {
   if (run.version !== 1) throw unreadable(`it is version ${String(run.version)} of the format, and this is version 1`);
   if (!Array.isArray(run.conversations) || !Array.isArray(run.scenarios)) throw unreadable("it holds no conversations");
   return run as SavedTestRun;
+}
+
+/**
+ * The version of the agent in `projectRoot`: the git commit checked out, and whether the
+ * project's files differ from it. Null outside a git repository, and where git cannot tell.
+ */
+export function agentVersionOf(projectRoot: string): AgentVersion | null {
+  const git = (...args: string[]) => execFileSync("git", ["-C", projectRoot, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  try {
+    const commit = git("rev-parse", "HEAD").trim();
+    if (!/^[0-9a-f]{7,64}$/.test(commit)) return null;
+    // The project's own files: a change elsewhere in a larger repository is another agent's.
+    return { commit, dirty: git("status", "--porcelain", "--", ".").trim() !== "" };
+  } catch {
+    // KEEP-JUSTIFIED: no repository, no commit or no git IS the answer "no version"; the run says null.
+    return null;
+  }
+}
+
+/** What `saveRun` writes beyond the conversations: any field of the run file, and where. */
+export type SaveRunOptions = Partial<Omit<SavedTestRun, "format" | "version" | "conversations">> & {
+  /** The scenario name conversations without one are saved under. Default: "conversations". */
+  name?: string;
+  /** Each conversation's checks, in the order of the conversations: saved as its assessment,
+   * a pass when every check passed (one that is `reportOnly` or `notJudged` fails nothing). */
+  checks?: ReadonlyArray<readonly ScenarioCheck[] | undefined>;
+  /** The project to save into. Default: the project this process runs. */
+  root?: string;
+};
+
+/** A check that counts against the agent: it failed, and it is neither report-only nor unjudged. */
+const failed = (check: ScenarioCheck) => !check.pass && !check.reportOnly && !check.notJudged;
+
+/**
+ * Save conversations as a run, `.curb/test-runs/<id>.json`, which `curb test --rejudge` checks
+ * again and `curb review` reads. A conversation without a scenario is saved as a run of one
+ * named `options.name`; one from `curb test` keeps its own. Giving an earlier run's `id` replaces
+ * that run's file. The newest {@link KEPT_TEST_RUNS} runs are kept. Returns the run as written
+ * and its path, relative to the project.
+ */
+export function saveRun(
+  records: ReadonlyArray<ConversationRecord & { assessment?: Assessment }>,
+  options: SaveRunOptions = {},
+): { run: TestRun; path: string } {
+  const { name = "conversations", checks, root = resolveProjectRoot(), ...fields } = options;
+  const now = new Date();
+  const conversations = records.map((record, index): RunConversation => {
+    const { format, version, source, scenario, ...rest } = record;
+    const given = checks?.[index];
+    const assessment: Assessment | undefined =
+      given === undefined ? record.assessment : { outcome: given.some(failed) ? "fail" : "pass", checks: [...given], notes: [], judge: null };
+    return {
+      format,
+      version,
+      source,
+      scenario: scenario ?? { name, file: "", mode: record.caller ? "simulated" : "scripted", run: index + 1 },
+      ...rest,
+      ...(assessment === undefined ? {} : { assessment }),
+    };
+  });
+  const scenarios = fields.scenarios ?? groupsOf(conversations);
+  const run: TestRun = {
+    format: "curb.test-run",
+    version: 1,
+    id: fields.id ?? newTestRunId(now),
+    createdAt: fields.createdAt ?? now.toISOString(),
+    curb: fields.curb ?? curbVersion(),
+    agentVersion: fields.agentVersion === undefined ? agentVersionOf(root) : fields.agentVersion,
+    complete: fields.complete ?? true,
+    ...(fields.rejudgedFrom === undefined ? {} : { rejudgedFrom: fields.rejudgedFrom }),
+    models: fields.models ?? { agent: null, caller: null, judge: null },
+    callerPromptVersion: fields.callerPromptVersion ?? CALLER_PROMPT_VERSION,
+    judgePromptVersion: fields.judgePromptVersion ?? JUDGE_PROMPT_VERSION,
+    maxErrorRate: fields.maxErrorRate ?? null,
+    scenarios,
+    conversations,
+  };
+  saveTestRun(root, run);
+  return { run, path: testRunPath(run.id) };
+}
+
+/** One scenario entry per scenario the conversations ran, with the settings a re-judge applies
+ * to a scenario that is not in the project: none of its own. */
+function groupsOf(conversations: readonly RunConversation[]): SavedScenarioSettings[] {
+  const groups = new Map<string, SavedScenarioSettings>();
+  for (const { scenario } of conversations) {
+    const key = `${scenario.file}\n${scenario.name}`;
+    const group = groups.get(key) ?? { name: scenario.name, file: scenario.file, mode: scenario.mode, runs: 0, minPassRate: 1, expectations: [], failOn: [], style: {} };
+    group.runs += 1;
+    if (scenario.mode === "simulated") group.mode = "simulated";
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+/** A saved run: `which` is "latest" (the default), a run's id, or the path of its file. Throws,
+ * naming the runs there are, when it does not exist. */
+export function loadRun(which = "latest", options: { root?: string } = {}): TestRun {
+  return loadTestRun(options.root ?? resolveProjectRoot(), which);
 }

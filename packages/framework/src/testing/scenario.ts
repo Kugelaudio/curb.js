@@ -156,8 +156,9 @@ export type ScenarioEvidence = {
 
 /** One named result. `detail` says what was found, always when the check failed. A check a judge
  * answered carries its `evidence`. A check that needs the judge and did not get an answer is
- * `notJudged`: it did not pass, and it says nothing against the agent either. */
-export type ScenarioCheck = { name: string; pass: boolean; detail?: string; evidence?: ScenarioEvidence; notJudged?: true };
+ * `notJudged`: it did not pass, and it says nothing against the agent either. A `reportOnly`
+ * check is shown and counted and fails nothing. */
+export type ScenarioCheck = { name: string; pass: boolean; detail?: string; evidence?: ScenarioEvidence; notJudged?: true; reportOnly?: true };
 
 /** A tool call an `expect` helper looks for: the tool's name, or the name with the input the call
  * must have. */
@@ -433,7 +434,8 @@ function preview(value: unknown): string {
   return JSON.stringify(value) ?? String(value);
 }
 
-function callerProblems(caller: unknown): string[] {
+/** What is wrong with `caller` as a simulated caller, one entry per problem. */
+export function callerProblems(caller: unknown): string[] {
   if (!isRecord(caller)) return ['caller must be an object: { goal: "...", knows: "..." }.'];
   const problems = unknownFields(caller, CALLER_FIELDS, "caller");
   const { goal, knows, language, persona, behaviours } = caller;

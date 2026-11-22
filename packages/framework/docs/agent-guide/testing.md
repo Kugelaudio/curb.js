@@ -229,7 +229,8 @@ the saved conversation go to stderr, so stdout carries only the result.
 ## 3. `curb test`: do whole conversations work?
 
 `curb say` plays one turn at a time; `curb test` plays whole conversations and
-says pass or fail. A scenario is a file ending in `.scenario.ts` anywhere under
+says pass or fail. It is built from public functions of `curb/testing` (`startCall`, `judge` and
+the rest, in the [Testing API](./testing-api.md)), which a test of your own can use too. A scenario is a file ending in `.scenario.ts` anywhere under
 `src/`, for example next to the skill it tests:
 
 ```ts
