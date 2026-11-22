@@ -364,6 +364,13 @@ test("every project ships a workflow that runs curb check and curb test on pull 
     assert.match(workflow, /KUGELAUDIO_API_KEY: \$\{\{ secrets\.KUGELAUDIO_API_KEY \}\}/);
     assert.match(workflow, /run: npx curb check\n/);
     assert.match(workflow, /run: npx curb test\n/);
+    // A missing secret fails a pull request from the repository itself and a run started by hand;
+    // a fork's pull request, which gets no secrets, runs only curb check.
+    assert.match(
+      workflow,
+      /if: env\.KUGELAUDIO_API_KEY == '' && \(github\.event_name == 'workflow_dispatch' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\)\n {8}run: \|\n {10}echo "::error::KUGELAUDIO_API_KEY is not set[^"]*"\n {10}exit 1\n/,
+    );
+    assert.match(workflow, /# run: npx curb test --caller-model openai:gpt-5\.4-mini --judge-model openai:gpt-5\.4-mini\n/);
     // Third-party actions are pinned to a commit, and no checkout leaves its token behind.
     const uses = [...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]);
     assert.ok(uses.length >= 2);

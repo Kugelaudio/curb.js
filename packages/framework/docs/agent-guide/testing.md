@@ -913,8 +913,9 @@ A scenario file that cannot be loaded is reported as
 ### In CI
 
 A new project ships `.github/workflows/curb-test.yml`: it runs `curb check` and
-`curb test` on every pull request, once the repository has the agent's LLM key
-as a secret (`KUGELAUDIO_API_KEY` by default). Each scenario says how often it
+`curb test` on every pull request, and fails with an error that says so while the
+repository lacks the agent's LLM key as a secret (`KUGELAUDIO_API_KEY` by default);
+a pull request from a fork gets no secrets and runs only `curb check`. Each scenario says how often it
 runs and how many runs must pass (`runs`, `minPassRate`). On GitHub Actions the
 report is also written to the job summary (`GITHUB_STEP_SUMMARY`), and
 `--report <file>` writes the same Markdown to a file anywhere.

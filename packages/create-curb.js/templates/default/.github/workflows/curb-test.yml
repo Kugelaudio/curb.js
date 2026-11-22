@@ -5,8 +5,9 @@ name: curb test
 # Secrets and variables > Actions), an API key from the KugelAudio dashboard. An agent on
 # another provider needs that provider's key here instead, under the name its .env uses.
 #
-# A pull request from a fork gets no secrets, so the scenarios are skipped there and only
-# `curb check` runs.
+# Without that secret the job fails on a pull request from this repository and on a run started
+# by hand, so a missing key never passes as green. A pull request from a fork gets no secrets, so
+# the scenarios are skipped there and only `curb check` runs.
 
 on:
   pull_request:
@@ -28,6 +29,11 @@ jobs:
       # CPU binaries ship in npm; this skips a download the tests do not need.
       ONNXRUNTIME_NODE_INSTALL: skip
     steps:
+      - name: The API key secret is set
+        if: env.KUGELAUDIO_API_KEY == '' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        run: |
+          echo "::error::KUGELAUDIO_API_KEY is not set, so curb test cannot run the scenarios. Add it as a repository secret: Settings > Secrets and variables > Actions."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -41,3 +47,7 @@ jobs:
       - name: npx curb test
         if: env.KUGELAUDIO_API_KEY != ''
         run: npx curb test
+        # To take the simulated caller and the judge off the agent's provider, run them on OpenAI
+        # with OPENAI_API_KEY as a repository secret: replace the run line above with these two.
+        # env: { OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}" }
+        # run: npx curb test --caller-model openai:gpt-5.4-mini --judge-model openai:gpt-5.4-mini
