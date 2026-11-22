@@ -186,7 +186,19 @@ describe("a deadline per attempt", () => {
     expect(signals[0]).not.toBe(signals[1]);
     expect(signals[0]?.aborted).toBe(false);
     expect(failure).toBeInstanceOf(ProviderError);
-    expect((failure as Error).message).toBe("The operation was aborted due to timeout");
+    expect((failure as Error).message).toBe("The operation was aborted due to timeout (no answer within 20 ms)");
+  });
+
+  it("holds the retries of a request to its one deadline: a provider that fails slowly is not tried for minutes", async () => {
+    const time = clock();
+    const client = failing(Array.from({ length: 4 }, () => apiError(503, "Service unavailable")));
+
+    const failure = await withRetries(client, { ...time, baseDelayMs: 1000, timeoutMs: 5000 })(request).catch((error: unknown) => error);
+
+    // Pauses of one and two seconds fit into the five; the third, of four, would not.
+    expect(client).toHaveBeenCalledTimes(3);
+    expect(time.pauses).toEqual([1000, 2000]);
+    expect((failure as Error).message).toBe("HTTP 503: Service unavailable (no answer within 5 s)");
   });
 
   it("leaves the request's own signal as it is when no deadline is set", async () => {
@@ -195,6 +207,76 @@ describe("a deadline per attempt", () => {
     const sent = { ...request, signal: controller.signal };
     await withRetries(client)(sent);
     expect(client).toHaveBeenCalledWith(sent);
+  });
+});
+
+describe("a provider that keeps timing out", () => {
+  /** A client that never answers: only the deadline of its attempt ends it. */
+  function silent() {
+    return vi.fn<AgentLlmClient>(
+      (sent) => new Promise((_resolve, reject) => sent.signal!.addEventListener("abort", () => reject(sent.signal!.reason))),
+    );
+  }
+
+  it("is sent nothing more after two rounds in a row: the next request fails at once, and counts as given up", async () => {
+    const throttle = new Throttle();
+    const onGiveUp = vi.fn();
+    const client = silent();
+    const send = withRetries(client, { throttle, timeoutMs: 30, onGiveUp });
+
+    // Two requests in flight together wait on the same silence: one round.
+    const first = await Promise.allSettled([send(request), send(request)]);
+    expect(first.map((settled) => settled.status)).toEqual(["rejected", "rejected"]);
+    expect(throttle.notAnsweringFor()).toBeNull();
+    await expect(send(request)).rejects.toThrow("The operation was aborted due to timeout (no answer within 30 ms)");
+
+    const refused = await send(request).catch((error: unknown) => error);
+
+    expect(refused).toBeInstanceOf(ProviderError);
+    expect((refused as Error).message).toBe("not sent: the provider did not answer within 30 ms, 2 times in a row");
+    expect(client).toHaveBeenCalledTimes(3);
+    expect(onGiveUp).toHaveBeenCalledTimes(4);
+  });
+
+  it("counts afresh once the provider answers, and is sent requests again a deadline later", async () => {
+    const throttle = new Throttle();
+    let answering = false;
+    const client = vi.fn<AgentLlmClient>((sent) =>
+      answering
+        ? Promise.resolve({ text: "Hello.", toolCalls: [] })
+        : new Promise((_resolve, reject) => sent.signal!.addEventListener("abort", () => reject(sent.signal!.reason))),
+    );
+    const send = withRetries(client, { throttle, timeoutMs: 20 });
+
+    await expect(send(request)).rejects.toThrow("no answer within 20 ms");
+    answering = true;
+    await expect(send(request)).resolves.toMatchObject({ text: "Hello." });
+    answering = false;
+    await expect(send(request)).rejects.toThrow("no answer within 20 ms");
+    // One round since the answer: still sent.
+    expect(throttle.notAnsweringFor()).toBeNull();
+    await expect(send(request)).rejects.toThrow("no answer within 20 ms");
+    expect(throttle.notAnsweringFor()).toBe(20);
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    answering = true;
+    await expect(send(request)).resolves.toMatchObject({ text: "Hello." });
+    expect(throttle.notAnsweringFor()).toBeNull();
+  });
+
+  it("is not what a rate limit is: waiting for one fails nothing, however long the provider asks", async () => {
+    const time = clock();
+    const client = failing([
+      apiError(429, "Rate limit reached", { "Retry-After": "90" }),
+      apiError(429, "Rate limit reached", { "Retry-After": "90" }),
+      apiError(429, "Rate limit reached", { "Retry-After": "90" }),
+    ]);
+
+    const response = await withRetries(client, { ...time, timeoutMs: 60_000 })(request);
+
+    expect(response.text).toBe("Hello.");
+    expect(time.pauses).toEqual([90_000, 90_000, 90_000]);
+    expect(time.throttle.notAnsweringFor()).toBeNull();
   });
 });
 

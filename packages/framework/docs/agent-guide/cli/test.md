@@ -39,6 +39,7 @@ npx curb test --rejudge latest --judge-model openai:gpt-5.2
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | A provider that keeps timing out ends the run within about two deadlines, and a scenario with too many errors to be assessed starts no more runs |
 | v1.25.0 | A scenario's own findings, notes, checks across runs (`across runs:`) and a caller function are reported |
 | v1.25.0 | Repeated runs with rates, the judge's findings, style numbers, saved runs and `--rejudge`, a Markdown report, and exit code 2 |
 | v1.4.33 | `curb test` introduced |

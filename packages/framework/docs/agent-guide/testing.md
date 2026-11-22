@@ -764,7 +764,7 @@ agent, so it is left out of the pass rate:
 
 | Error | What happened |
 | --- | --- |
-| `provider` | a request to the agent's LLM failed after the retries, or timed out |
+| `provider` | a request to the agent's LLM failed after the retries, or got no answer within its deadline (`AGENT_LLM_TIMEOUT_MS`, 60 s, retries included); after two such rounds in a row the next requests fail at once |
 | `simulator` | the simulated caller could not say its next line |
 | `simulator_loop` | the caller said the same line three times in a row while the agent's replies moved on |
 | `invented_fact` | the caller said a fact that is not in `knows` |
@@ -777,7 +777,8 @@ error that is the agent's own (the step limit, an empty reply) is a failure.
 Errors cannot hide a problem: when more than a third of a scenario's runs are
 errors (one run in three is allowed), or none completed,
 the scenario is `ERROR` and `curb test` exits 2. A run that failed still counts: a scenario
-with failures below its `minPassRate` fails, however many errors it has.
+with failures below its `minPassRate` fails, however many errors it has. Once more than a third
+of the runs a scenario plans are errors, its other runs are not started, and its report says so.
 
 ### Style numbers
 

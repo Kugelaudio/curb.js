@@ -365,6 +365,37 @@ describe("curb test, repeated and saved runs", () => {
     expect(printed).toMatch(/\n0 of 1 scenario\(s\) passed in \d+\.\ds\. Not assessed \(too many errors\): hello \(src\/agent\/hello\.scenario\.ts\)\n$/);
   });
 
+  it("starts no more runs of a scenario that has too many errors to be assessed, and says so", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const root = project({
+      "src/agent/hello.scenario.ts": `import { scenario } from "curb/testing";
+export default scenario({ turns: ["Hi"], runs: 5, expect: ({ said }) => [said("hello")] });
+`,
+    });
+    let gaveUp = 0;
+    const { host, stats } = tasksHost({
+      agent: () => [],
+      agentLlm: () => async () => {
+        gaveUp += 1;
+        throw new Error("The operation was aborted due to timeout (no answer within 60 s)");
+      },
+      providerErrors: () => gaveUp,
+    });
+
+    const { code, printed } = await run(["--concurrency", "1", "--json"], root, host);
+
+    expect(code).toBe(2);
+    const [result] = (JSON.parse(printed) as TestReport).scenarios as ScenarioResult[];
+    // Two errors of five runs are more than the 34% a scenario may have: three runs never start.
+    expect(stats.bundles).toBe(2);
+    expect(result.stats).toMatchObject({ runs: 5, ran: 2, errors: 2 });
+    expect(result.outcome).toBe("error");
+    expect(result.notes).toContain(
+      "3 of 5 run(s) not started: 2 error(s) already, more than the 34% of its runs a scenario may have, so it cannot be assessed",
+    );
+    expect(savedRun(root).conversations).toHaveLength(2);
+  });
+
   /** Scripted scenarios that each say one line, and an agent that takes `ms(line)` to answer it. */
   function timedHost(ms: (line: string) => number) {
     const flight = { now: 0, most: 0 };

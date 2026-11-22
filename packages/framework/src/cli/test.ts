@@ -33,7 +33,17 @@ import {
   type ScenarioReport,
   type TestReport,
 } from "./scenarios/report.js";
-import { DEFAULT_CONCURRENCY, DEFAULT_MAX_ERROR_RATE, MAX_CONCURRENCY, playRun, scenarioSettings, summarizeScenario, uncoveredVariants } from "./scenarios/run.js";
+import {
+  DEFAULT_CONCURRENCY,
+  DEFAULT_MAX_ERROR_RATE,
+  MAX_CONCURRENCY,
+  cannotBeAssessed,
+  notStartedNote,
+  playRun,
+  scenarioSettings,
+  summarizeScenario,
+  uncoveredVariants,
+} from "./scenarios/run.js";
 import type { ExperimentDeclaration, SavedConversation, SavedScenarioSettings, TestModels, ThrottleStats } from "./scenarios/types.js";
 import { runUsage, sumUsage } from "./scenarios/usage.js";
 
@@ -401,6 +411,8 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
   type Job = { index: number; run: number };
   const jobs: Job[] = [];
   const left: number[] = [];
+  /** The runs of each scenario that were not started: it had too many errors to be assessed. */
+  const notStarted: number[] = [];
   const declaredOf: Array<readonly ExperimentDeclaration[]> = [];
   for (const [index, entry] of selected.entries()) {
     printed.write(index, `\n--- ${entry.name} (${entry.file})\n`);
@@ -414,6 +426,7 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
     conversationsOf[index] = [];
     declaredOf[index] = [];
     left[index] = settingsOf[index].runs;
+    notStarted[index] = 0;
     for (let at = 0; at < settingsOf[index].runs; at += 1) jobs.push({ index, run: at });
   }
   const done = new Set<number>();
@@ -433,19 +446,22 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
       const settings = settingsOf[index]!;
       const once = settings.runs === 1;
       const write = (text: string) => printed.write(index, text);
-      const conversation = await playRun({
-        scenario: entry.scenario,
-        name: entry.name,
-        file: entry.file,
-        host,
-        ...choice,
-        run: at,
-        onCall: (call) => void (models = { ...models, agent: models.agent ?? call.model }),
-        onDeclared: (declared) => void (declaredOf[index] = declared),
-        ...(once ? { onTurn: (turn: ScenarioTurn) => write(formatTurn(turn)) } : {}),
-      });
-      conversationsOf[index]!.push(conversation);
-      if (!once) write(formatRunLine(scenarioRun(conversation), settings.runs));
+      if (cannotBeAssessed(conversationsOf[index]!, settings.runs, DEFAULT_MAX_ERROR_RATE)) notStarted[index]! += 1;
+      else {
+        const conversation = await playRun({
+          scenario: entry.scenario,
+          name: entry.name,
+          file: entry.file,
+          host,
+          ...choice,
+          run: at,
+          onCall: (call) => void (models = { ...models, agent: models.agent ?? call.model }),
+          onDeclared: (declared) => void (declaredOf[index] = declared),
+          ...(once ? { onTurn: (turn: ScenarioTurn) => write(formatTurn(turn)) } : {}),
+        });
+        conversationsOf[index]!.push(conversation);
+        if (!once) write(formatRunLine(scenarioRun(conversation), settings.runs));
+      }
       left[index]! -= 1;
       if (left[index]! > 0) return;
 
@@ -457,7 +473,10 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
         conversations: conversationsOf[index]!,
         maxErrorRate: DEFAULT_MAX_ERROR_RATE,
         durationMs: Math.round(performance.now() - runsStarted),
-        notes: uncoveredVariants(declaredOf[index]!, entry.scenario, conversationsOf[index]!.map((saved) => saved.experiments)),
+        notes: [
+          ...notStartedNote(conversationsOf[index]!, settings.runs, notStarted[index]!, DEFAULT_MAX_ERROR_RATE),
+          ...uncoveredVariants(declaredOf[index]!, entry.scenario, conversationsOf[index]!.map((saved) => saved.experiments)),
+        ],
       });
       write(once ? formatChecks(result) : formatRepeated(result));
       reports[index] = result;

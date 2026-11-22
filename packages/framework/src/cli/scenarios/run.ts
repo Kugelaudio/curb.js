@@ -33,6 +33,21 @@ export const MAX_CONCURRENCY = 16;
  * in three, so that a single provider hiccup does not void a scenario that runs three times. */
 export const DEFAULT_MAX_ERROR_RATE = 0.34;
 
+/** Whether a scenario's runs so far hold more errors than `maxErrorRate` allows of its `runs`:
+ * however its other runs end, it cannot be assessed, so they are not started. */
+export function cannotBeAssessed(conversations: readonly SavedConversation[], runs: number, maxErrorRate: number): boolean {
+  return conversations.filter((conversation) => conversation.assessment.outcome === "error").length > maxErrorRate * runs;
+}
+
+/** The note of a scenario whose last `notStarted` runs were not started ({@link cannotBeAssessed}); none when all ran. */
+export function notStartedNote(conversations: readonly SavedConversation[], runs: number, notStarted: number, maxErrorRate: number): string[] {
+  if (notStarted === 0) return [];
+  const errors = conversations.filter((conversation) => conversation.assessment.outcome === "error").length;
+  return [
+    `${notStarted} of ${runs} run(s) not started: ${errors} error(s) already, more than the ${Math.round(maxErrorRate * 100)}% of its runs a scenario may have, so it cannot be assessed`,
+  ];
+}
+
 /** How often a scenario runs: its own `runs`, which `requested` (`curb test --runs`) overrides
  * for a simulated caller. Scripted lines say the same words every time and run once unless the
  * scenario itself asks for more. */
@@ -127,7 +142,9 @@ export async function playRun(
 /**
  * Run one scenario: each run a conversation of its own on a fresh agent of `host`, `concurrency`
  * at a time, each assessed as it ends, all summed up into one result. Every run that was asked
- * for runs. `curb test` plays the runs of all its scenarios through one `inParallel` instead.
+ * for runs, unless so many were errors that the scenario cannot be assessed
+ * ({@link cannotBeAssessed}). `curb test` plays the runs of all its scenarios through one
+ * `inParallel` instead.
  */
 export async function runScenario(
   params: ScenarioRunParams & {
@@ -145,9 +162,15 @@ export async function runScenario(
   const settings = scenarioSettings(params);
   let declared: readonly ExperimentDeclaration[] = [];
   const conversations: SavedConversation[] = [];
+  const maxErrorRate = params.maxErrorRate ?? DEFAULT_MAX_ERROR_RATE;
+  let notStarted = 0;
   await inParallel(
     Array.from({ length: settings.runs }, (_, run) => run),
     async (run) => {
+      if (cannotBeAssessed(conversations, settings.runs, maxErrorRate)) {
+        notStarted += 1;
+        return;
+      }
       const conversation = await playRun({
         ...params,
         run,
@@ -165,9 +188,12 @@ export async function runScenario(
     ...(params.judgeModel === undefined ? {} : { judgeModel: params.judgeModel }),
     settings,
     conversations,
-    maxErrorRate: params.maxErrorRate ?? DEFAULT_MAX_ERROR_RATE,
+    maxErrorRate,
     durationMs: Math.round(performance.now() - started),
-    notes: uncoveredVariants(declared, params.scenario, conversations.map((conversation) => conversation.experiments)),
+    notes: [
+      ...notStartedNote(conversations, settings.runs, notStarted, maxErrorRate),
+      ...uncoveredVariants(declared, params.scenario, conversations.map((conversation) => conversation.experiments)),
+    ],
   });
 }
 

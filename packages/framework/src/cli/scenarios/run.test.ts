@@ -842,4 +842,32 @@ describe("provider errors", () => {
     expect(await play()).toMatchObject({ outcome: "fail", stats: { errors: 0, failed: 1 } });
     vi.restoreAllMocks();
   });
+
+  it("leave the other runs of a scenario unstarted once it cannot be assessed", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let bundles = 0;
+    let gaveUp = 0;
+    const result = await runScenario({
+      scenario: scenario({ turns: ["Hi"], runs: 3 }),
+      name: "hello",
+      file: "src/agent/hello.scenario.ts",
+      createBundle: async () => {
+        bundles += 1;
+        const { runtime, session } = tasksBundle(async () => {
+          gaveUp += 1;
+          throw new Error("HTTP 529: overloaded");
+        });
+        return { runtime, session, providerErrors: () => gaveUp };
+      },
+      simulator: unused,
+      slots: new RunSlots(1),
+    });
+
+    expect(bundles).toBe(2);
+    expect(result).toMatchObject({ outcome: "error", stats: { runs: 3, ran: 2, errors: 2 } });
+    expect(result.notes).toContain(
+      "1 of 3 run(s) not started: 2 error(s) already, more than the 34% of its runs a scenario may have, so it cannot be assessed",
+    );
+    vi.restoreAllMocks();
+  });
 });
