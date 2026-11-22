@@ -208,8 +208,8 @@ describe("curb review", () => {
     const { host, stats } = reviewHost(
       (call): Answers => ({ called_for: { answer: "yes", turn: 1, quote: "Please move", reason: reasons[call]! } }),
       () => "",
-      // 3 is in two topics, so in neither; 9 names no scenario.
-      () => JSON.stringify({ topics: [{ topic: "Move an appointment", reasons: [1, 3], scenarios: [2, 9] }, { topic: "Cancel an appointment", reasons: [2], scenarios: [] }, { topic: "Opening hours", reasons: [3], scenarios: [1] }] }),
+      // 3 is in two topics, so in both; 4 names no reason; 9 names no scenario.
+      () => JSON.stringify({ topics: [{ topic: "Move an appointment", reasons: [1, 3, 4], scenarios: [2, 9] }, { topic: "Cancel an appointment", reasons: [], scenarios: [] }, { topic: "Opening hours", reasons: [3], scenarios: [1] }] }),
     );
 
     const { printed } = await review(["calls.jsonl", "--json"], root, host);
@@ -222,8 +222,9 @@ describe("curb review", () => {
     ]);
     expect((JSON.parse(printed) as ReviewReport).coverage).toEqual({
       topics: [
-        { topic: "Move an appointment", calls: 1, share: 1 / 3, scenarios: ["moves an appointment"] },
-        { topic: "Cancel an appointment", calls: 1, share: 1 / 3, scenarios: [] },
+        // A call that wanted two things counts under both; one in no topic is under "Other reasons".
+        { topic: "Move an appointment", calls: 2, share: 2 / 3, scenarios: ["moves an appointment"] },
+        { topic: "Opening hours", calls: 1, share: 1 / 3, scenarios: ["opening hours"] },
         { topic: "Other reasons", calls: 1, share: 1 / 3, scenarios: [] },
       ],
       unclear: 0,

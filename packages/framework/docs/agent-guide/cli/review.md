@@ -95,7 +95,8 @@ Read it before you commit it.
 
 **What callers called about** sorts the `called_for` answers into topics with one more request,
 and marks each topic with the scenarios whose caller wants it (by its goal, its lines or its name),
-or `no scenario`. A topic with many calls and no scenario is the next scenario to write.
+or `no scenario`. A call that wanted two things counts under both topics, so the shares can add up
+to more than 100%. A topic with many calls and no scenario is the next scenario to write.
 
 With `--json` the same is one object:
 
