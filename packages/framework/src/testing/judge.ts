@@ -1,8 +1,10 @@
 import type { AgentLlmClient } from "../agent-session.js";
 import { request } from "./caller.js";
 import type { ScenarioEndedBy } from "./checks.js";
-import type { RecordedTool } from "./record.js";
-import { JUDGE_FINDINGS, type JudgeFinding, type ScenarioCaller, type ScenarioToolCall, type ScenarioTurn } from "./scenario.js";
+import { clientOf, testModel } from "./model.js";
+import type { ConversationRecord, RecordedTool } from "./record.js";
+import { describeProviderError } from "./resilience.js";
+import { JUDGE_FINDINGS, type JudgeFinding, type ScenarioCaller, type ScenarioCheck, type ScenarioToolCall, type ScenarioTurn } from "./scenario.js";
 
 /**
  * The judge: one LLM call per conversation that answers a fixed list of questions about it,
@@ -375,3 +377,98 @@ function evidenceIn(turns: readonly ScenarioTurn[], turn: unknown, quote: unknow
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+/** What the built-in judge looks for in a conversation, in one sentence each, by id: data, to
+ * spread, extend or leave out of what `judge` is asked. */
+export const FINDINGS: Readonly<Record<JudgeFinding, string>> = JUDGE_FINDINGS;
+
+/** One thing a judge found on one call: its kind, the turn and the words of the agent's that show
+ * it, and why. */
+export type Finding = { call: string; kind: string; turn: number | null; quote: string; reason: string };
+
+/** A model the judge asks: a `testModel`, or any function of the same shape. */
+type JudgeModel = ((system: string, input: string) => Promise<string>) & { readonly model?: string | null };
+
+/** The judge's answers about one conversation, and its yes answers to the findings as findings. */
+export type Judgement = JudgeResult & { findings: Finding[] };
+
+/** How a report names a conversation: its id, else its scenario and run. */
+export function callName(record: Pick<ConversationRecord, "id" | "scenario">): string {
+  return record.id ?? (record.scenario ? `${record.scenario.name} run ${record.scenario.run}` : "call");
+}
+
+/**
+ * The questions for one conversation: the goal of a simulated caller, the findings of the
+ * built-in list that `findings` holds with their built-in sentence (each asked as the built-in
+ * judge asks it), the expectations, then every other finding in its order.
+ */
+function questionsOf(caller: ScenarioCaller | null, findings: Readonly<Record<string, string>>, expectations: readonly string[] | Readonly<Record<string, string>>): JudgeQuestion[] {
+  const builtIn = (id: string) => Object.hasOwn(FINDING_QUESTIONS, id) && findings[id] === JUDGE_FINDINGS[id as JudgeFinding];
+  const listed = Array.isArray(expectations)
+    ? expectations.map((text, index): JudgeQuestion => ({ id: `expectation_${index + 1}`, kind: "expectation", text }))
+    : Object.entries(expectations).map(([id, text]): JudgeQuestion => ({ id, kind: "expectation", text }));
+  return [
+    ...judgeQuestions(caller, []).filter((question) => question.kind === "goal" || (Object.hasOwn(findings, question.id) && builtIn(question.id))),
+    ...listed,
+    ...Object.entries(findings).flatMap(([id, text]): JudgeQuestion[] => (builtIn(id) ? [] : [{ id, kind: "finding", text }])),
+  ];
+}
+
+/**
+ * The judge on one conversation: one request that answers every question about it with yes, no
+ * or unknown, the turn that shows it and a quote of that turn held to the transcript. It asks
+ * whether a simulated caller reached its goal, each of `findings` (default {@link FINDINGS}; a
+ * yes with a quote is a finding), and each of `expectations` (sentences that are true of a good
+ * call, as a list or by id). `model` defaults to `testModel()`. Rejects, in one line without the
+ * provider's response, when the judge cannot be asked or its answer cannot be read twice.
+ */
+export async function judge(
+  record: ConversationRecord,
+  options: { findings?: Readonly<Record<string, string>>; expectations?: readonly string[] | Readonly<Record<string, string>>; model?: JudgeModel } = {},
+): Promise<Judgement> {
+  const model: JudgeModel = options.model ?? (await testModel());
+  const questions = questionsOf(record.caller, options.findings ?? FINDINGS, options.expectations ?? []);
+  let result: JudgeResult;
+  try {
+    result = await judgeConversation({
+      llm: clientOf(model),
+      conversation: { turns: record.turns, endedBy: record.ending.by, caller: record.caller, ...(record.tools ? { tools: record.tools } : {}) },
+      questions,
+      model: model.model ?? null,
+    });
+  } catch (error) {
+    throw new Error(describeProviderError(error));
+  }
+  const call = callName(record);
+  const findings = result.answers.flatMap((answer): Finding[] =>
+    answer.kind === "finding" && answer.answer === "yes" && answer.quote !== null
+      ? [{ call, kind: answer.id, turn: answer.turn, quote: answer.quote, reason: answer.reason }]
+      : [],
+  );
+  return { ...result, findings };
+}
+
+/** The version of the judge's prompt, which every result carries. */
+judge.promptVersion = JUDGE_PROMPT_VERSION;
+
+/**
+ * One question of your own about a conversation, answered like an expectation: a check named
+ * after it that fails on a no, passes on a yes, and passes on an unknown with a detail that says
+ * so, with the turn and quote the judge gave. A judge that cannot be asked gives a check that is
+ * `notJudged`.
+ */
+export async function ask(record: ConversationRecord, question: string, options: { model?: JudgeModel } = {}): Promise<ScenarioCheck> {
+  let judged: Judgement;
+  try {
+    // Only the question: no goal, no finding.
+    judged = await judge({ ...record, caller: null }, { ...options, findings: {}, expectations: { question } });
+  } catch (error) {
+    return { name: question, pass: false, detail: `not judged: ${error instanceof Error ? error.message : String(error)}`, notJudged: true };
+  }
+  const answer = judged.answers.find((candidate) => candidate.id === "question")!;
+  const evidence = { answer: answer.answer, turn: answer.turn, quote: answer.quote };
+  // An unknown says neither yes nor no: not judged, so it neither passes nor fails.
+  if (answer.answer === "unknown") return { name: question, pass: false, detail: `unknown: ${answer.reason}`, evidence, notJudged: true };
+  return { name: question, pass: answer.answer === "yes", detail: answer.reason, evidence };
+}
+

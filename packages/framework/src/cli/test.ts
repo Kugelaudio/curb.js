@@ -1,24 +1,25 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentLlmClient } from "../agent-session.js";
-import { experimentDeclarations } from "../experiments.js";
-import type { AgentModelUsage } from "../llm/ai-sdk.js";
-import { anthropic, kugelaudio, openai, type KugelaudioLlmModel, type LlmDescriptor } from "../providers.js";
-import { aggregateScenario } from "../testing/aggregate.js";
-import { assessConversation, assessmentSettings } from "../testing/assess.js";
-import { ANSWER_TIMEOUT_MS, CALLER_PROMPT_VERSION } from "../testing/caller.js";
-import { JUDGE_PROMPT_VERSION } from "../testing/judge.js";
 import {
-  loadTestRun,
-  newTestRunId,
-  saveTestRun,
-  testRunPath,
-  type SavedConversation,
-  type SavedScenarioSettings,
-  type SavedTestRun,
-  type TestModels,
-} from "../testing/record.js";
+  inParallel,
+  loadRun,
+  projectHost,
+  saveRun,
+  scenario as accepted,
+  simulatedCaller,
+  judge,
+  testModel,
+  type Scenario,
+  type ScenarioDefinition,
+  type ScenarioTurn,
+  type TestHost,
+  type TestRun,
+} from "../testing/index.js";
+import { routeConsoleToStderr } from "./headless-project.js";
+import { aggregateScenario, scenarioRun, type ScenarioResult } from "./scenarios/aggregate.js";
+import { assessConversation, assessmentSettings } from "./scenarios/assess.js";
+import { runsProblem } from "./scenarios/limits.js";
 import {
   TEST_EXIT_CODES,
   formatChecks,
@@ -31,36 +32,13 @@ import {
   testOutcome,
   type ScenarioReport,
   type TestReport,
-} from "../testing/report.js";
-import { Throttle, withRetries, withStreamRetries } from "../testing/resilience.js";
-import {
-  DEFAULT_CONCURRENCY,
-  DEFAULT_MAX_ERROR_RATE,
-  MAX_CONCURRENCY,
-  RunSlots,
-  runScenario,
-  scenarioSettings,
-  type ScenarioBundle,
-  type ScenarioResult,
-} from "../testing/run.js";
-import {
-  isScenario,
-  runsProblem,
-  scenario as accepted,
-  type Scenario,
-  type ScenarioDefinition,
-  type ScenarioTurn,
-} from "../testing/scenario.js";
-import { TokenCounter, runUsage, sumUsage } from "../testing/usage.js";
-import { curbVersion } from "../version.js";
-import {
-  diagnosticsNote,
-  disableConversationRecording,
-  dropDiagnosticLogs,
-  routeConsoleToStderr,
-} from "./headless-project.js";
+} from "./scenarios/report.js";
+import { DEFAULT_CONCURRENCY, DEFAULT_MAX_ERROR_RATE, MAX_CONCURRENCY, playRun, scenarioSettings, uncoveredVariants } from "./scenarios/run.js";
+import type { ExperimentDeclaration, SavedConversation, SavedScenarioSettings, TestModels, ThrottleStats } from "./scenarios/types.js";
+import { runUsage, sumUsage } from "./scenarios/usage.js";
 
-export type { LoadFailure, ScenarioReport, TestReport } from "../testing/report.js";
+export type { TestHost } from "../testing/index.js";
+export type { LoadFailure, ScenarioReport, TestReport } from "./scenarios/report.js";
 
 export const TEST_USAGE = `Usage: curb test [<filter>] [options]
 
@@ -121,12 +99,6 @@ Add one, for example src/agent/first-call.scenario.ts:
   });
 
 Scenarios are described in node_modules/curb/docs/agent-guide/testing.md.`;
-
-/**
- * The small, fast model of each provider that plays the caller and judges its goal. They run
- * on the agent's own provider, whose key the project already has.
- */
-export const SIMULATION_MODELS = { anthropic: "claude-haiku-5-5", openai: "gpt-5.4-mini" } as const;
 
 export type TestArgs = {
   filter: string;
@@ -215,65 +187,6 @@ export function parseTestArgs(args: readonly string[]): TestArgs {
   };
 }
 
-/** Which of the two parts a simulation model plays. */
-export type SimulatorRole = "caller" | "judge";
-
-/** What `curb test` runs scenarios on: the project's agent and LLM provider (fakes in tests). */
-export type TestHost = {
-  /** A fresh runtime + session for the project's agent, built the way a call builds them. */
-  createBundle(): Promise<ScenarioBundle>;
-  /** The LLM that plays the caller or judges the call, for an agent whose LLM is `llm`.
-   * `onUsage` hears the tokens each of its requests used. */
-  simulator(llm: LlmDescriptor, role: SimulatorRole, onUsage: (usage: AgentModelUsage) => void): AgentLlmClient;
-  /** Which model plays each part, for the report. Throws when one has no key in this process. */
-  models?(llm: LlmDescriptor): TestModels;
-  /** What every request of this host shares about its provider's rate limit. The command has
-   * it lower the run's concurrency, and reports how long the run waited. */
-  throttle?: Throttle;
-};
-
-/** The model the simulated caller and the judge use for an agent on `llm`. KugelAudio and an
- * OpenAI-compatible endpoint serve only what they serve, so there it is the agent's own model. */
-export function simulationLlm(llm: LlmDescriptor): LlmDescriptor {
-  switch (llm.provider) {
-    case "anthropic":
-      return anthropic(SIMULATION_MODELS.anthropic);
-    case "openai":
-      return openai(SIMULATION_MODELS.openai);
-    case "kugelaudio":
-    case "openai-compatible":
-      return llm;
-  }
-}
-
-/**
- * The model `spec` names (`--caller-model`, `--judge-model`), for an agent on `llm`:
- * `<provider>:<model>` with openai, anthropic or kugelaudio, else a model of the agent's own
- * provider and endpoint. Without a spec, {@link simulationLlm}.
- */
-export function modelFor(spec: string | undefined, llm: LlmDescriptor): LlmDescriptor {
-  const named = spec?.trim();
-  if (!named) return simulationLlm(llm);
-  const [, provider, model] = /^(openai|anthropic|kugelaudio):(.+)$/.exec(named) ?? [];
-  const on = provider ?? llm.provider;
-  const id = model ?? named;
-  switch (on) {
-    case "openai":
-      return openai(id);
-    case "anthropic":
-      return anthropic(id);
-    case "kugelaudio":
-      return kugelaudio.llm({ model: id as KugelaudioLlmModel });
-    default:
-      return llm.provider === "openai-compatible" ? { ...llm, options: { ...llm.options, model: id } } : llm;
-  }
-}
-
-/** A model as a result names it: `provider:model`. */
-export function modelLabel(llm: LlmDescriptor): string {
-  return `${llm.provider}:${llm.options.model}`;
-}
-
 type LoadedScenario = { name: string; file: string; scenario: Scenario } | { name: string; file: string; error: string };
 
 /** Every `*.scenario.ts` under the project's src/, as sorted paths relative to the project. */
@@ -323,11 +236,13 @@ async function loadScenarios(projectRoot: string, file: string): Promise<LoadedS
   });
 }
 
-const NO_MODELS: TestModels = { agent: null, caller: null, judge: null };
+/** Whether `value` is what `scenario()` returned: it marks each with this registry symbol, so a
+ * scenario is recognised whichever copy of `curb/testing` made it. */
+function isScenario(value: unknown): value is Scenario {
+  return typeof value === "object" && value !== null && (value as Record<symbol, unknown>)[Symbol.for("curb.scenario")] === true;
+}
 
-/** How long a test session waits for one LLM request. Far beyond any single answer: the host's
- * retries hold each attempt to the real deadline, and a rate limit may take minutes to lift. */
-const SESSION_PATIENCE_MS = 60 * 60_000;
+const NO_MODELS: TestModels = { agent: null, caller: null, judge: null };
 
 /** What one `curb test` invocation runs with: the arguments, with the defaults filled in. */
 type TestRunOptions = TestArgs & { concurrency: number };
@@ -357,7 +272,7 @@ export async function testCommand(
   try {
     const loaded: LoadedScenario[] = [];
     for (const file of files) loaded.push(...(await loadScenarios(projectRoot, file)));
-    const host = () => options.host ?? projectHost(run);
+    const host = () => options.host ?? projectHost();
     const session = { projectRoot, run, out, loaded, started, env };
     return run.rejudge === undefined ? await runScenarios(session, host) : await rejudge(session, run.rejudge, host);
   } finally {
@@ -407,11 +322,23 @@ function inScenarioOrder<T>(byIndex: ReadonlyArray<T | undefined>): T[] {
   return byIndex.filter((entry): entry is T => entry !== undefined);
 }
 
+/** The fields of every run file this invocation writes, beyond its conversations. */
+type RunFields = { id?: string; createdAt?: string; agentVersion?: TestRun["agentVersion"] };
+
+/** Save the run so far (`saveRun`), and keep what makes a later save replace the same file. */
+function saveSoFar(session: TestSession, fields: RunFields, run: Parameters<typeof saveRun>[1], conversations: readonly SavedConversation[]): string {
+  const saved = saveRun(conversations, { ...run, ...fields, maxErrorRate: DEFAULT_MAX_ERROR_RATE, root: session.projectRoot });
+  Object.assign(fields, { id: saved.run.id, createdAt: saved.run.createdAt, agentVersion: saved.run.agentVersion ?? null });
+  return saved.path;
+}
+
 /**
  * Play the selected scenarios, as many conversations at a time as `--concurrency` allows across
- * all of them, report each in the scenarios' order, and save the run after each one.
+ * all of them, report each in the scenarios' order, and save the run after each one. Every run
+ * of every scenario is one item of one `inParallel`: `playRun` plays it (`startCall`, `converse`,
+ * the checks and the judge), and a scenario is summed up once its last run is in.
  */
-async function runScenarios(session: TestSession, hostOf: () => TestHost | Promise<TestHost>): Promise<number> {
+async function runScenarios(session: TestSession, hostOf: () => TestHost): Promise<number> {
   const { run, out, loaded } = session;
   const selected = loaded.filter((entry) => matches(run.filter, entry));
   if (selected.length === 0) {
@@ -421,116 +348,134 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost | Promi
     return TEST_EXIT_CODES.fail;
   }
 
-  const host = await hostOf();
-  const slots = hostSlots(host, run.concurrency);
-  const saved = newSavedRun();
+  const host = hostOf();
+  const before = host.throttle?.stats();
+  const choice = { ...(run.callerModel === undefined ? {} : { callerModel: run.callerModel }), ...(run.judgeModel === undefined ? {} : { judgeModel: run.judgeModel }) };
   const printed = inOrder(run.json ? () => {} : out, selected.length);
   const reports: ScenarioReport[] = [];
   const settingsOf: Array<SavedScenarioSettings | undefined> = [];
   const conversationsOf: Array<SavedConversation[] | undefined> = [];
+  const fields: RunFields = {};
+  let models = NO_MODELS;
+  let savedTo: string | null = null;
 
-  // Every bundle is the same agent, so the first one says which LLM it runs on. It is built
+  // Every agent is the same, so the first one says which LLM the models run beside. It is built
   // before any header (the first build logs the agent's authoring diagnostics, to stderr), and
-  // the first run takes it.
-  let spare: ScenarioBundle | null = selected.some((entry) => "scenario" in entry) ? await host.createBundle() : null;
-  const llm = spare?.runtime.settings.current().llm;
-  if (llm) saved.models = host.models?.(llm) ?? NO_MODELS;
-  const createBundle = () => {
-    const first = spare;
-    spare = null;
-    return first ? Promise.resolve(first) : host.createBundle();
-  };
+  // the first run takes it. A model without a key is refused here, before any run.
+  if (selected.some((entry) => "scenario" in entry)) {
+    const caller = await testModel({ host, role: "caller", ...(choice.callerModel === undefined ? {} : { model: choice.callerModel }) });
+    const judging = await testModel({ host, role: "judge", ...(choice.judgeModel === undefined ? {} : { model: choice.judgeModel }) });
+    models = { agent: null, caller: caller.model, judge: judging.model };
+  }
 
-  const play = async (entry: LoadedScenario, index: number): Promise<ScenarioReport> => {
-    const write = (text: string) => printed.write(index, text);
-    write(`\n--- ${entry.name} (${entry.file})\n`);
+  type Job = { index: number; run: number };
+  const jobs: Job[] = [];
+  const left: number[] = [];
+  const declaredOf: Array<readonly ExperimentDeclaration[]> = [];
+  for (const [index, entry] of selected.entries()) {
+    printed.write(index, `\n--- ${entry.name} (${entry.file})\n`);
     if ("error" in entry) {
-      write(`FAIL ${entry.name}: ${entry.error}\n`);
-      return { ...entry, passed: false };
+      printed.write(index, `FAIL ${entry.name}: ${entry.error}\n`);
+      reports[index] = { ...entry, passed: false };
+      printed.finish(index);
+      continue;
     }
-    const settings = scenarioSettings({ scenario: entry.scenario, name: entry.name, file: entry.file, runs: run.runs });
-    const once = settings.runs === 1;
-    const conversations: SavedConversation[] = [];
-    const result = await runScenario({
-      scenario: entry.scenario,
-      name: entry.name,
-      file: entry.file,
-      createBundle,
-      llms: (onUsage) => ({
-        caller: host.simulator(llm!, "caller", (usage) => onUsage("caller", usage)),
-        judge: host.simulator(llm!, "judge", (usage) => onUsage("judge", usage)),
-      }),
-      runs: run.runs,
-      slots,
-      models: saved.models,
-      ...(once ? { onTurn: (turn: ScenarioTurn) => write(formatTurn(turn)) } : {}),
-      onRun: (finished, conversation) => {
-        conversations.push(conversation);
-        if (!once) write(formatRunLine(finished, settings.runs));
-      },
-    });
-    write(once ? formatChecks(result) : formatRepeated(result));
-    settingsOf[index] = settings;
-    conversationsOf[index] = conversations;
-    saveTestRun(session.projectRoot, { ...saved, scenarios: inScenarioOrder(settingsOf), conversations: inScenarioOrder(conversationsOf).flat() });
-    return result;
-  };
-  await Promise.all(
-    selected.map(async (entry, index) => {
-      try {
-        reports[index] = await play(entry, index);
-      } finally {
-        printed.finish(index);
-      }
-    }),
+    settingsOf[index] = scenarioSettings({ scenario: entry.scenario, name: entry.name, file: entry.file, runs: run.runs });
+    conversationsOf[index] = [];
+    declaredOf[index] = [];
+    left[index] = settingsOf[index].runs;
+    for (let at = 0; at < settingsOf[index].runs; at += 1) jobs.push({ index, run: at });
+  }
+  const done = new Set<number>();
+  for (const [index, entry] of selected.entries()) if ("error" in entry) done.add(index);
+  // Settings and conversations of the scenarios that are through, in their own order.
+  const through = () => ({
+    scenarios: selected.flatMap((_, index) => (done.has(index) && settingsOf[index] ? [settingsOf[index]] : [])),
+    conversations: selected.flatMap((_, index) => (done.has(index) ? (conversationsOf[index] ?? []) : [])),
+  });
+
+  let concurrency = run.concurrency;
+  const runsStarted = performance.now();
+  await inParallel(
+    jobs,
+    async ({ index, run: at }) => {
+      const entry = selected[index] as Extract<(typeof selected)[number], { scenario: Scenario }>;
+      const settings = settingsOf[index]!;
+      const once = settings.runs === 1;
+      const write = (text: string) => printed.write(index, text);
+      const conversation = await playRun({
+        scenario: entry.scenario,
+        name: entry.name,
+        file: entry.file,
+        host,
+        ...choice,
+        run: at,
+        onCall: (call) => void (models = { ...models, agent: models.agent ?? call.model }),
+        onDeclared: (declared) => void (declaredOf[index] = declared),
+        ...(once ? { onTurn: (turn: ScenarioTurn) => write(formatTurn(turn)) } : {}),
+      });
+      conversationsOf[index]!.push(conversation);
+      if (!once) write(formatRunLine(scenarioRun(conversation), settings.runs));
+      left[index]! -= 1;
+      if (left[index]! > 0) return;
+
+      const result = aggregateScenario({
+        settings,
+        conversations: conversationsOf[index]!,
+        maxErrorRate: DEFAULT_MAX_ERROR_RATE,
+        durationMs: Math.round(performance.now() - runsStarted),
+        notes: uncoveredVariants(declaredOf[index]!, entry.scenario, conversationsOf[index]!.map((saved) => saved.experiments)),
+      });
+      write(once ? formatChecks(result) : formatRepeated(result));
+      reports[index] = result;
+      done.add(index);
+      savedTo = saveSoFar(session, fields, { ...through(), models, complete: false }, through().conversations);
+      printed.finish(index);
+    },
+    { concurrency, host, onSlowDown: (lowered) => void (concurrency = lowered) },
   );
-  return finish(session, { ...saved, scenarios: inScenarioOrder(settingsOf), conversations: inScenarioOrder(conversationsOf).flat() }, reports, throttledBy(host, slots));
+  return finish(session, { fields, models, rejudgedFrom: undefined, callerPromptVersion: simulatedCaller.promptVersion, savedTo }, through(), reports, throttledBy(host, before, concurrency));
 }
 
-/** The slots of a run on `host`: as many conversations at a time as `concurrency` says, halved
- * each time the host's provider rate limits the run. */
-export function hostSlots(host: TestHost, concurrency: number): RunSlots {
-  const slots = new RunSlots(concurrency);
-  host.throttle?.onSlowDown(() => void slots.lower());
-  return slots;
-}
-
-/** The LLM of the project's agent, for a command that plays no turn: the judge runs on the
- * agent's provider, which only a bundle knows. */
-export async function agentLlm(host: TestHost): Promise<LlmDescriptor> {
-  return (await host.createBundle()).runtime.settings.current().llm;
-}
-
-/** How the provider's rate limit slowed the run down; undefined when it did not. */
-export function throttledBy(host: TestHost, slots: RunSlots): TestReport["throttled"] {
+/** How the provider's rate limit slowed this command down, since `before` (the host's throttle
+ * is the process's, and counts every command it served); undefined when it did not. */
+export function throttledBy(host: TestHost, before: ThrottleStats | undefined, concurrency: number): TestReport["throttled"] {
   const stats = host.throttle?.stats();
-  return stats && stats.waits > 0 ? { ...stats, concurrency: slots.limit } : undefined;
+  if (!stats) return undefined;
+  const waits = stats.waits - (before?.waits ?? 0);
+  return waits > 0 ? { waits, waitedMs: stats.waitedMs - (before?.waitedMs ?? 0), concurrency } : undefined;
 }
 
-function newSavedRun(): SavedTestRun {
-  const now = new Date();
-  return {
-    format: "curb.test-run",
-    version: 1,
-    id: newTestRunId(now),
-    createdAt: now.toISOString(),
-    curb: curbVersion(),
-    complete: false,
-    models: NO_MODELS,
-    callerPromptVersion: CALLER_PROMPT_VERSION,
-    judgePromptVersion: JUDGE_PROMPT_VERSION,
-    maxErrorRate: DEFAULT_MAX_ERROR_RATE,
-    scenarios: [],
-    conversations: [],
-  };
-}
+/** What `finish` saves and reports beyond the scenarios. */
+type Finished = {
+  fields: RunFields;
+  models: TestModels;
+  rejudgedFrom: string | undefined;
+  callerPromptVersion: string;
+  /** Where the run was saved while it ran. */
+  savedTo: string | null;
+};
 
 /** Save the finished run, print the report (and write it where it was asked for), and return
  * the exit code. */
-function finish(session: TestSession, saved: SavedTestRun, scenarios: ScenarioReport[], throttled: TestReport["throttled"]): number {
+function finish(
+  session: TestSession,
+  finished: Finished,
+  through: { scenarios: SavedScenarioSettings[]; conversations: SavedConversation[] },
+  scenarios: ScenarioReport[],
+  throttled: TestReport["throttled"],
+): number {
   const { run, out, env, projectRoot } = session;
-  const hasRuns = saved.conversations.length > 0;
-  if (hasRuns) saveTestRun(projectRoot, { ...saved, complete: true });
+  const hasRuns = through.conversations.length > 0;
+  const savedTo = hasRuns
+    ? saveSoFar(session, finished.fields, {
+        ...through,
+        models: finished.models,
+        complete: true,
+        callerPromptVersion: finished.callerPromptVersion,
+        ...(finished.rejudgedFrom === undefined ? {} : { rejudgedFrom: finished.rejudgedFrom }),
+      }, through.conversations)
+    : null;
   const outcome = testOutcome(scenarios);
   const report: TestReport = {
     passed: scenarios.every((entry) => entry.passed),
@@ -538,12 +483,12 @@ function finish(session: TestSession, saved: SavedTestRun, scenarios: ScenarioRe
     outcome,
     exitCode: TEST_EXIT_CODES[outcome],
     durationMs: Math.round(performance.now() - session.started),
-    models: saved.models,
-    callerPromptVersion: saved.callerPromptVersion,
-    judgePromptVersion: saved.judgePromptVersion,
+    models: finished.models,
+    callerPromptVersion: finished.callerPromptVersion,
+    judgePromptVersion: judge.promptVersion,
     usage: sumUsage(scenarios.filter(isResult).map((result) => result.usage)),
-    savedTo: hasRuns ? testRunPath(saved.id) : null,
-    ...(saved.rejudgedFrom === undefined ? {} : { rejudgedFrom: saved.rejudgedFrom }),
+    savedTo,
+    ...(finished.rejudgedFrom === undefined ? {} : { rejudgedFrom: finished.rejudgedFrom }),
     ...(throttled ? { throttled } : {}),
   };
   out(run.json ? `${JSON.stringify(report)}\n` : formatSummary(report));
@@ -565,9 +510,9 @@ function finish(session: TestSession, saved: SavedTestRun, scenarios: ScenarioRe
  * conversations are judged at a time as `--concurrency` allows, across all scenarios. The
  * result is reported like a run and saved as a run of its own.
  */
-async function rejudge(session: TestSession, which: string, hostOf: () => TestHost | Promise<TestHost>): Promise<number> {
+async function rejudge(session: TestSession, which: string, hostOf: () => TestHost): Promise<number> {
   const { run, out, loaded } = session;
-  const source = loadTestRun(session.projectRoot, which);
+  const source = loadRun(which, { root: session.projectRoot });
   const selected = source.scenarios.filter((entry) => matches(run.filter, entry));
   if (selected.length === 0) {
     console.error(
@@ -576,140 +521,68 @@ async function rejudge(session: TestSession, which: string, hostOf: () => TestHo
     return TEST_EXIT_CODES.fail;
   }
 
-  const host = await hostOf();
-  const llm = await agentLlm(host);
-  const models = { ...(host.models?.(llm) ?? NO_MODELS), agent: source.models.agent, caller: source.models.caller };
-  const saved: SavedTestRun = { ...newSavedRun(), rejudgedFrom: source.id, models, callerPromptVersion: source.callerPromptVersion };
-  const slots = hostSlots(host, run.concurrency);
+  const host = hostOf();
+  const before = host.throttle?.stats();
+  const judgeOptions = { host, role: "judge" as const, ...(run.judgeModel === undefined ? {} : { model: run.judgeModel }) };
+  const judgeModel = (await testModel(judgeOptions)).model;
+  const models: TestModels = { agent: source.models.agent, caller: source.models.caller, judge: judgeModel };
   const printed = inOrder(run.json ? () => {} : out, selected.length);
   const reports: ScenarioReport[] = [];
-  const settingsOf: Array<SavedScenarioSettings | undefined> = [];
-  const conversationsOf: Array<SavedConversation[] | undefined> = [];
+  const startedAt = performance.now();
 
-  const judgeAgain = async (was: SavedScenarioSettings, index: number): Promise<ScenarioReport> => {
-    const startedAt = performance.now();
+  // What each scenario applies now: its settings as the project holds it, else as saved.
+  const plans = selected.map((was) => {
     const current = loaded.find((entry) => entry.file === was.file && entry.name === was.name);
     const scenario = current && "scenario" in current ? current.scenario : null;
-    const settings: SavedScenarioSettings = scenario
-      ? { ...scenarioSettings({ scenario, name: was.name, file: was.file }), runs: was.runs }
-      : was;
+    const settings: SavedScenarioSettings = scenario ? { ...scenarioSettings({ scenario, name: was.name, file: was.file }), runs: was.runs } : was;
     const recorded = source.conversations.filter((entry) => entry.scenario.file === was.file && entry.scenario.name === was.name);
-    const conversations = await Promise.all(
-      recorded.map(({ assessment: _before, ...record }) =>
-        slots.run(async (): Promise<SavedConversation> => {
-          const judgeTokens = new TokenCounter();
-          const assessment = await assessConversation({
-            record,
-            settings: scenario ? assessmentSettings(scenario) : { expectations: settings.expectations, failOn: settings.failOn },
-            judge: host.simulator(llm, "judge", judgeTokens.add),
-            judgeModel: models.judge,
-          });
-          const usage = runUsage({ agent: record.usage?.agent ?? null, caller: record.usage?.caller ?? null, judge: judgeTokens.total() });
-          return { ...record, usage, assessment };
-        }),
-      ),
-    );
+    return { was, scenario, settings, recorded, judged: [] as SavedConversation[], left: recorded.length };
+  });
+  const report = (index: number) => {
+    const { was, scenario, settings, judged } = plans[index]!;
+    const gone = was.file ? `${was.file} no longer holds a scenario named "${was.name}"` : `"${was.name}" is no scenario of the project`;
     const result = aggregateScenario({
       settings,
-      conversations,
+      conversations: judged,
       maxErrorRate: DEFAULT_MAX_ERROR_RATE,
       durationMs: Math.round(performance.now() - startedAt),
-      notes: scenario ? [] : [`${was.file} no longer holds a scenario named "${was.name}": its saved settings were applied, and its expect was not`],
+      notes: scenario ? [] : [`${gone}: its saved settings were applied, and its expect was not`],
     });
-    settingsOf[index] = settings;
-    conversationsOf[index] = conversations;
+    reports[index] = result;
     printed.write(index, `\n--- ${was.name} (${was.file})\n${formatReplayed(result)}`);
-    return result;
+    printed.finish(index);
   };
-  await Promise.all(
-    selected.map(async (was, index) => {
-      try {
-        reports[index] = await judgeAgain(was, index);
-      } finally {
-        printed.finish(index);
-      }
-    }),
+  for (const [index, plan] of plans.entries()) if (plan.left === 0) report(index);
+
+  let concurrency = run.concurrency;
+  const jobs = plans.flatMap((plan, index) => plan.recorded.map((conversation, at) => ({ index, at, conversation })));
+  await inParallel(
+    jobs,
+    async ({ index, at, conversation }) => {
+      const plan = plans[index]!;
+      const { assessment: _before, ...record } = conversation;
+      const judging = await testModel(judgeOptions);
+      const assessment = await assessConversation({
+        record: record as Omit<SavedConversation, "assessment">,
+        settings: plan.scenario ? assessmentSettings(plan.scenario) : { expectations: plan.settings.expectations, failOn: plan.settings.failOn },
+        judge: judging,
+      });
+      const usage = runUsage({ agent: record.usage?.agent ?? null, caller: record.usage?.caller ?? null, judge: judging.usage() });
+      // In the saved run's order, whichever is judged first.
+      plan.judged[at] = { ...(record as Omit<SavedConversation, "assessment">), usage, assessment };
+      plan.left -= 1;
+      if (plan.left === 0) report(index);
+    },
+    { concurrency, host, onSlowDown: (lowered) => void (concurrency = lowered) },
   );
-  return finish(session, { ...saved, scenarios: inScenarioOrder(settingsOf), conversations: inScenarioOrder(conversationsOf).flat() }, reports, throttledBy(host, slots));
+  const through = { scenarios: plans.map((plan) => plan.settings), conversations: plans.flatMap((plan) => plan.judged) };
+  return finish(session, { fields: {}, models, rejudgedFrom: source.id, callerPromptVersion: source.callerPromptVersion, savedTo: null }, through, reports, throttledBy(host, before, concurrency));
 }
 
 /** A re-judged scenario as the report prints it: the transcript first when it ran once. */
 function formatReplayed(result: ScenarioResult): string {
   if (result.stats.runs > 1 || result.runs.length !== 1) return formatRepeated(result);
   return `${result.turns.map(formatTurn).join("")}${formatChecks(result)}`;
-}
-
-/**
- * The project's agent on the bundle path a call uses (`createVoiceAgentBundle`), which refuses
- * to start, naming the variable, when the agent's LLM key is missing. Conversation recording is
- * turned off first: the store is for real conversations, and every scenario would add one.
- * Every LLM request (the agent's, the caller's, the judge's) is sent again when the provider
- * says to, and counts its tokens.
- *
- * Loading the agent logs every authoring diagnostic, as a server boot does. That is curb
- * check's report and would bury the transcripts, so it becomes one note pointing there.
- */
-export async function projectHost(run: Pick<TestArgs, "callerModel" | "judgeModel">): Promise<TestHost> {
-  await disableConversationRecording();
-  const { getHostedAgent } = await import("../server/bootstrap.js");
-  const restoreConsole = dropDiagnosticLogs();
-  let diagnostics: Awaited<ReturnType<typeof getHostedAgent>>["diagnostics"];
-  try {
-    ({ diagnostics } = await getHostedAgent());
-  } finally {
-    restoreConsole();
-  }
-  const note = diagnosticsNote(diagnostics);
-  if (note) console.error(`note: ${note}`);
-  const { createVoiceAgentBundle } = await import("../voice-host.js");
-  const { missingLlmCredential, runAiSdkAgent } = await import("../llm/ai-sdk.js");
-  const { llmTimeoutFromEnv } = await import("../llm/deadline.js");
-  // One throttle for every request of the run, the agent's, the caller's and the judge's: a
-  // provider counts them against one limit. The provider SDK's own retries are off, so each
-  // rate limit is seen here, where the whole run can slow down for it.
-  const throttle = new Throttle();
-  const agentTimeoutMs = llmTimeoutFromEnv();
-  const chosen = { caller: run.callerModel, judge: run.judgeModel };
-  const options = { caller: "--caller-model", judge: "--judge-model" } as const;
-  /** The model of a part, refused when this process has no key for it. */
-  const modelOf = (role: SimulatorRole, llm: LlmDescriptor): LlmDescriptor => {
-    const model = modelFor(chosen[role], llm);
-    const missing = missingLlmCredential(model);
-    if (missing) {
-      throw new Error(
-        `[CURB_TEST_MODEL_KEY_MISSING] The ${role}'s model ${modelLabel(model)} needs ${missing}, and this process does not have it.\n` +
-          `Fix: set ${missing} in the project's .env, or pick a model of the agent's own provider with ${options[role]} <model>.`,
-      );
-    }
-    return model;
-  };
-  return {
-    async createBundle() {
-      const tokens = new TokenCounter();
-      let failed = 0;
-      const retry = { throttle, timeoutMs: agentTimeoutMs, onGiveUp: () => void (failed += 1) };
-      const { runtime, session, definition } = await createVoiceAgentBundle(undefined, (transports) => {
-        const { llm, streamLlm } = transports({ onUsage: tokens.add, maxRetries: 0 });
-        // Each attempt has the session's deadline; the session itself waits as long as a rate
-        // limit takes, which the retries bound.
-        return { llm: withRetries(llm, retry), streamLlm: withStreamRetries(streamLlm, retry), llmTimeoutMs: SESSION_PATIENCE_MS };
-      });
-      return {
-        runtime,
-        session,
-        firstTurn: definition.firstTurn,
-        experiments: experimentDeclarations(definition.experiments),
-        tokens: () => tokens.total(),
-        providerErrors: () => failed,
-      };
-    },
-    simulator(llm, role, onUsage) {
-      const model = modelOf(role, llm);
-      return withRetries((request) => runAiSdkAgent(request, { llm: model, onUsage, maxRetries: 0 }), { throttle, timeoutMs: ANSWER_TIMEOUT_MS });
-    },
-    models: (llm) => ({ agent: modelLabel(llm), caller: modelLabel(modelOf("caller", llm)), judge: modelLabel(modelOf("judge", llm)) }),
-    throttle,
-  };
 }
 
 function describe(error: unknown): string {

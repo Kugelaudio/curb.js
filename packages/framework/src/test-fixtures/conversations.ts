@@ -1,6 +1,6 @@
 import type { AgentLlmClient } from "../agent-session.js";
 import type { AgentRunRequest } from "../llm/types.js";
-import type { ConversationRecord, SavedConversation } from "../testing/record.js";
+import type { ConversationRecord, SavedConversation, ScenarioRecord } from "../testing/record.js";
 import type { ScenarioToolCall, ScenarioTurn } from "../testing/scenario.js";
 
 /**
@@ -42,8 +42,8 @@ export const refused = (name: string, message: string): ScenarioToolCall => ({
 /** A simulated conversation's record; `overrides.ending` is merged into a caller hang-up. */
 export function record(
   turns: ScenarioTurn[],
-  overrides: Partial<Omit<ConversationRecord, "ending">> & { ending?: Partial<ConversationRecord["ending"]> } = {},
-): ConversationRecord {
+  overrides: Partial<Omit<ScenarioRecord, "ending">> & { ending?: Partial<ScenarioRecord["ending"]> } = {},
+): ScenarioRecord {
   const { ending, ...rest } = overrides;
   return {
     format: "curb.conversation",

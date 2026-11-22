@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { refused, turn } from "../test-fixtures/conversations.js";
-import { styleLine, styleReport } from "./style.js";
+import { styleLine } from "../cli/scenarios/style.js";
+import { styleReport } from "./style.js";
 
 describe("style numbers", () => {
   const first = {

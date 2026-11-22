@@ -108,23 +108,13 @@ export function styleReport(conversations: readonly StyledConversation[], limits
   };
 }
 
-const percent = (share: number | null) => (share === null ? "n/a" : `${Math.round(share * 100)}%`);
-const plain = (value: number | null) => (value === null ? "n/a" : String(value));
-
-/** The numbers on one line, as the terminal and the Markdown report show them. */
-export function styleLine(style: StyleReport): string {
-  if (style.replies === 0) return "no agent reply to count";
-  return [
-    `words per reply p50 ${plain(style.wordsP50)}, p90 ${plain(style.wordsP90)}`,
-    `ends on a question ${percent(style.questionShare)}`,
-    `repeated opening ${percent(style.repeatedOpeningShare)}, closing ${percent(style.repeatedClosingShare)}`,
-    ...(style.sameGoodbyeShare === null ? [] : [`same goodbye ${percent(style.sameGoodbyeShare)}`]),
-    `steps per turn ${plain(style.stepsPerTurn)} (max ${plain(style.stepsPerTurnMax)})`,
-    `refused tool calls per run ${plain(style.refusedToolCallsPerRun)}`,
-  ].join(" · ");
-}
-
-/** A limit that was broken, in words: "wordsP90 is 52, above the limit of 40". */
-export function styleLimitLine(result: StyleLimitResult): string {
-  return `${result.metric} is ${plain(result.value)}, ${result.pass ? "within" : "above"} the limit of ${result.limit}`;
+/**
+ * How the agent talks across conversations, counted from their transcripts: words per reply
+ * (p50, p90), the share of replies that end on a question or open or close with a sentence the
+ * agent already used, whether every call ends on the same goodbye, model steps per turn and
+ * refused tool calls per conversation. `limits` holds the highest value accepted per number;
+ * each one set is in `limits` of the result with whether it held. No model is asked.
+ */
+export function styleNumbers(records: readonly StyledConversation[], limits: StyleLimits = {}): StyleReport {
+  return styleReport(records, limits);
 }

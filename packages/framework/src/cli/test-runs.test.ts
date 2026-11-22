@@ -7,9 +7,10 @@ import { anthropic, kugelaudio, openai, openaiCompatible } from "../providers.js
 import { isJudgeRequest, judgeAnswer } from "../test-fixtures/conversations.js";
 import { addTask, calls, hangUp, says, sendSummary, steps, tasksBundle } from "../test-fixtures/tasks.js";
 import type { SavedTestRun } from "../testing/record.js";
-import type { ScenarioResult } from "../testing/run.js";
+import type { ScenarioResult } from "./scenarios/run.js";
 import { createTestProject } from "./test-project.js";
-import { TEST_OPTIONS, modelFor, modelLabel, parseTestArgs, testCommand, type TestHost, type TestReport } from "./test.js";
+import { modelFor, modelLabel } from "../testing/host.js";
+import { TEST_OPTIONS, parseTestArgs, testCommand, type TestHost, type TestReport } from "./test.js";
 
 type Answers = NonNullable<Parameters<typeof judgeAnswer>[1]>;
 

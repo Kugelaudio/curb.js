@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { rmSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ScenarioResult } from "../testing/run.js";
+import type { ScenarioResult } from "./scenarios/run.js";
 import { createTestProject } from "./test-project.js";
 import { testCommand, type TestReport } from "./test.js";
 

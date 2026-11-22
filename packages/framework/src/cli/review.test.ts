@@ -8,7 +8,7 @@ import type { AgentRunRequest } from "../llm/types.js";
 import { ConversationStore } from "../server/conversation-store.js";
 import { isJudgeRequest, judgeAnswer, record, turn } from "../test-fixtures/conversations.js";
 import { steps, tasksBundle } from "../test-fixtures/tasks.js";
-import type { ReviewReport } from "../testing/review.js";
+import type { ReviewReport } from "./review-report.js";
 import { REVIEW_OPTIONS, parseReviewArgs, reviewCommand } from "./review.js";
 import type { TestHost } from "./test.js";
 

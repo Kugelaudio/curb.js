@@ -1,6 +1,7 @@
 import { declaredNameProblem } from "../goals.js";
 import type { ConfirmationVerdict } from "../llm/confirmation.js";
 import type { AgentTurnError } from "../llm/types.js";
+import { runsProblem } from "../cli/scenarios/limits.js";
 import { clientInfoProblem } from "../server/protocol.js";
 import { END_CALL_TOOL_NAME, SKIP_TURN_TOOL_NAME, type ToolResult } from "../types.js";
 
@@ -156,8 +157,9 @@ export type ScenarioEvidence = {
 
 /** One named result. `detail` says what was found, always when the check failed. A check a judge
  * answered carries its `evidence`. A check that needs the judge and did not get an answer is
- * `notJudged`: it did not pass, and it says nothing against the agent either. */
-export type ScenarioCheck = { name: string; pass: boolean; detail?: string; evidence?: ScenarioEvidence; notJudged?: true };
+ * `notJudged`: it did not pass, and it says nothing against the agent either. A `reportOnly`
+ * check is shown and counted and fails nothing. */
+export type ScenarioCheck = { name: string; pass: boolean; detail?: string; evidence?: ScenarioEvidence; notJudged?: true; reportOnly?: true };
 
 /** A tool call an `expect` helper looks for: the tool's name, or the name with the input the call
  * must have. */
@@ -240,8 +242,6 @@ export type Scenario = Readonly<ScenarioDefinition>;
 export const DEFAULT_MAX_TURNS = 12;
 /** The most caller turns a simulated conversation may be given. */
 export const MAX_SIMULATED_TURNS = 100;
-/** The most runs one scenario may ask for. */
-export const MAX_RUNS = 100;
 /** The most sentences `expectations` may hold: one judge call answers them all. */
 export const MAX_EXPECTATIONS = 12;
 
@@ -367,13 +367,6 @@ function fakesProblems(fakes: unknown): string[] {
   });
 }
 
-/** What is wrong with `value` as a number of runs, or undefined. */
-export function runsProblem(value: unknown): string | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_RUNS
-    ? undefined
-    : `must be a whole number of runs from 1 to ${MAX_RUNS}; got ${preview(value)}.`;
-}
-
 function expectationsProblems(expectations: unknown): string[] {
   if (!Array.isArray(expectations) || expectations.length === 0) {
     return ['expectations must be a non-empty list of sentences about the call, e.g. ["The agent reads the booking number back."].'];
@@ -433,7 +426,8 @@ function preview(value: unknown): string {
   return JSON.stringify(value) ?? String(value);
 }
 
-function callerProblems(caller: unknown): string[] {
+/** What is wrong with `caller` as a simulated caller, one entry per problem. */
+export function callerProblems(caller: unknown): string[] {
   if (!isRecord(caller)) return ['caller must be an object: { goal: "...", knows: "..." }.'];
   const problems = unknownFields(caller, CALLER_FIELDS, "caller");
   const { goal, knows, language, persona, behaviours } = caller;

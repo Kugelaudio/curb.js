@@ -1,0 +1,2596 @@
+{
+  "code": 1,
+  "report": {
+    "passed": false,
+    "scenarios": [
+      {
+        "name": "hello",
+        "file": "src/agent/hello.scenario.ts",
+        "mode": "scripted",
+        "passed": true,
+        "endedBy": "agent",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "turn": 1,
+            "caller": "Hi",
+            "reply": "Hello there.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1
+          },
+          {
+            "turn": 2,
+            "caller": "Thanks",
+            "reply": "Sure.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1
+          },
+          {
+            "turn": 3,
+            "caller": "Bye",
+            "reply": "Bye.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Bye!"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1
+          }
+        ],
+        "checks": [
+          {
+            "name": "no turn errors",
+            "pass": true
+          },
+          {
+            "name": "no empty agent reply",
+            "pass": true
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "pass": true
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "pass": true
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "pass": true,
+            "detail": "the agent ended the call (end_call) at turn 3"
+          },
+          {
+            "name": "said \"hello\"",
+            "pass": true,
+            "detail": "turn 1"
+          }
+        ],
+        "notes": [],
+        "outcome": "pass",
+        "flaky": false,
+        "stats": {
+          "runs": 1,
+          "ran": 1,
+          "passed": 1,
+          "failed": 0,
+          "errors": 0,
+          "passRate": 1,
+          "reliability": 1,
+          "errorRate": 0,
+          "minPassRate": 1,
+          "maxErrorRate": 0.34
+        },
+        "checkStats": [
+          {
+            "name": "no turn errors",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no empty agent reply",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "said \"hello\"",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          }
+        ],
+        "findings": [],
+        "variants": [],
+        "style": {
+          "replies": 3,
+          "wordsP50": 1,
+          "wordsP90": 2,
+          "questionShare": 0,
+          "repeatedOpeningShare": 0,
+          "repeatedClosingShare": 0,
+          "sameGoodbyeShare": null,
+          "stepsPerTurn": 1,
+          "stepsPerTurnMax": 1,
+          "refusedToolCallsPerRun": 0,
+          "limits": []
+        },
+        "usage": {
+          "agent": {
+            "inputTokens": 10,
+            "outputTokens": 1,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "caller": null,
+          "judge": null,
+          "totalTokens": 11
+        },
+        "runs": [
+          {
+            "run": 1,
+            "outcome": "pass",
+            "passed": true,
+            "endedBy": "agent",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "turn": 1,
+                "caller": "Hi",
+                "reply": "Hello there.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1
+              },
+              {
+                "turn": 2,
+                "caller": "Thanks",
+                "reply": "Sure.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 1
+              },
+              {
+                "turn": 3,
+                "caller": "Bye",
+                "reply": "Bye.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "end_call",
+                    "input": {
+                      "goodbye": "Bye!"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": true,
+                "steps": 1
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the agent ended the call (end_call) at turn 3"
+              },
+              {
+                "name": "said \"hello\"",
+                "pass": true,
+                "detail": "turn 1"
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "agent",
+              "unsaid": [],
+              "maxTurns": 3,
+              "caller": null
+            },
+            "endState": {
+              "stores": {
+                "tasks": {
+                  "tasks": []
+                }
+              },
+              "context": [
+                "content: No tasks yet.",
+                "tool: end_call(goodbye*) [runtime]",
+                "tool: skip_turn() [runtime]",
+                "tool: add_task(title*) [global]",
+                "tool: send_summary(to*) [global]"
+              ],
+              "skillPath": ""
+            },
+            "judge": null,
+            "usage": {
+              "agent": {
+                "inputTokens": 10,
+                "outputTokens": 1,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "caller": null,
+              "judge": null,
+              "totalTokens": 11
+            }
+          }
+        ]
+      },
+      {
+        "name": "adds milk",
+        "file": "src/agent/milk.scenario.ts",
+        "mode": "simulated",
+        "passed": false,
+        "endedBy": "agent",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "turn": 1,
+            "caller": "Put milk on my list.",
+            "reply": "Milk is on your list.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "add_task",
+                "input": {
+                  "title": "milk"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [
+              "content: Open tasks: milk."
+            ],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 2
+          },
+          {
+            "turn": 2,
+            "caller": "Thanks, bye!",
+            "reply": "Bye.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Bye!"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1
+          }
+        ],
+        "checks": [
+          {
+            "name": "no turn errors",
+            "pass": true
+          },
+          {
+            "name": "no empty agent reply",
+            "pass": true
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "pass": true
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "pass": true
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "pass": true,
+            "detail": "the agent ended the call (end_call) at turn 2"
+          },
+          {
+            "name": "the agent does not hang up on a caller who still wants something",
+            "pass": true,
+            "detail": "the agent ended the call at turn 2, and the caller was done"
+          },
+          {
+            "name": "the caller reaches its goal",
+            "pass": true,
+            "detail": "goal: yes",
+            "evidence": {
+              "answer": "yes",
+              "turn": null,
+              "quote": null
+            }
+          },
+          {
+            "name": "expectation: The agent says that milk is on the list.",
+            "pass": false,
+            "detail": "expectation_1: no",
+            "evidence": {
+              "answer": "no",
+              "turn": null,
+              "quote": null
+            }
+          },
+          {
+            "name": "state of tasks has {\"tasks\":[{\"title\":\"milk\"}]}",
+            "pass": true
+          }
+        ],
+        "notes": [],
+        "outcome": "fail",
+        "flaky": false,
+        "stats": {
+          "runs": 2,
+          "ran": 2,
+          "passed": 0,
+          "failed": 2,
+          "errors": 0,
+          "passRate": 0,
+          "reliability": 0,
+          "errorRate": 0,
+          "minPassRate": 1,
+          "maxErrorRate": 0.34
+        },
+        "checkStats": [
+          {
+            "name": "no turn errors",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no empty agent reply",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the agent does not hang up on a caller who still wants something",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the caller reaches its goal",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "expectation: The agent says that milk is on the list.",
+            "passed": 0,
+            "total": 2,
+            "passRate": 0,
+            "unknown": 0
+          },
+          {
+            "name": "state of tasks has {\"tasks\":[{\"title\":\"milk\"}]}",
+            "passed": 2,
+            "total": 2,
+            "passRate": 1,
+            "unknown": 0
+          }
+        ],
+        "findings": [
+          {
+            "id": "<id>",
+            "question": "The agent asked the caller for a piece of information the caller had already stated.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent told the caller it did or recorded something that no successful tool call did.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent ignored or misread something the caller said.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent repeated itself, contradicted itself, or said something that does not follow from the call.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent ended the call although the caller had not said goodbye or that they needed nothing else.",
+            "found": 0,
+            "unknown": 0,
+            "total": 2,
+            "rate": 0,
+            "examples": []
+          }
+        ],
+        "variants": [],
+        "style": {
+          "replies": 4,
+          "wordsP50": 1,
+          "wordsP90": 5,
+          "questionShare": 0,
+          "repeatedOpeningShare": 0,
+          "repeatedClosingShare": 0,
+          "sameGoodbyeShare": 1,
+          "stepsPerTurn": 1.5,
+          "stepsPerTurnMax": 2,
+          "refusedToolCallsPerRun": 0,
+          "limits": []
+        },
+        "usage": {
+          "agent": {
+            "inputTokens": 20,
+            "outputTokens": 2,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "caller": {
+            "inputTokens": 28,
+            "outputTokens": 12,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "judge": {
+            "inputTokens": 14,
+            "outputTokens": 6,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 82
+        },
+        "runs": [
+          {
+            "run": 1,
+            "outcome": "fail",
+            "passed": false,
+            "endedBy": "agent",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "turn": 1,
+                "caller": "Put milk on my list.",
+                "reply": "Milk is on your list.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "add_task",
+                    "input": {
+                      "title": "milk"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [
+                  "content: Open tasks: milk."
+                ],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 2
+              },
+              {
+                "turn": 2,
+                "caller": "Thanks, bye!",
+                "reply": "Bye.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "end_call",
+                    "input": {
+                      "goodbye": "Bye!"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": true,
+                "steps": 1
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the agent ended the call (end_call) at turn 2"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": true,
+                "detail": "the agent ended the call at turn 2, and the caller was done"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": true,
+                "detail": "goal: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "expectation: The agent says that milk is on the list.",
+                "pass": false,
+                "detail": "expectation_1: no",
+                "evidence": {
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "state of tasks has {\"tasks\":[{\"title\":\"milk\"}]}",
+                "pass": true
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "agent",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": {
+                "done": true,
+                "goalMet": true,
+                "reason": "milk is on the list"
+              }
+            },
+            "endState": {
+              "stores": {
+                "tasks": {
+                  "tasks": [
+                    {
+                      "title": "milk",
+                      "done": false
+                    }
+                  ]
+                }
+              },
+              "context": [
+                "content: Open tasks: milk.",
+                "tool: end_call(goodbye*) [runtime]",
+                "tool: skip_turn() [runtime]",
+                "tool: add_task(title*) [global]",
+                "tool: send_summary(to*) [global]"
+              ],
+              "skillPath": ""
+            },
+            "judge": {
+              "promptVersion": "3",
+              "model": "openai:gpt-5.4-mini",
+              "answers": [
+                {
+                  "id": "<id>",
+                  "kind": "goal",
+                  "text": "Did the caller reach this goal by the end of the call: Put milk on the list",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "goal: yes"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "asked_again: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "claimed_without_tool: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ignored_caller: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "incoherent: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "wrong_tool_use: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ended_early: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "expectation",
+                  "text": "The agent says that milk is on the list.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "expectation_1: no"
+                }
+              ]
+            },
+            "usage": {
+              "agent": {
+                "inputTokens": 10,
+                "outputTokens": 1,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "caller": {
+                "inputTokens": 14,
+                "outputTokens": 6,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "judge": {
+                "inputTokens": 7,
+                "outputTokens": 3,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "totalTokens": 41
+            }
+          },
+          {
+            "run": 2,
+            "outcome": "fail",
+            "passed": false,
+            "endedBy": "agent",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "turn": 1,
+                "caller": "Put milk on my list.",
+                "reply": "Milk is on your list.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "add_task",
+                    "input": {
+                      "title": "milk"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [
+                  "content: Open tasks: milk."
+                ],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 2
+              },
+              {
+                "turn": 2,
+                "caller": "Thanks, bye!",
+                "reply": "Bye.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "end_call",
+                    "input": {
+                      "goodbye": "Bye!"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": true,
+                "steps": 1
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the agent ended the call (end_call) at turn 2"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": true,
+                "detail": "the agent ended the call at turn 2, and the caller was done"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": true,
+                "detail": "goal: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "expectation: The agent says that milk is on the list.",
+                "pass": false,
+                "detail": "expectation_1: no",
+                "evidence": {
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null
+                }
+              },
+              {
+                "name": "state of tasks has {\"tasks\":[{\"title\":\"milk\"}]}",
+                "pass": true
+              }
+            ],
+            "notes": [],
+            "experiments": {},
+            "ending": {
+              "by": "agent",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": {
+                "done": true,
+                "goalMet": true,
+                "reason": "milk is on the list"
+              }
+            },
+            "endState": {
+              "stores": {
+                "tasks": {
+                  "tasks": [
+                    {
+                      "title": "milk",
+                      "done": false
+                    }
+                  ]
+                }
+              },
+              "context": [
+                "content: Open tasks: milk.",
+                "tool: end_call(goodbye*) [runtime]",
+                "tool: skip_turn() [runtime]",
+                "tool: add_task(title*) [global]",
+                "tool: send_summary(to*) [global]"
+              ],
+              "skillPath": ""
+            },
+            "judge": {
+              "promptVersion": "3",
+              "model": "openai:gpt-5.4-mini",
+              "answers": [
+                {
+                  "id": "<id>",
+                  "kind": "goal",
+                  "text": "Did the caller reach this goal by the end of the call: Put milk on the list",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "goal: yes"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "asked_again: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "claimed_without_tool: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ignored_caller: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "incoherent: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "wrong_tool_use: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ended_early: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "expectation",
+                  "text": "The agent says that milk is on the list.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "expectation_1: no"
+                }
+              ]
+            },
+            "usage": {
+              "agent": {
+                "inputTokens": 10,
+                "outputTokens": 1,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "caller": {
+                "inputTokens": 14,
+                "outputTokens": 6,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "judge": {
+                "inputTokens": 7,
+                "outputTokens": 3,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "totalTokens": 41
+            }
+          }
+        ]
+      },
+      {
+        "name": "sends",
+        "file": "src/agent/send.scenario.ts",
+        "mode": "simulated",
+        "passed": false,
+        "endedBy": "agent",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "turn": 1,
+            "caller": "Send my list to Sam.",
+            "reply": "Sent to Sam.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "send_summary",
+                "input": {
+                  "to": "Sam"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true,
+                  "message": "Sent."
+                },
+                "faked": true
+              }
+            ],
+            "errors": [],
+            "contextDiff": [
+              "content: Sent."
+            ],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 2
+          },
+          {
+            "turn": 2,
+            "caller": "Also send a copy to me.",
+            "reply": "Goodbye.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Goodbye."
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1
+          }
+        ],
+        "checks": [
+          {
+            "name": "no turn errors",
+            "pass": true
+          },
+          {
+            "name": "no empty agent reply",
+            "pass": true
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "pass": true
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "pass": true
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "pass": true,
+            "detail": "the agent ended the call (end_call) at turn 2"
+          },
+          {
+            "name": "the agent does not hang up on a caller who still wants something",
+            "pass": false,
+            "detail": "the agent ended the call at turn 2 while the caller still wanted: a copy for me"
+          },
+          {
+            "name": "the caller reaches its goal",
+            "pass": true,
+            "detail": "goal: yes",
+            "evidence": {
+              "answer": "yes",
+              "turn": null,
+              "quote": null
+            }
+          }
+        ],
+        "notes": [
+          "this scenario has no checks of its own (expect), so only the built-in checks ran"
+        ],
+        "outcome": "fail",
+        "flaky": false,
+        "stats": {
+          "runs": 1,
+          "ran": 1,
+          "passed": 0,
+          "failed": 1,
+          "errors": 0,
+          "passRate": 0,
+          "reliability": 0,
+          "errorRate": 0,
+          "minPassRate": 1,
+          "maxErrorRate": 0.34
+        },
+        "checkStats": [
+          {
+            "name": "no turn errors",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no empty agent reply",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no fallback line instead of a reply",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "no sentence repeated within a turn",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the conversation ends cleanly",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          },
+          {
+            "name": "the agent does not hang up on a caller who still wants something",
+            "passed": 0,
+            "total": 1,
+            "passRate": 0,
+            "unknown": 0
+          },
+          {
+            "name": "the caller reaches its goal",
+            "passed": 1,
+            "total": 1,
+            "passRate": 1,
+            "unknown": 0
+          }
+        ],
+        "findings": [
+          {
+            "id": "<id>",
+            "question": "The agent asked the caller for a piece of information the caller had already stated.",
+            "found": 0,
+            "unknown": 0,
+            "total": 1,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent told the caller it did or recorded something that no successful tool call did.",
+            "found": 0,
+            "unknown": 0,
+            "total": 1,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent ignored or misread something the caller said.",
+            "found": 0,
+            "unknown": 0,
+            "total": 1,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent repeated itself, contradicted itself, or said something that does not follow from the call.",
+            "found": 0,
+            "unknown": 0,
+            "total": 1,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense.",
+            "found": 0,
+            "unknown": 0,
+            "total": 1,
+            "rate": 0,
+            "examples": []
+          },
+          {
+            "id": "<id>",
+            "question": "The agent ended the call although the caller had not said goodbye or that they needed nothing else.",
+            "found": 0,
+            "unknown": 0,
+            "total": 1,
+            "rate": 0,
+            "examples": []
+          }
+        ],
+        "variants": [],
+        "style": {
+          "replies": 2,
+          "wordsP50": 1,
+          "wordsP90": 3,
+          "questionShare": 0,
+          "repeatedOpeningShare": 0,
+          "repeatedClosingShare": 0,
+          "sameGoodbyeShare": null,
+          "stepsPerTurn": 1.5,
+          "stepsPerTurnMax": 2,
+          "refusedToolCallsPerRun": 0,
+          "limits": []
+        },
+        "usage": {
+          "agent": {
+            "inputTokens": 10,
+            "outputTokens": 1,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "caller": {
+            "inputTokens": 21,
+            "outputTokens": 9,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "judge": {
+            "inputTokens": 7,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 51
+        },
+        "runs": [
+          {
+            "run": 1,
+            "outcome": "fail",
+            "passed": false,
+            "endedBy": "agent",
+            "durationMs": "<durationMs>",
+            "turns": [
+              {
+                "turn": 1,
+                "caller": "Send my list to Sam.",
+                "reply": "Sent to Sam.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "send_summary",
+                    "input": {
+                      "to": "Sam"
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true,
+                      "message": "Sent."
+                    },
+                    "faked": true
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [
+                  "content: Sent."
+                ],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": false,
+                "steps": 2
+              },
+              {
+                "turn": 2,
+                "caller": "Also send a copy to me.",
+                "reply": "Goodbye.",
+                "fallback": null,
+                "confirmation": null,
+                "toolCalls": [
+                  {
+                    "name": "end_call",
+                    "input": {
+                      "goodbye": "Goodbye."
+                    },
+                    "ok": true,
+                    "result": {
+                      "ok": true
+                    }
+                  }
+                ],
+                "errors": [],
+                "contextDiff": [],
+                "skillPath": "",
+                "skipped": false,
+                "endedCall": true,
+                "steps": 1
+              }
+            ],
+            "checks": [
+              {
+                "name": "no turn errors",
+                "pass": true
+              },
+              {
+                "name": "no empty agent reply",
+                "pass": true
+              },
+              {
+                "name": "no fallback line instead of a reply",
+                "pass": true
+              },
+              {
+                "name": "no sentence repeated within a turn",
+                "pass": true
+              },
+              {
+                "name": "the conversation ends cleanly",
+                "pass": true,
+                "detail": "the agent ended the call (end_call) at turn 2"
+              },
+              {
+                "name": "the agent does not hang up on a caller who still wants something",
+                "pass": false,
+                "detail": "the agent ended the call at turn 2 while the caller still wanted: a copy for me"
+              },
+              {
+                "name": "the caller reaches its goal",
+                "pass": true,
+                "detail": "goal: yes",
+                "evidence": {
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null
+                }
+              }
+            ],
+            "notes": [
+              "this scenario has no checks of its own (expect), so only the built-in checks ran"
+            ],
+            "experiments": {},
+            "ending": {
+              "by": "agent",
+              "unsaid": [],
+              "maxTurns": 12,
+              "caller": {
+                "done": false,
+                "goalMet": null,
+                "reason": "a copy for me"
+              }
+            },
+            "endState": {
+              "stores": {
+                "tasks": {
+                  "tasks": []
+                }
+              },
+              "context": [
+                "content: No tasks yet.",
+                "content: Sent.",
+                "tool: end_call(goodbye*) [runtime]",
+                "tool: skip_turn() [runtime]",
+                "tool: add_task(title*) [global]",
+                "tool: send_summary(to*) [global]"
+              ],
+              "skillPath": ""
+            },
+            "judge": {
+              "promptVersion": "3",
+              "model": "openai:gpt-5.4-mini",
+              "answers": [
+                {
+                  "id": "<id>",
+                  "kind": "goal",
+                  "text": "Did the caller reach this goal by the end of the call: Send my list to Sam",
+                  "answer": "yes",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "goal: yes"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "asked_again: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "claimed_without_tool: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ignored_caller: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "incoherent: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "wrong_tool_use: no"
+                },
+                {
+                  "id": "<id>",
+                  "kind": "finding",
+                  "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                  "answer": "no",
+                  "turn": null,
+                  "quote": null,
+                  "reason": "ended_early: no"
+                }
+              ]
+            },
+            "usage": {
+              "agent": {
+                "inputTokens": 10,
+                "outputTokens": 1,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "caller": {
+                "inputTokens": 21,
+                "outputTokens": 9,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "judge": {
+                "inputTokens": 7,
+                "outputTokens": 3,
+                "cacheReadTokens": 0,
+                "cacheWriteTokens": 0
+              },
+              "totalTokens": 51
+            }
+          }
+        ]
+      }
+    ],
+    "outcome": "fail",
+    "exitCode": 1,
+    "durationMs": "<durationMs>",
+    "models": {
+      "agent": "openai:gpt-5.2",
+      "caller": "openai:gpt-5.4-mini",
+      "judge": "openai:gpt-5.4-mini"
+    },
+    "callerPromptVersion": "2",
+    "judgePromptVersion": "3",
+    "usage": {
+      "agent": {
+        "inputTokens": 40,
+        "outputTokens": 4,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "caller": {
+        "inputTokens": 49,
+        "outputTokens": 21,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "judge": {
+        "inputTokens": 21,
+        "outputTokens": 9,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "totalTokens": 144
+    },
+    "savedTo": "<savedTo>"
+  },
+  "saved": {
+    "format": "curb.test-run",
+    "version": 1,
+    "id": "<id>",
+    "createdAt": "<createdAt>",
+    "curb": "<curb>",
+    "agentVersion": null,
+    "complete": true,
+    "models": {
+      "agent": "openai:gpt-5.2",
+      "caller": "openai:gpt-5.4-mini",
+      "judge": "openai:gpt-5.4-mini"
+    },
+    "callerPromptVersion": "2",
+    "judgePromptVersion": "3",
+    "maxErrorRate": 0.34,
+    "scenarios": [
+      {
+        "name": "hello",
+        "file": "src/agent/hello.scenario.ts",
+        "mode": "scripted",
+        "runs": 1,
+        "minPassRate": 1,
+        "expectations": [],
+        "failOn": [],
+        "style": {}
+      },
+      {
+        "name": "adds milk",
+        "file": "src/agent/milk.scenario.ts",
+        "mode": "simulated",
+        "runs": 2,
+        "minPassRate": 1,
+        "expectations": [
+          "The agent says that milk is on the list."
+        ],
+        "failOn": [],
+        "style": {}
+      },
+      {
+        "name": "sends",
+        "file": "src/agent/send.scenario.ts",
+        "mode": "simulated",
+        "runs": 1,
+        "minPassRate": 1,
+        "expectations": [],
+        "failOn": [],
+        "style": {}
+      }
+    ],
+    "conversations": [
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "hello",
+          "file": "src/agent/hello.scenario.ts",
+          "mode": "scripted",
+          "run": 1
+        },
+        "caller": null,
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "turn": 1,
+            "caller": "Hi",
+            "reply": "Hello there.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1
+          },
+          {
+            "turn": 2,
+            "caller": "Thanks",
+            "reply": "Sure.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 1
+          },
+          {
+            "turn": 3,
+            "caller": "Bye",
+            "reply": "Bye.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Bye!"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1
+          }
+        ],
+        "tools": [
+          {
+            "name": "add_task",
+            "description": "Add a task to the list."
+          },
+          {
+            "name": "send_summary",
+            "description": "Send the list to someone."
+          }
+        ],
+        "ending": {
+          "by": "agent",
+          "unsaid": [],
+          "maxTurns": 3,
+          "caller": null
+        },
+        "endState": {
+          "stores": {
+            "tasks": {
+              "tasks": []
+            }
+          },
+          "context": [
+            "content: No tasks yet.",
+            "tool: end_call(goodbye*) [runtime]",
+            "tool: skip_turn() [runtime]",
+            "tool: add_task(title*) [global]",
+            "tool: send_summary(to*) [global]"
+          ],
+          "skillPath": ""
+        },
+        "unusedFakes": [],
+        "usage": {
+          "agent": {
+            "inputTokens": 10,
+            "outputTokens": 1,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "caller": null,
+          "judge": null,
+          "totalTokens": 11
+        },
+        "assessment": {
+          "outcome": "pass",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the agent ended the call (end_call) at turn 3"
+            },
+            {
+              "name": "said \"hello\"",
+              "pass": true,
+              "detail": "turn 1"
+            }
+          ],
+          "notes": [],
+          "judge": null
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "adds milk",
+          "file": "src/agent/milk.scenario.ts",
+          "mode": "simulated",
+          "run": 1
+        },
+        "caller": {
+          "goal": "Put milk on the list"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "turn": 1,
+            "caller": "Put milk on my list.",
+            "reply": "Milk is on your list.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "add_task",
+                "input": {
+                  "title": "milk"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [
+              "content: Open tasks: milk."
+            ],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 2
+          },
+          {
+            "turn": 2,
+            "caller": "Thanks, bye!",
+            "reply": "Bye.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Bye!"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1
+          }
+        ],
+        "tools": [
+          {
+            "name": "add_task",
+            "description": "Add a task to the list."
+          },
+          {
+            "name": "send_summary",
+            "description": "Send the list to someone."
+          }
+        ],
+        "ending": {
+          "by": "agent",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": {
+            "done": true,
+            "goalMet": true,
+            "reason": "milk is on the list"
+          }
+        },
+        "endState": {
+          "stores": {
+            "tasks": {
+              "tasks": [
+                {
+                  "title": "milk",
+                  "done": false
+                }
+              ]
+            }
+          },
+          "context": [
+            "content: Open tasks: milk.",
+            "tool: end_call(goodbye*) [runtime]",
+            "tool: skip_turn() [runtime]",
+            "tool: add_task(title*) [global]",
+            "tool: send_summary(to*) [global]"
+          ],
+          "skillPath": ""
+        },
+        "unusedFakes": [],
+        "usage": {
+          "agent": {
+            "inputTokens": 10,
+            "outputTokens": 1,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "caller": {
+            "inputTokens": 14,
+            "outputTokens": 6,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "judge": {
+            "inputTokens": 7,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 41
+        },
+        "assessment": {
+          "outcome": "fail",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the agent ended the call (end_call) at turn 2"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": true,
+              "detail": "the agent ended the call at turn 2, and the caller was done"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": true,
+              "detail": "goal: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "expectation: The agent says that milk is on the list.",
+              "pass": false,
+              "detail": "expectation_1: no",
+              "evidence": {
+                "answer": "no",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "state of tasks has {\"tasks\":[{\"title\":\"milk\"}]}",
+              "pass": true
+            }
+          ],
+          "notes": [],
+          "judge": {
+            "promptVersion": "3",
+            "model": "openai:gpt-5.4-mini",
+            "answers": [
+              {
+                "id": "<id>",
+                "kind": "goal",
+                "text": "Did the caller reach this goal by the end of the call: Put milk on the list",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "goal: yes"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "asked_again: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "claimed_without_tool: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ignored_caller: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "incoherent: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "wrong_tool_use: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ended_early: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "expectation",
+                "text": "The agent says that milk is on the list.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "expectation_1: no"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "adds milk",
+          "file": "src/agent/milk.scenario.ts",
+          "mode": "simulated",
+          "run": 2
+        },
+        "caller": {
+          "goal": "Put milk on the list"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "turn": 1,
+            "caller": "Put milk on my list.",
+            "reply": "Milk is on your list.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "add_task",
+                "input": {
+                  "title": "milk"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [
+              "content: Open tasks: milk."
+            ],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 2
+          },
+          {
+            "turn": 2,
+            "caller": "Thanks, bye!",
+            "reply": "Bye.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Bye!"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1
+          }
+        ],
+        "tools": [
+          {
+            "name": "add_task",
+            "description": "Add a task to the list."
+          },
+          {
+            "name": "send_summary",
+            "description": "Send the list to someone."
+          }
+        ],
+        "ending": {
+          "by": "agent",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": {
+            "done": true,
+            "goalMet": true,
+            "reason": "milk is on the list"
+          }
+        },
+        "endState": {
+          "stores": {
+            "tasks": {
+              "tasks": [
+                {
+                  "title": "milk",
+                  "done": false
+                }
+              ]
+            }
+          },
+          "context": [
+            "content: Open tasks: milk.",
+            "tool: end_call(goodbye*) [runtime]",
+            "tool: skip_turn() [runtime]",
+            "tool: add_task(title*) [global]",
+            "tool: send_summary(to*) [global]"
+          ],
+          "skillPath": ""
+        },
+        "unusedFakes": [],
+        "usage": {
+          "agent": {
+            "inputTokens": 10,
+            "outputTokens": 1,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "caller": {
+            "inputTokens": 14,
+            "outputTokens": 6,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "judge": {
+            "inputTokens": 7,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 41
+        },
+        "assessment": {
+          "outcome": "fail",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the agent ended the call (end_call) at turn 2"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": true,
+              "detail": "the agent ended the call at turn 2, and the caller was done"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": true,
+              "detail": "goal: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "expectation: The agent says that milk is on the list.",
+              "pass": false,
+              "detail": "expectation_1: no",
+              "evidence": {
+                "answer": "no",
+                "turn": null,
+                "quote": null
+              }
+            },
+            {
+              "name": "state of tasks has {\"tasks\":[{\"title\":\"milk\"}]}",
+              "pass": true
+            }
+          ],
+          "notes": [],
+          "judge": {
+            "promptVersion": "3",
+            "model": "openai:gpt-5.4-mini",
+            "answers": [
+              {
+                "id": "<id>",
+                "kind": "goal",
+                "text": "Did the caller reach this goal by the end of the call: Put milk on the list",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "goal: yes"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "asked_again: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "claimed_without_tool: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ignored_caller: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "incoherent: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "wrong_tool_use: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ended_early: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "expectation",
+                "text": "The agent says that milk is on the list.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "expectation_1: no"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "format": "curb.conversation",
+        "version": 1,
+        "source": "scenario",
+        "scenario": {
+          "name": "sends",
+          "file": "src/agent/send.scenario.ts",
+          "mode": "simulated",
+          "run": 1
+        },
+        "caller": {
+          "goal": "Send my list to Sam"
+        },
+        "experiments": {},
+        "startedAt": "<startedAt>",
+        "durationMs": "<durationMs>",
+        "turns": [
+          {
+            "turn": 1,
+            "caller": "Send my list to Sam.",
+            "reply": "Sent to Sam.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "send_summary",
+                "input": {
+                  "to": "Sam"
+                },
+                "ok": true,
+                "result": {
+                  "ok": true,
+                  "message": "Sent."
+                },
+                "faked": true
+              }
+            ],
+            "errors": [],
+            "contextDiff": [
+              "content: Sent."
+            ],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": false,
+            "steps": 2
+          },
+          {
+            "turn": 2,
+            "caller": "Also send a copy to me.",
+            "reply": "Goodbye.",
+            "fallback": null,
+            "confirmation": null,
+            "toolCalls": [
+              {
+                "name": "end_call",
+                "input": {
+                  "goodbye": "Goodbye."
+                },
+                "ok": true,
+                "result": {
+                  "ok": true
+                }
+              }
+            ],
+            "errors": [],
+            "contextDiff": [],
+            "skillPath": "",
+            "skipped": false,
+            "endedCall": true,
+            "steps": 1
+          }
+        ],
+        "tools": [
+          {
+            "name": "add_task",
+            "description": "Add a task to the list."
+          },
+          {
+            "name": "send_summary",
+            "description": "Send the list to someone."
+          }
+        ],
+        "ending": {
+          "by": "agent",
+          "unsaid": [],
+          "maxTurns": 12,
+          "caller": {
+            "done": false,
+            "goalMet": null,
+            "reason": "a copy for me"
+          }
+        },
+        "endState": {
+          "stores": {
+            "tasks": {
+              "tasks": []
+            }
+          },
+          "context": [
+            "content: No tasks yet.",
+            "content: Sent.",
+            "tool: end_call(goodbye*) [runtime]",
+            "tool: skip_turn() [runtime]",
+            "tool: add_task(title*) [global]",
+            "tool: send_summary(to*) [global]"
+          ],
+          "skillPath": ""
+        },
+        "unusedFakes": [],
+        "usage": {
+          "agent": {
+            "inputTokens": 10,
+            "outputTokens": 1,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "caller": {
+            "inputTokens": 21,
+            "outputTokens": 9,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "judge": {
+            "inputTokens": 7,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          },
+          "totalTokens": 51
+        },
+        "assessment": {
+          "outcome": "fail",
+          "checks": [
+            {
+              "name": "no turn errors",
+              "pass": true
+            },
+            {
+              "name": "no empty agent reply",
+              "pass": true
+            },
+            {
+              "name": "no fallback line instead of a reply",
+              "pass": true
+            },
+            {
+              "name": "no sentence repeated within a turn",
+              "pass": true
+            },
+            {
+              "name": "the conversation ends cleanly",
+              "pass": true,
+              "detail": "the agent ended the call (end_call) at turn 2"
+            },
+            {
+              "name": "the agent does not hang up on a caller who still wants something",
+              "pass": false,
+              "detail": "the agent ended the call at turn 2 while the caller still wanted: a copy for me"
+            },
+            {
+              "name": "the caller reaches its goal",
+              "pass": true,
+              "detail": "goal: yes",
+              "evidence": {
+                "answer": "yes",
+                "turn": null,
+                "quote": null
+              }
+            }
+          ],
+          "notes": [
+            "this scenario has no checks of its own (expect), so only the built-in checks ran"
+          ],
+          "judge": {
+            "promptVersion": "3",
+            "model": "openai:gpt-5.4-mini",
+            "answers": [
+              {
+                "id": "<id>",
+                "kind": "goal",
+                "text": "Did the caller reach this goal by the end of the call: Send my list to Sam",
+                "answer": "yes",
+                "turn": null,
+                "quote": null,
+                "reason": "goal: yes"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent asked the caller for a specific piece of information (a name, a number, a date, a choice) that the caller had already stated earlier in the call. A caller who repeats a request does not count, and neither does an agent that reads details back to have them confirmed. Quote the agent's question, and give as earlier_turn the turn in which the caller had stated that information.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "asked_again: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "claimed_without_tool: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ignored or misread something the caller said. Quote the agent's reply that shows it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ignored_caller: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent repeated itself, contradicted itself, or said something that does not follow from the call. Quote the agent's words.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "incoherent: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent's tool calls did not match what the caller asked for, or came in an order that makes no sense. Quote the tool call, or the agent's words about it.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "wrong_tool_use: no"
+              },
+              {
+                "id": "<id>",
+                "kind": "finding",
+                "text": "The agent ended the call although the caller had not said goodbye and had not said that they needed nothing else. Having done what the caller last asked for is no reason to end the call. When the caller did say goodbye, an earlier request of theirs that went unanswered is not this finding: that is ignored_caller. Answer no when the agent did not end the call. Quote the last words before the call ended.",
+                "answer": "no",
+                "turn": null,
+                "quote": null,
+                "reason": "ended_early: no"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "requests": {
+    "caller": [
+      "10a815458160a2f6",
+      "10a815458160a2f6",
+      "607a5913ce5f48c8",
+      "6fa6e973f2861874",
+      "f7a62dbb85e54b70",
+      "f7a62dbb85e54b70",
+      "fe1ae4dd161a3b6f"
+    ],
+    "judge": [
+      "342f251173f758b6",
+      "ef8bfe3fb6bd8054",
+      "ef8bfe3fb6bd8054"
+    ],
+    "grouping": []
+  }
+}

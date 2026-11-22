@@ -1,7 +1,8 @@
 # Saved test runs
 
 Every `curb test` saves the conversations it played to one JSON file,
-`.curb/test-runs/<id>.json`, in the project. `curb test --rejudge <run>` reads one back and checks
+`.curb/test-runs/<id>.json`, in the project; [`saveRun`](./testing-api.md#saverun-and-loadrun)
+saves conversations of your own the same way. `curb test --rejudge <run>` reads one back and checks
 its conversations again without running the agent ([Testing](./testing.md#saved-runs-and-re-judging)).
 The newest 20 runs are kept, and `.curb/` is in a new project's `.gitignore`.
 
@@ -22,6 +23,7 @@ A run's id is the time it started and four random characters, so ids sort by tim
   "id": "20261027T101502118Z-k3f9",
   "createdAt": "2026-10-27T10:15:02.118Z",
   "curb": "1.25.0",
+  "agentVersion": { "commit": "3f9c2a1d8e7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a", "dirty": false },
   "complete": true,
   "models": { "agent": "kugelaudio:qwen3.8-27b", "caller": "kugelaudio:qwen3.8-27b", "judge": "kugelaudio:qwen3.8-27b" },
   "callerPromptVersion": "2",
@@ -46,11 +48,13 @@ A run's id is the time it started and four random characters, so ids sort by tim
 | Field | What it holds |
 |---|---|
 | `format`, `version` | `"curb.test-run"` and `1`. A file of another format or version is refused with what it is |
+| `agentVersion` | The version of the agent the run played: the project's git `commit`, and whether the project's files differed from it (`dirty`). `null` outside a git repository; absent in runs saved before it was recorded |
 | `complete` | `false` while scenarios are still running |
 | `rejudgedFrom` | The id of the run whose conversations these are, on a re-judged run |
 | `models` | The model that played each part, as `provider:model` |
 | `callerPromptVersion`, `judgePromptVersion` | The versions of the simulated caller's and the judge's prompt. Answers from different versions are not the same measurement |
-| `scenarios` | What each scenario asked of its runs when it ran |
+| `maxErrorRate` | The share of a scenario's runs that may be errors; `null` in a run `saveRun` wrote without one |
+| `scenarios` | What each scenario asked of its runs when it ran. Conversations `saveRun` saved without a scenario are under one of their own, with `file` empty |
 | `conversations` | One conversation record per run |
 
 ## A conversation record
@@ -92,18 +96,20 @@ A run's id is the time it started and four random characters, so ids sort by tim
 
 | Field | What it holds |
 |---|---|
-| `source` | Where the conversation comes from. `curb test` writes `"scenario"` |
-| `scenario` | The scenario and which of its runs this is, from 1 |
-| `caller` | The simulated caller as the scenario defined it; `null` for scripted lines |
+| `source` | Where the conversation comes from: `"scenario"` (`curb test`), `"call"` (`startCall`), or, for a call `loadCalls` read, `"dev"`, `"calls-export"` or `"transcript"` |
+| `id` | How a report names the call, where its source names it. Optional |
+| `scenario` | The scenario and which of its runs this is, from 1. Every conversation of a run file has one |
+| `caller` | The simulated caller as it was defined; `null` for scripted lines and any other caller |
 | `experiments` | The variant the call had in each of the agent's experiments |
 | `turns` | Every turn: the caller's line (`null` for the agent's opening), what the caller heard, each tool call with its input and result, the turn's errors, and how many model steps it took |
 | `tools` | Every tool the agent was offered at some point of the call, as `{ "name", "description" }`, without the framework's own. The judge reads it. Optional: a record without it is judged without it |
-| `ending.by` | Who or what ended it: `agent`, `caller`, `script`, `max_turns`, `error` or `simulator` |
+| `ending.by` | Who or what ended it: `agent`, `caller`, `script`, `max_turns`, `error` or `simulator`; `null` when its source does not say |
 | `ending.caller` | What the simulated caller said about the end: whether it was `done`, whether its goal was met, and why. `null` when it did not say |
 | `ending.providerError` | `true` when a failed request to the agent's LLM provider stopped it |
 | `endState` | The data of the agent's stores, its rendered context and its active skill when the call ended |
 | `usage` | Tokens per part, `null` where the provider reported none |
-| `assessment` | What the checks and the judge made of it when the file was written: the `outcome` (`pass`, `fail` or `error`), the `error` with its `kind`, every check, and every answer of the judge with its `turn` and `quote` |
+| `recordsToolCalls` | `false` when its source holds no tool calls (a Calls export, a transcript). Optional |
+| `assessment` | What the checks and the judge made of it when the file was written; absent on a conversation `saveRun` saved without checks: the `outcome` (`pass`, `fail` or `error`), the `error` with its `kind`, every check, and every answer of the judge with its `turn` and `quote` |
 
 Everything a check, the judge or a style number reads is in `turns`, `ending` and `endState`. A
 re-judge reads only those, so it gives the same result as the run did when nothing was changed, apart
@@ -124,6 +130,7 @@ run.
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | A run records `agentVersion`; `saveRun` and `loadRun` write and read runs; a conversation record may have another `source`, an `id`, `recordsToolCalls`, a `null` `ending.by` and `startedAt` |
 | v1.25.0 | Saved test runs and `curb test --rejudge` introduced |
 
 ## Next steps

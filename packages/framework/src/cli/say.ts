@@ -12,15 +12,8 @@ import type { AgentChatMessage, AgentTurnError } from "../llm/types.js";
 import type { AgentSiteRuntime } from "../runtime.js";
 import { conversationState, restoreConversation, type ConversationState } from "../server/conversation-restore.js";
 import { clientInfo, clientInfoProblem } from "../server/protocol.js";
-import {
-  confirmationLine,
-  installFakes,
-  playOpening,
-  playTurn,
-  toolCallLine,
-  toolCallsOf,
-  type PlayedTurn,
-} from "../testing/run.js";
+import { installFakes, playOpening, playTurn, toolCallsOf, type PlayedTurn } from "../testing/call.js";
+import { confirmationLine, toolCallLine } from "./scenarios/report.js";
 import {
   fakedToolProblem,
   toolResultProblem,

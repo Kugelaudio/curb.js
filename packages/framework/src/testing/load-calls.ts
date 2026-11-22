@@ -1,18 +1,29 @@
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { recordedConversations } from "../cli/conversations.js";
+import { resolveProjectRoot } from "../project.node.js";
 import { END_CALL_TOOL_NAME, type ToolResult } from "../types.js";
 import type { ScenarioEndedBy } from "./checks.js";
-import type { RecordedTool } from "./record.js";
+import type { ConversationRecord, ConversationSource, RecordedTool } from "./record.js";
 import type { ScenarioToolCall, ScenarioTurn } from "./scenario.js";
 
 /**
- * The calls `curb review` reads, from the four shapes a file can have. A file is recognised by
- * what it holds, never by its name, and each call becomes the turns the judge reads, with what
- * its source knows beyond the words: whether tool calls are recorded, and who ended the call.
+ * Calls from the files they come in, as conversation records: a saved test run, a Calls export
+ * of the KugelAudio dashboard, `curb conversations --json`, a written transcript, and the
+ * `curb dev` store itself. A file is recognised by what it holds, never by its name, and each
+ * call becomes the record every check and judge reads, with what its source knows beyond the
+ * words: whether tool calls are recorded, and who ended the call.
  */
 
-/** One call to review. */
+/** One call as its source holds it. */
 export type ReviewCall = {
   /** How the report names the call: its id where it comes from. */
   id: string;
+  source: ConversationSource;
+  startedAt?: string;
+  durationMs?: number;
+  /** The record itself, for a conversation of a saved test run. */
+  record?: ConversationRecord;
   turns: ScenarioTurn[];
   /** Who ended the call; null when the source does not say. */
   endedBy: ScenarioEndedBy | null;
@@ -72,6 +83,8 @@ function savedCall(conversation: unknown): ReviewCall | null {
   const ending = isRecord(conversation.ending) ? conversation.ending : {};
   return {
     id: `${String(scenario.name ?? "conversation")} run ${String(scenario.run ?? 1)}`,
+    source: "scenario",
+    record: conversation as ConversationRecord,
     turns: conversation.turns as ScenarioTurn[],
     endedBy: typeof ending.by === "string" ? (ending.by as ScenarioEndedBy) : null,
     recordsTools: true,
@@ -117,7 +130,14 @@ export function storedCall(conversation: unknown): ReviewCall | null {
     }
   }
   const ended = calls.some((call) => call.name === END_CALL_TOOL_NAME && call.ok);
-  return { id: `conversation ${String(conversation.id)}`, turns: turnsOf(lines), endedBy: ended ? "agent" : null, recordsTools: true };
+  return {
+    id: `conversation ${String(conversation.id)}`,
+    source: "dev",
+    ...(typeof conversation.startedAt === "string" ? { startedAt: conversation.startedAt } : {}),
+    turns: turnsOf(lines),
+    endedBy: ended ? "agent" : null,
+    recordsTools: true,
+  };
 }
 
 /** Who ended a hosted call, from the export's `endReason`. */
@@ -147,7 +167,15 @@ function exportedCall(call: Record<string, unknown>): ReviewCall {
     return by && typeof turn.text === "string" ? [{ by, text: turn.text }] : [];
   });
   const endedBy = typeof call.endReason === "string" && Object.hasOwn(ENDED_BY, call.endReason) ? ENDED_BY[call.endReason]! : null;
-  return { id: String(call.callId), turns: turnsOf(lines), endedBy, recordsTools: false };
+  return {
+    id: String(call.callId),
+    source: "calls-export",
+    ...(typeof call.startedAt === "string" ? { startedAt: call.startedAt } : {}),
+    ...(typeof call.durationMs === "number" ? { durationMs: call.durationMs } : {}),
+    turns: turnsOf(lines),
+    endedBy,
+    recordsTools: false,
+  };
 }
 
 /** A line that starts with who speaks, with or without Markdown bold around the label. */
@@ -164,7 +192,7 @@ function writtenCall(id: string, text: string): ReviewCall | null {
     else if (lines.length > 0 && row.trim()) lines.at(-1)!.text += ` ${row.trim()}`;
   }
   if (!lines.some((line) => line.by === "caller") || !lines.some((line) => line.by === "agent")) return null;
-  return { id, turns: turnsOf(lines), endedBy: null, recordsTools: false };
+  return { id, source: "transcript", turns: turnsOf(lines), endedBy: null, recordsTools: false };
 }
 
 /**
@@ -186,4 +214,83 @@ export function callsIn(name: string, text: string): ReadCalls | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The record of one call: a saved run's conversation as it is, with its id; any other call
+ * with what its source holds. */
+function recordOf(call: ReviewCall): ConversationRecord {
+  if (call.record) return { ...call.record, id: call.id };
+  return {
+    format: "curb.conversation",
+    version: 1,
+    source: call.source,
+    id: call.id,
+    caller: null,
+    experiments: {},
+    startedAt: call.startedAt ?? null,
+    durationMs: call.durationMs ?? 0,
+    turns: call.turns,
+    ...(call.tools ? { tools: [...call.tools] } : {}),
+    ending: { by: call.endedBy, unsaid: [], maxTurns: call.turns.filter((turn) => turn.caller !== null).length, caller: null },
+    endState: null,
+    unusedFakes: [],
+    usage: null,
+    ...(call.recordsTools ? {} : { recordsToolCalls: false as const }),
+  };
+}
+
+/** The calls `loadCalls` read: every call with a transcript, how many it left out for having
+ * none, and the files in a folder it left out for holding no calls. */
+export type LoadedCalls = { calls: ConversationRecord[]; skipped: number; ignored: string[] };
+
+const READ_EXTENSIONS = [".json", ".jsonl", ".md", ".txt"];
+
+/** Whether `text` is the `curb dev` store: JSON lines, each a record of its journal, but for a
+ * last one cut short by a process that stopped while it wrote. */
+function isDevStore(text: string): boolean {
+  const rows = text.split(/\r?\n/).filter((row) => row.trim()).map(parsed);
+  const records = rows.slice(0, -1).every(isRecord) ? rows.filter(isRecord) : [];
+  return records.some((row) => row.t === "conversation") && records.every((row) => typeof row.t === "string");
+}
+
+/**
+ * The calls in files, as conversation records. A path is a file, or a folder whose .json,
+ * .jsonl, .md and .txt files are read; a relative one is read from `root`. A file is one of
+ * {@link REVIEW_SHAPES}, or the `curb dev` store itself (`.data/conversations.jsonl`), of which
+ * `last` picks the newest conversations. Throws, naming the file and the shapes there are, on a
+ * file given by name that holds no calls; in a folder, such a file (a README beside the exports)
+ * is left out and named in `ignored`.
+ */
+export function loadCalls(paths: string | readonly string[], options: { last?: number; root?: string } = {}): LoadedCalls {
+  const root = options.root ?? resolveProjectRoot();
+  const read: LoadedCalls = { calls: [], skipped: 0, ignored: [] };
+  for (const given of typeof paths === "string" ? [paths] : paths) {
+    const path = resolve(root, given);
+    if (!existsSync(path)) throw new Error(`[CURB_REVIEW_NOT_FOUND] No file or folder at ${given}.\nFix: pass ${REVIEW_SHAPES}; or a folder of such files.`);
+    const isCallFile = (name: string) => READ_EXTENSIONS.some((extension) => name.toLowerCase().endsWith(extension));
+    const folder = statSync(path).isDirectory();
+    // Each file as a refusal or a note names it: the way it was given.
+    const files = folder ? readdirSync(path).filter(isCallFile).sort().map((name) => join(given, name)) : [given];
+    for (const file of files) {
+      const text = readFileSync(resolve(root, file), "utf8");
+      const found = !folder && isDevStore(text) ? storedCalls(resolve(root, file), options.last) : callsIn(basename(file), text);
+      if (!found && folder) read.ignored.push(file);
+      else if (!found) throw new Error(`[CURB_REVIEW_UNREADABLE] ${file} holds no calls in a shape curb review reads.\nFix: pass ${REVIEW_SHAPES}.`);
+      else {
+        read.calls.push(...found.calls.map(recordOf));
+        read.skipped += found.skipped;
+      }
+    }
+  }
+  return read;
+}
+
+/** The shapes {@link loadCalls} reads, as a refusal lists them. */
+loadCalls.shapes = REVIEW_SHAPES;
+
+/** The newest `last` conversations of the `curb dev` store at `file` (all of them without). */
+function storedCalls(file: string, last = Number.MAX_SAFE_INTEGER): ReadCalls {
+  const found = recordedConversations(dirname(file), file, { last, id: null, json: false }).map((conversation) => storedCall(conversation)!);
+  const calls = found.filter((call) => call.turns.length > 0);
+  return { calls, skipped: found.length - calls.length };
 }

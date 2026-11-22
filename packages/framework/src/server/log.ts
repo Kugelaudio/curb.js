@@ -51,8 +51,15 @@ function line(symbol: string, tag: string, message: string, tint?: (text: string
   return ` ${symbol} ${dim(stamp())} ${tagColor(tag.padEnd(TAG_WIDTH))} ${message}`;
 }
 
+/** Info lines go to stderr from now on: a script or a test that runs the agent (`curb/testing`)
+ * owns stdout, and the framework's own lines would mix into what it prints. */
+let infoToStderr = false;
+export function routeInfoLogsToStderr(): void {
+  infoToStderr = true;
+}
+
 export function logInfo(tag: string, message: string): void {
-  console.log(line(green("✓"), tag, message));
+  (infoToStderr ? console.error : console.log)(line(green("✓"), tag, message));
 }
 
 export function logWarn(tag: string, message: string): void {

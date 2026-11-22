@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fallbackReplies } from "../llm/localized.js";
-import { builtInChecks, expectContext, fallbackLineIn, repeatedSentences, type Conversation } from "./checks.js";
+import { conversationChecks, expectContext, fallbackLineIn, repeatedSentences, type Conversation } from "./checks.js";
 import type { ScenarioCheck, ScenarioToolCall, ScenarioTurn } from "./scenario.js";
 
 function turn(overrides: Partial<ScenarioTurn> & { turn: number }): ScenarioTurn {
@@ -37,7 +37,7 @@ function failed(checks: ScenarioCheck[]): Array<[string, string | undefined]> {
 
 describe("built-in checks", () => {
   it("pass a clean conversation and say how it ended", () => {
-    const checks = builtInChecks(conversation([turn({ turn: 1 }), turn({ turn: 2, endedCall: true })], { endedBy: "agent" }));
+    const checks = conversationChecks(conversation([turn({ turn: 1 }), turn({ turn: 2, endedCall: true })], { endedBy: "agent" }));
     expect(failed(checks)).toEqual([]);
     expect(checks.map((check) => check.name)).toEqual([
       "no turn errors",
@@ -62,7 +62,7 @@ describe("built-in checks", () => {
       ],
       errors: [{ kind: "step_limit", message: "The turn used all 8 LLM steps (maxSteps)." }],
     });
-    const checks = builtInChecks(
+    const checks = conversationChecks(
       conversation([turn({ turn: 1 }), looping], { endedBy: "error", stopReason: "step_limit: The turn used all 8 LLM steps (maxSteps)." }),
     );
 
@@ -84,12 +84,12 @@ describe("built-in checks", () => {
       result: { ok: false, message: "Held, not run: ask the caller first." },
       heldFor: "I'll book Tuesday the 27th, is that right?",
     };
-    const checks = builtInChecks(conversation([turn({ turn: 1, toolCalls: [held, held, held] })]));
+    const checks = conversationChecks(conversation([turn({ turn: 1, toolCalls: [held, held, held] })]));
     expect(failed(checks)).toEqual([]);
   });
 
   it("never flag a turn the agent skipped on purpose", () => {
-    const checks = builtInChecks(
+    const checks = conversationChecks(
       conversation([turn({ turn: 1, reply: "", skipped: true }), turn({ turn: 2, reply: "Take care.", endedCall: true })], {
         endedBy: "agent",
       }),
@@ -100,7 +100,7 @@ describe("built-in checks", () => {
   it("flag a turn the model answered with nothing, under the empty-reply check only", () => {
     const { turnFailed } = fallbackReplies("en");
     const empty = "The model answered with no text and no tool call, twice in a row.";
-    const checks = builtInChecks(
+    const checks = conversationChecks(
       conversation([turn({ turn: 1, reply: turnFailed, fallback: turnFailed, errors: [{ kind: "empty_reply", message: empty }] })], {
         endedBy: "error",
         stopReason: `empty_reply: ${empty}`,
@@ -114,7 +114,7 @@ describe("built-in checks", () => {
   });
 
   it("flag a sentence said twice in one turn, and a hang-up before the script was done", () => {
-    const checks = builtInChecks(
+    const checks = conversationChecks(
       conversation([turn({ turn: 1, reply: "Sure. Sure! Your policy covers storm damage.", endedCall: true })], {
         endedBy: "agent",
         unsaid: ["And hail?"],

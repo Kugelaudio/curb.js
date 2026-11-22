@@ -53,19 +53,3 @@ export function runUsage(byRole: Record<UsageRole, TokenUsage | null>): RunUsage
   const totalTokens = ROLES.reduce((sum, role) => sum + (byRole[role] ? tokensOf(byRole[role]) : 0), 0);
   return { ...byRole, totalTokens };
 }
-
-/** The usage of several runs together; null when none of them has any. */
-export function sumUsage(runs: ReadonlyArray<RunUsage | null>): RunUsage | null {
-  const counters: Record<UsageRole, TokenCounter> = {
-    agent: new TokenCounter(),
-    caller: new TokenCounter(),
-    judge: new TokenCounter(),
-  };
-  for (const run of runs) {
-    for (const role of ROLES) {
-      const usage = run?.[role];
-      if (usage) counters[role].add(usage);
-    }
-  }
-  return runUsage({ agent: counters.agent.total(), caller: counters.caller.total(), judge: counters.judge.total() });
-}

@@ -1,11 +1,8 @@
-import { END_CALL_TOOL_NAME, SKIP_TURN_TOOL_NAME } from "../types.js";
+import type { ScenarioCheck, ScenarioConfirmation, ScenarioToolCall, ScenarioTurn } from "../../testing/index.js";
+import { END_CALL_TOOL_NAME, SKIP_TURN_TOOL_NAME } from "../../types.js";
 import type { FindingStats, ScenarioResult, ScenarioRun } from "./aggregate.js";
-import type { TestModels } from "./record.js";
-import type { ThrottleStats } from "./resilience.js";
-import { confirmationLine, toolCallLine } from "./run.js";
-import type { ScenarioCheck, ScenarioTurn } from "./scenario.js";
 import { styleLine } from "./style.js";
-import type { RunUsage } from "./usage.js";
+import type { RunUsage, TestModels, ThrottleStats } from "./types.js";
 
 /**
  * A test run as people read it: the terminal report `curb test` prints, and the Markdown report
@@ -59,6 +56,21 @@ export function testOutcome(scenarios: readonly ScenarioReport[]): TestOutcome {
   const failed = scenarios.some((report) => ("error" in report ? true : isResult(report) && report.outcome === "fail"));
   if (failed) return "fail";
   return scenarios.some((report) => isResult(report) && report.outcome === "error") ? "error" : "pass";
+}
+
+/** A tool call as `curb test` and `curb say` print it: held, faked, ok, or refused with the reason. */
+export function toolCallLine(call: ScenarioToolCall): string {
+  const input = JSON.stringify(call.input);
+  if (call.heldFor !== undefined) return `[tool ${call.name} held] ${input} -> runs on the caller's yes to "${call.heldFor}"`;
+  const reason = !call.ok && call.result?.message ? ` -> ${call.result.message}` : "";
+  return `[tool ${call.name} ${call.faked ? "faked" : call.ok ? "ok" : "refused"}] ${input}${reason}`;
+}
+
+/** The caller's answer to a held action as `curb test` and `curb say` print it: the verdict, the
+ * words, and what became of the tool. */
+export function confirmationLine({ tool, answer, verdict, ran }: ScenarioConfirmation): string {
+  const outcome = verdict === "unclear" ? "still waits for the caller's yes" : ran ? "ran" : "did not run";
+  return `[confirmation ${verdict}] ${JSON.stringify(answer)}: ${tool} ${outcome}`;
 }
 
 /** One turn as the report prints it: the caller's line, how it answered an action waiting for

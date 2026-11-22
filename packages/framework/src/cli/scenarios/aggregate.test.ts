@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { saved, turn } from "../test-fixtures/conversations.js";
+import { saved, turn } from "../../test-fixtures/conversations.js";
 import { aggregateScenario } from "./aggregate.js";
-import type { JudgeAnswer } from "./judge.js";
-import type { SavedConversation, SavedScenarioSettings } from "./record.js";
+import type { JudgeAnswer } from "../../testing/judge.js";
+import type { SavedConversation, SavedScenarioSettings } from "../../testing/record.js";
 
 const settings: SavedScenarioSettings = {
   name: "books",

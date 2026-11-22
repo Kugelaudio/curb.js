@@ -262,10 +262,16 @@
 ./providers kugelaudio
 ./providers openai
 ./providers openaiCompatible
+./testing Call
+./testing Caller
 ./testing CallerBehaviour
 ./testing CallerPersona
+./testing ConversationRecord
 ./testing ExpectedCall
+./testing FINDINGS
+./testing Finding
 ./testing JudgeFinding
+./testing ReportGroup
 ./testing Scenario
 ./testing ScenarioCaller
 ./testing ScenarioCheck
@@ -279,10 +285,31 @@
 ./testing ScenarioTurnError
 ./testing StyleLimits
 ./testing StyleMetric
+./testing TestHost
+./testing TestModel
+./testing TestRun
+./testing ask
 ./testing buildCallEvent
+./testing builtInChecks
+./testing checksOf
+./testing converse
+./testing groupFindings
+./testing inParallel
+./testing judge
+./testing loadCalls
+./testing loadRun
+./testing passRate
 ./testing personas
+./testing projectHost
+./testing report
 ./testing runHook
+./testing saveRun
 ./testing scenario
+./testing scriptedCaller
+./testing simulatedCaller
+./testing startCall
+./testing styleNumbers
+./testing testModel
 curb build
 curb check
 curb conversations
@@ -297,6 +324,7 @@ curb review --concurrency
 curb review --json
 curb review --judge-model
 curb review --last
+curb run
 curb say
 curb secrets
 curb server

@@ -1,10 +1,21 @@
-import type { AgentLlmClient } from "../agent-session.js";
-import { BUILT_IN_CHECKS, builtInChecks, expectContext, hangUpCheck } from "./checks.js";
-import { judgeConversation, type JudgeAnswer, type JudgeResult } from "./judge.js";
-import type { Assessment, ConversationRecord, RunError } from "./record.js";
-import { describeProviderError } from "./resilience.js";
-import type { JudgeFinding, Scenario, ScenarioCheck, ScenarioTurn } from "./scenario.js";
-import { sentenceKey } from "./style.js";
+import {
+  builtInChecks,
+  checksOf,
+  judge,
+  type ConversationRecord,
+  type JudgeFinding,
+  type Scenario,
+  type ScenarioCheck,
+  type ScenarioTurn,
+  type TestModel,
+} from "../../testing/index.js";
+import type { Assessment, JudgeAnswer, JudgeResult, RunError } from "./types.js";
+
+/** The names of the checks the runner adds to the built-in ones. */
+const BUILT_IN_CHECKS = { goal: "the caller reaches its goal" } as const;
+
+/** A sentence as two of them are compared: ignoring case, punctuation and spacing. */
+const sentenceKey = (sentence: string) => sentence.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /**
  * What a finished conversation comes to: pass, fail, or error. Everything here reads a
@@ -32,20 +43,12 @@ export const CALLER_LOOP = 3;
 export async function assessConversation(params: {
   record: ConversationRecord;
   settings: AssessmentSettings;
-  /** The judge's LLM. Asked once, when the conversation has a simulated caller or expectations. */
-  judge: AgentLlmClient;
-  judgeModel?: string | null;
+  /** The judge's model. Asked once, when the conversation has a simulated caller or expectations. */
+  judge: TestModel;
 }): Promise<Assessment> {
   const { record, settings } = params;
   const { turns, ending, caller } = record;
-  const checks = builtInChecks({
-    turns,
-    endedBy: ending.by,
-    ...(ending.reason === undefined ? {} : { stopReason: ending.reason }),
-    unsaid: ending.unsaid,
-    maxTurns: ending.maxTurns,
-  });
-  if (caller) checks.push(hangUpCheck(ending.by, ending.caller, turns));
+  const checks = builtInChecks(record);
 
   let error = brokenRun(record);
   let judged: JudgeResult | null = null;
@@ -54,14 +57,10 @@ export async function assessConversation(params: {
   const judges = caller !== null || settings.expectations.length > 0;
   if (judges && !error && !brokeOff) {
     try {
-      judged = await judgeConversation({
-        llm: params.judge,
-        conversation: { turns, endedBy: ending.by, caller, ...(record.tools ? { tools: record.tools } : {}) },
-        expectations: settings.expectations,
-        model: params.judgeModel ?? null,
-      });
+      const { promptVersion, model, answers } = await judge(record, { expectations: settings.expectations, model: params.judge });
+      judged = { promptVersion, model, answers };
     } catch (cause) {
-      error = { kind: "judge", message: describeProviderError(cause) };
+      error = { kind: "judge", message: cause instanceof Error ? cause.message : String(cause) };
     }
   }
   const notJudged = (name: string): ScenarioCheck => ({
@@ -203,7 +202,7 @@ async function authorChecks(expect: Scenario["expect"], record: ConversationReco
   if (!expect) return [];
   let returned: unknown;
   try {
-    returned = await expect(expectContext(record.turns, record.endState));
+    returned = await expect(checksOf(record));
   } catch (error) {
     return [{ name: "expect", pass: false, detail: `expect threw: ${describe(error)}` }];
   }
