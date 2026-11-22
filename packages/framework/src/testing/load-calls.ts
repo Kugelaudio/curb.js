@@ -169,10 +169,24 @@ function errorText(error: unknown): string | undefined {
   return undefined;
 }
 
-/** One entry of an exported call's `toolCalls` (`{ name, offsetMs, outcome, input | arguments,
+/** The fields of a result as a hosted call's tool event carries it (`curb.tool` of the host
+ * protocol): `{ message?, data?, truncated? }`, with whether the call succeeded beside it. */
+const EVENT_RESULT_FIELDS = new Set(["message", "data", "truncated"]);
+
+/** Whether `result` is a tool event's result: an object with nothing but those fields, at least
+ * one of them, and a `message` that is text. Any other object is the tool's data. */
+function isEventResult(result: unknown): result is { message?: string; data?: unknown; truncated?: unknown } {
+  if (!isRecord(result)) return false;
+  const fields = Object.keys(result);
+  if (fields.length === 0 || !fields.every((field) => EVENT_RESULT_FIELDS.has(field))) return false;
+  return result.message === undefined || typeof result.message === "string";
+}
+
+/** One entry of an exported call's `toolCalls` (`{ name, offsetMs, ok | outcome, input | arguments,
  * result, error }`) as the tool call a turn holds; null for an entry without a name. `ok`, when
  * the entry has it, says whether the call succeeded; otherwise its `outcome` does, and without
- * either it succeeded when it has no error. */
+ * either it succeeded when it has no error. Its `result` is a whole `{ ok, message, data }`, a
+ * tool event's `{ message, data }` beside the entry's own `ok`, or else the tool's data. */
 function exportedToolCall(entry: Record<string, unknown>): ScenarioToolCall | null {
   if (typeof entry.name !== "string" || !entry.name.trim()) return null;
   const input = isRecord(entry.input) ? entry.input : isRecord(entry.arguments) ? entry.arguments : {};
@@ -183,6 +197,9 @@ function exportedToolCall(entry: Record<string, unknown>): ScenarioToolCall | nu
   let result: ToolResult | null = null;
   if (isRecord(entry.result) && typeof entry.result.ok === "boolean") {
     result = { ...(entry.result as ToolResult), ...(error && typeof entry.result.message !== "string" ? { message: error } : {}) };
+  } else if (isEventResult(entry.result)) {
+    const message = entry.result.message ?? error;
+    result = { ok, ...(message !== undefined ? { message } : {}), ...(entry.result.data !== undefined ? { data: entry.result.data } : {}) };
   } else if (entry.result !== undefined || error !== undefined) {
     result = { ok, ...(error !== undefined ? { message: error } : {}), ...(entry.result !== undefined ? { data: entry.result } : {}) };
   }
@@ -231,11 +248,16 @@ function exportedCall(call: Record<string, unknown>): ReviewCall {
   const endedBy = typeof call.endReason === "string" && Object.hasOwn(ENDED_BY, call.endReason)
     ? ENDED_BY[call.endReason]!
     : toolCalls.some(({ call: toolCall }) => toolCall.name === END_CALL_TOOL_NAME && toolCall.ok) ? "agent" : null;
+  // The dashboard's export writes the call's length in seconds; a line may hold milliseconds instead.
+  const seconds = call.durationSeconds;
+  const durationMs = typeof call.durationMs === "number"
+    ? call.durationMs
+    : typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * 1000) : undefined;
   return {
     id: String(call.callId),
     source: "calls-export",
     ...(typeof call.startedAt === "string" ? { startedAt: call.startedAt } : {}),
-    ...(typeof call.durationMs === "number" ? { durationMs: call.durationMs } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
     turns: turnsOf(lines),
     endedBy,
     recordsTools,

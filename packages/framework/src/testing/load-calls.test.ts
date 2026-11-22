@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { record, ran, turn } from "../test-fixtures/conversations.js";
+import { turnLines } from "./judge.js";
 import { callsIn } from "./load-calls.js";
 
 const spoken = (text: string) => callsIn("call.md", text)!.calls[0]!.turns.map((entry) => [entry.turn, entry.caller, entry.reply]);
@@ -126,6 +127,71 @@ describe("the calls curb review reads", () => {
     const before = callsIn("older.jsonl", JSON.stringify(older))!.calls[0]!;
     expect(before).toMatchObject({ recordsTools: false, endedBy: null });
     expect(before.turns.map((turn) => [turn.caller, turn.reply])).toEqual(none.turns.map((turn) => [turn.caller, turn.reply]));
+  });
+
+  it("reads a hosted call's tool event result, so the judge reads a refused call with its reason", () => {
+    const line = {
+      callId: "call-v",
+      endReason: "caller_ended",
+      transcript: {
+        turns: [
+          { speaker: "caller", text: "Friday at ten, please.", startOffsetMs: 1_000 },
+          { speaker: "agent", text: "Friday at ten is gone. Would eleven do?", startOffsetMs: 4_000 },
+          { speaker: "caller", text: "Yes, eleven.", startOffsetMs: 7_000 },
+          { speaker: "agent", text: "You are booked for eleven.", startOffsetMs: 10_000 },
+        ],
+      },
+      // Each entry as the tool event of the host protocol holds it: `ok` beside `result: { message, data }`.
+      toolCalls: [
+        { name: "book_appointment", offsetMs: 2_500, ok: false, input: { day: "friday", time: "10:00" }, result: { message: "That slot is taken." } },
+        { name: "book_appointment", offsetMs: 8_500, ok: true, input: { day: "friday", time: "11:00" }, result: { message: "Booked.", data: { reference: "A-1042" } } },
+        // A long message was cut by the runner, and data too large for the event was left out.
+        { name: "list_slots", offsetMs: 8_600, ok: true, arguments: {}, result: { message: "Mon 09:00, … [truncated]", truncated: true } },
+        { name: "send_summary", offsetMs: 8_700, ok: false, input: {}, result: { data: { queued: false } }, error: "No email address on file." },
+        // Anything else is still the tool's data, and a whole result is still read as it is.
+        { name: "lookup_slots", offsetMs: 8_800, ok: true, input: {}, result: { message: "one left", slots: ["11:00"] } },
+        { name: "lookup_slots", offsetMs: 8_900, ok: true, input: {}, result: {} },
+      ],
+    };
+
+    const call = callsIn("export.jsonl", `${JSON.stringify(line)}\n`)!.calls[0]!;
+
+    expect(call.turns[0]!.toolCalls).toEqual([
+      { name: "book_appointment", input: { day: "friday", time: "10:00" }, ok: false, result: { ok: false, message: "That slot is taken." } },
+    ]);
+    expect(turnLines(call.turns[0]!)).toEqual([
+      "Caller: Friday at ten, please.",
+      '(The agent called the tool book_appointment: refused. Input: {"day":"friday","time":"10:00"}. Result: That slot is taken.)',
+      "Agent: Friday at ten is gone. Would eleven do?",
+    ]);
+    expect(call.turns[1]!.toolCalls.map((toolCall) => toolCall.result)).toEqual([
+      { ok: true, message: "Booked.", data: { reference: "A-1042" } },
+      { ok: true, message: "Mon 09:00, … [truncated]" },
+      { ok: false, message: "No email address on file.", data: { queued: false } },
+      { ok: true, data: { message: "one left", slots: ["11:00"] } },
+      { ok: true, data: {} },
+    ]);
+    expect(turnLines(call.turns[1]!)[1]).toBe(
+      '(The agent called the tool book_appointment: ok. Input: {"day":"friday","time":"11:00"}. Result: Booked. Data: {"reference":"A-1042"})',
+    );
+  });
+
+  it("reads a Calls export line's length from durationSeconds, as from durationMs", () => {
+    const line = (length: Record<string, unknown>) =>
+      JSON.stringify({ callId: "call-w", ...length, transcript: { turns: [{ speaker: "caller", text: "Hi." }, { speaker: "agent", text: "Hello." }] } });
+    const durationOf = (length: Record<string, unknown>) => callsIn("export.jsonl", line(length))!.calls[0]!.durationMs;
+
+    expect(durationOf({ durationSeconds: 42 })).toBe(42_000);
+    expect(durationOf({ durationSeconds: 61.2345 })).toBe(61_235);
+    expect(durationOf({ durationSeconds: 0 })).toBe(0);
+    expect(durationOf({ durationMs: 42_500 })).toBe(42_500);
+    // Milliseconds are the finer of the two, so a line with both is read from them.
+    expect(durationOf({ durationMs: 42_500, durationSeconds: 42 })).toBe(42_500);
+    // No length, or one that is not a length, is none.
+    expect(durationOf({})).toBeUndefined();
+    expect(durationOf({ durationSeconds: null })).toBeUndefined();
+    expect(durationOf({ durationSeconds: "42" })).toBeUndefined();
+    expect(durationOf({ durationSeconds: -1 })).toBeUndefined();
   });
 
   it("places a Calls export's tool call before any words, and one without a time where the one before it was", () => {

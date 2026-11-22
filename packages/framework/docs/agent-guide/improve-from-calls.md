@@ -200,9 +200,14 @@ What a review does and does not do:
   then each one is read into the agent turn it happened in, and `claimed_without_tool` and
   `wrong_tool_use` are asked ([the fields](./cli/review.md#calls-of-a-hosted-agent)). A line
   without them cannot show those two, and the report says of how many calls they were not asked.
-- **An export holds personal data**: the caller's phone number and everything that was said. Keep
-  the file out of git (add its name to `.gitignore`), do not share it, and delete it when the
-  review is done.
+- **A tool call says what the tool answered only from Curb v1.25.0 on.** An agent built with it
+  or later reports each tool's `result`, so the judge can tell "booked" from "refused: that slot
+  is taken". A call of an earlier agent shows that a tool ran and whether it succeeded, not its
+  answer: to review what the tools answered, upgrade Curb, deploy the agent again and export
+  calls it took after that.
+- **An export holds personal data**: the caller's phone number, everything that was said, and
+  what each tool was passed and answered. Keep the file out of git (add its name to
+  `.gitignore`), do not share it, and delete it when the review is done.
 - **A judge can be wrong.** That is why every pattern carries quotes to read, and why a number
   in the report is counted by code, not by the model.
 - **Your own findings are asked too.** The `findings` your scenarios give, such as a stock

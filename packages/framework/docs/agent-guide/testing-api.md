@@ -96,6 +96,10 @@ a folder that hold none of the shapes. A record says what its source does not kn
 `null` when the source does not say who ended the call, and `recordsToolCalls: false` when it holds
 no tool calls. A Calls export line that carries `toolCalls` holds them: each is read into the agent
 turn it happened in, by its time in the call ([the fields](./cli/review.md#calls-of-a-hosted-agent)).
+A tool call's `result` becomes the turn's `{ ok, message, data }`, whether the line holds it whole
+or as the `{ message, data }` of a hosted call's record beside the tool call's `ok`; it is there
+for calls of an agent built with Curb v1.25.0 or later. A line's `durationSeconds`, or its
+`durationMs`, is the record's `durationMs`.
 
 ## `saveRun` and `loadRun`
 
@@ -596,6 +600,7 @@ a call whose `content` is `not_stored`.
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | `loadCalls` reads a Calls export's tool result given as `{ message, data }` beside the tool call's `ok`, and a line's length from `durationSeconds` |
 | v1.25.0 | `callersFor` added, and `Call.systemPrompt`. `groupFindings` takes a played simulated call's caller as its draft's caller, with its `behaviours` |
 | v1.25.0 | `callerFromCall`, `replayCall`, `judgeAgreement`, `compareRuns` and `compare` added. `groupFindings` takes `records`, writes each draft's caller from a call of its pattern, and merges near-duplicate patterns. A saved run's `agentVersion` holds a hash of the agent's sources |
 | v1.25.0 | `scenario` takes `findings`, `expectRuns` and a `Caller` as `caller`, and `failOn` takes the scenario's own findings. `expect` gets `ask`, `model`, `note` and `transcriptText`; `checksOf` takes `{ model }` for them. `ScenarioRunResult` added |
