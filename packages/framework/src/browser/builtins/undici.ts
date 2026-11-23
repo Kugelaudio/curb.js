@@ -5,6 +5,11 @@ export class Agent {
   constructor(_options?: unknown) {}
 }
 
+/** The browser has no global dispatcher to configure. */
+export function getGlobalDispatcher(): undefined {
+  return undefined;
+}
+
 export function fetch(input: RequestInfo | URL, init?: RequestInit & { dispatcher?: unknown }): Promise<Response> {
   const { dispatcher: _dispatcher, ...browserInit } = init ?? {};
   return globalThis.fetch(input, browserInit);
