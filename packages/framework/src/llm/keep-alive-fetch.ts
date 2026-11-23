@@ -12,35 +12,20 @@ import { Agent, fetch as undiciFetch, getGlobalDispatcher } from "undici";
  */
 export const LLM_KEEP_ALIVE_MS = 30_000;
 
-/**
- * Whether requests would go out over Node's default transport: the global dispatcher is a
- * plain `Agent` nobody configured. A proxy (`NODE_USE_ENV_PROXY`, `setGlobalDispatcher`), a
- * mock or an agent with its own options or `factory` is the application's transport and is
- * kept; so is anything this cannot positively identify as the default.
- *
- * RISK: reads undici's internal `options`, `factory` and `maxRedirections` slots, in Node's
- * bundled copy and in the package. If their shape changes, every dispatcher counts as
- * configured and requests take Node's own fetch: the transport is kept, only the longer idle
- * time is lost.
- */
-export function usesDefaultTransport(dispatcher: unknown = getGlobalDispatcher()): boolean {
-  if (dispatcher === undefined) return true;
-  if (typeof dispatcher !== "object" || dispatcher === null || dispatcher.constructor?.name !== "Agent") return false;
-  const slot = (name: string) => {
-    const key = Object.getOwnPropertySymbols(dispatcher).find((symbol) => symbol.description === name);
-    return key === undefined ? undefined : (dispatcher as Record<symbol, unknown>)[key];
-  };
-  const options = slot("options");
-  const factory = slot("factory");
-  const maxRedirections = slot("maxRedirections");
-  if (typeof options !== "object" || options === null) return false;
-  if (typeof factory !== "function" || factory.name !== "defaultFactory") return false;
-  if (maxRedirections !== undefined && maxRedirections !== 0) return false;
-  return Object.entries(options).every(([name, value]) => value === undefined || (name === "maxOrigins" && value === Infinity));
+/** Where `bin/dispatcher-snapshot.js` records Node's own default dispatcher. */
+const NODE_DEFAULT_DISPATCHER = Symbol.for("curb.nodeDefaultDispatcher");
+
+/** Whether requests would go out over Node's default dispatcher, by identity: the one recorded
+ * before any project code ran. Any other global dispatcher is the application's transport and
+ * is kept; so is every dispatcher when none was recorded (Curb used without its CLI, a proxy from
+ * `NODE_USE_ENV_PROXY`, a preload that installed one). */
+export function usesDefaultTransport(): boolean {
+  const nodeDefault = (globalThis as Record<symbol, unknown>)[NODE_DEFAULT_DISPATCHER];
+  return nodeDefault !== undefined && getGlobalDispatcher() === nodeDefault;
 }
 
 /**
- * A fetch that keeps an idle connection open for `idleMs` when requests take Node's default
+ * A fetch that keeps an idle connection open for `idleMs` when requests take the default
  * transport, and is Node's own fetch otherwise. undici's own fetch with its own pool, the same
  * undici the AI SDK loads at runtime, so the two never disagree on versions.
  *

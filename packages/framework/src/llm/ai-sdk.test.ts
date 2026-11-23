@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { InvalidToolInputError, NoSuchToolError, type TextStreamPart, type ToolSet } from "ai";
+import { getGlobalDispatcher } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentAuthoringError } from "../authoring.js";
 import { kugelaudio, openai, openaiCompatible } from "../providers.js";
@@ -332,6 +333,9 @@ describe("kugelaudio.llm request", () => {
     const endpoint = await fakeChatEndpoint();
     vi.stubEnv("KUGELAUDIO_API_BASE", `${endpoint.origin}/`);
     vi.stubEnv("KUGELAUDIO_API_KEY", "test-kugel-key");
+    // As bin/dispatcher-snapshot.js records it when the CLI starts.
+    const nodeDefault = Symbol.for("curb.nodeDefaultDispatcher");
+    (globalThis as Record<symbol, unknown>)[nodeDefault] = getGlobalDispatcher();
     try {
       await drain(streamAiSdkAgent(turn, { llm: kugelaudio.llm() }));
       await new Promise((resolve) => setTimeout(resolve, 6_000));
@@ -340,6 +344,7 @@ describe("kugelaudio.llm request", () => {
       expect(endpoint.clientPorts).toHaveLength(2);
       expect(endpoint.clientPorts[1]).toBe(endpoint.clientPorts[0]);
     } finally {
+      delete (globalThis as Record<symbol, unknown>)[nodeDefault];
       await endpoint.close();
     }
   }, 15_000);

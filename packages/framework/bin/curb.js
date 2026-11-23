@@ -7,6 +7,7 @@
 // TSX_TSCONFIG_PATH at a generated config spanning the project's src/ and, in a checkout, the
 // framework source: otherwise JSX outside the config would fall back to the classic transform
 // and crash with "React is not defined".
+import "./dispatcher-snapshot.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +64,11 @@ if (!fromSource) {
     process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ""} --enable-source-maps`.trim();
   }
 }
+
+// The processes the CLI starts (the `curb dev` child, the voice worker's jobs) inherit execArgv, and
+// record Node's default dispatcher before their own code runs, as this one did.
+const dispatcherSnapshot = new URL("./dispatcher-snapshot.js", import.meta.url).href;
+if (!process.execArgv.includes(dispatcherSnapshot)) process.execArgv.push("--import", dispatcherSnapshot);
 
 // Dynamic imports so TSX_TSCONFIG_PATH is set before tsx reads it.
 const { register } = await import("tsx/esm/api");

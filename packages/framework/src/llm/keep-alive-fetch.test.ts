@@ -1,13 +1,23 @@
+import { execFileSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { Agent, type Dispatcher, getGlobalDispatcher, MockAgent, Pool, ProxyAgent, setGlobalDispatcher } from "undici";
-import { afterEach, describe, expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
+import { Agent, type Dispatcher, getGlobalDispatcher, Pool, ProxyAgent, setGlobalDispatcher } from "undici";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createKeepAliveFetch, keepAliveFetch, usesDefaultTransport } from "./keep-alive-fetch.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const servers: Server[] = [];
+const NODE_DEFAULT_DISPATCHER = Symbol.for("curb.nodeDefaultDispatcher");
+const recorded = globalThis as Record<symbol, unknown>;
+
+// What bin/dispatcher-snapshot.js does as the CLI starts: this process's dispatcher is Node's.
+beforeEach(() => {
+  recorded[NODE_DEFAULT_DISPATCHER] = getGlobalDispatcher();
+});
 
 afterEach(async () => {
+  delete recorded[NODE_DEFAULT_DISPATCHER];
   for (const server of servers.splice(0)) {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
@@ -73,12 +83,13 @@ describe("createKeepAliveFetch", () => {
   it("sends requests through the factory of an agent the application installed", async () => {
     const server = await listen(0);
     const origins: string[] = [];
-    const factory = (origin: string | URL, options: object): Dispatcher => {
+    // Named like undici's own, which the dispatcher's identity tells apart.
+    function defaultFactory(origin: string | URL, options: object): Dispatcher {
       origins.push(String(origin));
       return new Pool(origin, options);
-    };
+    }
     const previous = getGlobalDispatcher();
-    setGlobalDispatcher(new Agent({ factory }));
+    setGlobalDispatcher(new Agent({ factory: defaultFactory }));
     try {
       expect(await get(keepAliveFetch, server.url)).toBe(200);
     } finally {
@@ -89,19 +100,43 @@ describe("createKeepAliveFetch", () => {
 });
 
 describe("usesDefaultTransport", () => {
-  it("is true only for an agent nobody configured", () => {
-    expect(usesDefaultTransport(undefined)).toBe(true);
-    expect(usesDefaultTransport(new Agent())).toBe(true);
-    expect(usesDefaultTransport(new Agent({ connect: { rejectUnauthorized: false } }))).toBe(false);
-    expect(usesDefaultTransport(new Agent({ keepAliveTimeout: 1_000 }))).toBe(false);
-    expect(usesDefaultTransport(new Agent({ factory: (origin, options) => new Pool(origin, options) }))).toBe(false);
-    expect(usesDefaultTransport(new ProxyAgent("http://127.0.0.1:9"))).toBe(false);
-    expect(usesDefaultTransport(new MockAgent())).toBe(false);
-    expect(usesDefaultTransport({ dispatch() {} })).toBe(false);
+  it("is true only while the global dispatcher is the one recorded as Node's", () => {
+    const nodeDefault = getGlobalDispatcher();
+    expect(usesDefaultTransport()).toBe(true);
+    setGlobalDispatcher(new Agent());
+    try {
+      expect(usesDefaultTransport()).toBe(false);
+    } finally {
+      setGlobalDispatcher(nodeDefault);
+    }
+    expect(usesDefaultTransport()).toBe(true);
+    delete recorded[NODE_DEFAULT_DISPATCHER];
+    expect(usesDefaultTransport()).toBe(false);
+  });
+});
+
+describe("bin/dispatcher-snapshot.js", () => {
+  const snapshot = fileURLToPath(new URL("../../bin/dispatcher-snapshot.js", import.meta.url));
+  const check = [
+    `const node = globalThis[Symbol.for("curb.nodeDefaultDispatcher")];`,
+    `process.stdout.write(String(node !== undefined && node === globalThis[Symbol.for("undici.globalDispatcher.1")]));`,
+  ].join("\n");
+  const run = (preloads: string[], env: NodeJS.ProcessEnv = {}) =>
+    execFileSync(process.execPath, [...preloads.flatMap((url) => ["--import", url]), "--input-type=module", "-e", check], {
+      encoding: "utf8",
+      env: { ...process.env, NODE_USE_ENV_PROXY: undefined, ...env },
+    });
+
+  it("records Node's default dispatcher when nothing installed one first", () => {
+    expect(run([snapshot])).toBe("true");
   });
 
-  it("is true for Node's own default dispatcher", async () => {
-    await globalThis.fetch("http://127.0.0.1:9").catch(() => undefined);
-    expect(usesDefaultTransport()).toBe(true);
+  it("records nothing when a preload installed a dispatcher first", () => {
+    const preload = `data:text/javascript,globalThis[Symbol.for("undici.globalDispatcher.1")] = { dispatch() {} };`;
+    expect(run([preload, snapshot])).toBe("false");
+  });
+
+  it("records nothing when Node installed a proxy from the environment", () => {
+    expect(run([snapshot], { NODE_USE_ENV_PROXY: "1", HTTPS_PROXY: "http://127.0.0.1:9" })).toBe("false");
   });
 });
