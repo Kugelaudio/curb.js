@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { Agent, getGlobalDispatcher, MockAgent, ProxyAgent, setGlobalDispatcher } from "undici";
+import { Agent, type Dispatcher, getGlobalDispatcher, MockAgent, Pool, ProxyAgent, setGlobalDispatcher } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 import { createKeepAliveFetch, keepAliveFetch, usesDefaultTransport } from "./keep-alive-fetch.js";
 
@@ -69,6 +69,23 @@ describe("createKeepAliveFetch", () => {
     }
     expect(proxy.targets).toEqual(["http://model.test/v1/chat/completions"]);
   });
+
+  it("sends requests through the factory of an agent the application installed", async () => {
+    const server = await listen(0);
+    const origins: string[] = [];
+    const factory = (origin: string | URL, options: object): Dispatcher => {
+      origins.push(String(origin));
+      return new Pool(origin, options);
+    };
+    const previous = getGlobalDispatcher();
+    setGlobalDispatcher(new Agent({ factory }));
+    try {
+      expect(await get(keepAliveFetch, server.url)).toBe(200);
+    } finally {
+      setGlobalDispatcher(previous);
+    }
+    expect(origins).toEqual([server.url]);
+  });
 });
 
 describe("usesDefaultTransport", () => {
@@ -77,6 +94,7 @@ describe("usesDefaultTransport", () => {
     expect(usesDefaultTransport(new Agent())).toBe(true);
     expect(usesDefaultTransport(new Agent({ connect: { rejectUnauthorized: false } }))).toBe(false);
     expect(usesDefaultTransport(new Agent({ keepAliveTimeout: 1_000 }))).toBe(false);
+    expect(usesDefaultTransport(new Agent({ factory: (origin, options) => new Pool(origin, options) }))).toBe(false);
     expect(usesDefaultTransport(new ProxyAgent("http://127.0.0.1:9"))).toBe(false);
     expect(usesDefaultTransport(new MockAgent())).toBe(false);
     expect(usesDefaultTransport({ dispatch() {} })).toBe(false);

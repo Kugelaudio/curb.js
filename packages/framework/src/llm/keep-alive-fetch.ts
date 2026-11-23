@@ -15,18 +15,27 @@ export const LLM_KEEP_ALIVE_MS = 30_000;
 /**
  * Whether requests would go out over Node's default transport: the global dispatcher is a
  * plain `Agent` nobody configured. A proxy (`NODE_USE_ENV_PROXY`, `setGlobalDispatcher`), a
- * mock or an agent with its own options is the application's transport and is kept.
+ * mock or an agent with its own options or `factory` is the application's transport and is
+ * kept; so is anything this cannot positively identify as the default.
  *
- * RISK: reads undici's internal `options` symbol, in Node's bundled copy and in the package.
- * If its shape changes, every dispatcher counts as configured and requests take Node's own
- * fetch: the transport is kept, only the longer idle time is lost.
+ * RISK: reads undici's internal `options`, `factory` and `maxRedirections` slots, in Node's
+ * bundled copy and in the package. If their shape changes, every dispatcher counts as
+ * configured and requests take Node's own fetch: the transport is kept, only the longer idle
+ * time is lost.
  */
 export function usesDefaultTransport(dispatcher: unknown = getGlobalDispatcher()): boolean {
   if (dispatcher === undefined) return true;
   if (typeof dispatcher !== "object" || dispatcher === null || dispatcher.constructor?.name !== "Agent") return false;
-  const key = Object.getOwnPropertySymbols(dispatcher).find((symbol) => symbol.description === "options");
-  const options = key === undefined ? undefined : (dispatcher as Record<symbol, unknown>)[key];
+  const slot = (name: string) => {
+    const key = Object.getOwnPropertySymbols(dispatcher).find((symbol) => symbol.description === name);
+    return key === undefined ? undefined : (dispatcher as Record<symbol, unknown>)[key];
+  };
+  const options = slot("options");
+  const factory = slot("factory");
+  const maxRedirections = slot("maxRedirections");
   if (typeof options !== "object" || options === null) return false;
+  if (typeof factory !== "function" || factory.name !== "defaultFactory") return false;
+  if (maxRedirections !== undefined && maxRedirections !== 0) return false;
   return Object.entries(options).every(([name, value]) => value === undefined || (name === "maxOrigins" && value === Infinity));
 }
 
