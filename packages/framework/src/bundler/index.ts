@@ -25,9 +25,10 @@ import { MEDIA_RELAY_PROTOCOL } from "../relay-wire.js";
 import { mergeFramesPlugin } from "./merge-frames-plugin.js";
 import { packageSideEffectsPlugin } from "./package-side-effects-plugin.js";
 import { rawLoaderPlugin } from "./raw-plugin.js";
+import { runtimeHttpPlugin } from "./runtime-http-plugin.js";
 import { generateContextRegistryCode, projectContextFiles } from "./context-registry.js";
 import { hostBuildTarget } from "./build-target.js";
-import { workerEntrySource } from "./generated-entries.js";
+import { dispatcherSnapshotImport, workerEntrySource } from "./generated-entries.js";
 import { readProjectPackageName } from "../server/voice/worker-name.js";
 import {
   verificationIsolationRoot,
@@ -357,7 +358,7 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
     target: "node24",
     external: externalPackages(),
     // Last, so `?raw` is claimed first; see the plugin for the crash it prevents.
-    plugins: [rawLoaderPlugin(traceBase), mergeFramesPlugin(), packageSideEffectsPlugin()],
+    plugins: [rawLoaderPlugin(traceBase), runtimeHttpPlugin(), mergeFramesPlugin(), packageSideEffectsPlugin()],
     logLevel: "silent",
     metafile: true,
     // A dependency-layer build keeps the output in memory until its escape checks pass.
@@ -378,9 +379,12 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
       // to the artifact, which is what makes the mirrored node_modules tree reachable
       // from bundled CJS as well as from the externals.
       //
+      // The dispatcher snapshot comes first of all: see dispatcherSnapshotImport.
+      //
       // `var`, because the framework's compiled dist/ declares the same three names in each
       // of its files (scripts/build-dist.ts), and those land in this bundle's top scope too.
       js: [
+        dispatcherSnapshotImport(await readFile(join(frameworkRoot, "bin", "dispatcher-snapshot.js"), "utf8")),
         `import { createRequire as __curbCreateRequire } from "node:module";`,
         `import { fileURLToPath as __curbFileURLToPath } from "node:url";`,
         `import { dirname as __curbDirname } from "node:path";`,

@@ -117,6 +117,7 @@ const PACKAGES: Record<string, string> = {
   "onnxruntime-node": "onnxruntime.ts",
   sharp: "sharp.ts",
   pino: "pino.ts",
+  undici: "undici.ts",
 };
 
 function browserPackagesPlugin(): Plugin {
@@ -126,7 +127,7 @@ function browserPackagesPlugin(): Plugin {
       // An optional peer of `@livekit/agents`, imported dynamically and only by LiveKit's own MCP
       // client, which Curb does not use. A project does not install it, so it stays unresolved.
       builder.onResolve({ filter: /^@modelcontextprotocol\/client(\/.*)?$/ }, (args) => ({ path: args.path, external: true }));
-      builder.onResolve({ filter: /^(ws|onnxruntime-node|sharp|pino)$/ }, (args) => ({ path: join(builtinsDir, PACKAGES[args.path]!) }));
+      builder.onResolve({ filter: /^(ws|onnxruntime-node|sharp|pino|undici)$/ }, (args) => ({ path: join(builtinsDir, PACKAGES[args.path]!) }));
       builder.onResolve({ filter: /^\.\/native\.js$/ }, (args) =>
         args.importer.includes("/@livekit/rtc-ffi-bindings/") ? { path: join(builtinsDir, "rtc-ffi-native.ts") } : undefined,
       );

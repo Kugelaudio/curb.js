@@ -7,6 +7,7 @@
 // TSX_TSCONFIG_PATH at a generated config spanning the project's src/ and, in a checkout, the
 // framework source: otherwise JSX outside the config would fall back to the classic transform
 // and crash with "React is not defined".
+import "./dispatcher-snapshot.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
