@@ -281,7 +281,10 @@ and drops it; sentences before that one were already said. An empty `goodbye`
 is refused like any invalid input, and the call stays up. So is an `end_call` in the
 greeting of an inbound call (`firstTurn: "agent"`), before the caller has said a word: the
 model is told the call has just opened, and the greeting is said. An outbound call
-(`call.direction` is `outbound`) may hang up in its opening, to leave a message. The
+(`call.direction` is `outbound`) may hang up in its opening, to leave a message. An
+`end_call` in the same step as a refused call (an input that fails the tool's schema, or an
+unknown tool) is refused too: the caller hears no goodbye, and the model reads both failures
+and can make the call again before it ends the call. The
 call disconnects the moment the goodbye has finished playing, so it is never
 cut off mid-word. It is absent from typed chat sessions, where there is no call to
 hang up, and the framework's spoken-style rules teach it only while it is

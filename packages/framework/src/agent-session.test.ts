@@ -604,6 +604,53 @@ describe("AgentSession", () => {
         { ok: true },
       ]);
     });
+
+    it("refuses an end_call beside a refused call: no goodbye, the call stays up and the model sees the failure", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const hangUp = vi.fn();
+      runtime.setEndCallRequest(hangUp);
+      const invalid = "Invalid input for tool request_callback: phone is required.";
+      const callback = { name: "Ada", phone: "+491234567", topic: "Coverage" };
+      const goodbye = "An advisor will call you back. Take care.";
+      const { streamLlm, requests } = scriptedStream([
+        {
+          toolCalls: [
+            { name: "request_callback", input: { name: "Ada", topic: "Coverage" }, error: invalid },
+            { name: END_CALL_TOOL_NAME, input: { goodbye } },
+          ],
+        },
+        {
+          toolCalls: [
+            { name: "request_callback", input: callback },
+            { name: END_CALL_TOOL_NAME, input: { goodbye } },
+          ],
+        },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm });
+
+      const turn = await streamTurn(session, "please call me back, that's all");
+
+      // The first step's goodbye is never said: the model gets a second step and fixes the call.
+      expect(requests).toHaveLength(2);
+      expect(turn.heard).toBe(goodbye);
+      expect(hangUp).toHaveBeenCalledTimes(1);
+      const results = session.messages.flatMap((message) => (message.role === "tool" ? [[message.toolName, message.result]] : []));
+      expect(results.slice(0, 2)).toEqual([
+        ["request_callback", { ok: false, message: invalid }],
+        [
+          END_CALL_TOOL_NAME,
+          {
+            ok: false,
+            message:
+              "Not run: another call in this step failed. Make that call again correctly before you end the call; the call is still on.",
+          },
+        ],
+      ]);
+      expect(results[2]).toMatchObject(["request_callback", { ok: true }]);
+      expect(results[3]).toEqual([END_CALL_TOOL_NAME, { ok: true }]);
+      // The model's second request carries the failed result it corrects from.
+      expect(JSON.stringify(requests[1])).toContain("phone is required");
+    });
   });
 
   describe("the greeting of a call (firstTurn: agent)", () => {

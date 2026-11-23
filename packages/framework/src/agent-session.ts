@@ -62,6 +62,11 @@ export { normalizeLlmPunctuation } from "./llm/punctuation.js";
 export const GREETING_STAYS_OPEN =
   "Not run: the call has just opened and the caller has not said anything yet. Finish your greeting and let them answer.";
 
+/** The answer to an `end_call` in a step where another call was refused: its goodbye would end
+ * the turn before the model could make the refused call again. */
+const CALL_STAYS_OPEN_AFTER_REFUSAL =
+  "Not run: another call in this step failed. Make that call again correctly before you end the call; the call is still on.";
+
 /**
  * Pluggable LLM transport. The preview injects a `fetch("/api/agent")` client;
  * tests inject a mock. The session itself never touches the network or React.
@@ -858,6 +863,9 @@ export class AgentSession {
     // skip_turn ends the turn here, whatever else the model queued, and so does an end_call
     // that runs below.
     const staysSilent = planned.some(({ record }) => record.name === SKIP_TURN_TOOL_NAME && !record.invalid);
+    // A call the model must correct (its input failed the schema, or the tool is unknown) keeps
+    // the call open: an end_call beside it would say its goodbye before the model saw the failure.
+    let refusedBeside = planned.some(({ record }) => record.invalid && record.name !== END_CALL_TOOL_NAME);
 
     let next = messages;
     const assistantAt = next.length;
@@ -884,8 +892,9 @@ export class AgentSession {
       // An earlier call of this step may have changed the tool surface, so a
       // tool is known or unknown, and asks the caller or not, only now. The
       // record says how the call ended (refused, held, run); rewind reads it.
-      const refusal = toolCall.invalid ? undefined : this.refusal(toolCall.name, asksCaller, greets, held);
+      const refusal = toolCall.invalid ? undefined : this.refusal(toolCall.name, asksCaller, greets, held, refusedBeside);
       if (refusal) toolCall = { ...toolCall, invalid: refusal };
+      if (toolCall.invalid && toolCall.name !== END_CALL_TOOL_NAME) refusedBeside = true;
       let outcome: ToolCallOutcome;
       let durationMs: number | undefined;
       let skill: SkillChange | undefined;
@@ -900,7 +909,7 @@ export class AgentSession {
       }
       if (toolCall !== published) next = withToolCallRecord(next, assistantAt, toolCall);
       const ok = outcome.result.ok !== false;
-      // Refused (invalid input, CALL_STAYS_OPEN or GREETING_STAYS_OPEN), an end_call hung up
+      // Refused (invalid input, CALL_STAYS_OPEN, GREETING_STAYS_OPEN or CALL_STAYS_OPEN_AFTER_REFUSAL), an end_call hung up
       // nothing and says nothing.
       if (ok && toolCall.name === END_CALL_TOOL_NAME) goodbye ??= endCallGoodbye(toolCall.input);
       executed.push({ toolCall, ok, result: outcome.result, ...(durationMs === undefined ? {} : { durationMs }), ...(skill ? { skill } : {}) });
@@ -929,11 +938,19 @@ export class AgentSession {
   /** Why a call of `name` must not run now, or undefined. `asksCaller`: the step calls a
    * `confirm` tool, so the call stays open. `greets`: the turn is the greeting of an inbound
    * call, which the caller has not answered yet, so it stays open too. `held`: the step
-   * already holds an action. */
-  private refusal(name: string, asksCaller: boolean, greets: boolean, held: HeldCall | undefined): string | undefined {
+   * already holds an action. `refusedBeside`: another call of the step was refused, so the call
+   * stays open until the model has made it again. */
+  private refusal(
+    name: string,
+    asksCaller: boolean,
+    greets: boolean,
+    held: HeldCall | undefined,
+    refusedBeside: boolean,
+  ): string | undefined {
     if (!this.runtime.toolDefinition(name)) return `Unknown tool "${name}". Call only the tools you currently have.`;
     if (asksCaller && name === END_CALL_TOOL_NAME) return CALL_STAYS_OPEN;
     if (greets && name === END_CALL_TOOL_NAME) return GREETING_STAYS_OPEN;
+    if (refusedBeside && name === END_CALL_TOOL_NAME) return CALL_STAYS_OPEN_AFTER_REFUSAL;
     if (held && this.runtime.confirms(name)) return oneQuestionAtATime(held);
     return undefined;
   }
