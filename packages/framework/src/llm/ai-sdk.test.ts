@@ -122,8 +122,11 @@ describe("mapToolCalls", () => {
 async function fakeChatEndpoint() {
   const bodies: Record<string, unknown>[] = [];
   const requests: { path: string | undefined; authorization: string | undefined }[] = [];
+  /** The client port of each request: the same port twice means the connection was reused. */
+  const clientPorts: (number | undefined)[] = [];
   const server: Server = createServer((req, res) => {
     requests.push({ path: req.url, authorization: req.headers.authorization });
+    clientPorts.push(req.socket.remotePort);
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
     req.on("end", () => {
@@ -153,6 +156,9 @@ async function fakeChatEndpoint() {
       );
     });
   });
+  // A real front end holds an idle connection far longer than node:http's 5 s, and many send
+  // no Keep-Alive hint (node:http sends one, and undici would follow it): 0 does both.
+  server.keepAliveTimeout = 0;
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   return {
@@ -160,7 +166,12 @@ async function fakeChatEndpoint() {
     baseURL: `http://127.0.0.1:${port}/v1`,
     bodies,
     requests,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    clientPorts,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        server.closeIdleConnections();
+      }),
   };
 }
 
@@ -316,6 +327,22 @@ describe("kugelaudio.llm request", () => {
       await endpoint.close();
     }
   });
+
+  it("sends the next turn over the same connection when the caller took longer than Node's 4 s idle limit", async () => {
+    const endpoint = await fakeChatEndpoint();
+    vi.stubEnv("KUGELAUDIO_API_BASE", `${endpoint.origin}/`);
+    vi.stubEnv("KUGELAUDIO_API_KEY", "test-kugel-key");
+    try {
+      await drain(streamAiSdkAgent(turn, { llm: kugelaudio.llm() }));
+      await new Promise((resolve) => setTimeout(resolve, 6_000));
+      await drain(streamAiSdkAgent(turn, { llm: kugelaudio.llm() }));
+
+      expect(endpoint.clientPorts).toHaveLength(2);
+      expect(endpoint.clientPorts[1]).toBe(endpoint.clientPorts[0]);
+    } finally {
+      await endpoint.close();
+    }
+  }, 15_000);
 
   it("refuses a session without KUGELAUDIO_API_KEY, saying a hosted agent gets it from the platform", () => {
     vi.stubEnv("KUGELAUDIO_API_KEY", "");

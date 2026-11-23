@@ -21,6 +21,7 @@ import { normalizeLlmPunctuation } from "./punctuation.js";
 import { hostKeyPendingFix, keyPageSentence, LLM_KEYS, PLATFORM_PROVIDED } from "../provider-keys.js";
 import type { LlmDescriptor } from "../providers.js";
 import { resolveLlmProvider, type LlmProviderConfig } from "./provider.js";
+import { keepAliveFetch } from "./keep-alive-fetch.js";
 import { quietSdkWarnings } from "./sdk-warnings.js";
 import { serializeLlmInput } from "./serialize-input.js";
 
@@ -65,12 +66,13 @@ function buildModel(options: AiSdkAgentOptions, streamUsage: boolean): ModelCall
           baseURL: config.baseUrl,
           apiKey: config.apiKey,
           includeUsage: streamUsage,
+          fetch: keepAliveFetch,
         })(modelName),
         providerOptions: undefined,
       };
     case "anthropic":
       return {
-        model: createAnthropic({ apiKey: getAnthropicApiKey() })(modelName),
+        model: createAnthropic({ apiKey: getAnthropicApiKey(), fetch: keepAliveFetch })(modelName),
         providerOptions: {
           anthropic: {
             thinking: { type: "disabled" },
@@ -79,7 +81,7 @@ function buildModel(options: AiSdkAgentOptions, streamUsage: boolean): ModelCall
         },
       };
     case "openai":
-      return { model: createOpenAI({ apiKey: config.apiKey })(modelName), providerOptions: undefined };
+      return { model: createOpenAI({ apiKey: config.apiKey, fetch: keepAliveFetch })(modelName), providerOptions: undefined };
     case "openai-compatible":
       return {
         model: createOpenAICompatible({
@@ -87,6 +89,7 @@ function buildModel(options: AiSdkAgentOptions, streamUsage: boolean): ModelCall
           baseURL: config.baseUrl,
           apiKey: config.apiKey,
           includeUsage: streamUsage,
+          fetch: keepAliveFetch,
         })(modelName),
         temperature: config.temperature,
         topP: config.topP,
