@@ -45,6 +45,7 @@ import {
   uncoveredVariants,
 } from "./scenarios/run.js";
 import type { ExperimentDeclaration, SavedConversation, SavedScenarioSettings, TestModels, ThrottleStats } from "./scenarios/types.js";
+import { sinceLastVersion } from "./scenarios/since.js";
 import { runUsage, sumUsage } from "./scenarios/usage.js";
 
 export type { TestHost } from "../testing/index.js";
@@ -89,9 +90,14 @@ A tool runs for real on every run unless the scenario fakes it (fakes).
                          { passed, scenarios: [{ name, file, mode, passed, endedBy, durationMs,
                            turns, checks, notes, outcome, flaky, stats, checkStats, findings,
                            variants, style, usage, runs }], outcome, exitCode, durationMs,
-                           models, callerPromptVersion, judgePromptVersion, usage, savedTo }
+                           models, callerPromptVersion, judgePromptVersion, usage, savedTo,
+                           since }
 
-Every run is saved to .curb/test-runs/<id>.json (the newest 20 are kept).
+Every run is saved to .curb/test-runs/<id>.json (the newest 20 are kept). After a run, the
+report compares it with the newest saved run of another version of the agent (another hash
+of the files under src/ and context/, scenarios and tests left out) that played the same
+scenarios: per scenario the pass rate then and now, and better, worse, "no clear change"
+(Fisher's exact test, p < 0.1) or "too few runs to tell".
 
 Exit code 0 when every scenario passed; 1 when a scenario failed, or no scenario was found or
 matched; 2 when none failed but too many runs of a scenario were errors.`;
@@ -246,21 +252,36 @@ async function loadScenarios(projectRoot: string, file: string): Promise<LoadedS
   });
 }
 
+/** A scenario of the project as a review's coverage names it: what its caller wants. */
+export type ProjectScenario = { name: string; file: string; wants: string };
+
+/** What a scenario's caller wants, in its own words: the goal, a scripted caller's lines, or that
+ * it is a caller of the scenario's own. */
+function wantsOf(scenario: Scenario): string {
+  const { caller, turns } = scenario;
+  if (caller && typeof caller === "object") return caller.goal;
+  if (turns) return `says ${turns.map((line) => JSON.stringify(line)).join(", ")}`;
+  return "a caller of its own";
+}
+
 /**
- * The findings of their own that the project's scenarios give, by id, and a note for each
- * scenario file that could not be loaded. Several scenarios may share a finding (one module
- * imported by each); the same id with two sentences is refused, naming both files.
+ * The findings of their own that the project's scenarios give, by id, every scenario with what
+ * its caller wants, and a note for each scenario file that could not be loaded. Several
+ * scenarios may share a finding (one module imported by each); the same id with two sentences is
+ * refused, naming both files.
  */
-export async function projectFindings(projectRoot: string): Promise<{ findings: Record<string, string>; notes: string[] }> {
+export async function projectFindings(projectRoot: string): Promise<{ findings: Record<string, string>; notes: string[]; scenarios: ProjectScenario[] }> {
   const findings: Record<string, string> = {};
   const from = new Map<string, string>();
   const notes: string[] = [];
+  const scenarios: ProjectScenario[] = [];
   for (const file of findScenarioFiles(projectRoot)) {
     for (const entry of await loadScenarios(projectRoot, file)) {
       if ("error" in entry) {
         notes.push(`The findings of ${entry.file} were not asked: ${entry.error}`);
         continue;
       }
+      scenarios.push({ name: entry.name, file: entry.file, wants: wantsOf(entry.scenario) });
       for (const [id, sentence] of Object.entries(entry.scenario.findings ?? {})) {
         if (Object.hasOwn(findings, id) && findings[id] !== sentence) {
           throw new Error(
@@ -273,7 +294,7 @@ export async function projectFindings(projectRoot: string): Promise<{ findings: 
       }
     }
   }
-  return { findings, notes: [...new Set(notes)] };
+  return { findings, notes: [...new Set(notes)], scenarios };
 }
 
 /** Whether `value` is what `scenario()` returned: it marks each with this registry symbol, so a
@@ -366,10 +387,10 @@ function inScenarioOrder<T>(byIndex: ReadonlyArray<T | undefined>): T[] {
 type RunFields = { id?: string; createdAt?: string; agentVersion?: TestRun["agentVersion"] };
 
 /** Save the run so far (`saveRun`), and keep what makes a later save replace the same file. */
-function saveSoFar(session: TestSession, fields: RunFields, run: Parameters<typeof saveRun>[1], conversations: readonly SavedConversation[]): string {
+function saveSoFar(session: TestSession, fields: RunFields, run: Parameters<typeof saveRun>[1], conversations: readonly SavedConversation[]): ReturnType<typeof saveRun> {
   const saved = saveRun(conversations, { ...run, ...fields, maxErrorRate: DEFAULT_MAX_ERROR_RATE, root: session.projectRoot });
   Object.assign(fields, { id: saved.run.id, createdAt: saved.run.createdAt, agentVersion: saved.run.agentVersion ?? null });
-  return saved.path;
+  return saved;
 }
 
 /**
@@ -481,7 +502,7 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
       write(once ? formatChecks(result) : formatRepeated(result));
       reports[index] = result;
       done.add(index);
-      savedTo = saveSoFar(session, fields, { ...through(), models, complete: false }, through().conversations);
+      savedTo = saveSoFar(session, fields, { ...through(), models, complete: false }, through().conversations).path;
       printed.finish(index);
     },
     { concurrency, host, onSlowDown: (lowered) => void (concurrency = lowered) },
@@ -519,7 +540,7 @@ function finish(
 ): number {
   const { run, out, env, projectRoot } = session;
   const hasRuns = through.conversations.length > 0;
-  const savedTo = hasRuns
+  const saved = hasRuns
     ? saveSoFar(session, finished.fields, {
         ...through,
         models: finished.models,
@@ -528,6 +549,10 @@ function finish(
         ...(finished.rejudgedFrom === undefined ? {} : { rejudgedFrom: finished.rejudgedFrom }),
       }, through.conversations)
     : null;
+  const savedTo = saved?.path ?? null;
+  // Did the change help: this run against the last one of another version of the agent. A
+  // re-judge played no new version.
+  const since = saved && finished.rejudgedFrom === undefined ? sinceLastVersion(projectRoot, saved.path, saved.run) : undefined;
   const outcome = testOutcome(scenarios);
   const report: TestReport = {
     passed: scenarios.every((entry) => entry.passed),
@@ -542,6 +567,7 @@ function finish(
     savedTo,
     ...(finished.rejudgedFrom === undefined ? {} : { rejudgedFrom: finished.rejudgedFrom }),
     ...(throttled ? { throttled } : {}),
+    ...(since ? { since } : {}),
   };
   out(run.json ? `${JSON.stringify(report)}\n` : formatSummary(report));
   const markdown = run.report !== undefined || env.GITHUB_STEP_SUMMARY ? markdownReport(report) : "";

@@ -100,20 +100,35 @@ Reviewed 48 call(s): 29 with no finding, 17 with findings, 2 not judged.
 1. Ends the call right after booking, before the caller says goodbye
    9 of 46 judged call(s), 20% · ended_early
    call 0f3a51c2, turn 5: "You're all set for Tuesday at ten. Goodbye!" (The caller had not said goodbye.)
-   Scenario to add:
-     caller: { goal: "Book a haircut, then ask what it costs", knows: "Name Alex Example" },
+   Scenario to add (its caller from call 0f3a51c2):
+     caller: { goal: "Book a haircut for Tuesday at ten, then ask what it costs", knows: "Name Sam Example" },
      failOn: ["ended_early"],
+
+What callers called about:
+  Topic                Calls  Share  Covered by
+  Book an appointment     21    46%  books a haircut
+  Move an appointment     14    30%  no scenario
 ```
 
 Read a pattern from top to bottom: what the agent does wrong, on how many of the judged calls, and
 the words of up to three calls that show it. Open one of those calls and read the turn before you
-believe the title. Then work through the patterns one at a time:
+believe the title. The table after the patterns says what callers called about and which scenario
+tests each topic: a topic with many calls and `no scenario` is untested. Then work through the
+patterns one at a time:
 
-1. Put the pattern's scenario into a file under `src/agent/`, inside `scenario({ ... })`.
-2. Run `npx curb test` and see it fail. A scenario that passes does not reproduce the pattern:
-   change its caller until it does.
-3. Fix the agent (the table in section 2 names the usual causes) and run `npx curb test` again.
+1. Put the pattern's scenario into a file under `src/agent/`, inside `scenario({ ... })`. Its
+   caller was written from the call the report names and wants what that caller wanted, with the
+   same order numbers, dates and products, so the agent's data finds them.
+2. Run `npx curb test` with `--runs 5` and see it fail. A scenario that passes does not reproduce
+   the pattern: change its caller until it does.
+3. Fix the agent (the table in section 2 names the usual causes) and run `npx curb test --runs 5`
+   again. The report ends with the pass rates since the run before the fix, and says `better` only
+   when that is more than chance ([`curb test`](./cli/test.md#since-the-last-version)).
 4. After the fix is live, export the newer calls and review them: the pattern's share should drop.
+
+When the exact words of a call matter, replay them: `replayCall(record)` from
+[`curb/testing`](./testing-api.md#replaycall) is a scripted caller of that call's caller lines, and
+`callerFromCall(record)` the simulated caller the report drafts.
 
 What a review does and does not do:
 
@@ -121,8 +136,10 @@ What a review does and does not do:
   LLM provider; `--judge-model` picks another.
 - **The report quotes the calls.** A quote can hold a name or a number a caller said, so read a
   report before you share it.
-- **A scenario draft uses invented names and numbers.** A model wrote it from the findings, so
-  check it for real data before you commit it.
+- **A scenario draft keeps the call's order numbers and the like, and invents its personal
+  data.** People's names, phone numbers, email addresses and street addresses are replaced; a
+  model wrote it, so check it for real data before you commit it. A replayed call holds the
+  caller's real words: treat it like the export.
 - **An export without tool calls cannot show `claimed_without_tool` or `wrong_tool_use`.** The
   report says of how many calls they were not asked.
 - **A judge can be wrong.** That is why every pattern carries quotes to read, and why a number
@@ -135,7 +152,8 @@ With a coding agent, the whole loop is one request:
 
 ```text
 Run `npx curb review calls.jsonl --json`. Take the pattern on the most calls, add its scenario,
-make it fail with `npx curb test`, fix the agent and run the test again.
+make it fail with `npx curb test --runs 5`, fix the agent and run the test again until the report
+says it is better since the run before the fix.
 ```
 
 ## Next steps

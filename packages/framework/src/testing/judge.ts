@@ -199,7 +199,7 @@ function toolLine(call: ScenarioToolCall): string {
 
 /** The transcript lines of one turn, as the judge reads them, or only those a quote may come
  * from (`from`). */
-function turnLines(turn: ScenarioTurn, from: EvidenceFrom = "turn"): string[] {
+export function turnLines(turn: ScenarioTurn, from: EvidenceFrom = "turn"): string[] {
   return [
     ...(turn.caller === null || from !== "turn" ? [] : [`Caller: ${recorded(turn.caller)}`]),
     ...(from === "agent" ? [] : turn.toolCalls.map(toolLine)),
@@ -290,6 +290,15 @@ export function parseJudgeAnswers(
 ): JudgeAnswer[] | null {
   const given = answersIn(text);
   if (!given) return null;
+  // A model sometimes renames the ids it was given (a lone "question" comes back as "q1"). When
+  // the answers under ids nobody asked are exactly as many as the questions left unanswered,
+  // they are those questions' answers, in order.
+  const asked = new Set(questions.map((question) => question.id));
+  const unanswered = questions.filter((question) => !given.has(question.id));
+  const renamed = [...given.entries()].filter(([id]) => !asked.has(id));
+  if (unanswered.length > 0 && renamed.length === unanswered.length) {
+    for (const [index, question] of unanswered.entries()) given.set(question.id, renamed[index]![1]);
+  }
   return questions.map((question): JudgeAnswer => {
     const raw = given.get(question.id);
     if (!raw) return { ...question, answer: "unknown", turn: null, quote: null, reason: "the judge did not answer this question" };

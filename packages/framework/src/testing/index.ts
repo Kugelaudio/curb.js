@@ -8,9 +8,11 @@
  * (`testModel`), many at once (`inParallel`), results for CI (`report`), and the host they run
  * on (`projectHost`).
  *
- * Layer 2, building blocks: callers (`simulatedCaller`, `scriptedCaller`, `personas`), a whole
- * conversation (`converse`), checks of one (`builtInChecks`, `checksOf`), the judge (`judge`,
- * `ask`, `FINDINGS`), and numbers across many (`styleNumbers`, `passRate`, `groupFindings`).
+ * Layer 2, building blocks: callers (`simulatedCaller`, `scriptedCaller`, `personas`, and from a
+ * real call `callerFromCall`, `replayCall`), a whole conversation (`converse`), checks of one
+ * (`builtInChecks`, `checksOf`), the judge (`judge`, `ask`, `FINDINGS`, and how far to trust it,
+ * `judgeAgreement`), numbers across many (`styleNumbers`, `passRate`, `groupFindings`), and
+ * whether a change helped (`compareRuns`, `compare`).
  *
  * Layer 3, the ready-made path: `scenario()` files that `curb test` runs, and the hooks of a
  * call (`runHook`, `buildCallEvent`).
@@ -42,6 +44,9 @@ export { FINDINGS, ask, judge, type Finding } from "./judge.js";
 export { styleNumbers } from "./style.js";
 export { groupFindings } from "./review.js";
 export { personas } from "./personas.js";
+export { callerFromCall, replayCall } from "./from-call.js";
+export { compare, compareRuns, type RunComparison, type SideBySide } from "./compare.js";
+export { judgeAgreement, type JudgeAgreement } from "./agreement.js";
 
 // Layer 3.
 export { scenario } from "./scenario.js";

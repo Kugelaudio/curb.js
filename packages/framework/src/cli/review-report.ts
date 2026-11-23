@@ -1,4 +1,5 @@
 import { FINDINGS, type ConversationRecord, type Finding, type judge } from "../testing/index.js";
+import { CALLED_FOR, formatCoverage, type Coverage } from "./review-coverage.js";
 import { throttledLine, usageLine } from "./scenarios/report.js";
 import type { ReviewPattern, RunUsage, ThrottleStats } from "./scenarios/types.js";
 
@@ -48,12 +49,20 @@ export const NOT_ASKED = {
 export const recordsTools = (call: Pick<ConversationRecord, "recordsToolCalls">) => call.recordsToolCalls !== false;
 
 /** What the judge is asked of one call: every built-in finding its record can answer and
- * `unresolved`; `ended_early` is asked as {@link CALLER_CLOSED}, and only of a call the agent ended. */
+ * `unresolved`; `ended_early` is asked as {@link CALLER_CLOSED}, and only of a call the agent ended;
+ * and what the caller called for ({@link CALLED_FOR}), for the coverage. */
 export function reviewAsks(call: Pick<ConversationRecord, "recordsToolCalls" | "ending">): { findings: Record<string, string>; expectations: Record<string, string> } {
   const left: readonly string[] = [...(recordsTools(call) ? [] : NOT_ASKED.tools.questions), ...NOT_ASKED.ending.questions];
   const findings: Record<string, string> = Object.fromEntries(Object.entries(FINDINGS).filter(([id]) => !left.includes(id)));
   findings[UNRESOLVED.id] = UNRESOLVED.text;
-  return { findings, expectations: call.ending.by === "agent" ? { [CALLER_CLOSED.id]: CALLER_CLOSED.text } : {} };
+  return { findings, expectations: { ...(call.ending.by === "agent" ? { [CALLER_CLOSED.id]: CALLER_CLOSED.text } : {}), [CALLED_FOR.id]: CALLED_FOR.text } };
+}
+
+/** What the caller of a judged call called for, from the reason of the judge's yes to
+ * {@link CALLED_FOR}; null when the call did not show it. */
+export function calledFor(judged: Awaited<ReturnType<typeof judge>>): string | null {
+  const answer = judged.answers.find((candidate) => candidate.id === CALLED_FOR.id);
+  return answer?.answer === "yes" && !answer.reason.startsWith("(") ? answer.reason : null;
 }
 
 /** Longest quote of the agent's last words an `ended_early` finding keeps. */
@@ -82,6 +91,8 @@ const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 export type ReviewReport = {
   calls: { reviewed: number; withoutFindings: number; withFindings: number; notJudged: number; skipped: number };
   patterns: ReviewPattern[];
+  /** What the callers called about, by topic, and the scenarios that test each. */
+  coverage: Coverage;
   /** The questions that were not asked of some calls, with how many and why. */
   notAsked: Array<{ questions: string[]; calls: number; why: string }>;
   notJudged: Array<{ call: string; reason: string }>;
@@ -113,11 +124,17 @@ export function formatReview(report: ReviewReport): string {
     );
     const draft = pattern.scenario;
     if (!draft) return;
-    const caller = [`goal: ${JSON.stringify(draft.caller.goal)}`, ...(draft.caller.knows ? [`knows: ${JSON.stringify(draft.caller.knows)}`] : [])];
-    lines.push("   Scenario to add:", `     caller: { ${caller.join(", ")} },`);
+    const caller = [
+      `goal: ${JSON.stringify(draft.caller.goal)}`,
+      ...(draft.caller.knows ? [`knows: ${JSON.stringify(draft.caller.knows)}`] : []),
+      ...(draft.caller.persona ? [`persona: ${JSON.stringify(draft.caller.persona)}`] : []),
+    ];
+    lines.push(`   Scenario to add${draft.from ? ` (its caller from call ${draft.from})` : ""}:`, `     caller: { ${caller.join(", ")} },`);
     if (draft.failOn) lines.push(`     failOn: ${JSON.stringify(draft.failOn)},`);
     if (draft.expectations) lines.push(`     expectations: ${JSON.stringify(draft.expectations)},`);
   });
+  const coverage = formatCoverage(report.coverage);
+  if (coverage.length > 0) lines.push("", ...coverage);
   const tokens = usageLine(report.usage);
   const after = [
     ...report.notAsked.map(({ questions, calls: count, why }) => `Not asked of ${count} call(s) ${why}: ${questions.join(", ")}.`),

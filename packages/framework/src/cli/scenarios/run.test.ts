@@ -632,16 +632,33 @@ describe("repeated runs", () => {
     let inFlight = 0;
     let most = 0;
     const order: string[] = [];
-    const task = (name: string, ms: number) => async () => {
+    // Each task waits for its own gate, so the test, not the clock, decides when it ends.
+    const gates = new Map<string, () => void>();
+    const started: string[] = [];
+    const task = (name: string) => async () => {
       inFlight += 1;
       most = Math.max(most, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, ms));
+      started.push(name);
+      await new Promise<void>((resolve) => gates.set(name, resolve));
       inFlight -= 1;
       order.push(name);
       return name;
     };
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+    const open = async (name: string) => {
+      await settle();
+      gates.get(name)!();
+      await settle();
+    };
 
-    const results = await Promise.all([slots.run(task("a", 30)), slots.run(task("b", 5)), slots.run(task("c", 5)), slots.run(task("d", 5))]);
+    const all = Promise.all([slots.run(task("a")), slots.run(task("b")), slots.run(task("c")), slots.run(task("d"))]);
+    await settle();
+    expect(started).toEqual(["a", "b"]);
+    await open("b");
+    await open("c");
+    await open("d");
+    await open("a");
+    const results = await all;
 
     expect(results).toEqual(["a", "b", "c", "d"]);
     expect(most).toBe(2);

@@ -78,11 +78,14 @@ Key seams:
   real calls into the same record, `testModel` (`model.ts`), `inParallel` (`parallel.ts`),
   `report` and `passRate` (`results.ts`), all on a `TestHost` (`host.ts`; `projectHost()` is the
   project's agent and provider, and prepares the project when no command did). Layer 2: callers
-  and `converse` (`converse.ts`, `caller.ts`), `builtInChecks` and `checksOf` (`checks.ts`),
-  `judge`, `ask` and `FINDINGS` (`judge.ts`), `styleNumbers` (`style.ts`), `groupFindings`
-  (`review.ts`). Layer 3 lives in the CLI: `src/cli/scenarios/` plays a scenario's runs
-  (`run.ts`: `startCall`, `converse`, then `assess.ts`), sums them up (`aggregate.ts`) and formats
-  the report (`report.ts`); `src/cli/review-report.ts` is what `curb review` asks and prints.
+  and `converse` (`converse.ts`, `caller.ts`), a real call as a caller (`callerFromCall`,
+  `replayCall`, `from-call.ts`), `builtInChecks` and `checksOf` (`checks.ts`), `judge`, `ask` and
+  `FINDINGS` (`judge.ts`), `judgeAgreement` (`agreement.ts`), `styleNumbers` (`style.ts`),
+  `groupFindings` (`review.ts`), `compareRuns` and `compare` (`compare.ts`). Layer 3 lives in the
+  CLI: `src/cli/scenarios/` plays a scenario's runs (`run.ts`: `startCall`, `converse`, then
+  `assess.ts`), sums them up (`aggregate.ts`), formats the report (`report.ts`) and compares it with
+  the last run of another version of the agent (`since.ts`); `src/cli/review-report.ts` is what
+  `curb review` asks and prints, with what callers called about in `review-coverage.ts`.
   Everything after a conversation reads the record alone, so `--rejudge` assesses a saved
   conversation with the code that assessed it live, and a conversation from another source needs
   only a loader into that record. `src/cli/verdicts.test.ts` pins the verdicts and every caller,

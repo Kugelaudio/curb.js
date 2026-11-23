@@ -39,6 +39,7 @@ function judgeText(request: AgentRunRequest): string {
     expectation_2: { answer: "yes", turn: 1, quote: "Hello", reason: "It greets." },
     caller_closed: view.includes("[early]") ? { answer: "no", turn: 2, quote: "One more thing", reason: "The caller was not done." } : "yes",
     unresolved: view.includes("[open]") ? { answer: "yes", turn: 1, quote: "I will check", reason: "Moving the booking: it was only promised." } : "no",
+    called_for: /haircut/i.test(view) ? { answer: "yes", turn: 1, quote: "haircut", reason: "Book a haircut." } : /move my booking/i.test(view) ? { answer: "yes", turn: 1, quote: "move my booking", reason: "Move a booking." } : "no",
   };
   if (view.includes("Bye! Bye!")) answers.incoherent = { answer: "yes", turn: 2, quote: "Bye! Bye!", reason: "It says bye twice." };
   if (view.includes("What was your name again?")) {
@@ -56,6 +57,27 @@ function groupingText(request: AgentRunRequest): string {
     patterns: [
       { title: "Says goodbye twice at the end of the call", findings: numbers.slice(0, 2), scenario: { goal: "Book a haircut", knows: "Name Alex Example", expectation: "The agent says goodbye once." } },
       { title: "Leaves the caller's request open", findings: numbers.slice(2, 3), scenario: { goal: "Move a booking" } },
+    ],
+  });
+}
+
+/** A caller written from a call: what its first caller line asked for, with an invented name. */
+function draftText(request: AgentRunRequest): string {
+  const first = /Caller: (.*)$/m.exec(viewOf(request))?.[1] ?? "";
+  return JSON.stringify({ goal: `Ask: ${first.replace(/\[\w+\]/g, "").trim()}`, knows: "Name Sam Example", persona: "" });
+}
+
+/** The topics of what callers called about: every reason that names a haircut, and the rest, with
+ * the scenario whose goal names one. */
+function topicsText(request: AgentRunRequest): string {
+  const reasons = [...viewOf(request).matchAll(/^\[(\d+)\] (.*)$/gm)];
+  const scenarios = reasons.filter((match) => match.index! > viewOf(request).indexOf("<<<SCENARIOS"));
+  const asked = reasons.filter((match) => match.index! < viewOf(request).indexOf("REASONS>>>"));
+  const haircut = (match: RegExpMatchArray) => /haircut/i.test(match[2]!);
+  return JSON.stringify({
+    topics: [
+      { topic: "Book a haircut", reasons: asked.filter(haircut).map((match) => Number(match[1])), scenarios: scenarios.filter(haircut).map((match) => Number(match[1])) },
+      { topic: "Move a booking", reasons: asked.filter((match) => !haircut(match)).map((match) => Number(match[1])), scenarios: [] },
     ],
   });
 }
@@ -84,6 +106,8 @@ const agentLlm: AgentLlmClient = async (request): Promise<AgentRunResponse> => {
 
 function pinnedHost() {
   const requests = { caller: [] as string[], judge: [] as string[], grouping: [] as string[] };
+  // A review's requests to write a caller from a call and to sort what callers called about.
+  const review = { drafts: [] as string[], topics: [] as string[] };
   const host: TestHost = {
     async createBundle() {
       const { runtime, session } = tasksBundle(agentLlm);
@@ -95,13 +119,22 @@ function pinnedHost() {
         requests.caller.push(hashOf(request));
         return says(callerText(request));
       }
+      if (request.systemPrompt.startsWith("You read one recorded phone call")) {
+        review.drafts.push(hashOf(request));
+        return says(draftText(request));
+      }
+      if (request.systemPrompt.startsWith("You sort the reasons")) {
+        review.topics.push(hashOf(request));
+        return says(topicsText(request));
+      }
       const grouping = !request.systemPrompt.startsWith("You review");
       (grouping ? requests.grouping : requests.judge).push(hashOf(request));
       return says(grouping ? groupingText(request) : judgeText(request));
     },
     models: () => ({ agent: "openai:gpt-5.2", caller: "openai:gpt-5.4-mini", judge: "openai:gpt-5.4-mini" }),
   };
-  return { host, requests: () => Object.fromEntries(Object.entries(requests).map(([role, hashes]) => [role, [...hashes].sort()])) };
+  const sent = () => ({ ...requests, ...Object.fromEntries(Object.entries(review).filter(([, hashes]) => hashes.length > 0)) });
+  return { host, requests: () => Object.fromEntries(Object.entries(sent()).map(([role, hashes]) => [role, [...hashes].sort()])) };
 }
 
 /** A report with what differs between two runs of the same code taken out: times, ids, paths. */
@@ -257,7 +290,7 @@ describe("the verdicts on fixed conversations", () => {
   });
 
   it("curb review gives the findings and patterns it gave before, from the same requests", async () => {
-    const root = project({});
+    const root = project({ "src/agent/books.scenario.ts": BOOKS });
     write(root, "runs/pinned.json", `${JSON.stringify(savedRun())}\n`);
     write(root, "calls/notes.md", "Caller: Can you move my booking? [open]\nAgent: I will check.\nCaller: Thanks. [early]\nAgent: Bye! Bye!\n");
     const { host, requests } = pinnedHost();

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { judgeAnswer, turn } from "../test-fixtures/conversations.js";
 import { judge, type ConversationRecord } from "../testing/index.js";
 import { judgePrompt, judgeQuestions, type JudgeQuestion } from "../testing/judge.js";
-import { findingsOf, formatReview, reviewAsks, type ReviewReport } from "./review-report.js";
+import { calledFor, findingsOf, formatReview, reviewAsks, type ReviewReport } from "./review-report.js";
 
 type Answers = NonNullable<Parameters<typeof judgeAnswer>[1]>;
 
@@ -46,14 +46,21 @@ async function ids(endedBy: "agent" | "caller" | null, recordsTools: boolean): P
 }
 
 describe("the questions of a review", () => {
-  it("asks only what a call's record can answer, and always whether the caller got what they called for", async () => {
+  it("asks only what a call's record can answer, and always whether the caller got what they called for, and what that was", async () => {
     // The caller hung up: the agent did not end it early.
-    expect(await ids("caller", true)).toEqual(["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use", "unresolved"]);
+    expect(await ids("caller", true)).toEqual(["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use", "called_for", "unresolved"]);
     // No recorded tool calls: a claim cannot be held against them. The agent ended it: was the caller's last line a goodbye?
-    expect(await ids("agent", false)).toEqual(["asked_again", "ignored_caller", "incoherent", "caller_closed", "unresolved"]);
+    expect(await ids("agent", false)).toEqual(["asked_again", "ignored_caller", "incoherent", "caller_closed", "called_for", "unresolved"]);
     // Nobody knows who ended the call: it cannot have been ended early.
-    expect(await ids(null, true)).toEqual(["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use", "unresolved"]);
-    expect(await ids(null, false)).toEqual(["asked_again", "ignored_caller", "incoherent", "unresolved"]);
+    expect(await ids(null, true)).toEqual(["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use", "called_for", "unresolved"]);
+    expect(await ids(null, false)).toEqual(["asked_again", "ignored_caller", "incoherent", "called_for", "unresolved"]);
+  });
+
+  it("reads what the caller called for from the reason of a yes, and nothing from a no", async () => {
+    const record = call("caller", true);
+    const yes = await judge(record, { ...reviewAsks(record), model: answering({ called_for: { answer: "yes", turn: 1, quote: "move my appointment", reason: "Move an appointment to Friday." } }).model });
+    expect(calledFor(yes)).toBe("Move an appointment to Friday.");
+    expect(calledFor(await judge(record, { ...reviewAsks(record), model: answering().model }))).toBeNull();
   });
 
   it("words the built-in findings as curb test does, and adds no goal", async () => {
@@ -79,7 +86,7 @@ describe("judging a call for a review", () => {
     });
     const record = call(null, false);
     const judged = await judge(record, { ...reviewAsks(record), model });
-    expect(judged.answers.map((answer) => answer.id)).toEqual(["asked_again", "ignored_caller", "incoherent", "unresolved"]);
+    expect(judged.answers.map((answer) => answer.id)).toEqual(["asked_again", "ignored_caller", "incoherent", "called_for", "unresolved"]);
     expect(findingsOf(record, judged)).toEqual([
       { call: "call-a", kind: "ignored_caller", turn: 2, quote: "Someone will call you back", reason: "It did not answer the question." },
       { call: "call-a", kind: "unresolved", turn: 2, quote: "So is it moved?", reason: "Moving an appointment: it was only promised." },
@@ -125,7 +132,7 @@ describe("the review report", () => {
           { call: "0f3a51c2", kind: "ended_early", turn: 5, quote: "You're all set for Tuesday at ten. Goodbye!", reason: "The caller had not said goodbye." },
           { call: "77b1e0aa", kind: "ended_early", turn: null, quote: 'Done. "Bye"', reason: "It hung up after booking." },
         ],
-        scenario: { caller: { goal: "Book a haircut and then ask what it costs", knows: "Name Alex Example" }, failOn: ["ended_early"] },
+        scenario: { caller: { goal: "Book a haircut for Tuesday at ten, then ask what it costs", knows: "Name Sam Example, booking 4471", persona: "in a hurry" }, failOn: ["ended_early"], from: "0f3a51c2" },
       },
       {
         title: CALLBACK.title,
@@ -138,6 +145,14 @@ describe("the review report", () => {
       },
       { title: "The agent ignored or misread something the caller said.", calls: 1, share: 1 / 46, findings: 1, kinds: ["ignored_caller"], examples: [], scenario: null },
     ],
+    coverage: {
+      topics: [
+        { topic: "Move an appointment", calls: 20, share: 20 / 46, scenarios: ["moves a booking"] },
+        { topic: "Ask about prices", calls: 15, share: 15 / 46, scenarios: [] },
+        { topic: "Book a haircut", calls: 9, share: 9 / 46, scenarios: ["books a haircut", "books when busy"] },
+      ],
+      unclear: 2,
+    },
     notAsked: [
       { questions: ["claimed_without_tool", "wrong_tool_use"], calls: 48, why: "without recorded tool calls" },
       { questions: ["ended_early"], calls: 5, why: "whose record does not say who ended the call" },
@@ -164,8 +179,8 @@ describe("the review report", () => {
         "   9 of 46 judged call(s), 20% · ended_early",
         '   call 0f3a51c2, turn 5: "You\'re all set for Tuesday at ten. Goodbye!" (The caller had not said goodbye.)',
         '   call 77b1e0aa: "Done. \\"Bye\\"" (It hung up after booking.)',
-        "   Scenario to add:",
-        '     caller: { goal: "Book a haircut and then ask what it costs", knows: "Name Alex Example" },',
+        "   Scenario to add (its caller from call 0f3a51c2):",
+        '     caller: { goal: "Book a haircut for Tuesday at ten, then ask what it costs", knows: "Name Sam Example, booking 4471", persona: "in a hurry" },',
         '     failOn: ["ended_early"],',
         "",
         "2. Promises a callback instead of moving the appointment",
@@ -177,6 +192,13 @@ describe("the review report", () => {
         "",
         "3. The agent ignored or misread something the caller said.",
         "   1 of 46 judged call(s), 2% · ignored_caller",
+        "",
+        "What callers called about:",
+        "  Topic                Calls  Share  Covered by",
+        "  Move an appointment     20    43%  moves a booking",
+        "  Ask about prices        15    33%  no scenario",
+        "  Book a haircut           9    20%  books a haircut, books when busy",
+        "  2 call(s) did not show what the caller called for.",
         "",
         "Not asked of 48 call(s) without recorded tool calls: claimed_without_tool, wrong_tool_use.",
         "Not asked of 5 call(s) whose record does not say who ended the call: ended_early.",
@@ -192,7 +214,7 @@ describe("the review report", () => {
   });
 
   it("is one line and no next step when nothing was found", () => {
-    const clean: ReviewReport = { ...report, calls: { reviewed: 3, withoutFindings: 3, withFindings: 0, notJudged: 0, skipped: 0 }, patterns: [], notAsked: [], notJudged: [], notes: [], usage: null, throttled: undefined };
+    const clean: ReviewReport = { ...report, calls: { reviewed: 3, withoutFindings: 3, withFindings: 0, notJudged: 0, skipped: 0 }, patterns: [], coverage: { topics: [], unclear: 0 }, notAsked: [], notJudged: [], notes: [], usage: null, throttled: undefined };
     expect(formatReview(clean)).toBe("Reviewed 3 call(s): 3 with no finding, 0 with findings, 0 not judged.\n");
   });
 });

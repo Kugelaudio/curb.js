@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { groupFindings, inParallel, judge, loadCalls, projectHost, testModel, type ConversationRecord, type Finding, type TestHost } from "../testing/index.js";
 import { conversationsFile } from "./conversations.js";
 import { routeConsoleToStderr } from "./headless-project.js";
-import { NOT_ASKED, REVIEW_FINDINGS, findingsOf, formatReview, recordsTools, reviewAsks, type ReviewReport } from "./review-report.js";
+import { coverageOf } from "./review-coverage.js";
+import { NOT_ASKED, REVIEW_FINDINGS, calledFor, findingsOf, formatReview, recordsTools, reviewAsks, type ReviewReport } from "./review-report.js";
 import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY } from "./scenarios/run.js";
 import { runUsage } from "./scenarios/usage.js";
 import { parseOptions, projectFindings, throttledBy } from "./test.js";
@@ -15,9 +16,10 @@ export const REVIEW_USAGE = `Usage: curb review [<file or folder>...] [options]
 
 Reads many calls and reports what goes wrong on them, as patterns: what the agent does wrong
 in one sentence, on how many calls, with quotes from them, and a scenario that would reproduce
-it. The judge of curb test answers its questions about each call, a few calls at a time, and
-one more request sorts the findings into patterns. The findings the project's scenarios give
-(findings) are asked too. The agent is not run.
+it, its caller written from one of the pattern's calls. The judge of curb test answers its
+questions about each call, a few calls at a time, and one more request sorts the findings into
+patterns. The findings the project's scenarios give (findings) are asked too. Then it says what
+callers called about, by topic, and which scenario covers each. The agent is not run.
 
 Without a path, the last ${DEFAULT_LAST} conversations of curb dev are reviewed. A path is a file, or a
 folder whose .json, .jsonl, .md and .txt files are read. A file is one of:
@@ -36,8 +38,9 @@ with the keys from the project's .env.
   --json                 print one JSON object instead:
                          { calls: { reviewed, withoutFindings, withFindings, notJudged, skipped },
                            patterns: [{ title, calls, share, findings, kinds, examples: [{ call,
-                           kind, turn, quote, reason }], scenario }], notAsked, notJudged, notes,
-                           judgeModel, judgePromptVersion, usage, exitCode }
+                           kind, turn, quote, reason }], scenario }], coverage: { topics: [{
+                           topic, calls, share, scenarios }], unclear }, notAsked, notJudged,
+                           notes, judgeModel, judgePromptVersion, usage, exitCode }
 
 Exit code 0 when calls were reviewed, with or without findings; 1 when no call could be read
 or none could be judged.`;
@@ -119,14 +122,16 @@ export async function reviewCommand(
 
     let done = 0;
     const every = Math.max(1, Math.ceil(calls.length / 10));
-    // Per call: its findings, or why it could not be judged. A call that could not is no reason to stop.
+    // Per call: its findings and what the caller called for, or why it could not be judged. A
+    // call that could not is no reason to stop.
+    type Judged = { findings: Finding[]; calledFor: string | null };
     const results = await inParallel(
       calls,
-      async (call): Promise<Finding[] | { call: string; reason: string }> => {
+      async (call): Promise<Judged | { call: string; reason: string }> => {
         // A review judges what was said, not a goal written down for a test.
         const asks = reviewAsks(call);
         const result = await judge({ ...call, caller: null }, { ...asks, findings: { ...asks.findings, ...own.findings }, model }).then(
-          (answers) => findingsOf(call, answers),
+          (answers): Judged => ({ findings: findingsOf(call, answers), calledFor: calledFor(answers) }),
           (error: unknown) => ({ call: call.id!, reason: error instanceof Error ? error.message : String(error) }),
         );
         done += 1;
@@ -135,12 +140,14 @@ export async function reviewCommand(
       },
       { concurrency, host, onSlowDown: (lowered) => void (concurrency = lowered) },
     );
-    const judged = results.filter((result): result is Finding[] => Array.isArray(result));
-    const notJudged = results.flatMap((result) => (Array.isArray(result) ? [] : [result]));
-    const withFindings = judged.filter((ofCall) => ofCall.length > 0).length;
-    const found = judged.flat();
+    const judged = results.filter((result): result is Judged => "findings" in result);
+    const notJudged = results.flatMap((result) => ("findings" in result ? [] : [result]));
+    const withFindings = judged.filter((ofCall) => ofCall.findings.length > 0).length;
+    const found = judged.flatMap((ofCall) => ofCall.findings);
     if (found.length > 0) progress(`Sorting ${found.length} finding(s) into patterns.`);
-    const { patterns, notes } = await groupFindings(found, { model, calls: judged.length, kinds: { ...REVIEW_FINDINGS, ...own.findings } });
+    // Each draft's caller is written from a call of its pattern, so it keeps that call's order numbers and the like.
+    const { patterns, notes } = await groupFindings(found, { model, calls: judged.length, kinds: { ...REVIEW_FINDINGS, ...own.findings }, records: calls });
+    const covered = await coverageOf({ reasons: judged.map((ofCall) => ofCall.calledFor), scenarios: own.scenarios, model });
 
     const notAsked = (lacks: (call: ConversationRecord) => boolean, { questions, of }: (typeof NOT_ASKED)[keyof typeof NOT_ASKED]) => {
       const count = calls.filter(lacks).length;
@@ -150,9 +157,10 @@ export async function reviewCommand(
     const report: ReviewReport = {
       calls: { reviewed: calls.length, withoutFindings: judged.length - withFindings, withFindings, notJudged: notJudged.length, skipped },
       patterns,
+      coverage: covered.coverage,
       notAsked: [...notAsked((call) => !recordsTools(call), NOT_ASKED.tools), ...notAsked((call) => call.ending.by === null, NOT_ASKED.ending)],
       notJudged,
-      notes: [...(ignored.length > 0 ? [`Left out ${ignored.length} file(s) that hold no calls in a shape curb review reads: ${ignored.join(", ")}.`] : []), ...own.notes, ...notes],
+      notes: [...(ignored.length > 0 ? [`Left out ${ignored.length} file(s) that hold no calls in a shape curb review reads: ${ignored.join(", ")}.`] : []), ...own.notes, ...notes, ...(covered.note ? [covered.note] : [])],
       judgeModel,
       judgePromptVersion: judge.promptVersion,
       usage: runUsage({ agent: null, caller: null, judge: model.usage() }),
