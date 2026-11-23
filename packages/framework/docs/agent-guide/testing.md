@@ -600,8 +600,9 @@ findings: { reads_internal_id: "The agent reads out an internal booking id such 
 expectations: ["The agent says the booking number after the booking succeeded."],
 ```
 
-Scripted scenarios take `expectations` too. A scripted scenario without them
-calls no judge.
+Scripted scenarios take `expectations` too. A scripted scenario with no
+`expectations`, no `findings` and no `failOn` calls no judge; naming a finding in `failOn`
+is enough for the judge to read the call.
 
 ### Asking the judge in `expect`, and notes
 
