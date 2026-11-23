@@ -84,7 +84,8 @@ A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person
 1. `npx curb review`. With no recorded conversations yet it plays 20 simulated calls, with
    callers written from the agent's prompt, skills and tools, and reviews them; once the preview
    has conversations it reviews its last 20. For a hosted agent's calls, export them as a file
-   (the KugelAudio MCP tool `agent_export_calls`, or the dashboard's Calls page) and run
+   (the KugelAudio MCP tool `agent_export_calls` with `as: "file"` and `last: 200` answers a
+   one-time download link to `curl`; or the dashboard's Calls page) and run
    `npx curb review <file>`; a call line with `toolCalls` is also checked for claims made without
    a tool call. The file holds callers' phone numbers: never commit it. The review prints the
    problems that come back most, each with quotes and a scenario to add.

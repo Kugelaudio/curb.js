@@ -41,12 +41,22 @@ refused, naming both files. A scenario file that cannot be loaded is named in a 
 
 ## Calls of a hosted agent
 
-Export the hosted agent's calls as a file: with the KugelAudio MCP tool `agent_export_calls` from
-a coding agent, or on the dashboard's **Calls** page as JSONL. Then review the file:
+Export the hosted agent's calls as a file, then review the file. A coding agent does it with the
+KugelAudio MCP server, in three steps:
+
+1. Call `agent_export_calls` with `as: "file"` and either `last: 200` (the newest 200 calls, test
+   calls left out) or `from` and `to` for a date range. `agent_list_calls` shows when calls
+   happened. The answer is a download link that works once, for 15 minutes, with the number of
+   calls and a ready `curl` command. A range of more than 31 days or 1,000 calls is refused with
+   the reason, so narrow it.
+2. Download the file with that `curl` command.
+3. Review it:
 
 ```bash
-npx curb review calls-2030-03-01-to-2030-03-07.jsonl
+npx curb review transcripts-2030-03-07.jsonl
 ```
+
+A person gets the same file on the dashboard's **Calls** page, as the JSONL export.
 
 Each line is one call: `callId`, `startedAt`, `endedAt`, `durationSeconds`, `channel`, `via`,
 `caller`, `outcome`, `endReason`, `transcriptStatus`, `transcript` (`{ final, complete, turns }`,

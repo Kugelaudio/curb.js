@@ -147,7 +147,7 @@ them as a file and reviews that file:
 
 | Where the calls are | What to run |
 |---|---|
-| Hosted agent, coding agent connected | Export the calls as a file with the KugelAudio MCP tool `agent_export_calls`, then `npx curb review <file>` |
+| Hosted agent, coding agent connected | The KugelAudio MCP tool `agent_export_calls` with `as: "file"` and `last: 200` (or `from` and `to`) answers a one-time download link; `curl` the file, then `npx curb review <file>` ([`curb review`](./cli/review.md#calls-of-a-hosted-agent)) |
 | Hosted agent, dashboard | On the **Calls** page, export a date range as JSONL, then `npx curb review <file>` |
 | Nowhere yet: a new agent | `npx curb review`: 20 simulated calls, played, saved as a run and reviewed |
 | `curb dev` preview | `npx curb review`: the last 20 conversations, with no file (`--last <n>` for more) |
