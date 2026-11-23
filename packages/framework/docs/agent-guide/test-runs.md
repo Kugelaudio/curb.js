@@ -108,7 +108,7 @@ A run's id is the time it started and four random characters, so ids sort by tim
 | `ending.providerError` | `true` when a failed request to the agent's LLM provider stopped it |
 | `endState` | The data of the agent's stores, its rendered context and its active skill when the call ended |
 | `usage` | Tokens per part, `null` where the provider reported none |
-| `recordsToolCalls` | `false` when its source holds no tool calls (a Calls export, a transcript). Optional |
+| `recordsToolCalls` | `false` when its source holds no tool calls (a Calls export line without `toolCalls`, a transcript). Optional |
 | `assessment` | What the checks and the judge made of it when the file was written; absent on a conversation `saveRun` saved without checks: the `outcome` (`pass`, `fail` or `error`), the `error` with its `kind`, every check, and every answer of the judge with its `turn` and `quote` |
 
 Everything a check, the judge or a style number reads is in `turns`, `ending` and `endState`. A

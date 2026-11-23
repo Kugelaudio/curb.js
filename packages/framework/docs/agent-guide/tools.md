@@ -254,6 +254,9 @@ Keep the secret out of everything the model reads:
 
 - Never put a secret in the system prompt, an instruction, a skill's text, or a tool's
   result or message. The model reads all of them, and it may say aloud anything it reads.
+  On a call that keeps a record, a tool call's arguments, its result's `message` and its
+  `data` while small are also in that record, which the agent's host receives
+  ([`curb.tool`](./host-protocol.md#event-stream)).
 - Keep it out of error messages and logs: what your agent prints goes to its logs. An
   error the tool throws reaches the model only as a generic failure.
 - Read it from `process.env` inside the tool, as above, never when the file loads. A

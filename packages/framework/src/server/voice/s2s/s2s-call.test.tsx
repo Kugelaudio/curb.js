@@ -256,8 +256,9 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     model.callerSays("My policy is P-1.", { delegate: true });
     await until(() => model.commentary().length === 1, "the result went back");
     expect(record.tools()).toEqual([
+      // A result that says nothing beyond `ok` adds nothing; a tool's answer is its `result`.
       { name: "read_skill", arguments: { skill: "/report-claim" }, ok: true },
-      { name: "verify_policy", arguments: { policy: "P-1" }, ok: true, skillPath: "/report-claim" },
+      { name: "verify_policy", arguments: { policy: "P-1" }, ok: true, skillPath: "/report-claim", result: { message: "Verified." } },
     ]);
     // The conversation keeps them too, which is what the preview shows.
     expect(session.messages.flatMap((message) => ("toolCalls" in message ? (message.toolCalls ?? []) : [])).map((tool) => tool.name)).toEqual(["read_skill", "verify_policy"]);
@@ -279,6 +280,8 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
       ok: false,
       skillPath: "/report-claim",
       heldFor: "Book Tuesday: is that right?",
+      // What the model was answered: nothing ran yet.
+      result: { message: expect.stringContaining("Held, not run") },
     });
   });
 

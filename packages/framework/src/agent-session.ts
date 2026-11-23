@@ -51,6 +51,7 @@ import {
   SKIP_TURN_TOOL_NAME,
   type ToolCallOutcome,
   type ToolDefinition,
+  type ToolResult,
 } from "./types.js";
 import { END_CALL_VOICE_STYLE } from "./voice-style.js";
 import { continuesHeardLine, joinHeardLine } from "./heard-line.js";
@@ -142,9 +143,9 @@ const HEARD_LINE_GAP_MS = 2000;
 /** `reply`: everything the turn said aloud. */
 type TurnOutcome = { reply: string; error?: AgentTurnError };
 
-/** A tool call that ran, as a turn reports it: whether it succeeded, how long it took, and the
- * skill it opened or left. */
-type ExecutedCall = { toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number; skill?: SkillChange };
+/** A tool call that ran, as a turn reports it: whether it succeeded, what the model was answered,
+ * how long it took, and the skill it opened or left. */
+type ExecutedCall = { toolCall: AgentToolCallRecord; ok: boolean; result: ToolResult; durationMs?: number; skill?: SkillChange };
 
 /**
  * Surface-agnostic agent turn loop. Owns the conversation transcript and the
@@ -902,7 +903,7 @@ export class AgentSession {
       // Refused (invalid input, CALL_STAYS_OPEN or GREETING_STAYS_OPEN), an end_call hung up
       // nothing and says nothing.
       if (ok && toolCall.name === END_CALL_TOOL_NAME) goodbye ??= endCallGoodbye(toolCall.input);
-      executed.push({ toolCall, ok, ...(durationMs === undefined ? {} : { durationMs }), ...(skill ? { skill } : {}) });
+      executed.push({ toolCall, ok, result: outcome.result, ...(durationMs === undefined ? {} : { durationMs }), ...(skill ? { skill } : {}) });
       next = this.append(next, toolMessage(toolCall, outcome));
       if (!toolCall.invalid) this.reportToolRun(toolCall.name, outcome);
     }
@@ -972,7 +973,7 @@ export class AgentSession {
     const { outcome, durationMs, skill } = await this.executeToolCall(toolCall);
     next = this.append(next, toolMessage(toolCall, outcome));
     if (!toolCall.invalid) this.reportToolRun(toolCall.name, outcome);
-    yield { type: "tool", toolCall, ok: outcome.result.ok !== false, ...(durationMs === undefined ? {} : { durationMs }) };
+    yield { type: "tool", toolCall, ok: outcome.result.ok !== false, result: outcome.result, ...(durationMs === undefined ? {} : { durationMs }) };
     if (skill) yield { type: "skill", ...skill };
     // The confirmed action may be what a block acts on (the failure that hands the call off),
     // before the model speaks.
@@ -1019,6 +1020,7 @@ export class AgentSession {
       executed: {
         toolCall,
         ok: outcome.result.ok !== false,
+        result: outcome.result,
         ...(durationMs === undefined ? {} : { durationMs }),
         ...(skill ? { skill } : {}),
       },

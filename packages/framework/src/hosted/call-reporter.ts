@@ -181,9 +181,19 @@ function keepJson(value: unknown): { value: unknown; truncated: boolean } {
   } catch {
     return { value: "[not JSON]", truncated: true };
   }
+  if (utf8Bytes(text) <= MAX_RECORDED_MESSAGE_BYTES) return { value, truncated: false };
+  return { value: firstUtf8Bytes(text, MAX_RECORDED_MESSAGE_BYTES), truncated: true };
+}
+
+/** How many bytes `text` is as UTF-8, which is what it costs on the stream. */
+export function utf8Bytes(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+/** The start of `text` that fits in `limit` bytes of UTF-8, never ending inside a character. */
+export function firstUtf8Bytes(text: string, limit: number): string {
   const bytes = new TextEncoder().encode(text);
-  if (bytes.length <= MAX_RECORDED_MESSAGE_BYTES) return { value, truncated: false };
+  if (bytes.length <= limit) return text;
   // A cut through a multi-byte character decodes as U+FFFD; drop it.
-  const cut = new TextDecoder().decode(bytes.slice(0, MAX_RECORDED_MESSAGE_BYTES)).replace(/\uFFFD+$/, "");
-  return { value: cut, truncated: true };
+  return new TextDecoder().decode(bytes.slice(0, Math.max(0, limit))).replace(/\uFFFD+$/, "");
 }

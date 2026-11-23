@@ -137,8 +137,9 @@ export type AgentTurnStreamEvent =
   | ({ type: "delta" } & AgentStreamChunk)
   /** A tool the agent ran this turn (e.g. read_skill) — emitted after the step
    * executes so voice/streaming clients can show tool activity like chat. `durationMs` is how
-   * long its handler took, when it ran: a refused or held call has none. */
-  | { type: "tool"; toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number }
+   * long its handler took, when it ran: a refused or held call has none. `result` is what the
+   * model was answered: the tool's own result, or why the call was refused or held. */
+  | { type: "tool"; toolCall: AgentToolCallRecord; ok: boolean; durationMs?: number; result?: ToolResult }
   /** The active skill changed: `loaded` names the skill now active, `exited` the one left for
    * the agent level. Emitted after the event of the tool whose run changed it, or at the start
    * of a turn when the app changed it in between. */

@@ -53,7 +53,8 @@ a few wanting what it cannot do, at most ${SIMULATED_MAX_TURNS} caller turns eac
 
 A path is a file, or a folder whose .json, .jsonl, .md and .txt files are read. A file is one of:
   - a saved test run (.curb/test-runs/<id>.json)
-  - a Calls export from the KugelAudio dashboard (JSON Lines, one call per line)
+  - a Calls export from the KugelAudio dashboard (JSON Lines, one call per line); a line that
+    carries toolCalls is also asked claimed_without_tool and wrong_tool_use
   - the output of curb conversations --json
   - a text or Markdown file with one call, whose lines start with "Caller:" and "Agent:"
 

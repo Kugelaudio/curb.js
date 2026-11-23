@@ -147,9 +147,13 @@ describe("a tool that asks the caller first (<Tool confirm>)", () => {
     const asked = await streamTurn(session, "Tuesday at three, lisa@example.com.");
     expect(asked.deltas).toEqual([readBackOf(LISA)]);
     expect(asked.tools).toEqual([["book_meeting", false]]);
+    // Each tool event carries what the model was answered: held, then the action's own result.
+    const results = (turn: typeof asked) => turn.events.flatMap((event) => (event.type === "tool" ? [event.result] : []));
+    expect(results(asked)).toEqual([{ ok: false, message: expect.stringContaining("Held, not run") }]);
 
     const answered = await streamTurn(session, "Yes.");
     expect(answered.tools).toEqual([["book_meeting", true]]);
+    expect(results(answered)).toEqual([booked(LISA)]);
     expect(answered.deltas.join("")).toBe("Done, see you on Tuesday.");
   });
 

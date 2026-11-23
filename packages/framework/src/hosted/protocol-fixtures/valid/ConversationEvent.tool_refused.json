@@ -1,0 +1,1 @@
+{ "type": "event", "seq": 6, "at": 1759000014100, "kind": "curb.tool", "durationMs": 212.4, "payload": { "name": "book_appointment", "arguments": { "day": "friday", "time": "10:00" }, "ok": false, "skillPath": "/booking", "result": { "message": "That slot is taken." } } }

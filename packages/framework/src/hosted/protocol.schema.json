@@ -1037,6 +1037,48 @@
         "payload"
       ]
     },
+    "ToolEventPayload": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arguments": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "skillPath": {
+          "type": "string"
+        },
+        "heldFor": {
+          "type": "string"
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "data": {},
+            "truncated": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "required": [
+        "name",
+        "arguments",
+        "ok"
+      ]
+    },
     "ConversationBody": {
       "oneOf": [
         {

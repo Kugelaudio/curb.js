@@ -83,9 +83,12 @@ A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person
 
 1. `npx curb review`. With no recorded conversations yet it plays 20 simulated calls, with
    callers written from the agent's prompt, skills and tools, and reviews them; once the preview
-   has conversations it reviews its last 20, and `npx curb review <calls.jsonl>` reviews an export
-   of the dashboard's Calls page. It prints the problems that come back most, each with quotes
-   and a scenario to add.
+   has conversations it reviews its last 20. For a hosted agent's calls, export them as a file
+   (the KugelAudio MCP tool `agent_export_calls` with `as: "file"` and `last: 200` answers a
+   one-time download link to `curl`; or the dashboard's Calls page) and run
+   `npx curb review <file>`; a call line with `toolCalls` is also checked for claims made without
+   a tool call. The file holds callers' phone numbers: never commit it. The review prints the
+   problems that come back most, each with quotes and a scenario to add.
 2. Take the top pattern, and read its quoted turns before you believe its title.
 3. Add its drafted scenario as `src/agent/<name>.scenario.ts`, inside `scenario({ ... })`.
 4. `npx curb test <name> --runs 5` and see it fail. A scenario that passes does not reproduce the

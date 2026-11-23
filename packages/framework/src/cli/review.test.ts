@@ -318,6 +318,39 @@ describe("curb review", () => {
     expect(stats.judged.find((request) => callOf(request) === "run")!.stateSnapshot).toContain("- book_appointment: Book an appointment.");
   });
 
+  it("asks the tool findings of an export line that carries its tool calls, and shows the judge each one in its turn", async () => {
+    const withTools = JSON.stringify({
+      ...JSON.parse(exported("tools", "caller_ended", "Done, you are booked for Friday.")),
+      transcript: {
+        turns: [
+          { speaker: "caller", text: "[tools] Please move my appointment to Friday.", startOffsetMs: 1_000, endOffsetMs: 3_000 },
+          { speaker: "agent", text: "Done, you are booked for Friday.", startOffsetMs: 5_000, endOffsetMs: 7_000 },
+        ],
+      },
+      toolCalls: [{ name: "move_appointment", offsetMs: 4_000, outcome: "failed", arguments: { day: "friday" }, error: "no free slot" }],
+    });
+    const root = project({ "calls.jsonl": `${withTools}\n${exported("plain")}\n` });
+    const { host, stats } = reviewHost();
+
+    const { code, printed } = await review(["calls.jsonl"], root, host);
+
+    expect(code).toBe(0);
+    expect(printed).toContain("Not asked of 1 call(s) without recorded tool calls: claimed_without_tool, wrong_tool_use.");
+    const questions = Object.fromEntries(stats.judged.map((request) => [callOf(request), asked(request)]));
+    expect(questions).toEqual({
+      tools: ["asked_again", "claimed_without_tool", "ignored_caller", "incoherent", "wrong_tool_use", "called_for", "unresolved"],
+      plain: ["asked_again", "ignored_caller", "incoherent", "called_for", "unresolved"],
+    });
+    const snapshot = stats.judged.find((request) => callOf(request) === "tools")!.stateSnapshot.join("\n");
+    expect(snapshot).toContain(
+      [
+        "[turn 1] Caller: [tools] Please move my appointment to Friday.",
+        '[turn 1] (The agent called the tool move_appointment: refused. Input: {"day":"friday"}. Result: no free slot)',
+        "[turn 1] Agent: Done, you are booked for Friday.",
+      ].join("\n"),
+    );
+  });
+
   it("reviews the last conversations of curb dev when no path is given", async () => {
     const root = project();
     mkdirSync(join(root, ".data"));

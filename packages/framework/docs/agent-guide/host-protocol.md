@@ -155,7 +155,7 @@ record writes none of them.
 
 | `kind` | When | `payload` |
 |---|---|---|
-| `curb.tool` | every tool call, when it ends | `{name, arguments, ok, skillPath?, heldFor?}`; `durationMs` is how long the handler ran |
+| `curb.tool` | every tool call, when it ends | `{name, arguments, ok, skillPath?, heldFor?, result?}` (`ToolEventPayload` in the schema); `result` is `{message?, data?, truncated?}`, what the tool answered (see below); `durationMs` is how long the handler ran |
 | `curb.skill` | the active skill changed | `{action: "loaded" \| "exited", path, title?}` |
 | `curb.procedure` | a `<Procedure>` moved | `{action: "started" \| "step_completed" \| "completed" \| "left", title, step, steps, stepTitle?, stepTitles?}`; `stepTitles` is every step's title, on `started` |
 | `curb.transfer` | a transfer request got its outcome | `{outcome: "answered" \| "no_answer" \| "busy" \| "failed" \| "refused", to?}`; `durationMs` is the time since the request, `to` the number the request named, as written |
@@ -165,6 +165,30 @@ record writes none of them.
 | `curb.reply_to_client` | every reply the agent gave to the app's `curb.message` RPC (an `ask`) | `{key, id, reply, truncated?}` |
 | `curb.messages` | once, just before `curb.ended`, only when something is non-zero | `{undeliveredToClient: {[key]: n}, refusedQueuedHostMessages: n}` |
 | `curb.ended` | last | `{reason}` |
+
+**What a tool answered.** `result` on `curb.tool` is the tool's result as the model read it:
+`message` is its text and `data` its data. With `ok: true` it says what was done ("Booked:
+Friday at 10:00."). With `ok: false` its `message` says why the call failed or did not run: the
+tool's own answer of no ("That slot is taken."), input the tool refused, a tool the agent does
+not have. A call held for the caller's yes has `heldFor` and a `message` saying that nothing
+ran yet.
+
+One large result cannot bloat an event. `message` is at most 2 KiB of UTF-8 text: a longer one
+is cut there and ends in `… [truncated]`. `data` is kept only while its JSON is at most 1 KiB;
+larger data is left out, never cut. `truncated: true` says the message was cut or the data left
+out. Both limits together stay inside the 4 KiB the record keeps of a message's payload (next
+paragraph). A result with neither a message nor data has no `result`.
+
+`result` was added in v1.25.0 without a new protocol version, as every addition to v1 is: the
+event's `payload` is an open object, so a host built before it reads the event as it did and
+passes over the field it does not know. An event from an earlier runner has no `result`; read
+that as "not reported", not as "the tool returned nothing".
+
+**`arguments` and `result` can hold personal data.** They carry what the caller told the agent
+and what your systems answered: a name, a phone number, an address, an appointment. Store, show
+and delete a call's events under the same rules as its transcript. Reporting them adds no
+logging: the runner writes a tool's arguments and result neither to its log nor to a trace span
+([Tracing](./tracing.md)).
 
 `payload` and `reply` are kept as they were sent while their JSON is at most 4 KiB; a larger
 one is kept as the first 4 KiB of its JSON text, as a string, with `truncated: true`.
@@ -193,7 +217,8 @@ runner's own terminal record is lifecycle `ended`, written before the listener c
 Decode every answer and every stream line against the matching `$defs` type of
 `protocol.schema.json`, and run your decoder over the fixtures: each file under
 `protocol-fixtures/valid/` must decode as the type its name starts with, and each file
-under `protocol-fixtures/invalid/` must be refused. The schema never forbids unknown
+under `protocol-fixtures/invalid/` must be refused. `ToolEventPayload` is the one type that is
+not a line or an answer: it is the `payload` of a `curb.tool` event. The schema never forbids unknown
 properties; keep your decoder that lenient, so a newer runner's additions do not break it.
 
 The Curb repository runs this end to end on every change (`npm run smoke:self-host`): it

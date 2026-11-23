@@ -17,7 +17,7 @@ whose `.json`, `.jsonl`, `.md` and `.txt` files are read. A file is recognised b
 | A file with | Holds tool calls | Says who ended the call |
 |---|---|---|
 | A [saved test run](../test-runs.md), every conversation in it | yes | yes |
-| A Calls export from the KugelAudio dashboard: JSON Lines, one call per line | no | when `endReason` is `agent_completed`, `caller_ended`, `caller_hangup` or `client_disconnect` |
+| A Calls export of a hosted agent: JSON Lines, one call per line ([below](#calls-of-a-hosted-agent)) | when a line carries `toolCalls` | when `endReason` is `agent_completed`, `caller_ended`, `caller_hangup` or `client_disconnect`; otherwise when an `end_call` in `toolCalls` ran |
 | The output of [`curb conversations --json`](./conversations.md) | yes | only when the agent called `end_call` |
 | Text or Markdown with one call, whose lines start with `Caller:`, `User:` or `Customer:` and `Agent:`, `Assistant:` or `Bot:` | no | no |
 
@@ -38,6 +38,58 @@ A project's own findings are asked too: every `findings` that its scenarios give
 ([Testing](../testing.md#findings-of-your-own)), with the built-in questions in the same request,
 and the patterns know their sentences. One id with two different sentences in two scenarios is
 refused, naming both files. A scenario file that cannot be loaded is named in a note.
+
+## Calls of a hosted agent
+
+Export the hosted agent's calls as a file, then review the file. A coding agent does it with the
+KugelAudio MCP server, in three steps:
+
+1. Call `agent_export_calls` with `as: "file"` and either `last: 200` (the newest 200 calls, test
+   calls left out) or `from` and `to` for a date range. `agent_list_calls` shows when calls
+   happened. The answer is a download link that works once, for 15 minutes, with the number of
+   calls and a ready `curl` command. A range of more than 31 days or 1,000 calls is refused with
+   the reason, so narrow it.
+2. Download the file with that `curl` command.
+3. Review it:
+
+```bash
+npx curb review transcripts-2030-03-07.jsonl
+```
+
+A person gets the same file on the dashboard's **Calls** page, as the JSONL export.
+
+Each line is one call: `callId`, `startedAt`, `endedAt`, `durationSeconds`, `channel`, `via`,
+`caller`, `outcome`, `endReason`, `transcriptStatus`, `transcript` (`{ final, complete, turns }`,
+each turn `{ speaker, text, startOffsetMs, endOffsetMs }`) and `data`. The call's length is read
+from `durationSeconds`, or from `durationMs` on a line that has it. A line may also carry the
+call's tool calls in the order they ran:
+
+```json
+{"callId":"5d0c7f2e","endReason":"caller_ended","transcript":{"final":true,"complete":true,"turns":[{"speaker":"caller","text":"Can I move my appointment to Friday?","startOffsetMs":1200,"endOffsetMs":3400},{"speaker":"agent","text":"Done, Friday at ten.","startOffsetMs":5100,"endOffsetMs":6300}]},"toolCalls":[{"name":"move_appointment","offsetMs":4300,"outcome":"ok","input":{"day":"friday"},"result":{"ok":true,"message":"Moved to Friday 10:00."}}]}
+```
+
+| Field of a tool call | What it is |
+|---|---|
+| `name` | The tool. An entry without one is left out |
+| `offsetMs` | When it was called, in milliseconds from the start of the call. It puts the tool call in the agent turn it happened in: after the caller's line before it, before the agent's words after it. Without it, the tool call goes where the one before it went |
+| `outcome` | `ok` (or `success`, `succeeded`, `completed`) when it ran and succeeded; anything else, such as `failed`, when it did not. A boolean `ok` is read instead when a line has one; with neither, a tool call succeeded when it has no `error` |
+| `input` or `arguments` | What the agent passed it |
+| `result` | What it returned. A `{ ok, message, data }` object is read as it is. `{ message, data }` without `ok`, as a hosted call's record holds a result, is read with the tool call's own `ok`: `"ok": false` with `"result": { "message": "That slot is taken." }` is a refused call with that reason. Any other value is its data |
+| `error` | Why it failed, as text or `{ message }` |
+
+A tool call has a `result` when the agent that took the call was built with Curb v1.25.0 or
+later, which reports each tool's answer in the call's record
+([what a tool answered](../host-protocol.md#event-stream)). A tool call of an earlier agent has
+none: the judge then reads that the tool ran and whether it succeeded, not what it answered. A
+long answer arrives cut, ending in `… [truncated]`, and large data is left out.
+
+A line with `toolCalls`, even an empty list, records its tool calls, so `claimed_without_tool` and
+`wrong_tool_use` are asked of it, and the judge reads each tool call in its turn. A line without the
+field is read as before: those two are not asked of it, and the report says of how many calls.
+
+**The file holds personal data**: the caller's phone number (`caller`), everything that was
+said, and what each tool was passed and answered. Keep it out of git (add its name to `.gitignore`), do not share it, and delete it when the
+review is done.
 
 ## A new agent: simulated calls
 
@@ -213,6 +265,8 @@ npx curb review --last 50 --judge-model openai:gpt-5.2
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | A tool call's `result` may be the `{ message, data }` a hosted call's record holds, read with the tool call's `ok`, so the judge reads why a call was refused. A line's length is read from `durationSeconds` as well as `durationMs` |
+| v1.25.0 | A Calls export line may carry `toolCalls`: each tool call is read into the agent turn it happened in, and `claimed_without_tool` and `wrong_tool_use` are asked of the call |
 | v1.25.0 | With no path and no conversation recorded by `curb dev`, it simulates 20 calls, saves them as a run and reviews them (`simulated` in `--json`). Judging starts as each call ends, and patterns and coverage are asked at once |
 | v1.25.0 | A draft's caller is written from a call of its pattern; near-duplicate patterns are merged; what callers called about (`coverage`) |
 | v1.25.0 | `curb review` introduced. It asks the findings of the project's scenarios too |

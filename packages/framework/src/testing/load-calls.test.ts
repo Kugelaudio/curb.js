@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { record, ran, turn } from "../test-fixtures/conversations.js";
+import { turnLines } from "./judge.js";
 import { callsIn } from "./load-calls.js";
 
 const spoken = (text: string) => callsIn("call.md", text)!.calls[0]!.turns.map((entry) => [entry.turn, entry.caller, entry.reply]);
@@ -67,6 +68,151 @@ describe("the calls curb review reads", () => {
     expect(callsIn("one.json", JSON.stringify(one))?.calls[0]?.turns.map((entry) => [entry.caller, entry.reply])).toEqual([["Hi.", "Hello."]]);
     // A line that holds no transcript at all is a call without one.
     expect(callsIn("bare.jsonl", `${JSON.stringify(one)}\n${JSON.stringify({ callId: "call-h" })}\n`)).toMatchObject({ calls: [{ id: "call-g" }], skipped: 1 });
+  });
+
+  it("reads a Calls export line's tool calls into the agent turn each happened in, by its time in the call", () => {
+    const said = (speaker: string, text: string, startOffsetMs: number) => ({ speaker, text, startOffsetMs, endOffsetMs: startOffsetMs + 900 });
+    const line = {
+      callId: "call-t",
+      startedAt: "2030-03-04T09:00:00+01:00",
+      endReason: "error",
+      caller: "+15550100",
+      transcript: {
+        final: true,
+        complete: true,
+        turns: [
+          said("agent", "Birch Street Studio.", 0),
+          said("caller", "Is Saturday free?", 2_000),
+          said("agent", "Saturday at ten is free.", 4_000),
+          said("caller", "Book it, please.", 6_000),
+          said("agent", "You are booked.", 9_000),
+          said("caller", "Thanks, bye.", 11_000),
+          said("agent", "Goodbye!", 12_500),
+        ],
+      },
+      // Out of order on purpose: the time in the call places each one.
+      toolCalls: [
+        { name: "book_appointment", offsetMs: 7_500, outcome: "failed", arguments: { day: "saturday" }, error: "slot taken" },
+        { name: "lookup_slots", offsetMs: 3_100, outcome: "ok", input: { day: "saturday" }, result: { slots: ["10:00"] } },
+        { name: "book_appointment", offsetMs: 8_200, ok: true, arguments: { day: "saturday", time: "10:00" }, result: { ok: true, message: "booked" } },
+        // At the same time as the agent's words, the tool call comes first.
+        { name: "end_call", offsetMs: 12_500, outcome: "succeeded" },
+        { offsetMs: 13_000, outcome: "ok" },
+      ],
+    };
+
+    const call = callsIn("export.jsonl", `${JSON.stringify(line)}\n`)!.calls[0]!;
+
+    // The end reason does not say who ended it; the end_call that ran does.
+    expect(call).toMatchObject({ id: "call-t", recordsTools: true, endedBy: "agent" });
+    expect(call.turns.map((turn) => [turn.turn, turn.caller, turn.reply, turn.toolCalls.map((toolCall) => toolCall.name), turn.endedCall])).toEqual([
+      [0, null, "Birch Street Studio.", [], false],
+      [1, "Is Saturday free?", "Saturday at ten is free.", ["lookup_slots"], false],
+      [2, "Book it, please.", "You are booked.", ["book_appointment", "book_appointment"], false],
+      [3, "Thanks, bye.", "Goodbye!", ["end_call"], true],
+    ]);
+    expect(call.turns[1]!.toolCalls).toEqual([{ name: "lookup_slots", input: { day: "saturday" }, ok: true, result: { ok: true, data: { slots: ["10:00"] } } }]);
+    expect(call.turns[2]!.toolCalls).toEqual([
+      { name: "book_appointment", input: { day: "saturday" }, ok: false, result: { ok: false, message: "slot taken" } },
+      { name: "book_appointment", input: { day: "saturday", time: "10:00" }, ok: true, result: { ok: true, message: "booked" } },
+    ]);
+    expect(call.turns[3]!.toolCalls).toEqual([{ name: "end_call", input: {}, ok: true, result: null }]);
+
+    // An empty list says the call recorded its tool calls and made none.
+    const none = callsIn("none.jsonl", JSON.stringify({ ...line, toolCalls: [] }))!.calls[0]!;
+    expect(none).toMatchObject({ recordsTools: true, endedBy: null });
+    expect(none.turns.flatMap((turn) => turn.toolCalls)).toEqual([]);
+    // Without the field the line reads as before: no tool calls, and not recorded.
+    const { toolCalls: _dropped, ...older } = line;
+    const before = callsIn("older.jsonl", JSON.stringify(older))!.calls[0]!;
+    expect(before).toMatchObject({ recordsTools: false, endedBy: null });
+    expect(before.turns.map((turn) => [turn.caller, turn.reply])).toEqual(none.turns.map((turn) => [turn.caller, turn.reply]));
+  });
+
+  it("reads a hosted call's tool event result, so the judge reads a refused call with its reason", () => {
+    const line = {
+      callId: "call-v",
+      endReason: "caller_ended",
+      transcript: {
+        turns: [
+          { speaker: "caller", text: "Friday at ten, please.", startOffsetMs: 1_000 },
+          { speaker: "agent", text: "Friday at ten is gone. Would eleven do?", startOffsetMs: 4_000 },
+          { speaker: "caller", text: "Yes, eleven.", startOffsetMs: 7_000 },
+          { speaker: "agent", text: "You are booked for eleven.", startOffsetMs: 10_000 },
+        ],
+      },
+      // Each entry as the tool event of the host protocol holds it: `ok` beside `result: { message, data }`.
+      toolCalls: [
+        { name: "book_appointment", offsetMs: 2_500, ok: false, input: { day: "friday", time: "10:00" }, result: { message: "That slot is taken." } },
+        { name: "book_appointment", offsetMs: 8_500, ok: true, input: { day: "friday", time: "11:00" }, result: { message: "Booked.", data: { reference: "A-1042" } } },
+        // A long message was cut by the runner, and data too large for the event was left out.
+        { name: "list_slots", offsetMs: 8_600, ok: true, arguments: {}, result: { message: "Mon 09:00, … [truncated]", truncated: true } },
+        { name: "send_summary", offsetMs: 8_700, ok: false, input: {}, result: { data: { queued: false } }, error: "No email address on file." },
+        // Anything else is still the tool's data, and a whole result is still read as it is.
+        { name: "lookup_slots", offsetMs: 8_800, ok: true, input: {}, result: { message: "one left", slots: ["11:00"] } },
+        { name: "lookup_slots", offsetMs: 8_900, ok: true, input: {}, result: {} },
+      ],
+    };
+
+    const call = callsIn("export.jsonl", `${JSON.stringify(line)}\n`)!.calls[0]!;
+
+    expect(call.turns[0]!.toolCalls).toEqual([
+      { name: "book_appointment", input: { day: "friday", time: "10:00" }, ok: false, result: { ok: false, message: "That slot is taken." } },
+    ]);
+    expect(turnLines(call.turns[0]!)).toEqual([
+      "Caller: Friday at ten, please.",
+      '(The agent called the tool book_appointment: refused. Input: {"day":"friday","time":"10:00"}. Result: That slot is taken.)',
+      "Agent: Friday at ten is gone. Would eleven do?",
+    ]);
+    expect(call.turns[1]!.toolCalls.map((toolCall) => toolCall.result)).toEqual([
+      { ok: true, message: "Booked.", data: { reference: "A-1042" } },
+      { ok: true, message: "Mon 09:00, … [truncated]" },
+      { ok: false, message: "No email address on file.", data: { queued: false } },
+      { ok: true, data: { message: "one left", slots: ["11:00"] } },
+      { ok: true, data: {} },
+    ]);
+    expect(turnLines(call.turns[1]!)[1]).toBe(
+      '(The agent called the tool book_appointment: ok. Input: {"day":"friday","time":"11:00"}. Result: Booked. Data: {"reference":"A-1042"})',
+    );
+  });
+
+  it("reads a Calls export line's length from durationSeconds, as from durationMs", () => {
+    const line = (length: Record<string, unknown>) =>
+      JSON.stringify({ callId: "call-w", ...length, transcript: { turns: [{ speaker: "caller", text: "Hi." }, { speaker: "agent", text: "Hello." }] } });
+    const durationOf = (length: Record<string, unknown>) => callsIn("export.jsonl", line(length))!.calls[0]!.durationMs;
+
+    expect(durationOf({ durationSeconds: 42 })).toBe(42_000);
+    expect(durationOf({ durationSeconds: 61.2345 })).toBe(61_235);
+    expect(durationOf({ durationSeconds: 0 })).toBe(0);
+    expect(durationOf({ durationMs: 42_500 })).toBe(42_500);
+    // Milliseconds are the finer of the two, so a line with both is read from them.
+    expect(durationOf({ durationMs: 42_500, durationSeconds: 42 })).toBe(42_500);
+    // No length, or one that is not a length, is none.
+    expect(durationOf({})).toBeUndefined();
+    expect(durationOf({ durationSeconds: null })).toBeUndefined();
+    expect(durationOf({ durationSeconds: "42" })).toBeUndefined();
+    expect(durationOf({ durationSeconds: -1 })).toBeUndefined();
+  });
+
+  it("places a Calls export's tool call before any words, and one without a time where the one before it was", () => {
+    const line = {
+      callId: "call-u",
+      endReason: "caller_ended",
+      transcript: { turns: [{ speaker: "agent", text: "Hello, Anna.", startOffsetMs: 1_000 }, { speaker: "caller", text: "Hi.", startOffsetMs: 3_000 }, { speaker: "agent", text: "Your order shipped.", startOffsetMs: 5_000 }] },
+      toolCalls: [
+        { name: "lookup_caller", offsetMs: 200, outcome: "ok" },
+        { name: "lookup_order", offsetMs: 4_000, outcome: "ok" },
+        { name: "track_parcel", outcome: "ok" },
+      ],
+    };
+
+    const call = callsIn("export.jsonl", JSON.stringify(line))!.calls[0]!;
+
+    expect(call.turns.map((turn) => [turn.caller, turn.reply, turn.toolCalls.map((toolCall) => toolCall.name)])).toEqual([
+      [null, "Hello, Anna.", ["lookup_caller"]],
+      ["Hi.", "Your order shipped.", ["lookup_order", "track_parcel"]],
+    ]);
+    expect(call.endedBy).toBe("caller");
   });
 
   it("reads the output of curb conversations --json, with each tool call and its result", () => {

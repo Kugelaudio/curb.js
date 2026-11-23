@@ -1,0 +1,1 @@
+{ "name": "book_appointment", "arguments": { "day": "friday", "time": "10:00" }, "ok": true, "skillPath": "/booking", "result": { "message": "Booked: Friday at 10:00.", "data": { "reference": "A-1042" } } }
