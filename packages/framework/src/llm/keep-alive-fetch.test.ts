@@ -136,7 +136,15 @@ describe("bin/dispatcher-snapshot.js", () => {
     expect(run([preload, snapshot])).toBe("false");
   });
 
-  it("records nothing when Node installed a proxy from the environment", () => {
-    expect(run([snapshot], { NODE_USE_ENV_PROXY: "1", HTTPS_PROXY: "http://127.0.0.1:9" })).toBe("false");
+  const envProxy = { NODE_USE_ENV_PROXY: "1", HTTPS_PROXY: "http://127.0.0.1:9" };
+  // Node reads NODE_USE_ENV_PROXY from 22.21 and 24.5 on; an older one installs no proxy.
+  const nodeInstallsEnvProxy =
+    execFileSync(process.execPath, ["-e", `process.stdout.write(String(globalThis[Symbol.for("undici.globalDispatcher.1")] !== undefined))`], {
+      encoding: "utf8",
+      env: { ...process.env, ...envProxy },
+    }) === "true";
+
+  it.runIf(nodeInstallsEnvProxy)("records nothing when Node installed a proxy from the environment", () => {
+    expect(run([snapshot], envProxy)).toBe("false");
   });
 });
