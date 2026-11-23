@@ -9,6 +9,20 @@ import { RENDER_CHECK_ARG } from "./render-check.js";
  */
 
 /**
+ * The bundle's first import: `bin/dispatcher-snapshot.js`, which records Node's default HTTP
+ * dispatcher so the model client keeps its connection between turns (`llm/keep-alive-fetch.ts`).
+ *
+ * A data: URL, so the artifact needs no framework file beside it, and an import in the banner,
+ * so it runs before every other module, the externals included: an artifact starts here in a
+ * fresh process, without the CLI that loads the snapshot otherwise. Linking the bundle must not
+ * install a dispatcher before it runs, which `runtimeHttpPlugin` sees to.
+ */
+export function dispatcherSnapshotImport(snapshotSource: string): string {
+  const url = `data:text/javascript;base64,${Buffer.from(snapshotSource, "utf8").toString("base64")}`;
+  return `import ${JSON.stringify(url)};`;
+}
+
+/**
  * The worker-mode job body of the generated `hosted-worker.mjs`.
  *
  * Its own constant so a test can run exactly this text against stand-ins, without a

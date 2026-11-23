@@ -65,11 +65,6 @@ if (!fromSource) {
   }
 }
 
-// The processes the CLI starts (the `curb dev` child, the voice worker's jobs) inherit execArgv, and
-// record Node's default dispatcher before their own code runs, as this one did.
-const dispatcherSnapshot = new URL("./dispatcher-snapshot.js", import.meta.url).href;
-if (!process.execArgv.includes(dispatcherSnapshot)) process.execArgv.push("--import", dispatcherSnapshot);
-
 // Dynamic imports so TSX_TSCONFIG_PATH is set before tsx reads it.
 const { register } = await import("tsx/esm/api");
 register();
