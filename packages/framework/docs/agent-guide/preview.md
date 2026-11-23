@@ -335,4 +335,4 @@ What your sink has to guarantee, because of those retries:
 ## Next steps
 
 - [Testing](./testing.md): the same checks from the command line.
-- [Improve from real calls](./improve-from-calls.md): use a recorded conversation.
+- [Make the agent better](./improve-from-calls.md): use a recorded conversation.

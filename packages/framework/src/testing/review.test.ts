@@ -259,6 +259,23 @@ describe("scenario drafts written from a call of the pattern", () => {
     expect(requests.filter((request) => request.systemPrompt.startsWith("You read one recorded phone call"))).toHaveLength(2);
   });
 
+  it("takes the caller of a call a simulated caller played as it is, with no request, and writes the others from their call", async () => {
+    const { llm, requests } = drafting({ "20001": JSON.stringify({ goal: "Ask about order 20001", knows: "" }) });
+    const played = [
+      { ...calls[0]!, source: "call" as const, caller: { goal: "Find out where order 10422 is", knows: "Order 10422", persona: "In a hurry", behaviours: ["impatient" as const] } },
+      // A scenario's caller is in the project already: its call is written afresh.
+      calls[1]!,
+    ];
+
+    const { patterns } = await groupFindingsWith({ kinds: REVIEW_FINDINGS, llm, findings: split, judged: 2, records: played });
+
+    expect(patterns.map((pattern) => pattern.scenario)).toEqual([
+      { caller: { goal: "Find out where order 10422 is", knows: "Order 10422", persona: "In a hurry", behaviours: ["impatient"] }, failOn: ["ended_early"], from: "call-a" },
+      { caller: { goal: "Ask about order 20001" }, expectations: ["The agent says where the order is."], from: "call-b" },
+    ]);
+    expect(requests.filter((request) => request.systemPrompt.startsWith("You read one recorded phone call")).map((request) => request.stateSnapshot.join("\n"))).toEqual([expect.stringContaining("Order 20001")]);
+  });
+
   it("leaves a draft out, with a note, when no caller could be written from its call", async () => {
     const { llm } = drafting({ "10422": "I cannot." });
 

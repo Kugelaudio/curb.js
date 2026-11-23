@@ -388,6 +388,27 @@ test("AGENTS.md sends a coding agent through check, say and repeated test runs, 
   assert.match(agents, /`npx curb test --rejudge latest`/);
 });
 
+// "Make it better" on a new agent: the loop works with no recorded calls, and its steps come in order.
+test("AGENTS.md gives a coding agent one loop to make the agent better, from simulated calls on a new agent", () => {
+  const agents = readFileSync(join(template, "AGENTS.md"), "utf8");
+  const loop = agents.slice(agents.indexOf("**To make the agent better, run this loop.**"));
+  assert.ok(loop.length < agents.length, "the loop is missing");
+  const steps = [
+    "1. `npx curb review`",
+    "plays 20 simulated calls",
+    "2. Take the top pattern",
+    "3. Add its drafted scenario as `src/agent/<name>.scenario.ts`",
+    "4. `npx curb test <name> --runs 5` and see it fail",
+    "5. Fix the agent",
+    "6. `npx curb test <name> --runs 5` again and read the `Since` lines",
+    "7. Commit, and start again at 1.",
+  ].map((step) => loop.indexOf(step));
+  assert.ok(steps.every((at) => at >= 0), `a step is missing: ${steps}`);
+  assert.deepEqual([...steps].sort((a, b) => a - b), steps);
+  assert.match(loop, /A review of 20 simulated calls is some 300 to 400 LLM requests and takes a few minutes/);
+  assert.doesNotMatch(agents, /To improve the agent, read its recent conversations first/);
+});
+
 // A model that never asked for the name books under "Caller". The booking tool refuses that, so
 // the calendar never holds a booking nobody can be greeted by.
 test("the booking agent refuses a placeholder where the caller's name belongs", () => {

@@ -43,18 +43,24 @@ export const REVIEW_FINDINGS: Readonly<Record<string, string>> = {
 export const NOT_ASKED = {
   tools: { questions: ["claimed_without_tool", "wrong_tool_use"], of: "without recorded tool calls" },
   ending: { questions: ["ended_early"], of: "whose record does not say who ended the call" },
+  turnLimit: { questions: ["unresolved"], of: "simulated and cut off at the turn limit" },
 } as const;
+
+/** Whether a call is one a simulated caller played (`source: "call"`) that the turn limit cut off:
+ * the caller may still have got what it wanted, so `unresolved` is not asked of it. */
+export const cutOffSimulation = (call: Pick<ConversationRecord, "source" | "ending">) => call.source === "call" && call.ending.by === "max_turns";
 
 /** Whether a call's source records the agent's tool calls. */
 export const recordsTools = (call: Pick<ConversationRecord, "recordsToolCalls">) => call.recordsToolCalls !== false;
 
 /** What the judge is asked of one call: every built-in finding its record can answer and
- * `unresolved`; `ended_early` is asked as {@link CALLER_CLOSED}, and only of a call the agent ended;
- * and what the caller called for ({@link CALLED_FOR}), for the coverage. */
-export function reviewAsks(call: Pick<ConversationRecord, "recordsToolCalls" | "ending">): { findings: Record<string, string>; expectations: Record<string, string> } {
+ * `unresolved` (not of a simulated call the turn limit cut off); `ended_early` is asked as
+ * {@link CALLER_CLOSED}, and only of a call the agent ended; and what the caller called for
+ * ({@link CALLED_FOR}), for the coverage. */
+export function reviewAsks(call: Pick<ConversationRecord, "recordsToolCalls" | "ending"> & Partial<Pick<ConversationRecord, "source">>): { findings: Record<string, string>; expectations: Record<string, string> } {
   const left: readonly string[] = [...(recordsTools(call) ? [] : NOT_ASKED.tools.questions), ...NOT_ASKED.ending.questions];
   const findings: Record<string, string> = Object.fromEntries(Object.entries(FINDINGS).filter(([id]) => !left.includes(id)));
-  findings[UNRESOLVED.id] = UNRESOLVED.text;
+  if (!(call.source && cutOffSimulation({ source: call.source, ending: call.ending }))) findings[UNRESOLVED.id] = UNRESOLVED.text;
   return { findings, expectations: { ...(call.ending.by === "agent" ? { [CALLER_CLOSED.id]: CALLER_CLOSED.text } : {}), [CALLED_FOR.id]: CALLED_FOR.text } };
 }
 
@@ -89,6 +95,9 @@ const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /** What `curb review` reports, and prints as one JSON object with --json. */
 export type ReviewReport = {
+  /** Set when the calls were simulated because `curb dev` had recorded none: how many were
+   * played, the caller turns each could take, and the run they were saved as. */
+  simulated?: { calls: number; maxTurns: number; savedTo: string };
   calls: { reviewed: number; withoutFindings: number; withFindings: number; notJudged: number; skipped: number };
   patterns: ReviewPattern[];
   /** What the callers called about, by topic, and the scenarios that test each. */
@@ -112,6 +121,9 @@ export function formatReview(report: ReviewReport): string {
   const { calls } = report;
   const judged = calls.reviewed - calls.notJudged;
   const lines = [
+    ...(report.simulated
+      ? [`These are ${report.simulated.calls} simulated call(s), because curb dev has recorded no conversation here yet. Saved to ${report.simulated.savedTo} (npx curb review ${report.simulated.savedTo} reads them again).`]
+      : []),
     `Reviewed ${calls.reviewed} call(s): ${calls.withoutFindings} with no finding, ${calls.withFindings} with findings, ${calls.notJudged} not judged.`,
     ...(calls.skipped > 0 ? [`Left out ${calls.skipped} call(s) that have no transcript.`] : []),
   ];
@@ -128,6 +140,7 @@ export function formatReview(report: ReviewReport): string {
       `goal: ${JSON.stringify(draft.caller.goal)}`,
       ...(draft.caller.knows ? [`knows: ${JSON.stringify(draft.caller.knows)}`] : []),
       ...(draft.caller.persona ? [`persona: ${JSON.stringify(draft.caller.persona)}`] : []),
+      ...(draft.caller.behaviours?.length ? [`behaviours: ${JSON.stringify(draft.caller.behaviours)}`] : []),
     ];
     lines.push(`   Scenario to add${draft.from ? ` (its caller from call ${draft.from})` : ""}:`, `     caller: { ${caller.join(", ")} },`);
     if (draft.failOn) lines.push(`     failOn: ${JSON.stringify(draft.failOn)},`);

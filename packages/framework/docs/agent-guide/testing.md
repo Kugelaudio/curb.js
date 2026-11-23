@@ -1092,4 +1092,4 @@ and voice are only audible on a real call ([The preview](./preview.md)).
 ## Next steps
 
 - [Deploying](./deploying.md): put the agent live.
-- [Improve from real calls](./improve-from-calls.md): fix an agent from a call that went wrong, or review many calls with `curb review` to find what to fix first.
+- [Make the agent better](./improve-from-calls.md): the loop with `curb review`, on simulated calls of a new agent or on real ones, and how to fix an agent from one call that went wrong.

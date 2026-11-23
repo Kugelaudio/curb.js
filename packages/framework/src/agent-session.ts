@@ -768,12 +768,22 @@ export class AgentSession {
     return agentLanguage(this.runtime.settings.view());
   }
 
-  private buildRequest(messages: AgentChatMessage[], spoken: boolean): AgentRunRequest {
-    const snapshot = this.runtime.snapshot();
+  /** The system prompt the model receives on the next turn as things stand: the agent's
+   * `<SystemPrompt>`, and on a spoken turn the spoken-reply rules after it. */
+  systemPromptFor(spoken: boolean): string {
+    return this.systemPromptOf(this.runtime.snapshot(), spoken);
+  }
+
+  private systemPromptOf(snapshot: ReturnType<AgentSiteRuntime["snapshot"]>, spoken: boolean): string {
     const authored = snapshot.context.systemPrompt ?? "";
     const spokenRules = spoken ? this.spokenRulesFor(snapshot.context.tools) : "";
+    return spokenRules ? `${authored}\n\n${spokenRules}` : authored;
+  }
+
+  private buildRequest(messages: AgentChatMessage[], spoken: boolean): AgentRunRequest {
+    const snapshot = this.runtime.snapshot();
     return {
-      systemPrompt: spokenRules ? `${authored}\n\n${spokenRules}` : authored,
+      systemPrompt: this.systemPromptOf(snapshot, spoken),
       skillTitle: snapshot.context.title,
       // Today's date and time lead the current context. Built here, per request, and never
       // rendered into the tree, so it causes no context events; kept out of the system

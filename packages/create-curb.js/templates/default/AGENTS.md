@@ -51,8 +51,8 @@ A new project is created with `npm create curb.js my-agent`, and you then work i
 The full guide ships in `node_modules/curb/docs/agent-guide/`: read `README.md` first, then
 `what-the-model-receives.md`, `agents-and-skills.md`, `tools.md`, `state.md` and `testing.md`.
 There is one page per task, such as `human-handoff.md` and `confirmations.md`;
-`api-reference.md` leads to every export, and `improve-from-calls.md` is the way to fix an
-agent from a call that went wrong.
+`api-reference.md` leads to every export, and `improve-from-calls.md` is the way to make the
+agent better, from simulated calls or from calls that went wrong.
 A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person's yes first.
 
 ## Verify every change
@@ -79,15 +79,28 @@ A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person
 
 4. `npm run dev`: the browser preview with chat and voice on http://127.0.0.1:4000. Open it in the person's own browser yourself (`open http://127.0.0.1:4000` on macOS, `xdg-open` on Linux, `start` on Windows): a browser built into an app, like the Claude app's Browser pane, blocks the microphone, so a call there fails.
 
-**To improve the agent, read its recent conversations first.** `npx curb conversations`
-prints the last ones the preview ran, with every tool call, its input and its
-result (`--last <n>`, `--id <id>`, `--json`). Calls to the hosted agent are
-read with the `kugelaudio` MCP server's `agent_list_calls`, `agent_get_call` and
-`agent_get_call_timeline` where it is signed in. Find where the agent went wrong, fix that,
-and turn the conversation into a scenario so it stays fixed.
-With many calls, `npx curb review` (the preview's last 20) or `npx curb review <calls.jsonl>`
-(an export of the dashboard's Calls page) says what to fix first: the patterns that come
-back, each with quotes and a scenario to add (`improve-from-calls.md`).
+**To make the agent better, run this loop.** It works on a new agent and after go-live:
+
+1. `npx curb review`. With no recorded conversations yet it plays 20 simulated calls, with
+   callers written from the agent's prompt, skills and tools, and reviews them; once the preview
+   has conversations it reviews its last 20, and `npx curb review <calls.jsonl>` reviews an export
+   of the dashboard's Calls page. It prints the problems that come back most, each with quotes
+   and a scenario to add.
+2. Take the top pattern, and read its quoted turns before you believe its title.
+3. Add its drafted scenario as `src/agent/<name>.scenario.ts`, inside `scenario({ ... })`.
+4. `npx curb test <name> --runs 5` and see it fail. A scenario that passes does not reproduce the
+   problem: sharpen its caller until it fails.
+5. Fix the agent (its prompt, a skill, a tool or its state), never the scenario.
+6. `npx curb test <name> --runs 5` again and read the `Since` lines: `better` means the fix
+   helped beyond chance, `no clear change` that it has not yet. Then `npx curb test` for the rest.
+7. Commit, and start again at 1.
+
+A review of 20 simulated calls is some 300 to 400 LLM requests and takes a few minutes; each test
+run of one scenario is five conversations. To fix one call that went wrong, read it with
+`npx curb conversations` (`--last <n>`, `--id <id>`, `--json`: every tool call with its input
+and result), or for the hosted agent with the `kugelaudio` MCP server's `agent_list_calls`,
+`agent_get_call` and `agent_get_call_timeline`, then fix it and keep it as a scenario
+(`improve-from-calls.md`).
 
 ## The preview
 

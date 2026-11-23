@@ -296,6 +296,7 @@
 ./testing buildCallEvent
 ./testing builtInChecks
 ./testing callerFromCall
+./testing callersFor
 ./testing checksOf
 ./testing compare
 ./testing compareRuns

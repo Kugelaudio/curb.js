@@ -2,14 +2,16 @@
 
 Reads many calls and reports what goes wrong on them as patterns, most calls first, and what the
 callers called about, with the scenarios that test it
-([Improve an agent from real calls](../improve-from-calls.md#many-calls-find-what-to-fix-first)).
-It does not run the agent and changes no file.
+([Make the agent better](../improve-from-calls.md#the-loop)). On recorded calls it does not run the
+agent and changes no file; on a new agent with none it plays simulated calls first
+([A new agent](#a-new-agent-simulated-calls)).
 
 ```bash
 npx curb review [<file or folder>...] [options]
 ```
 
-Without a path it reviews the last 20 conversations of `curb dev`. A path is a file, or a folder
+Without a path it reviews the last 20 conversations of `curb dev`, and simulates 20 calls when
+`curb dev` has recorded none. A path is a file, or a folder
 whose `.json`, `.jsonl`, `.md` and `.txt` files are read. A file is recognised by what it holds:
 
 | A file with | Holds tool calls | Says who ended the call |
@@ -37,13 +39,64 @@ A project's own findings are asked too: every `findings` that its scenarios give
 and the patterns know their sentences. One id with two different sentences in two scenarios is
 refused, naming both files. A scenario file that cannot be loaded is named in a note.
 
+## A new agent: simulated calls
+
+When no path is given and `curb dev` has recorded no conversation yet, `curb review` plays calls
+instead of refusing:
+
+1. [`callersFor`](../testing-api.md#callersfor) starts a call to read what the agent offers on its
+   first turn (its system prompt, its opening, the skills it can open and its tools) and asks the
+   judge's model once for 20 callers: most want what the agent is for, spread across its skills
+   and tools; about four are hard to serve (in a hurry, unclear, changing their mind); two or three
+   want what the agent cannot do. Names and data are invented, and order numbers, services and the
+   like come from the agent's own demo data where its prompt or tools show it.
+2. Each caller is played as `curb test` plays a simulated scenario (`startCall`, `simulatedCaller`,
+   `converse`), at most 8 caller turns each, `--concurrency` calls at a time (default 4) on the one
+   rate limit every request shares. Progress goes to stderr.
+3. Each call goes to the judge the moment it ends, while the others still play. A call that broke
+   off on the provider or on the simulated caller says nothing about the agent: it is listed as not
+   judged.
+4. The calls are saved as a run, `.curb/test-runs/<id>.json`, so `npx curb review <that file>`
+   and `npx curb test --rejudge <that file>` read them again. It is saved under the scenario name
+   `simulated`, so `curb test` never compares a run of the project's scenarios with it.
+5. They are reviewed as recorded calls are: patterns, drafts and what callers called about. A
+   draft's caller is the caller that played its call, with no request to write one. A call the turn
+   limit cut off is not asked `unresolved`: its caller may still have got there.
+
+The report's first line says so:
+
+```text
+These are 20 simulated call(s), because curb dev has recorded no conversation here yet. Saved to .curb/test-runs/20261122T101502118Z-k3f9.json (npx curb review .curb/test-runs/20261122T101502118Z-k3f9.json reads them again).
+Reviewed 20 call(s): 16 with no finding, 3 with findings, 1 not judged.
+```
+
+With `--json` the object has `simulated: { calls, maxTurns, savedTo }`, and its `usage` counts the
+agent's and the simulated callers' tokens too. With recorded conversations, or with a path, nothing
+is simulated.
+
+### What a round costs
+
+For 20 simulated calls:
+
+| Step | Requests |
+|---|---|
+| Callers | 1 (and the agent's greeting, when it speaks first) |
+| The calls | Per call and caller turn, one request of the simulated caller and one of the agent, more when the agent calls tools; up to 8 turns, and one more of the caller when the agent hangs up on a line that did not end the call. Some 300 to 400 in all |
+| The judge | 20, one per call, each sent as soon as its call ends |
+| Patterns and what callers called about | 2, sent at once |
+
+Nothing else runs after the calls: no draft's caller is written, because a simulated call has its
+own. On recorded calls a round is the judge requests, the two after them, and one request per
+pattern to write its draft's caller from a call. A round of 20 simulated calls takes a few minutes,
+most of it the calls themselves; `--concurrency` plays more at a time when the provider allows.
+
 ## Options
 
 | Option | What it does |
 |---|---|
-| `--last <n>` | Without a path: the last n conversations of `curb dev`. Default 20 |
+| `--last <n>` | Without a path: the last n conversations of `curb dev`. Default 20. It does not change how many calls are simulated when there are none |
 | `--judge-model <id>` | The judge's model, as for `curb test`: a model of the agent's provider, or `<provider>:<model>` with `openai`, `anthropic` or `kugelaudio`. Default: a small model of the agent's provider |
-| `--concurrency <k>` | Calls judged at a time. Default 4, at most 16 |
+| `--concurrency <k>` | Calls judged, or simulated calls played, at a time. Default 4, at most 16 |
 | `--json` | Prints one JSON object |
 
 ## The report
@@ -133,7 +186,8 @@ With `--json` the same is one object:
 `share` is the pattern's calls divided by the judged calls. `scenario` is `null` for a pattern
 listed by kind, and `from` names the call its caller was written from. In `coverage`, a topic's
 `share` is of the judged calls too, `scenarios` is empty for `no scenario`, and `unclear` counts the
-calls that did not show what the caller called for. `throttled` is added when the provider's rate limit slowed the review down.
+calls that did not show what the caller called for. `simulated` is there only when the calls
+were simulated. `throttled` is added when the provider's rate limit slowed the review down.
 Progress goes to stderr, so stdout holds only the report.
 
 ## Exit codes
@@ -142,6 +196,9 @@ Progress goes to stderr, so stdout holds only the report.
 |---|---|
 | 0 | Calls were reviewed, with or without findings |
 | 1 | No call could be read, or none could be judged |
+
+A path that holds no call is refused with `CURB_REVIEW_NO_CALLS`; a new agent whose callers could
+not be written (the model's answer held none twice) with `CURB_REVIEW_NO_CALLERS`.
 
 ## Example
 
@@ -156,5 +213,6 @@ npx curb review --last 50 --judge-model openai:gpt-5.2
 
 | Version | Changes |
 |---|---|
+| v1.25.0 | With no path and no conversation recorded by `curb dev`, it simulates 20 calls, saves them as a run and reviews them (`simulated` in `--json`). Judging starts as each call ends, and patterns and coverage are asked at once |
 | v1.25.0 | A draft's caller is written from a call of its pattern; near-duplicate patterns are merged; what callers called about (`coverage`) |
 | v1.25.0 | `curb review` introduced. It asks the findings of the project's scenarios too |

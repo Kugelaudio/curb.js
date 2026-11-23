@@ -8,8 +8,9 @@
  * (`testModel`), many at once (`inParallel`), results for CI (`report`), and the host they run
  * on (`projectHost`).
  *
- * Layer 2, building blocks: callers (`simulatedCaller`, `scriptedCaller`, `personas`, and from a
- * real call `callerFromCall`, `replayCall`), a whole conversation (`converse`), checks of one
+ * Layer 2, building blocks: callers (`simulatedCaller`, `scriptedCaller`, `personas`, from a
+ * real call `callerFromCall`, `replayCall`, and for an agent with no calls yet `callersFor`), a
+ * whole conversation (`converse`), checks of one
  * (`builtInChecks`, `checksOf`), the judge (`judge`, `ask`, `FINDINGS`, and how far to trust it,
  * `judgeAgreement`), numbers across many (`styleNumbers`, `passRate`, `groupFindings`), and
  * whether a change helped (`compareRuns`, `compare`).
@@ -45,6 +46,7 @@ export { styleNumbers } from "./style.js";
 export { groupFindings } from "./review.js";
 export { personas } from "./personas.js";
 export { callerFromCall, replayCall } from "./from-call.js";
+export { callersFor } from "./callers.js";
 export { compare, compareRuns, type RunComparison, type SideBySide } from "./compare.js";
 export { judgeAgreement, type JudgeAgreement } from "./agreement.js";
 

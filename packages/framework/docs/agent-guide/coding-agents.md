@@ -73,5 +73,5 @@ Connecting other clients is in the [KugelAudio docs](https://docs.kugelaudio.com
 
 ## Next steps
 
-- [Improve from real calls](./improve-from-calls.md): hand it a call that went wrong.
+- [Make the agent better](./improve-from-calls.md): the loop, from simulated calls on a new agent or a call that went wrong.
 - [Diagnostics](./diagnostics.md): every code and its fix.
