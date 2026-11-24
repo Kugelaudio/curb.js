@@ -46,7 +46,7 @@ naming it.
 | `PORT`, `WS_PORT` | `4000` | The port. `WS_PORT` wins. An explicit port is used exactly; otherwise `curb dev` takes the next free one |
 | `WS_HOST` | `127.0.0.1` | The address to listen on |
 | `AGENT_DEFAULT` | the first by name | The agent a project with several starts with |
-| `AGENT_LLM_TIMEOUT_MS` | `60000` | How long a model may take to answer |
+| `AGENT_LLM_TIMEOUT_MS` | `60000` | How long a model may take to answer. On a call, a request the provider rate limits is sent again after the pause it asks for, for up to 15 seconds, within this time; only then does the caller hear the fallback line |
 | `KUGEL_CONVERSATIONS_DB` | a local file | Where conversations are recorded. `off` turns it off ([The preview](./preview.md#recorded-conversations)) |
 | `CURB_NO_OPEN` | | `1` keeps `curb dev` from opening the browser |
 | `CURB_NPM_REGISTRY` | `https://registry.npmjs.org` | Where `curb upgrade` looks for new versions. Set it to a mirror |
