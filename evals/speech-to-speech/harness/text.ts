@@ -41,7 +41,7 @@ async function play({ spec, run }: { spec: EvalCaseSpec; run: number }) {
   const latencies: number[] = [];
   try {
     const call = await startCall(spec.fakes ? { fakes: spec.fakes } : {});
-    const record = await converse(timed(call, latencies), callerOf(spec, options), { maxTurns: spec.maxTurns ?? (spec.turns?.length ?? 10) });
+    const record = await converse(timed(call, latencies), callerOf(spec, options, language), { maxTurns: spec.maxTurns ?? (spec.turns?.length ?? 10) });
     call.close();
     const providerError = record.ending.by === "error" && record.ending.providerError === true;
     const score = scoreTurns(spec, record.turns, {

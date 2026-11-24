@@ -45,7 +45,7 @@ export const move = evalCase({
     "Hello, I'm moving and want to take my contract with me.",
     "My customer number is 4417203.",
     "I move out on the 15th of December.",
-    "The meter will say about 23518 then.",
+    "I read the meter this morning, it says 23518, and it will not change before I move.",
     "The new postcode is 10405.",
     "Thank you, bye.",
   ],

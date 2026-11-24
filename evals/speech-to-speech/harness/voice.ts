@@ -66,7 +66,7 @@ try {
       const call = await playVoiceCall({
         port,
         language,
-        caller: callerOf(spec, options),
+        caller: callerOf(spec, options, language),
         interrupt: interruptTurns(spec),
         maxTurns: spec.maxTurns ?? (spec.turns?.length ?? 10),
         log,

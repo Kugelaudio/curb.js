@@ -42,12 +42,12 @@ export async function agentCases(options: RunnerOptions): Promise<{ cases: EvalC
 
 let callerModel: Promise<TestModel> | null = null;
 
-/** The case's caller: its scripted lines, or Curb's simulated caller on the chosen model. */
-export function callerOf(spec: EvalCaseSpec, options: RunnerOptions): Caller {
+/** The case's caller, speaking the case file's `language` unless the case says otherwise. */
+export function callerOf(spec: EvalCaseSpec, options: RunnerOptions, language: string): Caller {
   if (spec.turns) return scriptedCaller(spec.turns.map(lineOf));
   callerModel ??= testModel({ role: "caller", ...(options.callerModel ? { model: options.callerModel } : {}) });
   const model = (system: string, input: string) => callerModel!.then((use) => use(system, input));
-  return simulatedCaller(spec.caller!, { model });
+  return simulatedCaller({ language, ...spec.caller! }, { model });
 }
 
 /** Caller turns (1-based) whose line talks over the agent. */
