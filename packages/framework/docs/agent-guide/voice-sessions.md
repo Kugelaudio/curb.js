@@ -143,8 +143,8 @@ two forms:
   part of the same turn, unless its input carries a long number (six digits or more as
   written, leading zeros included, like `+1 (202) 555-0142` or `012345`: a phone, order or
   account number) that the conversation never contained: the check made that up, so the call
-  is dropped. Numbers are compared whole, digit for digit; only a phone number written with
-  its country code (`+49 30 123456`) also matches the same number without it (`030 123456`).
+  is dropped. Numbers are compared whole, digit for digit; only a phone number may differ by
+  its country code (`+49 30 123456` and `030 123456`, with its leading zero).
   Dates are not checked. Anything else the check writes is dropped, unsaid and out of the
   transcript. That is one more LLM request on those turns, counted
   in the usage `curb test` reports. It starts once the reply's last words have gone to

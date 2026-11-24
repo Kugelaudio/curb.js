@@ -107,9 +107,8 @@ type WrittenNumber = { written: string; digits: string; international: boolean }
  * leading zeros included, like `+1 (202) 555-0142`, `030/1234567` or `012345`) in a check
  * call's `input` that nothing in `heard` holds, or undefined. `heard` is what the conversation
  * holds: the instructions, the caller's and the agent's words, tool results. Numbers are
- * compared whole, by their digits. Only a phone number written with its country code (`+49 30
- * 123456`) also matches the same number without it (`030 123456`, `30 123456`); any other
- * number matches only digit for digit. A check that fills such a number made it up, so its
+ * compared whole, by their digits. A phone number may differ only by its country code
+ * ({@link sameNumber}); any other number matches only digit for digit. A check that fills such a number made it up, so its
  * call is not run. Dates are left alone.
  */
 export function inventedNumber(input: unknown, heard: readonly unknown[]): string | undefined {
@@ -128,11 +127,18 @@ function writtenNumbers(text: string): WrittenNumber[] {
     .filter(({ written }) => !DATE.test(written));
 }
 
-/** The same number: digit for digit, or a phone number with its country code and the same one without. */
-function sameNumber(a: WrittenNumber, b: WrittenNumber): boolean {
-  if (a.digits === b.digits) return true;
-  if (a.international === b.international) return false;
-  const [withCode, without] = a.international ? [a, b] : [b, a];
+/**
+ * Whether the check's `written` number is the conversation's `said` one: digit for digit, or
+ * the same phone number with and without its country code. The check may add a country code
+ * to a heard number (`+49 30 123456` for `030 123456` or `30 123456`); a number it writes
+ * without one is a phone number only with its trunk zero (`030 123456` for `+49 30 123456`),
+ * so an id made of a heard phone number's national digits (`30123456`) is not that number.
+ */
+function sameNumber(written: WrittenNumber, said: WrittenNumber): boolean {
+  if (written.digits === said.digits) return true;
+  if (written.international === said.international) return false;
+  if (!written.international && !written.digits.startsWith("0")) return false;
+  const [withCode, without] = written.international ? [written, said] : [said, written];
   const national = without.digits.replace(/^0/, "");
   const code = withCode.digits.length - national.length;
   return national.length >= LONG_NUMBER_DIGITS && code >= 1 && code <= COUNTRY_CODE_DIGITS && withCode.digits.endsWith(national);

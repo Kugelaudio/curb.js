@@ -27,6 +27,11 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ phone: "+12 3456" }, ["room 3456"])).toBe("+12 3456");
   });
 
+  it("an id made of a heard phone number's national digits is not that phone number", () => {
+    expect(inventedNumber({ account: "301234567" }, ["my number is +49 30 1234567"])).toBe("301234567");
+    expect(inventedNumber({ phone: "030 1234567" }, ["my number is +49 30 1234567"])).toBeUndefined();
+  });
+
   it("counts the digits as written, leading zeros included", () => {
     expect(inventedNumber({ order: "012345" }, ["where is my order?"])).toBe("012345");
     expect(inventedNumber({ order: "000123" }, ["where is my order?"])).toBe("000123");
