@@ -37,6 +37,23 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ phone: "+49 30 1234567" }, ["call me on 0301234567"])).toBeUndefined();
   });
 
+  it("two phone numbers that both carry a country code match only in full", () => {
+    expect(inventedNumber({ phone: "+49 40 1234567" }, ["my number is +49 30 1234567"])).toBe("+49 40 1234567");
+    expect(inventedNumber({ phone: "+44 30 1234567" }, ["my number is +49 30 1234567"])).toBe("+44 30 1234567");
+    expect(inventedNumber({ phone: "040 1234567" }, ["my number is +49 30 1234567"])).toBe("040 1234567");
+    expect(inventedNumber({ phone: "+49 (30) 123-4567" }, ["my number is +49 30 1234567"])).toBeUndefined();
+  });
+
+  it("the phone marker names the value itself: a parent object or a phone-plan id does not make a field a phone number", () => {
+    const heard = ["my number is +49 30 1234567"];
+    expect(inventedNumber({ phoneContact: { account: "0301234567" } }, heard)).toBe("0301234567");
+    expect(inventedNumber({ phoneAccountId: "0301234567" }, heard)).toBe("0301234567");
+    const plan = { type: "object", properties: { plan: { type: "string", description: "Account ID for the caller's phone plan" } } };
+    expect(inventedNumber({ plan: "0301234567" }, heard, plan)).toBe("0301234567");
+    expect(inventedNumber({ contact: { phone: "0301234567" } }, heard)).toBeUndefined();
+    expect(inventedNumber({ phones: ["0301234567"] }, heard)).toBeUndefined();
+  });
+
   it("reads the phone marker from the tool's schema: a field's name, format or description", () => {
     const heard = ["my number is +49 30 1234567"];
     const schema = (property: Record<string, unknown>) => ({ type: "object", properties: { contact: { type: "string", ...property } } });

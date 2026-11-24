@@ -102,18 +102,23 @@ const DATE = /^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./]\d{1,2}[./]\d{2,4})$/;
 /** A number's digits, and whether it was written with a leading `+` (a country code). */
 type WrittenNumber = { written: string; digits: string; international: boolean };
 
-/** A field whose name, `format` or description says it holds a phone number. */
-const PHONE = /phone|telefon|(?:^|[^a-z])(?:tel|mobile?|cell)(?:[^a-z]|$)/i;
+/** A field name that ends in a phone word: `phone`, `callerPhone`, `mobile_number`, `telefonnummer`. */
+const PHONE_NAME = /(?:^|[ _-])(?:tele)?(?:phone|tel|mobile|cell|telefon|handy)(?:[ _-]?(?:numbers?|nos?|nr|nummer))?s?$/i;
+/** A schema `format` for a phone number. */
+const PHONE_FORMAT = /^(?:tel|phone|phone-number|telephone|e164)$/i;
+/** A description that says the value is a phone number. */
+const PHONE_DESCRIPTION = /\b(?:tele)?(?:phone|mobile|cell)[ -]?(?:number|no\b)|telefonnummer|handynummer|rufnummer/i;
+/** A field name that says it holds an identifier, never a phone number, whatever else it says. */
+const ID_NAME = /(?:^|[ _-])(?:id|ids|account|plan|contract|order|code|pin|ext|extension)(?:[ _-]|$)/i;
 
 /**
  * The first long number (six digits or more as written, leading zeros included, like
  * `+1 (202) 555-0142`, `030/1234567` or `012345`) in a check call's `input` that nothing in
  * `heard` holds, or undefined. `heard` is what the conversation holds: the instructions, the
- * caller's and the agent's words, tool results. A number in a phone field (its name, or in
- * `schema` its `format` or description, says phone, tel, mobile or cell) is the same phone
- * number with or without its country code or trunk zero (`+49 30 1234567`, `030 1234567`);
- * a number in any other field, an order or account number, matches only digit for digit, as
- * written. A check that fills such a number made it up, so its call is not run. Dates are
+ * caller's and the agent's words, tool results. A number in a phone field ({@link isPhoneField})
+ * may be written with or without its country code (`+49 30 1234567`, `030 1234567`,
+ * {@link samePhone}); a number in any other field, an order or account number, matches only
+ * digit for digit, as written. A check that fills such a number made it up, so its call is not run. Dates are
  * left alone.
  */
 export function inventedNumber(input: unknown, heard: readonly unknown[], schema?: unknown): string | undefined {
@@ -125,7 +130,9 @@ export function inventedNumber(input: unknown, heard: readonly unknown[], schema
   return undefined;
 }
 
-/** The numbers in `value`, each with whether it sits in a phone field, read along `schema`. */
+/** The numbers in `value`, each with whether it sits in a phone field, read along `schema`. A
+ * field is a phone field by its own marker only, never its parent object's; a list's items are
+ * the field's values. */
 function fieldNumbers(
   value: unknown,
   schema: unknown,
@@ -141,13 +148,26 @@ function fieldNumbers(
   const properties = schemaPart(schema, "properties");
   return Object.entries(value).flatMap(([name, item]) => {
     const field = schemaPart(properties, name);
-    return fieldNumbers(item, field, phone || isPhoneField(name, field), seen);
+    return fieldNumbers(item, field, isPhoneField(name, field), seen);
   });
 }
 
+/**
+ * Whether the field `name` (described by `field`) holds a phone number: its name ends in a phone
+ * word, its `format` is a phone format, or its description says it is a phone number. A name
+ * that says id, account, plan or code is never a phone field ("Account ID for the caller's
+ * phone plan").
+ */
 function isPhoneField(name: string, field: unknown): boolean {
-  const marks = [name.replace(/([a-z])([A-Z])/g, "$1 $2"), schemaPart(field, "format"), schemaPart(field, "description")];
-  return marks.some((mark) => typeof mark === "string" && PHONE.test(mark));
+  const words = name.replace(/([a-z])([A-Z])/g, "$1 $2");
+  if (ID_NAME.test(words)) return false;
+  const format = schemaPart(field, "format");
+  const description = schemaPart(field, "description");
+  return (
+    PHONE_NAME.test(words) ||
+    (typeof format === "string" && PHONE_FORMAT.test(format)) ||
+    (typeof description === "string" && PHONE_DESCRIPTION.test(description))
+  );
 }
 
 function schemaPart(schema: unknown, key: string): unknown {
@@ -165,17 +185,19 @@ function sameDigits(written: WrittenNumber, said: WrittenNumber): boolean {
   return written.digits === said.digits;
 }
 
-/** The same phone number: the same national digits, a country code or trunk zero aside. */
+/**
+ * The same phone number, in one canonical form: digit for digit, or a number written without a
+ * country code (its trunk zero aside) that is the other one's digits after its country code, one
+ * to three digits. Two numbers that both carry a country code match only in full; nothing else
+ * is shortened.
+ */
 function samePhone(written: WrittenNumber, said: WrittenNumber): boolean {
   if (written.digits === said.digits) return true;
-  const theirs = nationalDigits(said);
-  return nationalDigits(written).some((national) => national.length >= LONG_NUMBER_DIGITS && theirs.includes(national));
-}
-
-/** A phone number without its country code (one to three digits after the `+`) or its trunk zero. */
-function nationalDigits({ digits, international }: WrittenNumber): string[] {
-  if (!international) return [digits.replace(/^0/, "")];
-  return Array.from({ length: COUNTRY_CODE_DIGITS }, (_, i) => digits.slice(i + 1));
+  if (written.international === said.international) return false;
+  const [withCode, without] = written.international ? [written, said] : [said, written];
+  const national = without.digits.replace(/^0/, "");
+  const code = withCode.digits.length - national.length;
+  return national.length >= LONG_NUMBER_DIGITS && code >= 1 && code <= COUNTRY_CODE_DIGITS && withCode.digits.endsWith(national);
 }
 
 /** Every string and number in `value`, however deep; each object is read once. */
