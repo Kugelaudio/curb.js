@@ -50,7 +50,7 @@ export type AiSdkAgentOptions = {
 };
 
 /** The model fields of an AI SDK call: the model, its sampling and its provider options. */
-type ModelCall = Pick<Parameters<typeof streamText>[0], "model" | "providerOptions" | "temperature" | "topP">;
+type ModelCall = Pick<Parameters<typeof streamText>[0], "model" | "providerOptions" | "temperature" | "topP" | "seed">;
 
 /** The chat model the llm descriptor names, plus the call options that only apply to that
  * provider. `streamUsage` asks an OpenAI-compatible endpoint to end its stream with the usage. */
@@ -60,7 +60,7 @@ function buildModel(options: AiSdkAgentOptions, streamUsage: boolean): ModelCall
   switch (config.kind) {
     case "kugelaudio":
       // OpenAI Chat Completions at KugelAudio's ingress; thinking is off on its side, so no
-      // request option is sent.
+      // reasoning option is sent. Sampling goes only when the agent set it.
       return {
         model: createOpenAICompatible({
           name: "kugelaudio",
@@ -69,6 +69,9 @@ function buildModel(options: AiSdkAgentOptions, streamUsage: boolean): ModelCall
           includeUsage: streamUsage,
           fetch: keepAliveFetch,
         })(modelName),
+        temperature: config.temperature,
+        topP: config.topP,
+        seed: config.seed,
         providerOptions: undefined,
       };
     case "anthropic":
@@ -171,13 +174,14 @@ export function resetStrictToolsForTests(): void {
 
 function buildAgentCallParams(request: AgentRunRequest, options: AiSdkAgentOptions, streamUsage = false, strict = false) {
   quietSdkWarnings();
-  const { model, providerOptions, temperature, topP } = buildModel(options, streamUsage);
+  const { model, providerOptions, temperature, topP, seed } = buildModel(options, streamUsage);
   const input = serializeLlmInput(request);
 
   return {
     model,
     temperature,
     topP,
+    seed,
     instructions: input.system,
     // LlmMessage is a structural subset of the AI SDK's ModelMessage.
     messages: input.messages as ModelMessage[],

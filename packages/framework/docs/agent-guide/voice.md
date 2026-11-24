@@ -14,7 +14,7 @@ tree.
 
 | Factory | Options | Key (env) |
 |---|---|---|
-| `kugelaudio.llm(...)` | `model`: `"qwen3.8-27b"` (default) or `"mistral-medium-3.5-128b"` | `KUGELAUDIO_API_KEY` |
+| `kugelaudio.llm(...)` | `model`: `"qwen3.8-27b"` (default) or `"mistral-medium-3.5-128b"`; `temperature`, `topP`, `seed` | `KUGELAUDIO_API_KEY` |
 | `anthropic(model)` | | `ANTHROPIC_API_KEY` |
 | `openai(model)` | | `OPENAI_API_KEY` |
 | `openaiCompatible({ baseURL, model, ... })` | `reasoningEffort`, `temperature`, `topP`, `body` | `AGENT_LLM_API_KEY`, else `OPENAI_API_KEY`, else none |
@@ -35,8 +35,8 @@ whose key is missing fails with an error naming the variable.
 
 `kugelaudio.llm()` is KugelAudio's LLM, hosted in the EU, on the same `KUGELAUDIO_API_KEY` as
 its speech, so an agent on KugelAudio needs no other key; a hosted agent gets that key from
-KugelAudio. Thinking is off on KugelAudio's side, so the agent never speaks its reasoning, and
-nothing beyond the conversation and the tools is sent. It is served at `KUGELAUDIO_API_BASE`
+KugelAudio. Thinking is off on KugelAudio's side, and nothing beyond the conversation, the
+tools and the sampling options you set is sent. It is served at `KUGELAUDIO_API_BASE`
 (default `https://api.eu.kugelaudio.com`) plus `/v1`. An organization gets it with hosted
 agents; without them its turns answer 403 `LLM_NOT_ENABLED`.
 

@@ -112,6 +112,15 @@ describe("live settings updates", () => {
     expect(settings.update("host", { llm: { provider: "anthropic", model: "claude-sonnet-5" } }).llm).toEqual({ provider: "anthropic", model: "claude-sonnet-5" });
   });
 
+  it("keeps the author's sampling when the KugelAudio model changes", () => {
+    const own = kugelaudio.llm({ temperature: 0.7, topP: 0.8, seed: 42 });
+    const settings = settingsWith({ host: ["llm"] }, own);
+    settings.update("host", { llm: { provider: "kugelaudio", model: "mistral-medium-3.5-128b" } });
+    expect(settings.current().llm).toStrictEqual(
+      kugelaudio.llm({ model: "mistral-medium-3.5-128b", temperature: 0.7, topP: 0.8, seed: 42 }),
+    );
+  });
+
   it("reports the effective settings without credentials or extra options", () => {
     const settings = new SessionSettings();
     settings.setAdjustable({ host: ["tts.model"] });

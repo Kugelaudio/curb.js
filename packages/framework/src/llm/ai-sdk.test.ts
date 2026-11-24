@@ -319,7 +319,7 @@ describe("openaiCompatible request body", () => {
 });
 
 describe("kugelaudio.llm request", () => {
-  it("posts the conversation to KUGELAUDIO_API_BASE/v1 with the KugelAudio key, and no thinking or sampling field", async () => {
+  it("posts the conversation to KUGELAUDIO_API_BASE/v1 with the KugelAudio key, and no thinking field or sampling field it was not given", async () => {
     const endpoint = await fakeChatEndpoint();
     vi.stubEnv("KUGELAUDIO_API_BASE", `${endpoint.origin}/`);
     vi.stubEnv("KUGELAUDIO_API_KEY", "test-kugel-key");
@@ -358,6 +358,24 @@ describe("kugelaudio.llm request", () => {
       await runAiSdkAgent(turn, { llm: openaiCompatible({ baseURL: endpoint.baseURL, model: "m" }) });
 
       expect(endpoint.bodies.map(strictTools)).toEqual([[true], [true], [undefined]]);
+    } finally {
+      await endpoint.close();
+    }
+  });
+
+  it("sends temperature, top_p and seed when the agent sets them", async () => {
+    const endpoint = await fakeChatEndpoint();
+    vi.stubEnv("KUGELAUDIO_API_BASE", `${endpoint.origin}/`);
+    vi.stubEnv("KUGELAUDIO_API_KEY", "test-kugel-key");
+    try {
+      const llm = kugelaudio.llm({ temperature: 0.7, topP: 0.8, seed: 42 });
+      await drain(streamAiSdkAgent(turn, { llm }));
+      await runAiSdkAgent(turn, { llm });
+      expect(endpoint.bodies).toHaveLength(2);
+      for (const body of endpoint.bodies) {
+        expect(body).toMatchObject({ model: "qwen3.8-27b", temperature: 0.7, top_p: 0.8, seed: 42 });
+        expect(body).not.toHaveProperty("reasoning_effort");
+      }
     } finally {
       await endpoint.close();
     }
