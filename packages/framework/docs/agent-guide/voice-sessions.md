@@ -117,6 +117,25 @@ After the disconnect the session closes normally: the room is left, and a hosted
 single-call runner reaches the end of its work and exits 0, the ordinary "completed"
 outcome, with no separate signal.
 
+## When the model talks about a tool instead of calling it
+
+A model on a call sometimes says what it is doing without doing it. The session catches
+two forms:
+
+- **A tool call written as words.** A step whose text names one of its tools
+  (`add_to_list(reason=...)`) is never said from the name on. The model is asked once
+  more, with a note that the reply was not said; a second such step ends the turn with
+  the fixed apology. Only names nobody says in a sentence are matched: ones with an
+  underscore, a digit or an inner capital.
+- **An action announced, then not taken.** After a spoken turn that ends on a statement
+  ("I'm removing you from our list now.") rather than a question, the session asks the
+  model once whether that reply spoke of something one of its tools does without calling
+  it. A tool call in the answer runs as part of the same turn, and an `end_call` it leads to
+  hangs up after the words already said, without a second goodbye; anything else is
+  dropped, unsaid and out of the transcript. That is one more LLM request on those turns, counted
+  in the usage `curb test` reports. It starts once the reply's last words have gone to
+  speech.
+
 ## Failure behavior
 
 `curb start` fails before registering when a LiveKit credential is missing, naming it. A

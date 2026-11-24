@@ -46,6 +46,7 @@ import { closeAbandonedStream, llmTimeoutFromEnv, LlmTimeoutError, untilAborted 
 import { LlmTrace } from "./llm/trace.js";
 import { TurnQueue } from "./llm/turn-queue.js";
 import { TurnSpeech } from "./llm/turn-speech.js";
+import { callStaysOpenAfter, FOLLOW_THROUGH_CHECK, namedToolNote, needsFollowThroughCheck } from "./llm/follow-through.js";
 import {
   END_CALL_TOOL_NAME,
   SKIP_TURN_TOOL_NAME,
@@ -105,6 +106,10 @@ export type AgentSessionOptions = {
   /** Runs and times each tool call. The server passes one that also makes the run a span
    * (`tool-span.ts`); without it a tool run is timed and not traced. */
   traceTool?: ToolRunTracer;
+  /** Ask the model once more after a spoken turn that ended on a statement, whether it said
+   * it is doing something a tool does without calling it (`llm/follow-through.ts`). The
+   * server turns it on; off by default. */
+  checkFollowThrough?: boolean;
 };
 
 /** Per-turn options — one session serves typed and spoken turns alike. */
@@ -193,6 +198,7 @@ export class AgentSession {
   private endedOnFallbackLine = false;
   /** The running turn records no words ({@link AgentTurnOptions.unsaid}). */
   private unsaid = false;
+  private readonly checkFollowThrough: boolean;
   /** The action waiting for the caller's yes (`<Tool confirm>`); null when none. */
   private pending: PendingConfirmation | null = null;
   /** How many inputs have arrived. A held action is answered only by a later one. */
@@ -209,6 +215,7 @@ export class AgentSession {
     this.llm = llm;
     this.streamLlm = options.streamLlm;
     this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
+    this.checkFollowThrough = options.checkFollowThrough === true;
     this.maxTranscriptMessages = options.maxTranscriptMessages ?? DEFAULT_MAX_TRANSCRIPT_MESSAGES;
     this.spokenStyleSuffix = options.spokenStyleSuffix;
     this.traceAttributes = options.traceAttributes ?? (() => ({}));
@@ -549,6 +556,12 @@ export class AgentSession {
       }
       let steps = 0;
       let retriedEmpty = false;
+      let retriedLeak = false;
+      // The follow-through check runs at most once a turn; `check` is its note while it runs.
+      // `followedThrough`: it called a tool, after the reply had said its last words.
+      let checked = false;
+      let check: AgentChatMessage | undefined;
+      let followedThrough = false;
       while (true) {
         controller.signal.throwIfAborted();
         if (steps >= this.maxSteps) {
@@ -560,11 +573,13 @@ export class AgentSession {
         }
         stepCall = null;
         const request: AgentRunRequest = {
-          ...this.buildRequest(messages, options.spoken === true),
+          ...this.buildRequest(check ? [...messages, check] : messages, options.spoken === true),
           signal: controller.signal,
         };
         stepCall = this.llmLog.sent(request);
-        speech.startStep();
+        speech.startStep(request.tools.map((tool) => tool.name));
+        // Nothing of the check is said: its answer is a tool call or nothing.
+        if (check) speech.mute();
         unrecorded = true;
         const timer = setTimeout(
           () => controller.abort(new LlmTimeoutError(this.llmTimeoutMs)),
@@ -580,6 +595,17 @@ export class AgentSession {
           clearTimeout(timer);
         }
 
+        if (check) {
+          // The check found nothing to do: the turn ends as it was, and the note leaves no trace.
+          const note = check;
+          check = undefined;
+          if (!response.toolCalls.some((call) => call.name !== SKIP_TURN_TOOL_NAME)) {
+            unrecorded = false;
+            break;
+          }
+          messages = this.append(messages, note);
+          followedThrough = true;
+        }
         if (!response.text.trim() && response.toolCalls.length === 0 && !speech.stepText) {
           // The model ended the turn saying nothing, which is never an answer: ask again once.
           unrecorded = false;
@@ -603,6 +629,27 @@ export class AgentSession {
           speech.wholeStep(response.text, speaks);
         }
         unrecorded = false;
+
+        const leaked = speaks ? speech.leakedTool : undefined;
+        if (leaked) {
+          // The model wrote a tool call as words, which TurnSpeech never says: ask again once,
+          // with a note, keeping what the step said before the name showed.
+          console.warn(`[curb] the model wrote the tool name ${leaked} as words instead of calling it; it was not said.`);
+          messages = this.keepSpokenText(messages, speech.stepText);
+          if (!retriedLeak) {
+            retriedLeak = true;
+            messages = this.append(messages, contextEvent(namedToolNote(leaked)));
+            continue;
+          }
+          if (!speech.reply) {
+            unanswered = {
+              kind: "empty_reply",
+              message: `The model wrote the tool name ${leaked} as words instead of calling it, twice in a row.`,
+            };
+            this.llmLog.failed(stepCall, unanswered.message);
+          }
+          break;
+        }
 
         if (speaks && !speech.stepText) {
           // The model wrote only a stage direction ("[assistant turned their head away]"), which
@@ -642,14 +689,29 @@ export class AgentSession {
           // A goodbye whose first sentences the step already said (the model wrote it as text
           // too) goes on from there; one that was said to its end adds nothing. A read-back
           // is always asked in full: it is the question the caller answers.
-          const line = outcome.held ? closing : speech.unheard(closing);
+          // After a follow-through check the reply has already said its closing words, so an
+          // end_call it led to hangs up after them without a second goodbye.
+          const line = outcome.held ? closing : followedThrough ? "" : speech.unheard(closing);
           if (line) {
             const delta = speech.line(line);
             messages = this.keepSpokenText(messages, speech.stepText);
             if (streaming && delta) yield this.spokenDelta(delta, speech);
           }
         }
-        if (outcome.done) break;
+        if (outcome.done) {
+          const checks =
+            speaks &&
+            !checked &&
+            this.checkFollowThrough &&
+            options.spoken === true &&
+            !this.unsaid &&
+            options.kind !== "synthetic" &&
+            steps < this.maxSteps &&
+            needsFollowThroughCheck(speech.reply, request.tools.map((tool) => tool.name));
+          if (!checks) break;
+          checked = true;
+          check = contextEvent(FOLLOW_THROUGH_CHECK);
+        }
       }
       settled = true;
     } catch (error) {
@@ -876,15 +938,26 @@ export class AgentSession {
 
     if (toolCalls.length === 0) return { messages: next, done: true, toolCalls: [] };
 
-    const executed: ExecutedCall[] = [];
     let held: HeldCall | undefined;
     let goodbye: string | undefined;
-    for (const { record, published } of planned) {
+    // end_call runs after every other call of its step, and only when all of them went through:
+    // a refused or failed call is the model's to correct, or to tell the caller about, before
+    // the call ends. Results are recorded in the order the model wrote the calls.
+    const order = planned
+      .map((_, index) => index)
+      .sort((a, b) => Number(planned[a]!.record.name === END_CALL_TOOL_NAME) - Number(planned[b]!.record.name === END_CALL_TOOL_NAME));
+    const failed: string[] = [];
+    const ran: { toolCall: AgentToolCallRecord; published: AgentToolCallRecord; outcome: ToolCallOutcome; call: ExecutedCall }[] = [];
+    for (const index of order) {
+      const { record, published } = planned[index]!;
       let toolCall = record;
       // An earlier call of this step may have changed the tool surface, so a
       // tool is known or unknown, and asks the caller or not, only now. The
       // record says how the call ended (refused, held, run); rewind reads it.
-      const refusal = toolCall.invalid ? undefined : this.refusal(toolCall.name, asksCaller, greets, held);
+      const refusal = toolCall.invalid
+        ? undefined
+        : (this.refusal(toolCall.name, asksCaller, greets, held) ??
+          (toolCall.name === END_CALL_TOOL_NAME && failed.length > 0 ? callStaysOpenAfter(failed) : undefined));
       if (refusal) toolCall = { ...toolCall, invalid: refusal };
       let outcome: ToolCallOutcome;
       let durationMs: number | undefined;
@@ -898,12 +971,22 @@ export class AgentSession {
       } else {
         ({ outcome, durationMs, skill } = await this.executeToolCall(toolCall));
       }
-      if (toolCall !== published) next = withToolCallRecord(next, assistantAt, toolCall);
       const ok = outcome.result.ok !== false;
-      // Refused (invalid input, CALL_STAYS_OPEN or GREETING_STAYS_OPEN), an end_call hung up
-      // nothing and says nothing.
+      if (!ok && toolCall.name !== END_CALL_TOOL_NAME && !failed.includes(toolCall.name)) failed.push(toolCall.name);
+      // Refused (invalid input, CALL_STAYS_OPEN, GREETING_STAYS_OPEN, or a call of its step that
+      // failed), an end_call hung up nothing and says nothing.
       if (ok && toolCall.name === END_CALL_TOOL_NAME) goodbye ??= endCallGoodbye(toolCall.input);
-      executed.push({ toolCall, ok, result: outcome.result, ...(durationMs === undefined ? {} : { durationMs }), ...(skill ? { skill } : {}) });
+      ran[index] = {
+        toolCall,
+        published,
+        outcome,
+        call: { toolCall, ok, result: outcome.result, ...(durationMs === undefined ? {} : { durationMs }), ...(skill ? { skill } : {}) },
+      };
+    }
+    const executed: ExecutedCall[] = [];
+    for (const { toolCall, published, outcome, call } of ran) {
+      if (toolCall !== published) next = withToolCallRecord(next, assistantAt, toolCall);
+      executed.push(call);
       next = this.append(next, toolMessage(toolCall, outcome));
       if (!toolCall.invalid) this.reportToolRun(toolCall.name, outcome);
     }

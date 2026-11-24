@@ -1,3 +1,4 @@
+import { namedTool } from "./follow-through.js";
 import { normalizeLlmPunctuation } from "./punctuation.js";
 
 /**
@@ -50,7 +51,9 @@ function wordsOf(sentence: string): string {
  *
  * A step's opening stage directions ({@link LEADING_STAGE_DIRECTIONS}) are never said: a step
  * opening with a bracket says nothing until it closed. A step that wrote nothing else says
- * nothing at all.
+ * nothing at all. Nor is a tool call the model wrote as words: once the step's unsaid text
+ * names one of its tools ({@link namedTool}), the step falls silent as if the call had
+ * started, and {@link leakedTool} names it.
  *
  * The transcript records exactly {@link stepText}, so what the model remembers saying is
  * what the caller heard. Steps are joined with one space, so the words of two steps never
@@ -67,6 +70,10 @@ export class TurnSpeech {
   private muted = false;
   /** The step is a line the framework says word for word ({@link line}), not the model's. */
   private verbatim = false;
+  /** The tools of the current step, whose names are never said. */
+  private toolNames: readonly string[] = [];
+  /** The tool name the current step wrote as words. */
+  private leaked: string | undefined;
 
   /** What the turn said aloud, trimmed. */
   get reply(): string {
@@ -78,18 +85,25 @@ export class TurnSpeech {
     return this.step.trim();
   }
 
-  /** A new LLM step starts. */
-  startStep(): void {
+  /** The tool the current step wrote as words instead of calling it, if it did. */
+  get leakedTool(): string | undefined {
+    return this.leaked;
+  }
+
+  /** A new LLM step starts, with `toolNames` the tools it may call. */
+  startStep(toolNames: readonly string[] = []): void {
     this.step = "";
     this.held = "";
     this.muted = false;
     this.verbatim = false;
+    this.toolNames = toolNames;
+    this.leaked = undefined;
   }
 
   /** One streamed text delta. Returns what to say now: every complete sentence but the newest. */
   text(delta: string): string {
     this.held += delta;
-    if (this.muted) return "";
+    if (this.muted || this.leaks()) return "";
     if (!this.step.trim() && OPEN_STAGE_DIRECTION.test(this.held)) return "";
     let cut = 0;
     for (const match of this.held.matchAll(SENTENCE_BREAK)) cut = match.index + match[0].length;
@@ -98,13 +112,18 @@ export class TurnSpeech {
 
   /** The provider started a tool call: nothing more of this step is said. */
   toolInputStart(): void {
+    this.mute();
+  }
+
+  /** Nothing more of this step is said, and what is held is dropped when it ends. */
+  mute(): void {
     this.muted = true;
   }
 
   /** The step's response is complete. `speaks`: it ended without a tool call. Returns the
    * held rest when it speaks; drops it otherwise. */
   endStep(speaks: boolean): string {
-    if (speaks) return this.release(this.held.length);
+    if (speaks && !this.leaks()) return this.release(this.held.length);
     this.held = "";
     return "";
   }
@@ -142,6 +161,13 @@ export class TurnSpeech {
       }
     }
     return line;
+  }
+
+  /** Whether the unsaid text names a tool; if so, the step falls silent. */
+  private leaks(): boolean {
+    this.leaked ??= namedTool(this.held, this.toolNames);
+    if (this.leaked) this.muted = true;
+    return this.leaked !== undefined;
   }
 
   private release(cut: number): string {

@@ -111,6 +111,8 @@ async function buildBundle(agentId: string | undefined, wrap?: LlmTransportWrap)
   const bundle = await createAgentSession(used.llm, used.streamLlm, hosted.id, {
     spokenStyleSuffix: VOICE_STYLE.join("\n"),
     llmTimeoutMs: used.llmTimeoutMs,
+    // A spoken turn that says it is doing something a tool does gets one more step to call it.
+    checkFollowThrough: true,
   });
   runtime = bundle.runtime;
   // Outside settings changes may switch the LLM; one whose key this process lacks is refused.

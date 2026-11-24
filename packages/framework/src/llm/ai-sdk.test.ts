@@ -5,7 +5,14 @@ import { getGlobalDispatcher } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentAuthoringError } from "../authoring.js";
 import { kugelaudio, openai, openaiCompatible } from "../providers.js";
-import { assertLlmCredential, mapToolCalls, readAgentStream, runAiSdkAgent, streamAiSdkAgent } from "./ai-sdk.js";
+import {
+  assertLlmCredential,
+  mapToolCalls,
+  readAgentStream,
+  resetStrictToolsForTests,
+  runAiSdkAgent,
+  streamAiSdkAgent,
+} from "./ai-sdk.js";
 import type { AgentRunRequest, AgentRunResponse, AgentStreamPart } from "./types.js";
 
 afterEach(() => {
@@ -119,8 +126,9 @@ describe("mapToolCalls", () => {
 });
 
 /** A local OpenAI-compatible chat endpoint that records each request body and answers
- * "Hallo." (as SSE when the request streams). */
-async function fakeChatEndpoint() {
+ * "Hallo." (as SSE when the request streams). `refuseStrict`: a request with a strict tool is
+ * refused as a grammar the endpoint cannot compile, as vLLM's answer to an unsupported pattern. */
+async function fakeChatEndpoint({ refuseStrict = false }: { refuseStrict?: boolean } = {}) {
   const bodies: Record<string, unknown>[] = [];
   const requests: { path: string | undefined; authorization: string | undefined }[] = [];
   /** The client port of each request: the same port twice means the connection was reused. */
@@ -133,6 +141,11 @@ async function fakeChatEndpoint() {
     req.on("end", () => {
       const body = JSON.parse(raw) as Record<string, unknown>;
       bodies.push(body);
+      if (refuseStrict && strictTools(body).some(Boolean)) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "Invalid grammar specification: 'triggers'", type: "BadRequestError", code: 400 } }));
+        return;
+      }
       const head = { id: "c1", created: 0, model: body.model };
       if (body.stream) {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -174,6 +187,11 @@ async function fakeChatEndpoint() {
         server.closeIdleConnections();
       }),
   };
+}
+
+/** Each tool's `strict` in a request body, undefined where it is not sent. */
+function strictTools(body: Record<string, unknown>): (boolean | undefined)[] {
+  return ((body.tools ?? []) as { function: { strict?: boolean } }[]).map((entry) => entry.function.strict);
 }
 
 const turn: AgentRunRequest = {
@@ -325,6 +343,43 @@ describe("kugelaudio.llm request", () => {
         expect(body.messages).toContainEqual({ role: "user", content: "Hallo, wer bist du?" });
       }
     } finally {
+      await endpoint.close();
+    }
+  });
+
+  it("sends every tool strict, so the endpoint decodes its arguments under the schema", async () => {
+    const endpoint = await fakeChatEndpoint();
+    vi.stubEnv("KUGELAUDIO_API_BASE", endpoint.origin);
+    vi.stubEnv("KUGELAUDIO_API_KEY", "test-kugel-key");
+    try {
+      await drain(streamAiSdkAgent(turn, { llm: kugelaudio.llm() }));
+      await runAiSdkAgent(turn, { llm: kugelaudio.llm() });
+      // Another OpenAI-compatible endpoint may not take it: no strict there.
+      await runAiSdkAgent(turn, { llm: openaiCompatible({ baseURL: endpoint.baseURL, model: "m" }) });
+
+      expect(endpoint.bodies.map(strictTools)).toEqual([[true], [true], [undefined]]);
+    } finally {
+      await endpoint.close();
+    }
+  });
+
+  it("sends a step again without strict when the endpoint refuses a tool's grammar, and every later one too", async () => {
+    resetStrictToolsForTests();
+    const endpoint = await fakeChatEndpoint({ refuseStrict: true });
+    vi.stubEnv("KUGELAUDIO_API_BASE", endpoint.origin);
+    vi.stubEnv("KUGELAUDIO_API_KEY", "test-kugel-key");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const streamed = await drain(streamAiSdkAgent(turn, { llm: kugelaudio.llm() }));
+      const generated = await runAiSdkAgent(turn, { llm: kugelaudio.llm() });
+
+      expect(streamed.text).toBe("Hallo.");
+      expect(generated.text).toBe("Hallo.");
+      expect(endpoint.bodies.map(strictTools)).toEqual([[true], [undefined], [undefined]]);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+      resetStrictToolsForTests();
       await endpoint.close();
     }
   });
