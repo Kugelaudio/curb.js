@@ -50,8 +50,8 @@ export type KugelaudioLlmOptions = {
   temperature?: number;
   /** Nucleus sampling, above 0 and at most 1, sent as `top_p`. Unset: the service's default. */
   topP?: number;
-  /** A whole number sent as `seed`: the same request with the same seed samples the same
-   * answer, as far as the service can repeat it. Unset: a fresh draw every turn. */
+  /** A safe integer (`Number.isSafeInteger`), sent as `seed`. A fixed seed makes answers to
+   * identical requests more repeatable; it is not a guarantee. Unset: the service's default. */
   seed?: number;
 };
 
@@ -267,8 +267,8 @@ export const kugelaudio = {
     const seed = options?.seed;
     if (seed !== undefined && !Number.isSafeInteger(seed)) {
       refuseOption(
-        `kugelaudio.llm() got seed ${String(seed)}, which is not a whole number.`,
-        "Pass a whole number, for example seed: 42, or leave it unset for a fresh draw every turn.",
+        `kugelaudio.llm() got seed ${String(seed)}, which is not a safe integer.`,
+        "Pass a safe integer (Number.isSafeInteger), for example seed: 42, or leave it unset for the service's default.",
         "kugelaudio.llm",
       );
     }

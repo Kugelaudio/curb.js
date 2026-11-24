@@ -44,8 +44,12 @@ export function resolveLlmProvider(
         );
       }
       // Thinking is off on the service's side, so nothing beyond the conversation is sent.
-      const { model, ...sampling } = descriptor.options;
-      return { kind: "kugelaudio", model, baseUrl: kugelaudioLlmBaseUrl(env), apiKey, ...sampling };
+      const { model, temperature, topP, seed } = descriptor.options;
+      // Only the sampling fields: a descriptor built by hand may carry other properties.
+      const sampling = Object.fromEntries(
+        Object.entries({ temperature, topP, seed }).filter(([, value]) => value !== undefined),
+      ) as { temperature?: number; topP?: number; seed?: number };
+      return { ...sampling, kind: "kugelaudio", model, baseUrl: kugelaudioLlmBaseUrl(env), apiKey };
     }
     case "anthropic":
       return { kind: "anthropic", model: descriptor.options.model };

@@ -102,7 +102,7 @@ describe("kugelaudio.llm sampling", () => {
     throw new Error("kugelaudio.llm accepted the options");
   }
 
-  it("refuse temperature outside 0 to 2, topP outside (0, 1] and a seed that is not a whole number", () => {
+  it("refuse temperature outside 0 to 2, topP outside (0, 1] and a seed that is not a safe integer", () => {
     for (const temperature of [-0.1, 2.1, Number.NaN, "0.7"]) {
       const diagnostic = kugelRefusal({ temperature });
       expect(diagnostic.message).toContain("kugelaudio.llm() got temperature");
@@ -112,7 +112,7 @@ describe("kugelaudio.llm sampling", () => {
       expect(kugelRefusal({ topP }).message).toContain("kugelaudio.llm() got topP");
     }
     for (const seed of [1.5, Number.NaN, Number.MAX_VALUE, "42"]) {
-      expect(kugelRefusal({ seed }).message).toContain("kugelaudio.llm() got seed");
+      expect(kugelRefusal({ seed }).message).toContain("which is not a safe integer");
     }
     expect(kugelaudio.llm({ temperature: 0, topP: 1, seed: 0 }).options).toEqual({
       model: "qwen3.8-27b",

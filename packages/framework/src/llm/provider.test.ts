@@ -38,6 +38,18 @@ describe("resolveLlmProvider", () => {
     });
   });
 
+  it("kugelaudio copies only the sampling fields of a descriptor that carries other properties", () => {
+    const options = { model: "qwen3.8-27b", topP: 0.9, kind: "anthropic", baseUrl: "https://elsewhere.example", apiKey: "x", extra: 1 };
+    const descriptor = { provider: "kugelaudio", kind: "llm", options } as unknown as LlmDescriptor;
+    expect(resolveLlmProvider(descriptor, { KUGELAUDIO_API_KEY: "k" })).toEqual({
+      kind: "kugelaudio",
+      model: "qwen3.8-27b",
+      baseUrl: "https://api.eu.kugelaudio.com/v1",
+      apiKey: "k",
+      topP: 0.9,
+    });
+  });
+
   it("anthropic carries the descriptor's model; its key is resolved by the transport", () => {
     expect(resolveLlmProvider(anthropic("claude-sonnet-5"), {})).toEqual({
       kind: "anthropic",

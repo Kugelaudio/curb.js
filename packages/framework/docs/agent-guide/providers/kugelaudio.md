@@ -19,7 +19,7 @@ KugelAudio's EU-hosted LLM, part of hosted agents.
 | `model` | one of `KUGELAUDIO_LLM_MODELS` | `DEFAULT_KUGELAUDIO_LLM_MODEL` | The model |
 | `temperature` | `number`, 0 to 2 | the service's default for the model | Lower answers vary less between runs; 0 picks the likeliest word every time |
 | `topP` | `number`, above 0 up to 1 | the service's default | Samples only from the likeliest words whose probabilities add up to `topP` |
-| `seed` | whole `number` | a fresh draw every turn | The same conversation with the same seed samples the same answer, as far as the service can repeat it |
+| `seed` | `number`, a safe integer (`Number.isSafeInteger`) | the service's default | A fixed seed makes answers to identical requests more repeatable; it is not a guarantee |
 
 For runs you compare, such as `curb test` against a changed prompt, pin the sampling:
 
