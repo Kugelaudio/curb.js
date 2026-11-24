@@ -355,7 +355,11 @@ function llmFor(
     }
   }
   try {
-    if (provider === "kugelaudio") return kugelaudio.llm({ model: update.model as KugelaudioLlmModel });
+    // The author's sampling stays when only the KugelAudio model changes.
+    if (provider === "kugelaudio") {
+      const ownOptions = base.provider === "kugelaudio" ? base.options : {};
+      return kugelaudio.llm({ ...ownOptions, model: update.model as KugelaudioLlmModel });
+    }
     if (provider === "anthropic") return anthropic(update.model);
     if (provider === "openai") return openai(update.model);
     const baseURL = (update.baseURL ?? ownBaseURL)!;
