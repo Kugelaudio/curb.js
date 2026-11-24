@@ -1,7 +1,9 @@
+import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  affectedScenarios,
   inParallel,
   loadRun,
   projectHost,
@@ -14,6 +16,7 @@ import {
   type ScenarioDefinition,
   type ScenarioTurn,
   type TestHost,
+  type AffectedScenario,
   type TestRun,
 } from "../testing/index.js";
 import { routeConsoleToStderr } from "./headless-project.js";
@@ -75,6 +78,10 @@ waits for it, goes on more slowly, and the report says how long it waited.
 A tool runs for real on every run unless the scenario fakes it (fakes).
 
   <filter>               run only the scenarios whose name or file contains it (ignoring case)
+  --changed <ref>        run only the scenarios a change since <ref> (a branch or commit, such
+                         as origin/main) can affect: those in a changed skill's folder or whose
+                         saved runs opened it, every one when the agent level changed, and any
+                         scenario no saved run played
   --runs <n>             run every scenario n times (1 to 100) and report rates; a scripted
                          scenario must pass every run unless it sets minPassRate
   --concurrency <k>      conversations at a time, across all scenarios and their runs
@@ -91,7 +98,7 @@ A tool runs for real on every run unless the scenario fakes it (fakes).
                            turns, checks, notes, outcome, flaky, stats, checkStats, findings,
                            variants, style, usage, runs }], outcome, exitCode, durationMs,
                            models, callerPromptVersion, judgePromptVersion, usage, savedTo,
-                           since }
+                           since, changed }
 
 Every run is saved to .curb/test-runs/<id>.json (the newest 20 are kept). After a run, the
 report compares it with the newest saved run of another version of the agent (another hash
@@ -127,6 +134,8 @@ export type TestArgs = {
   report?: string;
   /** The saved run to check again. */
   rejudge?: string;
+  /** The branch or commit whose changes since pick the scenarios. */
+  changed?: string;
 };
 
 /** The options that take no value. */
@@ -139,6 +148,7 @@ const VALUES: Readonly<Record<string, string>> = {
   "--judge-model": "<id>",
   "--report": "<file>",
   "--rejudge": "<run>",
+  "--changed": "<ref>",
 };
 
 /** The options `curb test` takes, as public-api.txt lists them. */
@@ -191,6 +201,7 @@ export function parseTestArgs(args: readonly string[]): TestArgs {
   const { words, values, flags, wrong, number, concurrency } = parseOptions("curb test", TEST_USAGE, args, FLAGS, VALUES);
   const runs = number("--runs", () => true, "a whole number");
   if (runs !== undefined && runsProblem(runs)) throw wrong("--runs", runsProblem(runs)!);
+  if (values.has("--changed") && values.has("--rejudge")) throw wrong("--changed", "cannot be combined with --rejudge: a re-judge plays no change of the agent.");
   return {
     filter: words.join(" ").trim(),
     json: flags.has("--json"),
@@ -200,6 +211,7 @@ export function parseTestArgs(args: readonly string[]): TestArgs {
     judgeModel: values.get("--judge-model"),
     report: values.get("--report"),
     rejudge: values.get("--rejudge"),
+    changed: values.get("--changed"),
   };
 }
 
@@ -342,6 +354,8 @@ export async function testCommand(
 }
 
 type TestSession = {
+  /** What `--changed` picked, once it has. */
+  changed?: NonNullable<TestReport["changed"]>;
   projectRoot: string;
   run: TestRunOptions;
   out: (text: string) => void;
@@ -349,6 +363,39 @@ type TestSession = {
   started: number;
   env: Readonly<Record<string, string | undefined>>;
 };
+
+/**
+ * The files of the project at `root` that differ from where the current branch left `ref` (their
+ * merge base): changed, added, deleted or renamed (both names), committed or not, and new files
+ * git does not ignore. Paths are relative to the project. Throws, saying how to fix it, when git
+ * cannot find that point.
+ */
+export function changedSince(root: string, ref: string): { base: string; files: string[]; before: (file: string) => string | null } {
+  const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
+  let base: string;
+  try {
+    base = git("merge-base", ref, "HEAD").trim();
+  } catch {
+    throw new Error(
+      `curb test: --changed ${ref}: git cannot find where this branch left ${JSON.stringify(ref)}.\n` +
+        "Fix: name a branch or commit this repository has, and fetch it first where the checkout is shallow (GitHub Actions: actions/checkout with fetch-depth: 0).",
+    );
+  }
+  const listed = (text: string) => text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const files = [
+    ...listed(git("diff", "--name-only", "--no-renames", "--relative", base, "--", ".")),
+    ...listed(git("ls-files", "--others", "--exclude-standard", "--", ".")),
+  ];
+  const before = (file: string): string | null => {
+    try {
+      return git("show", `${base}:./${file}`);
+    } catch {
+      // KEEP-JUSTIFIED: a file the base does not hold IS the answer "it did not exist".
+      return null;
+    }
+  };
+  return { base, files: [...new Set(files)].sort(), before };
+}
 
 const matches = (filter: string, entry: { name: string; file: string }) =>
   !filter || entry.name.toLowerCase().includes(filter.toLowerCase()) || entry.file.toLowerCase().includes(filter.toLowerCase());
@@ -401,12 +448,29 @@ function saveSoFar(session: TestSession, fields: RunFields, run: Parameters<type
  */
 async function runScenarios(session: TestSession, hostOf: () => TestHost): Promise<number> {
   const { run, out, loaded } = session;
-  const selected = loaded.filter((entry) => matches(run.filter, entry));
-  if (selected.length === 0) {
+  const matched = loaded.filter((entry) => matches(run.filter, entry));
+  if (matched.length === 0) {
     console.error(
       `No scenario matches "${run.filter}". The scenarios are: ${loaded.map((entry) => `${entry.name} (${entry.file})`).join(", ")}.`,
     );
     return TEST_EXIT_CODES.fail;
+  }
+  // --changed: only the scenarios the change can affect. One that could not be loaded is reported
+  // whatever changed.
+  let selected = matched;
+  if (run.changed !== undefined) {
+    const { base, files, before } = changedSince(session.projectRoot, run.changed);
+    const verdicts = affectedScenarios(files, matched.filter((entry) => "scenario" in entry), { root: session.projectRoot, before });
+    const affected = new Set(verdicts.filter((verdict) => verdict.affected).map((verdict) => `${verdict.file}\n${verdict.name}`));
+    selected = matched.filter((entry) => "error" in entry || affected.has(`${entry.file}\n${entry.name}`));
+    const of = ({ name, file, why }: AffectedScenario) => ({ name, file, why });
+    session.changed = {
+      since: run.changed,
+      base,
+      files,
+      ran: verdicts.filter((verdict) => verdict.affected).map(of),
+      skipped: verdicts.filter((verdict) => !verdict.affected).map(of),
+    };
   }
 
   const host = hostOf();
@@ -568,6 +632,7 @@ function finish(
     ...(finished.rejudgedFrom === undefined ? {} : { rejudgedFrom: finished.rejudgedFrom }),
     ...(throttled ? { throttled } : {}),
     ...(since ? { since } : {}),
+    ...(session.changed ? { changed: session.changed } : {}),
   };
   out(run.json ? `${JSON.stringify(report)}\n` : formatSummary(report));
   const markdown = run.report !== undefined || env.GITHUB_STEP_SUMMARY ? markdownReport(report) : "";

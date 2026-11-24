@@ -271,7 +271,7 @@ describe("curb review", () => {
       notJudged: [],
       notes: ["The findings could not be sorted into patterns (its answer could not be read): they are listed by kind, without scenarios."],
       judgeModel: "openai:gpt-5.4-mini",
-      judgePromptVersion: "3",
+      judgePromptVersion: "4",
       usage: { agent: null, caller: null, judge: { inputTokens: 500, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 }, totalTokens: 550 },
       exitCode: 0,
     } satisfies ReviewReport);

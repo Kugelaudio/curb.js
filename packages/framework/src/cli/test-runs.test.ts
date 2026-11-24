@@ -293,7 +293,7 @@ export default scenario({ turns: ["Hi"], minPassRate: 0.5, expect: ({ said }) =>
     });
     expect(typeof result.durationMs).toBe("number");
     // What is new sits beside it.
-    expect(report).toMatchObject({ passed: true, outcome: "pass", exitCode: 0, callerPromptVersion: "3", judgePromptVersion: "3", usage: null });
+    expect(report).toMatchObject({ passed: true, outcome: "pass", exitCode: 0, callerPromptVersion: "4", judgePromptVersion: "4", usage: null });
     expect(report.models).toEqual({ agent: "openai:gpt-5.2", caller: "openai:gpt-5.4-mini", judge: "openai:gpt-5.4-mini" });
     expect(result).toMatchObject({ outcome: "pass", flaky: false, stats: { runs: 1, ran: 1, passed: 1, passRate: 1, reliability: 1 }, findings: [], variants: [] });
     expect(result.runs).toHaveLength(1);
@@ -315,8 +315,8 @@ export default scenario({ turns: ["Hi"], minPassRate: 0.5, expect: ({ said }) =>
       version: 1,
       complete: true,
       models: { agent: "openai:gpt-5.2", caller: "openai:gpt-5.4-mini", judge: "openai:gpt-5.4-mini" },
-      callerPromptVersion: "3",
-      judgePromptVersion: "3",
+      callerPromptVersion: "4",
+      judgePromptVersion: "4",
       scenarios: [{ name: "adds milk", file: "src/agent/milk.scenario.ts", mode: "simulated", runs: 2, minPassRate: 1 }],
     });
     expect(saved.conversations.map((conversation) => [conversation.format, conversation.version, conversation.scenario.run, conversation.assessment.outcome])).toEqual([
@@ -517,7 +517,7 @@ export default scenario({ caller: { goal: "Send my list to Sam" }, runs: 2 });
     expect(markdown).toContain("<summary>Run 1: fail</summary>");
     expect(markdown).toContain("caller: Put milk on my list.");
     expect(markdown).toContain("| adds milk | words per reply p50 1, p90 5");
-    expect(markdown).toContain("models: agent openai:gpt-5.2, caller openai:gpt-5.4-mini, judge openai:gpt-5.4-mini · judge prompt 3, caller prompt 3");
+    expect(markdown).toContain("models: agent openai:gpt-5.2, caller openai:gpt-5.4-mini, judge openai:gpt-5.4-mini · judge prompt 4, caller prompt 4");
 
     // Without either, nothing is written.
     const quiet = project({ "src/agent/hello.scenario.ts": HELLO });
@@ -571,7 +571,8 @@ describe("curb test options", () => {
       report: "report.md",
     });
     expect(parseTestArgs(["--rejudge", "latest"])).toEqual({ filter: "", json: false, rejudge: "latest" });
-    expect(TEST_OPTIONS).toEqual(["--json", "--runs", "--concurrency", "--caller-model", "--judge-model", "--report", "--rejudge"]);
+    expect(parseTestArgs(["--changed=origin/main"])).toEqual({ filter: "", json: false, changed: "origin/main" });
+    expect(TEST_OPTIONS).toEqual(["--json", "--runs", "--concurrency", "--caller-model", "--judge-model", "--report", "--rejudge", "--changed"]);
   });
 
   it("refuses a value out of range, naming what the option takes", () => {

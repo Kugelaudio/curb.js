@@ -736,7 +736,7 @@
               "skillPath": ""
             },
             "judge": {
-              "promptVersion": "3",
+              "promptVersion": "4",
               "model": "openai:gpt-5.4-mini",
               "answers": [
                 {
@@ -760,7 +760,7 @@
                 {
                   "id": "<id>",
                   "kind": "finding",
-                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim, and neither is a claim that an ok tool call in that turn or an earlier one did. Quote the agent's claim, and give as tool the name of the tool in the list that does what the agent claimed, or none when the list holds no such tool.",
                   "answer": "no",
                   "turn": null,
                   "quote": null,
@@ -980,7 +980,7 @@
               "skillPath": ""
             },
             "judge": {
-              "promptVersion": "3",
+              "promptVersion": "4",
               "model": "openai:gpt-5.4-mini",
               "answers": [
                 {
@@ -1004,7 +1004,7 @@
                 {
                   "id": "<id>",
                   "kind": "finding",
-                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim, and neither is a claim that an ok tool call in that turn or an earlier one did. Quote the agent's claim, and give as tool the name of the tool in the list that does what the agent claimed, or none when the list holds no such tool.",
                   "answer": "no",
                   "turn": null,
                   "quote": null,
@@ -1473,7 +1473,7 @@
               "skillPath": ""
             },
             "judge": {
-              "promptVersion": "3",
+              "promptVersion": "4",
               "model": "openai:gpt-5.4-mini",
               "answers": [
                 {
@@ -1497,7 +1497,7 @@
                 {
                   "id": "<id>",
                   "kind": "finding",
-                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                  "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim, and neither is a claim that an ok tool call in that turn or an earlier one did. Quote the agent's claim, and give as tool the name of the tool in the list that does what the agent claimed, or none when the list holds no such tool.",
                   "answer": "no",
                   "turn": null,
                   "quote": null,
@@ -1574,8 +1574,8 @@
       "caller": "openai:gpt-5.4-mini",
       "judge": "openai:gpt-5.4-mini"
     },
-    "callerPromptVersion": "3",
-    "judgePromptVersion": "3",
+    "callerPromptVersion": "4",
+    "judgePromptVersion": "4",
     "usage": {
       "agent": {
         "inputTokens": 40,
@@ -1612,8 +1612,8 @@
       "caller": "openai:gpt-5.4-mini",
       "judge": "openai:gpt-5.4-mini"
     },
-    "callerPromptVersion": "3",
-    "judgePromptVersion": "3",
+    "callerPromptVersion": "4",
+    "judgePromptVersion": "4",
     "maxErrorRate": 0.34,
     "scenarios": [
       {
@@ -1984,7 +1984,7 @@
           ],
           "notes": [],
           "judge": {
-            "promptVersion": "3",
+            "promptVersion": "4",
             "model": "openai:gpt-5.4-mini",
             "answers": [
               {
@@ -2008,7 +2008,7 @@
               {
                 "id": "<id>",
                 "kind": "finding",
-                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim, and neither is a claim that an ok tool call in that turn or an earlier one did. Quote the agent's claim, and give as tool the name of the tool in the list that does what the agent claimed, or none when the list holds no such tool.",
                 "answer": "no",
                 "turn": null,
                 "quote": null,
@@ -2251,7 +2251,7 @@
           ],
           "notes": [],
           "judge": {
-            "promptVersion": "3",
+            "promptVersion": "4",
             "model": "openai:gpt-5.4-mini",
             "answers": [
               {
@@ -2275,7 +2275,7 @@
               {
                 "id": "<id>",
                 "kind": "finding",
-                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim, and neither is a claim that an ok tool call in that turn or an earlier one did. Quote the agent's claim, and give as tool the name of the tool in the list that does what the agent claimed, or none when the list holds no such tool.",
                 "answer": "no",
                 "turn": null,
                 "quote": null,
@@ -2504,7 +2504,7 @@
             "this scenario has no checks of its own (expect), so only the built-in checks ran"
           ],
           "judge": {
-            "promptVersion": "3",
+            "promptVersion": "4",
             "model": "openai:gpt-5.4-mini",
             "answers": [
               {
@@ -2528,7 +2528,7 @@
               {
                 "id": "<id>",
                 "kind": "finding",
-                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+                "text": "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. Saying back what the caller said, or what it is going to do, is not such a claim, and neither is a claim that an ok tool call in that turn or an earlier one did. Quote the agent's claim, and give as tool the name of the tool in the list that does what the agent claimed, or none when the list holds no such tool.",
                 "answer": "no",
                 "turn": null,
                 "quote": null,
@@ -2578,18 +2578,18 @@
   },
   "requests": {
     "caller": [
-      "1ea792f40a3d7c46",
-      "378677c7b690f873",
-      "3acd04778891b14a",
-      "3acd04778891b14a",
-      "60e997c294f0d117",
-      "60e997c294f0d117",
-      "acc3a1d90747fc1b"
+      "17694493707ad14c",
+      "17694493707ad14c",
+      "4369c89293b7ba49",
+      "4369c89293b7ba49",
+      "7a81bc3a6ed9f469",
+      "e1751b86003d6357",
+      "e1e8f818328ca955"
     ],
     "judge": [
-      "342f251173f758b6",
-      "ef8bfe3fb6bd8054",
-      "ef8bfe3fb6bd8054"
+      "0380ec9603bca226",
+      "0380ec9603bca226",
+      "f7b40de47708c527"
     ],
     "grouping": []
   }

@@ -262,6 +262,7 @@
 ./providers kugelaudio
 ./providers openai
 ./providers openaiCompatible
+./testing AffectedScenario
 ./testing Call
 ./testing Caller
 ./testing CallerBehaviour
@@ -292,6 +293,7 @@
 ./testing TestHost
 ./testing TestModel
 ./testing TestRun
+./testing affectedScenarios
 ./testing ask
 ./testing buildCallEvent
 ./testing builtInChecks
@@ -341,6 +343,7 @@ curb server
 curb start
 curb test
 curb test --caller-model
+curb test --changed
 curb test --concurrency
 curb test --json
 curb test --judge-model

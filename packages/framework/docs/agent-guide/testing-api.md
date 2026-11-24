@@ -22,6 +22,7 @@ exports `curb test` and `curb review` use, for a test of your own in any test ru
 | 2 | [`judgeAgreement`](#judgeagreement) | How far to trust the judge on your findings |
 | 2 | [`styleNumbers`](#stylenumbers), [`groupFindings`](#groupfindings) | Numbers and patterns across many conversations |
 | 2 | [`compareRuns`](#compareruns), [`compare`](#compare) | Did a change help: two runs, or two sets of calls side by side |
+| 2 | [`affectedScenarios`](#affectedscenarios) | Which scenarios a change can affect |
 | 3 | `scenario` | Declares a conversation for `curb test` |
 | 3 | `runHook`, `buildCallEvent` | Run one of the agent's hooks in this process |
 
@@ -440,6 +441,30 @@ shown in a random order, so the judge cannot learn which side is which. It retur
 of B, the ties, and every pair's winner with the model's reason. An answer that cannot be read is
 asked for once more; a second one rejects.
 
+## `affectedScenarios`
+
+```ts
+affectedScenarios(changed: string[], scenarios: { name, file }[], options?: { root?, runs?, before? }): AffectedScenario[]
+```
+
+```ts
+const files = execFileSync("git", ["diff", "--name-only", "origin/main..."], { encoding: "utf8" }).split("\n").filter(Boolean);
+affectedScenarios(files, [{ name: "orders", file: "src/agent/orders/orders.scenario.ts" }, { name: "greets", file: "src/agent/greets.scenario.ts" }]);
+// [{ name: "orders", file: "...", affected: true, why: "it sits in src/agent/orders, which changed" },
+//  { name: "greets", file: "...", affected: false, why: "its saved runs opened no skill" }]
+```
+
+For each scenario, whether a change that touched `changed` (paths relative to the project) can affect
+it, and why: the choice [`curb test --changed`](./cli/test.md#only-what-a-change-affects) makes, from
+any list of files, for a CI rule of your own. A file in a skill's folder affects the scenarios in that
+folder, those whose saved runs opened the skill or one under it, and those no saved run played;
+`agent.tsx`, any other file under `src/` or `context/`, and `package.json` affect every one; tests and
+files outside those affect none. `runs` are the saved runs that say which skills each scenario opened
+(default: every run in the project's `.curb/test-runs/`), `root` the project (default: the one this
+process runs). `before(file)` returns a file as it was before the change, null when it did not exist:
+with it, a changed `skill.tsx` whose `meta` is the same affects only its skill; without it, every
+scenario, since `meta` is how every conversation is offered the skill.
+
 ## `scenario`
 
 ```ts
@@ -600,6 +625,7 @@ a call whose `content` is `not_stored`.
 
 | Version | Changes |
 |---|---|
+| v1.27.0 | `affectedScenarios` added. `judge` does not count `claimed_without_tool` when the tool it names ran and succeeded in the turn of the claim or before (`judge.promptVersion` 4). `simulatedCaller` ends the call once its goal is done, also when asked whether there is anything else (`simulatedCaller.promptVersion` 4) |
 | v1.25.0 | `loadCalls` reads a Calls export's tool result given as `{ message, data }` beside the tool call's `ok`, and a line's length from `durationSeconds` |
 | v1.25.0 | `callersFor` added, and `Call.systemPrompt`. `groupFindings` takes a played simulated call's caller as its draft's caller, with its `behaviours` |
 | v1.25.0 | `callerFromCall`, `replayCall`, `judgeAgreement`, `compareRuns` and `compare` added. `groupFindings` takes `records`, writes each draft's caller from a call of its pattern, and merges near-duplicate patterns. A saved run's `agentVersion` holds a hash of the agent's sources |

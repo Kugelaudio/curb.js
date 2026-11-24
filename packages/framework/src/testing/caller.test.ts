@@ -74,6 +74,12 @@ describe("the simulated caller's prompt", () => {
     expect(prompt).toContain("Stay on the call until the agent has confirmed that your goal is done, or it is clear that it cannot be done");
     expect(prompt).toContain("[hang up: met - <why>]");
     expect(prompt).toContain("[hang up: not met - <why>]");
+    // Once done, it ends the call, whatever its persona: "anything else?" is its goodbye line,
+    // while a question that needs a decision or a detail is answered first.
+    expect(prompt).toContain("Then end the call at once, whoever you are");
+    expect(prompt).toContain("Do not repeat what was already done, ask for it again or make small talk first.");
+    expect(prompt).toContain("When the agent asks whether there is anything else and your goal is done, that is your goodbye line");
+    expect(prompt).toContain("Never hang up while the agent asks you for a decision or a detail");
   });
 
   it("adds the persona and one rule per behaviour", () => {
