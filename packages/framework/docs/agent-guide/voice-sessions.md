@@ -130,7 +130,8 @@ two forms:
 - **An action announced, then not taken.** After a spoken turn that ends on a statement
   ("I'm removing you from our list now.") rather than a question, the session asks the
   model once whether that reply spoke of something one of its tools does without calling
-  it. A tool call in the answer runs as part of the same turn, and an `end_call` it leads to
+  it. An offer or a suggestion ("I can show you a demo.") is not an action yet and gets
+  no call. A tool call in the answer runs as part of the same turn, and an `end_call` it leads to
   hangs up after the words already said, without a second goodbye; anything else is
   dropped, unsaid and out of the transcript. That is one more LLM request on those turns, counted
   in the usage `curb test` reports. It starts once the reply's last words have gone to

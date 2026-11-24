@@ -57,7 +57,8 @@ export const FOLLOW_THROUGH_CHECK =
   "Check your last reply before the caller answers. Did it say that you are doing something now, or have done it " +
   "(looking something up, booking, noting, removing, forwarding, ending the call), that one of your tools does, " +
   "without calling that tool in this turn? If so, call that tool now with the right input. If not, call no tool " +
-  "and write nothing. Never call a tool the reply did not speak of.";
+  "and write nothing. An offer, a suggestion or a question to the caller is not an action yet: it waits for the " +
+  "caller's answer, so call no tool for it. Never call a tool the reply did not speak of.";
 
 /**
  * Whether a turn that ended on `reply` is checked: it said something, did not end on a question
