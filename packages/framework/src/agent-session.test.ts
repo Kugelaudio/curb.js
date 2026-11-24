@@ -700,7 +700,7 @@ describe("AgentSession", () => {
       expect(notes(session)).toEqual([FOLLOW_THROUGH_CHECK]);
     });
 
-    it("the check never offers end_call: a plain answer or a goodbye it misread cannot hang up", async () => {
+    it("after a plain answer the check never offers end_call: an answer it misreads as a goodbye cannot hang up", async () => {
       for (const text of ["Your policy covers water damage.", "Alright, call us any time. Bye for now."]) {
         const runtime = createInsuranceDemoRuntime();
         const hangUp = vi.fn();
@@ -718,6 +718,40 @@ describe("AgentSession", () => {
         expect(turn.heard).toBe(text);
         expect(hangUp).not.toHaveBeenCalled();
       }
+    });
+
+    it("after the turn's own action, a goodbye without end_call is followed through: the check offers only end_call", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const hangUp = vi.fn();
+      runtime.setEndCallRequest(hangUp);
+      const { streamLlm, requests } = scriptedStream([
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+        { text: "An advisor calls you tomorrow. Goodbye." },
+        { toolCalls: [{ name: "request_callback", input: callback }, { name: END_CALL_TOOL_NAME, input: { goodbye: "Bye." } }] },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "I'm Alex Doe, 555 0100, call me about my claim status, bye");
+
+      expect(requests).toHaveLength(3);
+      expect(requests[2]!.tools.map((tool) => tool.name)).toEqual([END_CALL_TOOL_NAME]);
+      // A tool the check did not offer is never run, so the callback is not booked twice.
+      expect(turn.events.filter((event) => event.type === "tool" && event.toolCall.name === "request_callback")).toHaveLength(1);
+      expect(turn.heard).toBe("An advisor calls you tomorrow. Goodbye.");
+      expect(hangUp).toHaveBeenCalledTimes(0);
+
+      const { streamLlm: again } = scriptedStream([
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+        { text: "An advisor calls you tomorrow. Goodbye." },
+        { toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye: "Bye." } }] },
+      ]);
+      const ending = createInsuranceDemoRuntime();
+      ending.setEndCallRequest(hangUp);
+      const session2 = new AgentSession(ending, idleLlm, { streamLlm: again, checkFollowThrough: true });
+      const ended = await streamTurn(session2, "I'm Alex Doe, 555 0100, call me about my claim status, bye");
+
+      expect(ended.heard).toBe("An advisor calls you tomorrow. Goodbye.");
+      expect(hangUp).toHaveBeenCalledTimes(1);
     });
 
     it("a check call carrying a number the conversation never had is not run: the check makes up no input", async () => {

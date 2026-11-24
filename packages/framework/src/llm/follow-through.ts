@@ -16,8 +16,11 @@
  *
  * The check repairs a missed action; it must never add one the caller did not ask for. A plain
  * answer or a description ("the assistant notes the caller's number") can read like an
- * announcement, so the check never ends the call and never runs a call whose input it made up.
+ * announcement, so the check ends the call only after an action of the turn, and never runs a
+ * call whose input it made up.
  */
+
+import { END_CALL_TOOL_NAME } from "../types.js";
 
 /** What a refused `end_call` answers when another call of its step did not go through. */
 export function callStaysOpenAfter(failed: readonly string[]): string {
@@ -57,9 +60,9 @@ export function namedToolNote(tool: string): string {
  */
 export const FOLLOW_THROUGH_CHECK =
   "Check your last reply before the caller answers. Did it say that you are doing something now, or have done it " +
-  "(looking something up, booking, noting, removing, forwarding), that one of your tools does, without calling " +
-  "that tool in this turn? If so, call that tool now with the right input. If not, call no tool and write nothing. " +
-  "An offer, a suggestion or a question to the caller is not an action yet: it waits for the caller's answer, so " +
+  "(looking something up, booking, noting, removing, forwarding, ending the call), that one of your tools does, " +
+  "without calling that tool in this turn? If so, call that tool now with the right input. If not, call no tool " +
+  "and write nothing. A goodbye is an action: it ends the call. An offer, a suggestion or a question to the caller is not an action yet: it waits for the caller's answer, so " +
   "call no tool for it. An answer or a description of how something works, or of what someone else does, is not " +
   "an action you take now. Never call a tool the reply did not speak of, and never make up an input: if the " +
   "conversation does not give a value the tool needs, call no tool.";
@@ -67,16 +70,19 @@ export const FOLLOW_THROUGH_CHECK =
 /**
  * The tools a follow-through check offers: the actions a reply can announce that its turn has
  * not run yet (`ran`, by name). A tool that ran is never offered again, so a check cannot
- * repeat its effect. The framework's own tools are never offered: skip_turn and read_skill do
- * nothing a reply announces, and `end_call` is left to the model's own turn, since a check
- * that misreads an answer as a goodbye would cut the caller off, while a goodbye the model
- * did not follow through costs one more turn.
+ * repeat its effect. skip_turn and read_skill do nothing a reply announces. `end_call` is
+ * offered only once the turn ran one of the agent's own actions: closing the call after an
+ * action ("you are off the list, goodbye") is the goodbye a check repairs, while after a turn
+ * that only answered, a check that misread the answer as a goodbye would cut the caller off.
  */
 export function followThroughTools<T extends { scope: string; name: string }>(
   tools: readonly T[],
   ran: ReadonlySet<string>,
 ): T[] {
-  return tools.filter((tool) => tool.scope !== "runtime" && !ran.has(tool.name));
+  const acted = tools.some((tool) => tool.scope !== "runtime" && ran.has(tool.name));
+  return tools.filter(
+    (tool) => !ran.has(tool.name) && (tool.scope !== "runtime" || (acted && tool.name === END_CALL_TOOL_NAME)),
+  );
 }
 
 /** Fewer digits than this are left alone: a count, a time, a day or an amount, often said in words. */

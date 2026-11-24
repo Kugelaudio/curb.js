@@ -135,8 +135,10 @@ two forms:
   no call, and neither is an answer or a description of how something works. The check
   offers only the agent's own tools that have not run in that turn, a confirmed action
   included, so it never repeats one; a turn with nothing left to offer is not checked. It
-  never offers `end_call`: a goodbye the model did not follow through is left to the next
-  turn, so an answer misread as a goodbye never hangs up. A tool call in the answer runs as
+  offers `end_call` only once the turn ran one of the agent's own tools ("You are off the
+  list. Goodbye."), and the call then hangs up after the words already said, without a
+  second goodbye. After a turn that only answered, the check cannot hang up, so an answer it
+  misreads as a goodbye never cuts the caller off. A tool call in the answer runs as
   part of the same turn, unless its input carries a long number (six digits or more, like a
   phone or order number) that the conversation never contained: the check made that up, so
   the call is dropped. Anything else the check writes is dropped, unsaid and out of the

@@ -18,13 +18,20 @@ describe("inventedNumber: a check call fills no long number the conversation nev
 });
 
 describe("followThroughTools", () => {
-  it("offers only the agent's own tools that have not run: never end_call or another framework tool", () => {
-    const tools = [
-      { name: "request_callback", scope: "global" },
-      { name: "lookup_order", scope: "global" },
-      { name: "end_call", scope: "runtime" },
-      { name: "skip_turn", scope: "runtime" },
-    ];
-    expect(followThroughTools(tools, new Set(["lookup_order"])).map((tool) => tool.name)).toEqual(["request_callback"]);
+  const tools = [
+    { name: "request_callback", scope: "global" },
+    { name: "lookup_order", scope: "global" },
+    { name: "end_call", scope: "runtime" },
+    { name: "skip_turn", scope: "runtime" },
+  ];
+  const offered = (ran: string[]) => followThroughTools(tools, new Set(ran)).map((tool) => tool.name);
+
+  it("offers the agent's own tools that have not run, and no framework tool after a turn that only answered", () => {
+    expect(offered([])).toEqual(["request_callback", "lookup_order"]);
+  });
+
+  it("offers end_call too once the turn ran one of the agent's own actions, never a tool that ran", () => {
+    expect(offered(["lookup_order"])).toEqual(["request_callback", "end_call"]);
+    expect(offered(["lookup_order", "request_callback"])).toEqual(["end_call"]);
   });
 });
