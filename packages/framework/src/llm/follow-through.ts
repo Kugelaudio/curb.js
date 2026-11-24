@@ -99,26 +99,59 @@ const WRITTEN_NUMBER = /\+?(?:\(\d+\)|\d)(?:[ \u00a0./-]?(?:\(\d+\)|\d))*/g;
 /** A date is not a number someone gives: the check may write tomorrow's. */
 const DATE = /^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./]\d{1,2}[./]\d{2,4})$/;
 
-/** A number's digits, and whether it was written with a leading `+` (a phone number with its country code). */
+/** A number's digits, and whether it was written with a leading `+` (a country code). */
 type WrittenNumber = { written: string; digits: string; international: boolean };
 
+/** A field whose name, `format` or description says it holds a phone number. */
+const PHONE = /phone|telefon|(?:^|[^a-z])(?:tel|mobile?|cell)(?:[^a-z]|$)/i;
+
 /**
- * The first long number (a phone, order or account number: six digits or more as written,
- * leading zeros included, like `+1 (202) 555-0142`, `030/1234567` or `012345`) in a check
- * call's `input` that nothing in `heard` holds, or undefined. `heard` is what the conversation
- * holds: the instructions, the caller's and the agent's words, tool results. Numbers are
- * compared whole, by their digits. A phone number may differ only by its country code
- * ({@link sameNumber}); any other number matches only digit for digit. A check that fills such a number made it up, so its
- * call is not run. Dates are left alone.
+ * The first long number (six digits or more as written, leading zeros included, like
+ * `+1 (202) 555-0142`, `030/1234567` or `012345`) in a check call's `input` that nothing in
+ * `heard` holds, or undefined. `heard` is what the conversation holds: the instructions, the
+ * caller's and the agent's words, tool results. A number in a phone field (its name, or in
+ * `schema` its `format` or description, says phone, tel, mobile or cell) is the same phone
+ * number with or without its country code or trunk zero (`+49 30 1234567`, `030 1234567`);
+ * a number in any other field, an order or account number, matches only digit for digit, as
+ * written. A check that fills such a number made it up, so its call is not run. Dates are
+ * left alone.
  */
-export function inventedNumber(input: unknown, heard: readonly unknown[]): string | undefined {
+export function inventedNumber(input: unknown, heard: readonly unknown[], schema?: unknown): string | undefined {
   const known = leafValues(heard).flatMap(writtenNumbers);
-  for (const number of leafValues(input).flatMap(writtenNumbers)) {
-    if (number.digits.length >= LONG_NUMBER_DIGITS && !known.some((said) => sameNumber(number, said))) {
-      return number.written;
-    }
+  for (const { number, phone } of fieldNumbers(input, schema, false, new WeakSet())) {
+    const same = phone ? samePhone : sameDigits;
+    if (number.digits.length >= LONG_NUMBER_DIGITS && !known.some((said) => same(number, said))) return number.written;
   }
   return undefined;
+}
+
+/** The numbers in `value`, each with whether it sits in a phone field, read along `schema`. */
+function fieldNumbers(
+  value: unknown,
+  schema: unknown,
+  phone: boolean,
+  seen: WeakSet<object>,
+): { number: WrittenNumber; phone: boolean }[] {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
+    return writtenNumbers(String(value)).map((number) => ({ number, phone }));
+  }
+  if (value === null || typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  if (Array.isArray(value)) return value.flatMap((item) => fieldNumbers(item, schemaPart(schema, "items"), phone, seen));
+  const properties = schemaPart(schema, "properties");
+  return Object.entries(value).flatMap(([name, item]) => {
+    const field = schemaPart(properties, name);
+    return fieldNumbers(item, field, phone || isPhoneField(name, field), seen);
+  });
+}
+
+function isPhoneField(name: string, field: unknown): boolean {
+  const marks = [name.replace(/([a-z])([A-Z])/g, "$1 $2"), schemaPart(field, "format"), schemaPart(field, "description")];
+  return marks.some((mark) => typeof mark === "string" && PHONE.test(mark));
+}
+
+function schemaPart(schema: unknown, key: string): unknown {
+  return schema !== null && typeof schema === "object" ? (schema as Record<string, unknown>)[key] : undefined;
 }
 
 function writtenNumbers(text: string): WrittenNumber[] {
@@ -127,21 +160,22 @@ function writtenNumbers(text: string): WrittenNumber[] {
     .filter(({ written }) => !DATE.test(written));
 }
 
-/**
- * Whether the check's `written` number is the conversation's `said` one: digit for digit, or
- * the same phone number with and without its country code. The check may add a country code
- * to a heard number (`+49 30 123456` for `030 123456` or `30 123456`); a number it writes
- * without one is a phone number only with its trunk zero (`030 123456` for `+49 30 123456`),
- * so an id made of a heard phone number's national digits (`30123456`) is not that number.
- */
-function sameNumber(written: WrittenNumber, said: WrittenNumber): boolean {
+/** The same number, digit for digit as written: an order or account number. */
+function sameDigits(written: WrittenNumber, said: WrittenNumber): boolean {
+  return written.digits === said.digits;
+}
+
+/** The same phone number: the same national digits, a country code or trunk zero aside. */
+function samePhone(written: WrittenNumber, said: WrittenNumber): boolean {
   if (written.digits === said.digits) return true;
-  if (written.international === said.international) return false;
-  if (!written.international && !written.digits.startsWith("0")) return false;
-  const [withCode, without] = written.international ? [written, said] : [said, written];
-  const national = without.digits.replace(/^0/, "");
-  const code = withCode.digits.length - national.length;
-  return national.length >= LONG_NUMBER_DIGITS && code >= 1 && code <= COUNTRY_CODE_DIGITS && withCode.digits.endsWith(national);
+  const theirs = nationalDigits(said);
+  return nationalDigits(written).some((national) => national.length >= LONG_NUMBER_DIGITS && theirs.includes(national));
+}
+
+/** A phone number without its country code (one to three digits after the `+`) or its trunk zero. */
+function nationalDigits({ digits, international }: WrittenNumber): string[] {
+  if (!international) return [digits.replace(/^0/, "")];
+  return Array.from({ length: COUNTRY_CODE_DIGITS }, (_, i) => digits.slice(i + 1));
 }
 
 /** Every string and number in `value`, however deep; each object is read once. */

@@ -925,7 +925,8 @@ export class AgentSession {
         request.stateSnapshot,
         messages.map((message) => (message.role === "tool" ? [message.content, message.result] : message.content)),
       ];
-      return calls.some((call) => inventedNumber(call.input, heard) !== undefined);
+      const schemaOf = (name: string) => request.tools.find((tool) => tool.name === name)?.inputSchema;
+      return calls.some((call) => inventedNumber(call.input, heard, schemaOf(call.name)) !== undefined);
     } catch (error) {
       console.warn("[curb] the follow-through check could not read the conversation; its calls are dropped:", error);
       return true;

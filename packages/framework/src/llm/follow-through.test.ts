@@ -27,9 +27,24 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ phone: "+12 3456" }, ["room 3456"])).toBe("+12 3456");
   });
 
-  it("an id made of a heard phone number's national digits is not that phone number", () => {
-    expect(inventedNumber({ account: "301234567" }, ["my number is +49 30 1234567"])).toBe("301234567");
-    expect(inventedNumber({ phone: "030 1234567" }, ["my number is +49 30 1234567"])).toBeUndefined();
+  it("only a field marked as a phone number may differ from a heard one by its country code or trunk zero", () => {
+    const heard = ["my number is +49 30 1234567"];
+    for (const digits of ["301234567", "0301234567", "030 1234567"]) {
+      expect(inventedNumber({ account: digits }, heard)).toBe(digits);
+      expect(inventedNumber({ phone: digits }, heard)).toBeUndefined();
+    }
+    expect(inventedNumber({ account: "+49 30 1234567" }, ["account 0301234567"])).toBe("+49 30 1234567");
+    expect(inventedNumber({ phone: "+49 30 1234567" }, ["call me on 0301234567"])).toBeUndefined();
+  });
+
+  it("reads the phone marker from the tool's schema: a field's name, format or description", () => {
+    const heard = ["my number is +49 30 1234567"];
+    const schema = (property: Record<string, unknown>) => ({ type: "object", properties: { contact: { type: "string", ...property } } });
+    expect(inventedNumber({ contact: "0301234567" }, heard, schema({ format: "tel" }))).toBeUndefined();
+    expect(inventedNumber({ contact: "0301234567" }, heard, schema({ description: "The caller's phone number" }))).toBeUndefined();
+    expect(inventedNumber({ contact: "0301234567" }, heard, schema({ description: "The customer account" }))).toBe("0301234567");
+    expect(inventedNumber({ contact: "0301234567" }, heard)).toBe("0301234567");
+    expect(inventedNumber({ caller: { mobileNumber: "0301234567" } }, heard)).toBeUndefined();
   });
 
   it("counts the digits as written, leading zeros included", () => {
