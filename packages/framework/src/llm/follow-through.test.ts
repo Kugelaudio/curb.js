@@ -44,6 +44,14 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ phone: "+49 (30) 123-4567" }, ["my number is +49 30 1234567"])).toBeUndefined();
   });
 
+  it("a country code is only the group written after the plus: no other digit is dropped", () => {
+    expect(inventedNumber({ phone: "091234567" }, ["my number is +49 89 1234567"])).toBe("091234567");
+    expect(inventedNumber({ phone: "089 1234567" }, ["my number is +49 89 1234567"])).toBeUndefined();
+    expect(inventedNumber({ phone: "+49 89 1234567" }, ["call me on 089 1234567"])).toBeUndefined();
+    expect(inventedNumber({ phone: "+49 89 1234567" }, ["call me on 09 1234567"])).toBe("+49 89 1234567");
+    expect(inventedNumber({ phone: "0891234567" }, ["my number is +49891234567"])).toBe("0891234567");
+  });
+
   it("the phone marker names the value itself: a parent object or a phone-plan id does not make a field a phone number", () => {
     const heard = ["my number is +49 30 1234567"];
     expect(inventedNumber({ phoneContact: { account: "0301234567" } }, heard)).toBe("0301234567");
@@ -54,11 +62,17 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ phones: ["0301234567"] }, heard)).toBeUndefined();
   });
 
-  it("reads the phone marker from the tool's schema: a field's name, format or description", () => {
+  it("reads the phone marker from a field's name or its schema's format, never its description", () => {
     const heard = ["my number is +49 30 1234567"];
     const schema = (property: Record<string, unknown>) => ({ type: "object", properties: { contact: { type: "string", ...property } } });
     expect(inventedNumber({ contact: "0301234567" }, heard, schema({ format: "tel" }))).toBeUndefined();
-    expect(inventedNumber({ contact: "0301234567" }, heard, schema({ description: "The caller's phone number" }))).toBeUndefined();
+    expect(inventedNumber({ contact: "0301234567" }, heard, schema({ description: "The caller's phone number" }))).toBe("0301234567");
+    expect(
+      inventedNumber({ reference: "0301234567" }, heard, {
+        type: "object",
+        properties: { reference: { type: "string", description: "Account ID associated with the caller's phone number" } },
+      }),
+    ).toBe("0301234567");
     expect(inventedNumber({ contact: "0301234567" }, heard, schema({ description: "The customer account" }))).toBe("0301234567");
     expect(inventedNumber({ contact: "0301234567" }, heard)).toBe("0301234567");
     expect(inventedNumber({ caller: { mobileNumber: "0301234567" } }, heard)).toBeUndefined();

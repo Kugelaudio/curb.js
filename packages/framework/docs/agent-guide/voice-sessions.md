@@ -144,11 +144,12 @@ two forms:
   written, leading zeros included, like `+1 (202) 555-0142` or `012345`: a phone, order or
   account number) that the conversation never contained: the check made that up, so the call
   is dropped. Numbers are compared whole. In a phone field the same number may be written
-  with or without its country code (`+49 30 123456`, `030 123456`); two numbers that both
-  carry a country code match only in full. A field is a phone field when its own name ends
-  in a phone word (`phone`, `callerPhone`, `mobile_number`), its schema's `format` is `tel`
-  or `phone`, or its description says it is a phone number; a name that says id, account,
-  plan or code never is, and a field inside a phone-named object is not one by that alone.
+  with or without its country code, when that code is written apart (`+49 30 123456`,
+  `030 123456`); two numbers that both carry a country code match only in full, and no other
+  digit is dropped. A field is a phone field when its own name ends in a phone word (`phone`,
+  `callerPhone`, `mobile_number`) or its schema's `format` is `tel` or `phone`; its
+  description is not read. A name that says id, account, plan or code never is, and a field
+  inside a phone-named object is not one by that alone.
   Any other field, an order or account number, matches only digit for digit, as written.
   Dates are not checked. Anything else the check writes is dropped, unsaid and out of the
   transcript. That is one more LLM request on those turns, counted
