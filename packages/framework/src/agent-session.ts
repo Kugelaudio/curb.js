@@ -621,13 +621,16 @@ export class AgentSession {
           // The check found nothing to do: the turn ends as it was, and the note leaves no trace.
           const note = check;
           check = undefined;
-          // A call of a tool the check did not offer is never run: the model was told not to.
+          // A call of a tool the check did not offer is never run: the model was told not to. A
+          // skip_turn beside an offered call is dropped, so it cannot end the turn before a
+          // failed call is repaired; only the calls checked here run.
           const offered = new Set(request.tools.map((tool) => tool.name));
           const calls = response.toolCalls.filter((call) => call.name !== SKIP_TURN_TOOL_NAME);
           if (calls.length === 0 || calls.some((call) => !offered.has(call.name))) {
             unrecorded = false;
             break;
           }
+          response = { ...response, toolCalls: calls };
           messages = this.append(messages, note);
           followedThrough = true;
         }

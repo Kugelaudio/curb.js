@@ -784,6 +784,28 @@ describe("AgentSession", () => {
       expect(notes(session)).toEqual([]);
     });
 
+    it("a skip_turn beside the check's call is dropped: a failed call is still repaired before the turn ends", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const { streamLlm, requests } = scriptedStream([
+        { text: "I have noted your callback request." },
+        { toolCalls: [{ name: "request_callback", input: { name: "Alex Doe" } }, { name: SKIP_TURN_TOOL_NAME, input: {} }] },
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+        { text: "An advisor calls you tomorrow." },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "I'm Alex Doe, 555 0100, call me about my claim status");
+
+      expect(requests).toHaveLength(4);
+      const ran = turn.events.flatMap((event) => (event.type === "tool" ? [[event.toolCall.name, event.ok]] : []));
+      expect(ran).toEqual([
+        ["request_callback", false],
+        ["request_callback", true],
+      ]);
+      expect(turn.heard).toBe("I have noted your callback request. An advisor calls you tomorrow.");
+      expect(turn.errors).toEqual([]);
+    });
+
     it("a check that fails or times out keeps the turn answered: no apology, no error, the cause logged", async () => {
       for (const failure of ["provider", "timeout"] as const) {
         const requests: AgentRunRequest[] = [];
