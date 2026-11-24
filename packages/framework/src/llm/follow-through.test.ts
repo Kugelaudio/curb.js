@@ -135,6 +135,10 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     // A label after the digits that names the next number is that number's label.
     expect(inventedNumber({ phone: "030 1234567" }, ["call me on 030 1234567 and my order is 12345678"])).toBeUndefined();
     expect(inventedNumber({ phone: "12345678" }, ["call me on 030 1234567 and my order is 12345678"])).toBe("12345678");
+    // A later time or number does not take the label from the number it follows.
+    expect(inventedNumber({ phone: "12345678" }, ["call me about 12345678, my order number, before 17:20"])).toBe("12345678");
+    expect(inventedNumber({ phone: "12345678" }, ["call me about 12345678, my order number, ref 99887766"])).toBe("12345678");
+    expect(inventedNumber({ phone: "12345678" }, ["call me about 12345678 at 9, my order number"])).toBe("12345678");
   });
 
   it("leaves dates, times and short numbers alone", () => {

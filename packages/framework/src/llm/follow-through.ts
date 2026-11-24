@@ -233,17 +233,29 @@ function heardPhones(value: unknown, place: "words" | "phone" | "other", seen: W
  * What the words around `number` in `text` call it. An id label on either side ("order number",
  * "Kundennummer") makes it an id, whatever callback words stand on the other side; else a phone
  * word on either side ("my number is", "call me on", "Telefonnummer") makes it a phone number.
- * A label after the digits that another number follows names that number, not this one. A
+ * A label right before the next long number names that one ({@link ownWordsAfter}). A
  * number no word names is a phone number when it is written as one: a country code or a trunk
  * zero.
  */
 function spokenKind(text: string, number: WrittenNumber & { index: number }): NumberKind {
   const before = words(text.slice(0, number.index).split(/[.!?;\n](?=\s|$)/).pop() ?? "").reverse();
-  const after = words(text.slice(number.index + number.written.length).split(/[.!?;\n](?=\s|$)/)[0] ?? "");
-  const kinds = [wordKind(before), after.some((word) => /^\d/.test(word)) ? undefined : wordKind(after)];
+  const after = words(ownWordsAfter(text.slice(number.index + number.written.length).split(/[.!?;\n](?=\s|$)/)[0] ?? ""));
+  const kinds = [wordKind(before), wordKind(after.filter((word) => !/^\d/.test(word)))];
   if (kinds.includes("id")) return "id";
   if (kinds.includes("phone")) return "phone";
   return number.international || /^0[1-9]/.test(number.digits) ? "phone" : undefined;
+}
+
+/**
+ * The part of `after`, the words following a number, that names that number. The words right
+ * before the next long number, with no comma between them and it, name that number instead
+ * ("and my order is 12345678"); a time or a short number takes no label.
+ */
+function ownWordsAfter(after: string): string {
+  const next = writtenNumbers(after).find(({ digits }) => digits.length >= LONG_NUMBER_DIGITS);
+  if (next === undefined) return after;
+  const lead = after.slice(0, next.index);
+  return lead.slice(0, Math.max(0, lead.search(/[,;][^,;]*$/)));
 }
 
 /** The words of `text`, lower case, camelCase split (`customerNumber`: customer number). */
