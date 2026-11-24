@@ -132,11 +132,15 @@ two forms:
   ("I'm removing you from our list now.") rather than a question, the session asks the
   model once whether that reply spoke of something one of its tools does without calling
   it. An offer or a suggestion ("I can show you a demo.") is not an action yet and gets
-  no call. The check offers only `end_call` and the agent's tools that have not run in
-  that turn, a confirmed action included, so it never repeats one; a turn with nothing
-  left to offer is not checked. A tool call in the answer runs as part of the same turn, and an `end_call` it leads to
-  hangs up after the words already said, without a second goodbye; anything else is
-  dropped, unsaid and out of the transcript. That is one more LLM request on those turns, counted
+  no call, and neither is an answer or a description of how something works. The check
+  offers only the agent's own tools that have not run in that turn, a confirmed action
+  included, so it never repeats one; a turn with nothing left to offer is not checked. It
+  never offers `end_call`: a goodbye the model did not follow through is left to the next
+  turn, so an answer misread as a goodbye never hangs up. A tool call in the answer runs as
+  part of the same turn, unless its input carries a long number (six digits or more, like a
+  phone or order number) that the conversation never contained: the check made that up, so
+  the call is dropped. Anything else the check writes is dropped, unsaid and out of the
+  transcript. That is one more LLM request on those turns, counted
   in the usage `curb test` reports. It starts once the reply's last words have gone to
   speech. A check that fails or times out is logged and leaves the turn answered.
 

@@ -50,6 +50,7 @@ import {
   callStaysOpenAfter,
   FOLLOW_THROUGH_CHECK,
   followThroughTools,
+  inventedNumber,
   namedToolNote,
   needsFollowThroughCheck,
 } from "./llm/follow-through.js";
@@ -621,12 +622,23 @@ export class AgentSession {
           // The check found nothing to do: the turn ends as it was, and the note leaves no trace.
           const note = check;
           check = undefined;
-          // A call of a tool the check did not offer is never run: the model was told not to. A
+          // A call of a tool the check did not offer is never run: the model was told not to. Nor
+          // is one carrying a number the conversation never had: the check made it up. A
           // skip_turn beside an offered call is dropped, so it cannot end the turn before a
           // failed call is repaired; only the calls checked here run.
           const offered = new Set(request.tools.map((tool) => tool.name));
+          const heard = [
+            request.systemPrompt,
+            ...request.stateSnapshot,
+            ...request.messages.map((message) =>
+              message.role === "tool" ? `${message.content} ${JSON.stringify(message.result)}` : message.content,
+            ),
+          ];
           const calls = response.toolCalls.filter((call) => call.name !== SKIP_TURN_TOOL_NAME);
-          if (calls.length === 0 || calls.some((call) => !offered.has(call.name))) {
+          if (
+            calls.length === 0 ||
+            calls.some((call) => !offered.has(call.name) || inventedNumber(call.input, heard) !== undefined)
+          ) {
             unrecorded = false;
             break;
           }

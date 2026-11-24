@@ -700,22 +700,41 @@ describe("AgentSession", () => {
       expect(notes(session)).toEqual([FOLLOW_THROUGH_CHECK]);
     });
 
-    it("an end_call the check leads to hangs up after the words already said, with no second goodbye", async () => {
+    it("the check never offers end_call: a plain answer or a goodbye it misread cannot hang up", async () => {
+      for (const text of ["Your policy covers water damage.", "Alright, call us any time. Bye for now."]) {
+        const runtime = createInsuranceDemoRuntime();
+        const hangUp = vi.fn();
+        runtime.setEndCallRequest(hangUp);
+        const { streamLlm, requests } = scriptedStream([
+          { text },
+          { toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye: "Goodbye." } }] },
+        ]);
+        const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+        const turn = await streamTurn(session, "does my policy cover water damage");
+
+        expect(requests).toHaveLength(2);
+        expect(requests[1]!.tools.map((tool) => tool.name)).not.toContain(END_CALL_TOOL_NAME);
+        expect(turn.heard).toBe(text);
+        expect(hangUp).not.toHaveBeenCalled();
+      }
+    });
+
+    it("a check call carrying a number the conversation never had is not run: the check makes up no input", async () => {
       const runtime = createInsuranceDemoRuntime();
-      const hangUp = vi.fn();
-      runtime.setEndCallRequest(hangUp);
       const { streamLlm, requests } = scriptedStream([
-        { text: "Alright, call us any time. Bye for now." },
-        { toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye: "Okay, take care. Goodbye." } }] },
+        { text: "The advisor notes your number and calls you back." },
+        { toolCalls: [{ name: "request_callback", input: { name: "Alex Doe", phone: "+1 123 456 789", topic: "claim" } }] },
+        { text: "Your callback is noted." },
       ]);
       const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
 
-      const turn = await streamTurn(session, "thanks, I'll think about it");
+      const turn = await streamTurn(session, "I'm Alex Doe. How do callbacks work?");
 
       expect(requests).toHaveLength(2);
-      expect(turn.heard).toBe("Alright, call us any time. Bye for now.");
-      expect(turn.reply).toBe("Alright, call us any time. Bye for now.");
-      expect(hangUp).toHaveBeenCalledTimes(1);
+      expect(turn.heard).toBe("The advisor notes your number and calls you back.");
+      expect(turn.events.filter((event) => event.type === "tool")).toEqual([]);
+      expect(notes(session)).toEqual([]);
     });
 
     it("a check that finds nothing to do ends the turn as it was and leaves no trace", async () => {
@@ -764,25 +783,6 @@ describe("AgentSession", () => {
       expect(turn.events.filter((event) => event.type === "tool")).toHaveLength(1);
     });
 
-    it("a check after a turn's action offers only what has not run, and never runs a tool it did not offer", async () => {
-      const runtime = createInsuranceDemoRuntime();
-      const hangUp = vi.fn();
-      runtime.setEndCallRequest(hangUp);
-      const { streamLlm, requests } = scriptedStream([
-        { toolCalls: [{ name: "request_callback", input: callback }] },
-        { text: "An advisor calls you tomorrow. Goodbye." },
-        { toolCalls: [{ name: "request_callback", input: callback }] },
-      ]);
-      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
-
-      const turn = await streamTurn(session, "I'm Alex Doe, 555 0100, call me about my claim status, bye");
-
-      expect(requests).toHaveLength(3);
-      expect(requests[2]!.tools.map((tool) => tool.name)).toEqual([END_CALL_TOOL_NAME]);
-      expect(turn.events.filter((event) => event.type === "tool")).toHaveLength(1);
-      expect(hangUp).not.toHaveBeenCalled();
-      expect(notes(session)).toEqual([]);
-    });
 
     it("a skip_turn beside the check's call is dropped: a failed call is still repaired before the turn ends", async () => {
       const runtime = createInsuranceDemoRuntime();
