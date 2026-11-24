@@ -41,10 +41,18 @@ export type KugelaudioLlmModel = (typeof KUGELAUDIO_LLM_MODELS)[number];
 export const DEFAULT_KUGELAUDIO_LLM_MODEL: KugelaudioLlmModel = "qwen3.8-27b";
 
 /** KugelAudio's LLM, hosted in the EU, on the same `KUGELAUDIO_API_KEY` as its speech. Thinking
- * is off on the service's side, so the agent never speaks its reasoning. */
+ * is off on the service's side. */
 export type KugelaudioLlmOptions = {
   /** Default {@link DEFAULT_KUGELAUDIO_LLM_MODEL}. */
   model?: KugelaudioLlmModel;
+  /** Sampling temperature, 0 to 2, sent as `temperature`. Lower is more repeatable; 0 picks
+   * the likeliest word every time. Unset: the service's default for the model. */
+  temperature?: number;
+  /** Nucleus sampling, above 0 and at most 1, sent as `top_p`. Unset: the service's default. */
+  topP?: number;
+  /** A whole number sent as `seed`: the same request with the same seed samples the same
+   * answer, as far as the service can repeat it. Unset: a fresh draw every turn. */
+  seed?: number;
 };
 
 export type KugelaudioTtsOptions = {
@@ -134,7 +142,7 @@ export type SttDescriptor =
   | { provider: "openai"; kind: "stt"; options: OpenaiSttOptions };
 
 export type LlmDescriptor =
-  | { provider: "kugelaudio"; kind: "llm"; options: { model: KugelaudioLlmModel } }
+  | { provider: "kugelaudio"; kind: "llm"; options: KugelaudioLlmOptions & { model: KugelaudioLlmModel } }
   | { provider: "anthropic"; kind: "llm"; options: { model: string } }
   | { provider: "openai"; kind: "llm"; options: { model: string } }
   | { provider: "openai-compatible"; kind: "llm"; options: OpenaiCompatibleOptions };
@@ -255,7 +263,16 @@ export const kugelaudio = {
           `for ${JSON.stringify(DEFAULT_KUGELAUDIO_LLM_MODEL)}.`,
       });
     }
-    return { provider: "kugelaudio", kind: "llm", options: { model } };
+    const { temperature, topP } = sampling("kugelaudio.llm", options ?? {});
+    const seed = options?.seed;
+    if (seed !== undefined && !Number.isSafeInteger(seed)) {
+      refuseOption(
+        `kugelaudio.llm() got seed ${String(seed)}, which is not a whole number.`,
+        "Pass a whole number, for example seed: 42, or leave it unset for a fresh draw every turn.",
+        "kugelaudio.llm",
+      );
+    }
+    return { provider: "kugelaudio", kind: "llm", options: defined({ model, temperature, topP, seed }) };
   },
   tts: (options?: KugelaudioTtsOptions): TtsDescriptor => ({
     provider: "kugelaudio",
@@ -355,24 +372,13 @@ export function openaiCompatible(options: OpenaiCompatibleOptions): LlmDescripto
       'Pass the endpoint, for example openaiCompatible({ baseURL: "http://127.0.0.1:11434/v1", model: "llama3.3" }).',
     );
   }
-  const { reasoningEffort, temperature, topP } = options;
+  const { reasoningEffort } = options;
+  const { temperature, topP } = sampling("openaiCompatible", options);
   if (reasoningEffort !== undefined && !REASONING_EFFORTS.includes(reasoningEffort)) {
     refuseOption(
       `openaiCompatible() got reasoningEffort ${JSON.stringify(reasoningEffort)}, which is not a reasoning_effort value.`,
       `Use one of ${REASONING_EFFORTS.map((value) => JSON.stringify(value)).join(", ")}; "none" switches thinking ` +
         "off where the endpoint supports it. The endpoint's documentation lists the values each model takes.",
-    );
-  }
-  if (temperature !== undefined && !(typeof temperature === "number" && temperature >= 0 && temperature <= 2)) {
-    refuseOption(
-      `openaiCompatible() got temperature ${String(temperature)}, outside 0 to 2.`,
-      "Pass a number from 0 to 2, for example temperature: 0.7, or leave it unset for the endpoint's default.",
-    );
-  }
-  if (topP !== undefined && !(typeof topP === "number" && topP > 0 && topP <= 1)) {
-    refuseOption(
-      `openaiCompatible() got topP ${String(topP)}, outside the range above 0 up to 1.`,
-      "Pass a number above 0 and at most 1, for example topP: 0.8, or leave it unset for the endpoint's default.",
     );
   }
   return {
@@ -469,6 +475,29 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+/** `temperature` and `topP` of an LLM factory, refused outside the ranges the OpenAI API takes. */
+function sampling(
+  factory: "openaiCompatible" | "kugelaudio.llm",
+  options: { temperature?: number; topP?: number },
+): { temperature?: number; topP?: number } {
+  const { temperature, topP } = options;
+  if (temperature !== undefined && !(typeof temperature === "number" && temperature >= 0 && temperature <= 2)) {
+    refuseOption(
+      `${factory}() got temperature ${String(temperature)}, outside 0 to 2.`,
+      "Pass a number from 0 to 2, for example temperature: 0.7, or leave it unset for the endpoint's default.",
+      factory,
+    );
+  }
+  if (topP !== undefined && !(typeof topP === "number" && topP > 0 && topP <= 1)) {
+    refuseOption(
+      `${factory}() got topP ${String(topP)}, outside the range above 0 up to 1.`,
+      "Pass a number above 0 and at most 1, for example topP: 0.8, or leave it unset for the endpoint's default.",
+      factory,
+    );
+  }
+  return { temperature, topP };
 }
 
 function refuseOption(message: string, fix: string, component = "openaiCompatible"): never {

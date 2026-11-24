@@ -32,6 +32,10 @@ describe("curb/providers factories", () => {
       [kugelaudio.llm(), { provider: "kugelaudio", kind: "llm", options: { model: "qwen3.8-27b" } }],
       [kugelaudio.llm({ model: "mistral-medium-3.5-128b" }),
         { provider: "kugelaudio", kind: "llm", options: { model: "mistral-medium-3.5-128b" } }],
+      [kugelaudio.llm({ temperature: 0.7, topP: 0.8, seed: 42 }),
+        { provider: "kugelaudio", kind: "llm", options: { model: "qwen3.8-27b", temperature: 0.7, topP: 0.8, seed: 42 } }],
+      [kugelaudio.llm({ temperature: undefined, seed: undefined }),
+        { provider: "kugelaudio", kind: "llm", options: { model: "qwen3.8-27b" } }],
       [anthropic("claude-sonnet-5"), { provider: "anthropic", kind: "llm", options: { model: "claude-sonnet-5" } }],
       [openai("gpt-5.2"), { provider: "openai", kind: "llm", options: { model: "gpt-5.2" } }],
       [openaiCompatible({ baseURL: "http://127.0.0.1:11434/v1", model: "llama3.3" }),
@@ -84,6 +88,38 @@ describe("curb/providers factories", () => {
     expect(diagnostic.fix).toBe(
       'Use one of "qwen3.8-27b", "mistral-medium-3.5-128b", or leave model unset for "qwen3.8-27b".',
     );
+  });
+});
+
+describe("kugelaudio.llm sampling", () => {
+  function kugelRefusal(options: Record<string, unknown>) {
+    try {
+      kugelaudio.llm(options as Parameters<typeof kugelaudio.llm>[0]);
+    } catch (error) {
+      expect(error).toBeInstanceOf(AgentAuthoringError);
+      return (error as AgentAuthoringError).diagnostic;
+    }
+    throw new Error("kugelaudio.llm accepted the options");
+  }
+
+  it("refuse temperature outside 0 to 2, topP outside (0, 1] and a seed that is not a whole number", () => {
+    for (const temperature of [-0.1, 2.1, Number.NaN, "0.7"]) {
+      const diagnostic = kugelRefusal({ temperature });
+      expect(diagnostic.message).toContain("kugelaudio.llm() got temperature");
+      expect(diagnostic.code).toBe(AUTHORING_DIAGNOSTIC_CODES.invalidProp);
+    }
+    for (const topP of [0, 1.1, "0.8"]) {
+      expect(kugelRefusal({ topP }).message).toContain("kugelaudio.llm() got topP");
+    }
+    for (const seed of [1.5, Number.NaN, Number.MAX_VALUE, "42"]) {
+      expect(kugelRefusal({ seed }).message).toContain("kugelaudio.llm() got seed");
+    }
+    expect(kugelaudio.llm({ temperature: 0, topP: 1, seed: 0 }).options).toEqual({
+      model: "qwen3.8-27b",
+      temperature: 0,
+      topP: 1,
+      seed: 0,
+    });
   });
 });
 

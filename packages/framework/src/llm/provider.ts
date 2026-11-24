@@ -4,7 +4,8 @@
  * environment, read through the table in `provider-keys.ts`. Read per turn, so a changed prop
  * applies to the next turn.
  *
- *   kugelaudio.llm({ model? })        KUGELAUDIO_API_KEY, at KUGELAUDIO_API_BASE (else the EU
+ *   kugelaudio.llm({ model?, temperature?, topP?, seed? })
+ *                                     KUGELAUDIO_API_KEY, at KUGELAUDIO_API_BASE (else the EU
  *                                     ingress) + /v1
  *   anthropic(model)                  ANTHROPIC_API_KEY (resolved in ai-sdk.ts)
  *   openai(model)                     OPENAI_API_KEY
@@ -17,7 +18,7 @@ import { kugelaudioLlmBaseUrl, LLM_KEYS } from "../provider-keys.js";
 import type { LlmDescriptor, OpenaiCompatibleOptions } from "../providers.js";
 
 export type LlmProviderConfig =
-  | { kind: "kugelaudio"; model: string; baseUrl: string; apiKey: string }
+  | { kind: "kugelaudio"; model: string; baseUrl: string; apiKey: string; temperature?: number; topP?: number; seed?: number }
   | { kind: "anthropic"; model: string }
   | { kind: "openai"; model: string; apiKey: string }
   | ({ kind: "openai-compatible"; model: string; baseUrl: string; apiKey: string | undefined } & Omit<
@@ -43,7 +44,8 @@ export function resolveLlmProvider(
         );
       }
       // Thinking is off on the service's side, so nothing beyond the conversation is sent.
-      return { kind: "kugelaudio", model: descriptor.options.model, baseUrl: kugelaudioLlmBaseUrl(env), apiKey };
+      const { model, ...sampling } = descriptor.options;
+      return { kind: "kugelaudio", model, baseUrl: kugelaudioLlmBaseUrl(env), apiKey, ...sampling };
     }
     case "anthropic":
       return { kind: "anthropic", model: descriptor.options.model };

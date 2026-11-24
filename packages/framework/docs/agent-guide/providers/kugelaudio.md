@@ -14,9 +14,18 @@ kugelaudio.tts(options?: KugelaudioTtsOptions): TtsDescriptor;
 
 KugelAudio's EU-hosted LLM, part of hosted agents.
 
-| Option | Type | Default |
-|---|---|---|
-| `model` | one of `KUGELAUDIO_LLM_MODELS` | `DEFAULT_KUGELAUDIO_LLM_MODEL` |
+| Option | Type | Default | What it does |
+|---|---|---|---|
+| `model` | one of `KUGELAUDIO_LLM_MODELS` | `DEFAULT_KUGELAUDIO_LLM_MODEL` | The model |
+| `temperature` | `number`, 0 to 2 | the service's default for the model | Lower answers vary less between runs; 0 picks the likeliest word every time |
+| `topP` | `number`, above 0 up to 1 | the service's default | Samples only from the likeliest words whose probabilities add up to `topP` |
+| `seed` | whole `number` | a fresh draw every turn | The same conversation with the same seed samples the same answer, as far as the service can repeat it |
+
+For runs you compare, such as `curb test` against a changed prompt, pin the sampling:
+
+```tsx
+<Agent llm={kugelaudio.llm({ temperature: 0.7, topP: 0.8, seed: 42 })} />
+```
 
 ## `kugelaudio.stt(options?)`
 
@@ -51,6 +60,7 @@ Kugel Ear 1.
 
 | Version | Changes |
 |---|---|
+| Unreleased | `kugelaudio.llm()` takes `temperature`, `topP` and `seed` |
 | v1.11.9 | `kugelaudio.llm()` added |
 | v1.4.33 | `kugelaudio.stt()` added |
 | v1.2.6 | `kugelaudio.tts()` introduced |

@@ -26,6 +26,18 @@ describe("resolveLlmProvider", () => {
     });
   });
 
+  it("kugelaudio carries the agent's temperature, topP and seed", () => {
+    expect(resolveLlmProvider(kugelaudio.llm({ temperature: 0.7, topP: 0.8, seed: 7 }), { KUGELAUDIO_API_KEY: "k" })).toEqual({
+      kind: "kugelaudio",
+      model: "qwen3.8-27b",
+      baseUrl: "https://api.eu.kugelaudio.com/v1",
+      apiKey: "k",
+      temperature: 0.7,
+      topP: 0.8,
+      seed: 7,
+    });
+  });
+
   it("anthropic carries the descriptor's model; its key is resolved by the transport", () => {
     expect(resolveLlmProvider(anthropic("claude-sonnet-5"), {})).toEqual({
       kind: "anthropic",

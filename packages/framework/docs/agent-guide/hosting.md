@@ -114,7 +114,7 @@ error naming it.
 
 | Provider prop | Variable |
 |---|---|
-| `kugelaudio.llm({ model? })` (default LLM) | `KUGELAUDIO_API_KEY`; `KUGELAUDIO_API_BASE` (default `https://api.eu.kugelaudio.com`), plus `/v1` |
+| `kugelaudio.llm({ model?, temperature?, topP?, seed? })` (default LLM) | `KUGELAUDIO_API_KEY`; `KUGELAUDIO_API_BASE` (default `https://api.eu.kugelaudio.com`), plus `/v1` |
 | `anthropic(model)` | `ANTHROPIC_API_KEY` |
 | `openai(model)`, `openai.stt()`, `openai.tts()` | `OPENAI_API_KEY` |
 | `openaiCompatible({ baseURL, model })` | `AGENT_LLM_API_KEY`, else `OPENAI_API_KEY`; optional |
