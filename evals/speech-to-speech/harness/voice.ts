@@ -8,13 +8,14 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { appendFileSync, mkdtempSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { loadCalls, saveRun, type ConversationRecord } from "curb/testing";
 import { agentCases, callerOf, interruptTurns, runnerOptions, writeScores } from "./cli.js";
+import { lineOf } from "./spec.js";
 import { checksOfScore, scoreTurns, type CaseScore } from "./score.js";
 import { playVoiceCall } from "./voice-call.js";
 
@@ -32,11 +33,13 @@ const freePort = () =>
     server.on("error", reject);
   });
 
+/** A diagnostic log of Curb's back office, when the framework writes one (`S2S_DEBUG_LOG`), one file per agent. */
+const debugLog = process.env.S2S_DEBUG_LOG ? `${process.env.S2S_DEBUG_LOG}.${options.agent}.jsonl` : null;
 const store = join(mkdtempSync(join(tmpdir(), `s2s-eval-${options.agent}-`)), "conversations.jsonl");
 const port = await freePort();
 const curbBin = join(dirname(createRequire(resolve("package.json")).resolve("curb/package.json")), "bin", "curb.js");
 const server = spawn(process.execPath, [curbBin, "server", "--port", String(port)], {
-  env: { ...process.env, KUGEL_CONVERSATIONS_DB: store },
+  env: { ...process.env, KUGEL_CONVERSATIONS_DB: store, ...(debugLog ? { S2S_DEBUG_LOG: debugLog } : {}) },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let serverLog = "";
@@ -63,12 +66,15 @@ try {
       const before = loadedCount();
       const log = (line: string) => console.error(`    ${new Date().toISOString().slice(11, 19)} ${line}`);
       console.error(`  ${spec.name} (run ${run})`);
+      if (debugLog) appendFileSync(debugLog, `${JSON.stringify({ at: Date.now(), e: "case", agent: options.agent, case: spec.name, run })}\n`);
       const call = await playVoiceCall({
         port,
         language,
         caller: callerOf(spec, options, language),
         interrupt: interruptTurns(spec),
         maxTurns: spec.maxTurns ?? (spec.turns?.length ?? 10),
+        caller_setup: options.legacyCaller ? "legacy" : "clean",
+        prefetch: (spec.turns ?? []).map(lineOf),
         log,
       });
       // The store is written as the call goes; give its last lines a moment.

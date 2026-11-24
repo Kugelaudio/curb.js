@@ -15,6 +15,8 @@ export type RunnerOptions = {
   out: string;
   concurrency: number;
   callerModel: string | undefined;
+  /** Voice: the first eval's caller timing and number reading (see `voice-call.ts`). */
+  legacyCaller: boolean;
 };
 
 export function runnerOptions(argv: readonly string[]): RunnerOptions {
@@ -29,6 +31,7 @@ export function runnerOptions(argv: readonly string[]): RunnerOptions {
     out: resolve(value("--out") ?? join(process.cwd(), "..", "..", ".results", "latest")),
     concurrency: Number(value("--concurrency") ?? 3),
     callerModel: value("--caller-model") ?? process.env.EVAL_CALLER_MODEL,
+    legacyCaller: argv.includes("--legacy-caller"),
   };
 }
 

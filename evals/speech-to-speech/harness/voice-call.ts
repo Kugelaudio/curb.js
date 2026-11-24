@@ -18,8 +18,12 @@ const FRAME_BYTES = (CALLER_SAMPLE_RATE / 1000) * FRAME_MS * 2;
 const AGENT_SAMPLE_RATE = 24_000;
 /** Peak below this (of 32767) is silence: a model may stream silent frames before it speaks. */
 const AUDIBLE_PEAK = 600;
-/** The agent is done answering once it was quiet this long and no turn of Curb's runs. */
-const REPLY_QUIET_MS = 4_500;
+/** The agent is done answering once it was quiet this long and no turn of Curb's runs. The legacy
+ * caller waited 4.5 s and then synthesized its line, so it often spoke after Curb's 6 s silence
+ * check-in; a person answers after about a second. */
+const REPLY_QUIET_MS = { legacy: 4_500, clean: 1_500 } as const;
+/** After a turn of Curb's ends, the model needs a moment to start saying its outcome. */
+const AFTER_TURN_MS = 2_500;
 /** A reply that has not started this long after the caller's line is no reply. */
 const NO_REPLY_MS = 25_000;
 /** How much of the agent's reply plays before an interrupting caller starts talking. */
@@ -56,6 +60,11 @@ export type VoiceCallOptions = {
   /** Caller turns (1-based) whose line starts while the agent is still speaking. */
   interrupt?: ReadonlySet<number>;
   maxTurns?: number;
+  /** `clean` (default): every scripted line synthesized before the call, and the caller answers
+   * 1.5 s after the agent went quiet. `legacy`: the first eval's caller (4.5 s, then synthesis). */
+  caller_setup?: "clean" | "legacy";
+  /** Scripted lines to synthesize before the call starts. */
+  prefetch?: readonly string[];
   log?: (line: string) => void;
 };
 
@@ -69,6 +78,8 @@ function peakOf(pcm: Buffer): number {
 
 export async function playVoiceCall(options: VoiceCallOptions): Promise<VoiceCallResult> {
   const log = options.log ?? (() => undefined);
+  const setup = options.caller_setup ?? "clean";
+  if (setup === "clean") await Promise.all((options.prefetch ?? []).map((line) => callerSpeech(line, options.language, true)));
   const maxTurns = options.maxTurns ?? 12;
   const started = Date.now();
   const control = new WebSocket(`ws://127.0.0.1:${options.port}/`);
@@ -222,7 +233,8 @@ export async function playVoiceCall(options: VoiceCallOptions): Promise<VoiceCal
         const now = Date.now();
         const spoke = firstAudibleSince(since) !== null;
         if (!spoke && now > deadline) return;
-        if (spoke && !running && agentState !== "speaking" && now - Math.max(lastAudibleAt, since) >= REPLY_QUIET_MS) return;
+        const afterTurn = setup === "legacy" || runningStoppedAt.every((at) => at < since || now - at >= AFTER_TURN_MS || lastAudibleAt > at);
+        if (spoke && !running && agentState !== "speaking" && afterTurn && now - Math.max(lastAudibleAt, since) >= REPLY_QUIET_MS[setup]) return;
         if (spoke && now - Math.max(lastAudibleAt, since) >= NO_REPLY_MS) return;
         await sleep(100);
       }
@@ -262,7 +274,7 @@ export async function playVoiceCall(options: VoiceCallOptions): Promise<VoiceCal
       }
       const spoken = line.replace(/\[hang up:[^\]]*\]/gi, "").trim();
       const interrupt = options.interrupt?.has(number) === true;
-      const pcm = await callerSpeech(spoken || line, options.language);
+      const pcm = await callerSpeech(spoken || line, options.language, setup === "clean");
       const linesBefore = agentLines.length;
       const finalsBefore = heardFinals.length;
       log(`caller ${number}: ${spoken}${interrupt ? " (talking over the agent)" : ""}`);

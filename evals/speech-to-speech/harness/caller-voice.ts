@@ -14,11 +14,21 @@ const CALLER_VOICES: Readonly<Record<string, number>> = { de: 1887, en: 1072 };
 
 const cache = new Map<string, Promise<Buffer>>();
 
-export function callerSpeech(text: string, language: string): Promise<Buffer> {
-  const key = `${language}|${text}`;
+/** How a person reads a number out on the phone: an order, card, customer or phone number digit by
+ * digit ("4 8 2 1 3"), a year as a year. TTS alone reads "48213" as "forty-eight thousand ...". */
+export function spokenDigits(text: string): string {
+  return text.replace(/\d[\d ]*\d|\d/g, (run) => {
+    const digits = run.replace(/ /g, "");
+    const year = /^(19|20)\d\d$/.test(digits);
+    return digits.length < 4 || year ? run : digits.split("").join(" ");
+  });
+}
+
+export function callerSpeech(text: string, language: string, digits = true): Promise<Buffer> {
+  const key = `${language}|${digits}|${text}`;
   let speech = cache.get(key);
   if (!speech) {
-    speech = synthesize(text, language);
+    speech = synthesize(digits ? spokenDigits(text) : text, language);
     cache.set(key, speech);
     speech.catch(() => cache.delete(key));
   }

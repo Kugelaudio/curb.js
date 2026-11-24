@@ -66,6 +66,20 @@ npx curb run ../../harness/text.ts --runs 3 --filter ambiguous
 npx curb run ../../harness/voice.ts --filter "sagt einen"
 ```
 
+Two more ways to take the voice path apart:
+
+```bash
+# What recognition alone costs: replay a voice run's calls in text, with the caller lines as the model heard them
+cd agents/clinic && npx curb run ../../harness/replay-heard.ts ../../.results/<run> --out ../../.results/<run>-heard
+# Have the model say Curb's replies as written and always hand the caller's answer back (openai.live({ verbatim: true }))
+S2S_VERBATIM=1 node run.mjs voice
+```
+
+The voice caller reads numbers digit by digit, has every scripted line synthesized before the call,
+and answers about 1.5 s after the agent goes quiet. `-- --legacy-caller` restores the first
+version's caller (4.5 s of quiet, then synthesis, numbers as TTS reads them), which often spoke after
+Curb's 6 s silence check-in.
+
 `--filter` takes part of a case's name or a kind (`direct`, `ambiguous`, `topic_switch`, `back`,
 `multi_step`, `interruption`, `refusal`, `faq`, `escalation`). Results go to `.results/` (ignored
 by git): `<agent>.<path>.json` per agent and path, the logs, and `summary.md`.
