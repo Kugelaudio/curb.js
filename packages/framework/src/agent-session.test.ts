@@ -797,6 +797,29 @@ describe("AgentSession", () => {
       expect(turn.heard).toBe("Your policy covers water damage.");
     });
 
+    it("a tool result backs the check's phone field only under a phone key, never through its summary", async () => {
+      const run = async (data: Record<string, string>) => {
+        const { streamLlm } = scriptedStream([
+          { text: "I'm noting your callback." },
+          { toolCalls: [{ name: "request_callback", input: { name: "Alex Doe", phone: "0301234567", topic: "claim" } }] },
+          { text: "" },
+        ]);
+        const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, { streamLlm, checkFollowThrough: true });
+        const result = { ok: true, data };
+        session.restoreTranscript([
+          { role: "user", content: "I'm Alex Doe, look me up" },
+          { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "lookup", input: {} }] },
+          { role: "tool", content: `lookup: ${JSON.stringify(result)}`, toolCallId: "c1", toolName: "lookup", result, contextDiff: [] },
+          { role: "assistant", content: "Found you." },
+        ]);
+        const turn = await streamTurn(session, "please call me about my claim");
+        return turn.events.filter((event) => event.type === "tool").length;
+      };
+
+      expect(await run({ custno: "0301234567" })).toBe(0);
+      expect(await run({ phone: "0301234567" })).toBe(1);
+    });
+
     it("the check's instructions hold the hang-up rules only when the check may call end_call", async () => {
       const hangUp = vi.fn();
       const plain = createInsuranceDemoRuntime();
@@ -852,6 +875,39 @@ describe("AgentSession", () => {
 
       expect(await run({ name: "Alex Doe", phone: "030 1234567", topic: "claim" })).toBe(1);
       expect(await run({ name: "Alex Doe", phone: "+49 30 1234567", topic: "claim 0301234567" })).toBe(0);
+    });
+
+    it("a check call with a short made-up phone value is not run", async () => {
+      const { streamLlm, requests } = scriptedStream([
+        { text: "The advisor notes the caller's name and number and calls back." },
+        { toolCalls: [{ name: "request_callback", input: { name: "Alex Doe", phone: "000", topic: "callbacks" } }] },
+        { text: "Your callback is noted." },
+      ]);
+      const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "I'm Alex Doe. Who calls a caller back?");
+
+      expect(requests).toHaveLength(2);
+      expect(turn.events.filter((event) => event.type === "tool")).toEqual([]);
+    });
+
+    it("a check call's phone value is a phone number the caller gave: not a value around it, not an order number", async () => {
+      const run = async (said: string, phone: string) => {
+        const { streamLlm } = scriptedStream([
+          { text: "I'm noting your callback." },
+          { toolCalls: [{ name: "request_callback", input: { name: "Alex Doe", phone, topic: "claim" } }] },
+          { text: "" },
+        ]);
+        const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, { streamLlm, checkFollowThrough: true });
+        const turn = await streamTurn(session, said);
+        return turn.events.filter((event) => event.type === "tool").length;
+      };
+
+      expect(await run("I'm Alex Doe, my number is 030 1234567", "unknown (030 1234567)")).toBe(0);
+      expect(await run("I'm Alex Doe, my number is 030 1234567", " ")).toBe(0);
+      expect(await run("I'm Alex Doe, my number is 030 1234567", "030 1234567")).toBe(1);
+      expect(await run("I'm Alex Doe, my order number is 12345678", "12345678")).toBe(0);
+      expect(await run("I'm Alex Doe, my phone number is 12345678", "12345678")).toBe(1);
     });
 
     it("a check that finds nothing to do ends the turn as it was and leaves no trace", async () => {

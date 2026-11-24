@@ -923,7 +923,8 @@ export class AgentSession {
       const heard = [
         request.systemPrompt,
         request.stateSnapshot,
-        messages.map((message) => (message.role === "tool" ? [message.content, message.result] : message.content)),
+        // A tool message's content is a summary of its result: the guard reads the result itself.
+        messages.map((message) => (message.role === "tool" ? message.result : message.content)),
       ];
       const schemaOf = (name: string) => request.tools.find((tool) => tool.name === name)?.inputSchema;
       return calls.some((call) => inventedNumber(call.input, heard, schemaOf(call.name)) !== undefined);

@@ -113,40 +113,56 @@ const ID_NAME = /(?:^|[ _-])(?:id|ids|account|plan|contract|order|code|pin|ext|e
  * The first long number (six digits or more as written, leading zeros included, like
  * `+1 (202) 555-0142`, `030/1234567` or `012345`) in a check call's `input` that nothing in
  * `heard` holds, or undefined. `heard` is what the conversation holds: the instructions, the
- * caller's and the agent's words, tool results. A number in a phone field ({@link isPhoneField})
- * may be written with or without its country code (`+49 30 1234567`, `030 1234567`,
- * {@link samePhone}); a number in any other field, an order or account number, matches only
- * digit for digit, as written. A check that fills such a number made it up, so its call is not run. Dates are
- * left alone.
+ * caller's and the agent's words, tool results. A number in an order, account or any other
+ * field matches only digit for digit, as written. A phone field ({@link isPhoneField}) holds one
+ * phone number and nothing else (`000`, `17:20`, `unknown (030 1234567)` or an empty value are
+ * returned whole), and that number must be one the conversation gave as a phone number
+ * ({@link heardPhones}), with or without its country code ({@link samePhone}): an order number
+ * never backs a phone field. A check that fills such a value made it up, so its call is not run.
+ * Dates are left alone.
  */
 export function inventedNumber(input: unknown, heard: readonly unknown[], schema?: unknown): string | undefined {
-  const known = leafValues(heard).flatMap(writtenNumbers);
-  for (const { number, phone } of fieldNumbers(input, schema, false, new WeakSet())) {
-    const same = phone ? samePhone : sameDigits;
-    if (number.digits.length >= LONG_NUMBER_DIGITS && !known.some((said) => same(number, said))) return number.written;
+  const known = leafValues(heard).flatMap((text) => writtenNumbers(text));
+  const phones = heardPhones(heard, "words", new WeakSet());
+  for (const { text, phone } of fieldValues(input, schema, false, new WeakSet())) {
+    if (phone) {
+      const number = wholeNumber(text);
+      if (number === undefined || !phones.some((said) => samePhone(number, said))) return text;
+      continue;
+    }
+    const numbers = writtenNumbers(text).filter(({ digits }) => digits.length >= LONG_NUMBER_DIGITS);
+    const invented = numbers.find((number) => !known.some((said) => sameDigits(number, said)));
+    if (invented) return invented.written;
   }
   return undefined;
 }
 
-/** The numbers in `value`, each with whether it sits in a phone field, read along `schema`. A
- * field is a phone field by its own marker only, never its parent object's; a list's items are
- * the field's values. */
-function fieldNumbers(
+/** `text` when it is one long number and nothing else, spaces around it aside. */
+function wholeNumber(text: string): WrittenNumber | undefined {
+  const trimmed = text.trim();
+  const [number] = writtenNumbers(trimmed);
+  return number?.written === trimmed && number.digits.length >= LONG_NUMBER_DIGITS ? number : undefined;
+}
+
+/** The strings and numbers in `value`, each with whether it sits in a phone field, read along
+ * `schema`. A field is a phone field by its own marker only, never its parent object's; a list's
+ * items are the field's values. */
+function fieldValues(
   value: unknown,
   schema: unknown,
   phone: boolean,
   seen: WeakSet<object>,
-): { number: WrittenNumber; phone: boolean }[] {
+): { text: string; phone: boolean }[] {
   if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
-    return writtenNumbers(String(value)).map((number) => ({ number, phone }));
+    return [{ text: String(value), phone }];
   }
   if (value === null || typeof value !== "object" || seen.has(value)) return [];
   seen.add(value);
-  if (Array.isArray(value)) return value.flatMap((item) => fieldNumbers(item, schemaPart(schema, "items"), phone, seen));
+  if (Array.isArray(value)) return value.flatMap((item) => fieldValues(item, schemaPart(schema, "items"), phone, seen));
   const properties = schemaPart(schema, "properties");
   return Object.entries(value).flatMap(([name, item]) => {
     const field = schemaPart(properties, name);
-    return fieldNumbers(item, field, isPhoneField(name, field), seen);
+    return fieldValues(item, field, isPhoneField(name, field), seen);
   });
 }
 
@@ -167,15 +183,95 @@ function schemaPart(schema: unknown, key: string): unknown {
   return schema !== null && typeof schema === "object" ? (schema as Record<string, unknown>)[key] : undefined;
 }
 
-function writtenNumbers(text: string): WrittenNumber[] {
+function writtenNumbers(text: string): (WrittenNumber & { index: number })[] {
   return [...text.matchAll(WRITTEN_NUMBER)]
-    .map(([written]) => ({
-      written,
-      digits: written.replace(/\D/g, ""),
-      international: written.startsWith("+"),
-      countryCode: COUNTRY_CODE.exec(written)?.[1],
+    .map((match) => ({
+      written: match[0],
+      index: match.index,
+      digits: match[0].replace(/\D/g, ""),
+      international: match[0].startsWith("+"),
+      countryCode: COUNTRY_CODE.exec(match[0])?.[1],
     }))
     .filter(({ written }) => !DATE.test(written));
+}
+
+/** A word that names an identifier: an order, account, customer or contract number. */
+const ID_WORD =
+  /^(?:ids?|orders?|accounts?|customers?|clients?|contracts?|invoices?|tickets?|ref|references?|bookings?|reservations?|polic(?:y|ies)|claims?|cases?|members?|membership|serial|tracking|iban|pins?|codes?|plans?|rooms?|(?:bestell|auftrag|kunde|konto|vertrag|rechnung|referenz|buchung|vorgang|police|versicherung|mitglied|sendung|zimmer)\p{L}*)$/u;
+/** A word that names a phone number or a call: `phone`, `call me`, `Telefon`, `Handynummer`. */
+const PHONE_WORD =
+  /^(?:(?:tele)?phones?|tel|cell(?:phone)?|mobiles?|calls?|called|reach|whatsapp|(?:telefon|handy|mobil|ruf|anruf|rückruf|zurückruf|erreich|festnetz)\p{L}*)$/u;
+/** A bare "number": a phone number unless an id word comes right before it ("order number"). */
+const NUMBER_WORD = /^(?:numbers?|nummer\p{L}*)$/u;
+/** How many words around a number may name it. */
+const CONTEXT_WORDS = 6;
+
+type NumberKind = "phone" | "id" | undefined;
+
+/**
+ * The numbers in `heard` given as phone numbers. In a tool result only a value under a phone key
+ * (`phone`, `callerPhone`) is one; a value under any other key (`customerNumber`, `orderId`,
+ * `note`) never is, whatever it looks like. In words, the nearest naming word on each side of
+ * the number says it ({@link spokenKind}). `place` is where `value` sits: in words, or under a
+ * phone key or another key of a tool result.
+ */
+function heardPhones(value: unknown, place: "words" | "phone" | "other", seen: WeakSet<object>): WrittenNumber[] {
+  if (typeof value === "number" || typeof value === "bigint") return place === "phone" ? writtenNumbers(String(value)) : [];
+  if (typeof value === "string") {
+    if (place !== "words") return place === "phone" ? writtenNumbers(value) : [];
+    return writtenNumbers(value).filter((number) => spokenKind(value, number) === "phone");
+  }
+  if (value === null || typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  if (Array.isArray(value)) return value.flatMap((item) => heardPhones(item, place, seen));
+  return Object.entries(value).flatMap(([name, item]) =>
+    heardPhones(item, isPhoneField(name, undefined) ? "phone" : "other", seen),
+  );
+}
+
+/**
+ * What the words around `number` in `text` call it. An id label on either side ("order number",
+ * "Kundennummer") makes it an id, whatever callback words stand on the other side; else a phone
+ * word on either side ("my number is", "call me on", "Telefonnummer") makes it a phone number.
+ * A label right before the next long number names that one ({@link ownWordsAfter}). A
+ * number no word names is a phone number when it is written as one: a country code or a trunk
+ * zero.
+ */
+function spokenKind(text: string, number: WrittenNumber & { index: number }): NumberKind {
+  const before = words(text.slice(0, number.index).split(/[.!?;\n](?=\s|$)/).pop() ?? "").reverse();
+  const after = words(ownWordsAfter(text.slice(number.index + number.written.length).split(/[.!?;\n](?=\s|$)/)[0] ?? ""));
+  const kinds = [wordKind(before), wordKind(after.filter((word) => !/^\d/.test(word)))];
+  if (kinds.includes("id")) return "id";
+  if (kinds.includes("phone")) return "phone";
+  return number.international || /^0[1-9]/.test(number.digits) ? "phone" : undefined;
+}
+
+/**
+ * The part of `after`, the words following a number, that names that number. The words right
+ * before the next long number, with no comma between them and it, name that number instead
+ * ("and my order is 12345678"); a time or a short number takes no label.
+ */
+function ownWordsAfter(after: string): string {
+  const next = writtenNumbers(after).find(({ digits }) => digits.length >= LONG_NUMBER_DIGITS);
+  if (next === undefined) return after;
+  const lead = after.slice(0, next.index);
+  return lead.slice(0, Math.max(0, lead.search(/[,;][^,;]*$/)));
+}
+
+/** The words of `text`, lower case, camelCase split (`customerNumber`: customer number). */
+function words(text: string): string[] {
+  return text.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2").toLowerCase().match(/[\p{L}\d]+/gu) ?? [];
+}
+
+/** The kind the first naming word in `nearestFirst` gives; another number on the way ends the search. */
+function wordKind(nearestFirst: readonly string[]): NumberKind {
+  for (const [at, word] of nearestFirst.slice(0, CONTEXT_WORDS).entries()) {
+    if (/^\d/.test(word)) return undefined;
+    if (ID_WORD.test(word)) return "id";
+    if (PHONE_WORD.test(word)) return "phone";
+    if (NUMBER_WORD.test(word)) return ID_WORD.test(nearestFirst[at + 1] ?? "") ? "id" : "phone";
+  }
+  return undefined;
 }
 
 /** The same number, digit for digit as written: an order or account number. */
