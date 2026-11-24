@@ -161,4 +161,35 @@ describe("TurnSpeech", () => {
     // The framework's own lines are said word for word.
     expect(new TurnSpeech().line("(Recorded) Goodbye.")).toBe("(Recorded) Goodbye.");
   });
+
+  it("never says a tool call the model wrote as words: the step falls silent and names the tool", () => {
+    const tools = ["add_to_list", "end_call", "transfer"];
+    const speech = new TurnSpeech();
+    speech.startStep(tools);
+    expect(speech.text("Sure. ")).toBe("");
+    expect(speech.text("add_to_list(reason=")).toBe("");
+    expect(speech.text("\"calls\"). Bye.")).toBe("");
+    expect(speech.endStep(true)).toBe("");
+    expect(speech.leakedTool).toBe("add_to_list");
+    expect(speech.stepText).toBe("");
+
+    // Whole, too; and only sentences said before the name showed stay said.
+    const whole = new TurnSpeech();
+    whole.startStep(tools);
+    expect(whole.wholeStep("I note that. end_call", true)).toBe("");
+    expect(whole.leakedTool).toBe("end_call");
+    const late = new TurnSpeech();
+    late.startStep(tools);
+    expect(late.text("You are off the list. I end ")).toBe("You are off the list. ");
+    expect(late.text("the call now. end_call")).toBe("");
+    expect(late.endStep(true)).toBe("");
+    expect(late.stepText).toBe("You are off the list.");
+
+    // A plain word that is also a tool name is said, and the next step starts clean.
+    speech.startStep(tools);
+    expect(speech.wholeStep("I can transfer you. My end call note is ready.", true)).toBe(
+      "I can transfer you. My end call note is ready.",
+    );
+    expect(speech.leakedTool).toBeUndefined();
+  });
 });

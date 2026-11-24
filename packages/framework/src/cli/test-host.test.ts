@@ -86,8 +86,8 @@ describe("curb test on the project's own host", () => {
 
       expect(code).toBe(0);
       const report = JSON.parse(printed) as TestReport;
-      // Refused twice, then answered twice: no run is an error, and nothing was retried behind the run's back.
-      expect(endpoint.answered).toEqual([429, 429, 200, 200]);
+      // Refused twice, then answered twice, each turn and the follow-through check after it: no run is an error, and nothing was retried behind the run's back.
+      expect(endpoint.answered).toEqual([429, 429, 200, 200, 200, 200]);
       expect((report.scenarios as ScenarioResult[]).map((result) => [result.name, result.outcome, result.stats.errors])).toEqual([
         ["a", "pass", 0],
         ["b", "pass", 0],
@@ -99,11 +99,12 @@ describe("curb test on the project's own host", () => {
       expect(report.models).toEqual({ agent: "kugelaudio:qwen3.8-27b", caller: "kugelaudio:qwen3.8-27b", judge: "kugelaudio:qwen3.8-27b" });
       // The agent's turn is streamed, and only here is the endpoint asked for the usage.
       expect(endpoint.bodies.at(-1)).toMatchObject({ stream: true, stream_options: { include_usage: true }, model: "qwen3.8-27b" });
+      // Two turns and two follow-through checks, each answered with the same usage.
       expect(report.usage).toEqual({
-        agent: { inputTokens: 120, outputTokens: 10, cacheReadTokens: 80, cacheWriteTokens: 0 },
+        agent: { inputTokens: 240, outputTokens: 20, cacheReadTokens: 160, cacheWriteTokens: 0 },
         caller: null,
         judge: null,
-        totalTokens: 210,
+        totalTokens: 420,
       });
     } finally {
       await endpoint.close();

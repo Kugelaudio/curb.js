@@ -4,6 +4,7 @@ import { createAnthropic, type AnthropicProviderOptions } from "@ai-sdk/anthropi
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
+  APICallError,
   NoSuchToolError,
   generateText,
   jsonSchema,
@@ -116,7 +117,62 @@ function openaiCompatibleProviderOptions(
   return Object.keys(fields).length > 0 ? { openaiCompatible: fields } : undefined;
 }
 
-function buildAgentCallParams(request: AgentRunRequest, options: AiSdkAgentOptions, streamUsage = false) {
+/**
+ * The models that refused a strict tool grammar in this process, as `<base URL> <model>`.
+ *
+ * KugelAudio's endpoint decodes a tool call's arguments under the tool's JSON Schema when the
+ * tool is sent `strict`, so a call always carries its required fields in the declared types.
+ * Its grammar engine cannot compile every schema (a lookahead or `\p{L}` in a `.regex()`), and
+ * refuses the whole request with HTTP 400 when one tool's schema is such. That request is sent
+ * again without `strict`, and so is every later one to that model: Curb's own validation then
+ * refuses a bad call and the model corrects it, as on every other provider.
+ */
+const strictRefused = new Set<string>();
+
+/** The `strict` key of the model `options.llm` names, or null when its tools are not sent
+ * strict: only KugelAudio's endpoint is known to decode under the schema. */
+function strictKey(options: AiSdkAgentOptions): string | null {
+  const config = resolveLlmProvider(options.llm);
+  return config.kind === "kugelaudio" ? `${config.baseUrl} ${config.model}` : null;
+}
+
+/** Whether a request's tools go out strict. */
+function sendsStrict(key: string | null): key is string {
+  return key !== null && !strictRefused.has(key);
+}
+
+/** The endpoint refused the request for a tool grammar it cannot compile. */
+function refusedStrictGrammar(error: unknown): boolean {
+  if (!APICallError.isInstance(error) || error.statusCode !== 400) return false;
+  return /grammar|json.?schema|strict/i.test(`${error.responseBody ?? ""} ${error.message}`);
+}
+
+/** Run `send` with strict tools when the model takes them; once more without when the endpoint
+ * refuses the grammar, which happens before any output, so nothing was streamed yet. */
+async function* withStrictFallback<T>(
+  options: AiSdkAgentOptions,
+  send: (strict: boolean) => AsyncGenerator<AgentStreamPart, T>,
+): AsyncGenerator<AgentStreamPart, T> {
+  const key = strictKey(options);
+  if (!sendsStrict(key)) return yield* send(false);
+  try {
+    return yield* send(true);
+  } catch (error) {
+    if (!refusedStrictGrammar(error)) throw error;
+    strictRefused.add(key);
+    console.warn(
+      `[curb] the model at ${key} refused a tool schema as a strict grammar; its tools are sent without strict from now on, and Curb's validation checks each call.`,
+    );
+    return yield* send(false);
+  }
+}
+
+/** Forget which models refused strict tools (tests). */
+export function resetStrictToolsForTests(): void {
+  strictRefused.clear();
+}
+
+function buildAgentCallParams(request: AgentRunRequest, options: AiSdkAgentOptions, streamUsage = false, strict = false) {
   quietSdkWarnings();
   const { model, providerOptions, temperature, topP, seed } = buildModel(options, streamUsage);
   const input = serializeLlmInput(request);
@@ -135,6 +191,7 @@ function buildAgentCallParams(request: AgentRunRequest, options: AiSdkAgentOptio
         tool({
           description: definition.description,
           inputSchema: jsonSchema(definition.inputSchema as Parameters<typeof jsonSchema>[0]),
+          ...(strict ? { strict: true } : {}),
         }),
       ]),
     ),
@@ -192,17 +249,24 @@ export async function runAiSdkAgent(
   request: AgentRunRequest,
   options: AiSdkAgentOptions & { maxOutputTokens?: number },
 ): Promise<AgentRunResponse> {
-  const result = await generateText({
-    ...buildAgentCallParams(request, options),
-    abortSignal: request.signal,
-    maxOutputTokens: options.maxOutputTokens,
-    maxRetries: options.maxRetries,
+  // The non-streaming call yields nothing, so the generator only carries the fallback.
+  const steps = withStrictFallback(options, async function* (strict) {
+    const result = await generateText({
+      ...buildAgentCallParams(request, options, false, strict),
+      abortSignal: request.signal,
+      maxOutputTokens: options.maxOutputTokens,
+      maxRetries: options.maxRetries,
+    });
+    options.onUsage?.(modelUsage(result.usage));
+    return {
+      text: normalizeLlmPunctuation(result.text),
+      toolCalls: mapToolCalls(result.toolCalls),
+    };
   });
-  options.onUsage?.(modelUsage(result.usage));
-  return {
-    text: normalizeLlmPunctuation(result.text),
-    toolCalls: mapToolCalls(result.toolCalls),
-  };
+  for (;;) {
+    const next = await steps.next();
+    if (next.done) return next.value;
+  }
 }
 
 /** Stream LLM tokens for lower voice TTFA; returns the final step response. */
@@ -210,14 +274,16 @@ export async function* streamAiSdkAgent(
   request: AgentRunRequest,
   options: AiSdkAgentOptions,
 ): AsyncGenerator<AgentStreamPart, AgentRunResponse> {
-  const result = streamText({
-    ...buildAgentCallParams(request, options, options.onUsage !== undefined),
-    abortSignal: request.signal,
-    maxRetries: options.maxRetries,
-    // Rethrown from the error part by readAgentStream; the default would log it a second time.
-    onError: () => {},
+  return yield* withStrictFallback(options, (strict) => {
+    const result = streamText({
+      ...buildAgentCallParams(request, options, options.onUsage !== undefined, strict),
+      abortSignal: request.signal,
+      maxRetries: options.maxRetries,
+      // Rethrown from the error part by readAgentStream; the default would log it a second time.
+      onError: () => {},
+    });
+    return readAgentStream(result.stream, request.signal, options.onUsage);
   });
-  return yield* readAgentStream(result.stream, request.signal, options.onUsage);
 }
 
 /**

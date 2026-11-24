@@ -8,6 +8,7 @@ import {
   type AgentLlmStreamStep,
 } from "./agent-session.js";
 import { Agent, Text } from "./components.js";
+import { callStaysOpenAfter, FOLLOW_THROUGH_CHECK, namedToolNote } from "./llm/follow-through.js";
 import { fallbackReplies } from "./llm/localized.js";
 import type { AgentRunRequest, AgentRunResponse, AgentToolCall, AgentTurnStreamEvent } from "./llm/types.js";
 import { kugelaudio } from "./providers.js";
@@ -603,6 +604,281 @@ describe("AgentSession", () => {
         refused,
         { ok: true },
       ]);
+    });
+
+    it("keeps the call up when another call of the step failed: end_call runs last and is refused, the model fixes the call", async () => {
+      const callback = { name: "Alex Doe", phone: "555 0100", topic: "claim status" };
+      for (const order of ["end_call last", "end_call first"] as const) {
+        const runtime = createInsuranceDemoRuntime();
+        const hangUp = vi.fn();
+        runtime.setEndCallRequest(hangUp);
+        const bad = { name: "request_callback", input: { name: "Alex Doe" } };
+        const end = { name: END_CALL_TOOL_NAME, input: { goodbye: "Bye." } };
+        const { streamLlm, requests } = scriptedStream([
+          { toolCalls: order === "end_call last" ? [bad, end] : [end, bad] },
+          { toolCalls: [{ name: "request_callback", input: callback }, end] },
+        ]);
+        const session = new AgentSession(runtime, idleLlm, { streamLlm });
+
+        const turn = await streamTurn(session, "please have someone call me back, bye");
+
+        expect(requests).toHaveLength(2);
+        expect(turn.heard).toBe("Bye.");
+        expect(hangUp).toHaveBeenCalledTimes(1);
+        const results = session.messages.flatMap((message) =>
+          message.role === "tool" ? [[message.toolName, message.result.ok !== false]] : [],
+        );
+        // In the model's order, whatever order they ran in.
+        expect(results).toEqual(
+          order === "end_call last"
+            ? [["request_callback", false], [END_CALL_TOOL_NAME, false], ["request_callback", true], [END_CALL_TOOL_NAME, true]]
+            : [[END_CALL_TOOL_NAME, false], ["request_callback", false], ["request_callback", true], [END_CALL_TOOL_NAME, true]],
+        );
+        const refusedEnd = session.messages.find(
+          (message) => message.role === "tool" && message.toolName === END_CALL_TOOL_NAME,
+        );
+        expect(refusedEnd?.role === "tool" && refusedEnd.result.message).toBe(callStaysOpenAfter(["request_callback"]));
+      }
+    });
+  });
+
+  describe("follow-through: an action the reply speaks of is taken", () => {
+    const callback = { name: "Alex Doe", phone: "555 0100", topic: "claim status" };
+    const notes = (session: AgentSession) =>
+      session.messages.flatMap((message) => (message.role === "user" && message.kind === "context_event" ? [message.content] : []));
+
+    it("never says a tool call written as words, and asks the model once more with a note", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const { streamLlm, requests } = scriptedStream([
+        { text: "Sure. request_callback(name=Alex Doe)" },
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+        { text: "An advisor will call you back." },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const turn = await streamTurn(session, "please have someone call me back");
+
+      expect(turn.heard).toBe("An advisor will call you back.");
+      expect(turn.errors).toEqual([]);
+      expect(requests).toHaveLength(3);
+      expect(notes(session)).toEqual([namedToolNote("request_callback")]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
+    it("a second tool call written as words ends the turn on the fixed line", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const { streamLlm, requests } = scriptedStream([{ text: "request_callback()" }, { text: "request_callback(name=Alex)" }]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const turn = await streamTurn(session, "call me back");
+
+      expect(requests).toHaveLength(2);
+      expect(turn.errors.map((error) => error.kind)).toEqual(["empty_reply"]);
+      expect(turn.heard).not.toContain("request_callback");
+      warn.mockRestore();
+    });
+
+    it("asks once, after a statement, whether the reply spoke of a tool it did not call, and runs the call", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const { streamLlm, requests } = scriptedStream([
+        { text: "I have noted your callback request." },
+        { text: "This is never said.", toolCalls: [{ name: "request_callback", input: callback }] },
+        { text: "An advisor calls you tomorrow." },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "I'm Alex Doe, 555 0100, call me about my claim status");
+
+      expect(requests).toHaveLength(3);
+      const asked = requests[1]!.messages.at(-1);
+      expect(asked?.role === "user" && asked.content).toBe(FOLLOW_THROUGH_CHECK);
+      expect(turn.heard).toBe("I have noted your callback request. An advisor calls you tomorrow.");
+      expect(turn.events.filter((event) => event.type === "tool").map((event) => event.type === "tool" && event.ok)).toEqual([true]);
+      expect(notes(session)).toEqual([FOLLOW_THROUGH_CHECK]);
+    });
+
+    it("an end_call the check leads to hangs up after the words already said, with no second goodbye", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const hangUp = vi.fn();
+      runtime.setEndCallRequest(hangUp);
+      const { streamLlm, requests } = scriptedStream([
+        { text: "Alright, call us any time. Bye for now." },
+        { toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye: "Okay, take care. Goodbye." } }] },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "thanks, I'll think about it");
+
+      expect(requests).toHaveLength(2);
+      expect(turn.heard).toBe("Alright, call us any time. Bye for now.");
+      expect(turn.reply).toBe("Alright, call us any time. Bye for now.");
+      expect(hangUp).toHaveBeenCalledTimes(1);
+    });
+
+    it("a check that finds nothing to do ends the turn as it was and leaves no trace", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const { streamLlm, requests } = scriptedStream([{ text: "Your policy covers water damage." }, { text: "Nothing to do." }]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "does my policy cover water damage");
+
+      expect(requests).toHaveLength(2);
+      expect(turn.heard).toBe("Your policy covers water damage.");
+      expect(session.messages.map((message) => [message.role, message.content])).toEqual([
+        ["user", "does my policy cover water damage"],
+        ["assistant", "Your policy covers water damage."],
+      ]);
+    });
+
+    it("checks nothing after a question, or when the session does not ask for it", async () => {
+      for (const [text, checkFollowThrough] of [
+        ["Shall I have an advisor call you?", true],
+        ["I have noted your callback request.", false],
+      ] as const) {
+        const { streamLlm, requests } = scriptedStream([{ text }, { toolCalls: [{ name: "request_callback", input: callback }] }]);
+        const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, { streamLlm, checkFollowThrough });
+
+        const turn = await streamTurn(session, "call me back");
+
+        expect(requests).toHaveLength(1);
+        expect(turn.heard).toBe(text);
+      }
+    });
+
+    it("sends no check after a statement when the turn's action already ran: nothing is left to offer", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const { streamLlm, requests } = scriptedStream([
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+        { text: "An advisor calls you tomorrow." },
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "I'm Alex Doe, 555 0100, call me about my claim status");
+
+      expect(requests).toHaveLength(2);
+      expect(turn.heard).toBe("An advisor calls you tomorrow.");
+      expect(turn.events.filter((event) => event.type === "tool")).toHaveLength(1);
+    });
+
+    it("a check after a turn's action offers only what has not run, and never runs a tool it did not offer", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const hangUp = vi.fn();
+      runtime.setEndCallRequest(hangUp);
+      const { streamLlm, requests } = scriptedStream([
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+        { text: "An advisor calls you tomorrow. Goodbye." },
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "I'm Alex Doe, 555 0100, call me about my claim status, bye");
+
+      expect(requests).toHaveLength(3);
+      expect(requests[2]!.tools.map((tool) => tool.name)).toEqual([END_CALL_TOOL_NAME]);
+      expect(turn.events.filter((event) => event.type === "tool")).toHaveLength(1);
+      expect(hangUp).not.toHaveBeenCalled();
+      expect(notes(session)).toEqual([]);
+    });
+
+    it("a skip_turn beside the check's call is dropped: a failed call is still repaired before the turn ends", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const { streamLlm, requests } = scriptedStream([
+        { text: "I have noted your callback request." },
+        { toolCalls: [{ name: "request_callback", input: { name: "Alex Doe" } }, { name: SKIP_TURN_TOOL_NAME, input: {} }] },
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+        { text: "An advisor calls you tomorrow." },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "I'm Alex Doe, 555 0100, call me about my claim status");
+
+      expect(requests).toHaveLength(4);
+      const ran = turn.events.flatMap((event) => (event.type === "tool" ? [[event.toolCall.name, event.ok]] : []));
+      expect(ran).toEqual([
+        ["request_callback", false],
+        ["request_callback", true],
+      ]);
+      expect(turn.heard).toBe("I have noted your callback request. An advisor calls you tomorrow.");
+      expect(turn.errors).toEqual([]);
+    });
+
+    it("a check that fails or times out keeps the turn answered: no apology, no error, the cause logged", async () => {
+      for (const failure of ["provider", "timeout"] as const) {
+        const requests: AgentRunRequest[] = [];
+        const streamLlm: AgentLlmStreamStep = async function* (request) {
+          requests.push(request);
+          if (requests.length === 1) {
+            yield { delta: "Your policy covers water damage.", text: "Your policy covers water damage." };
+            return { text: "Your policy covers water damage.", toolCalls: [] };
+          }
+          if (failure === "provider") throw new Error("upstream 503");
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          return { text: "", toolCalls: [] };
+        };
+        const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, {
+          streamLlm,
+          checkFollowThrough: true,
+          llmTimeoutMs: 20,
+        });
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const turn = await streamTurn(session, "does my policy cover water damage");
+
+        expect(requests).toHaveLength(2);
+        expect(turn.errors).toEqual([]);
+        expect(turn.heard).toBe("Your policy covers water damage.");
+        expect(turn.reply).toBe("Your policy covers water damage.");
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(error).not.toHaveBeenCalled();
+        expect(session.llmTrace.at(-1)?.error).toContain(failure === "provider" ? "upstream 503" : "20");
+        expect(session.messages.map((message) => [message.role, message.content])).toEqual([
+          ["user", "does my policy cover water damage"],
+          ["assistant", "Your policy covers water damage."],
+        ]);
+        warn.mockRestore();
+        error.mockRestore();
+      }
+    });
+
+    it("a caller who cancels during the check cancels the turn as before: nothing logged as a failed check", async () => {
+      const cancel = new AbortController();
+      let calls = 0;
+      const streamLlm: AgentLlmStreamStep = async function* () {
+        calls += 1;
+        if (calls === 1) {
+          yield { delta: "Your policy covers water damage.", text: "Your policy covers water damage." };
+          return { text: "Your policy covers water damage.", toolCalls: [] };
+        }
+        cancel.abort();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return { text: "", toolCalls: [] };
+      };
+      const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, { streamLlm, checkFollowThrough: true });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const events: AgentTurnStreamEvent[] = [];
+      for await (const event of session.runTurnStream("does my policy cover water damage", { spoken: true, signal: cancel.signal })) {
+        events.push(event);
+      }
+
+      expect(calls).toBe(2);
+      expect(events.filter((event) => event.type === "error")).toEqual([]);
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("a typed reply that names a tool is answered in full: only speech is kept from saying tool names", async () => {
+      const reply = "To get a callback, I use request_callback with your name and number.";
+      const { session, llm } = makeSession([{ text: reply, toolCalls: [] }]);
+
+      expect(await session.runTurn("which tool books a callback")).toBe(reply);
+      expect(llm).toHaveBeenCalledTimes(1);
+      expect(notes(session)).toEqual([]);
     });
   });
 

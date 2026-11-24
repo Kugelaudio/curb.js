@@ -79,6 +79,12 @@ so say what to do next.
   (`items.0.quantity: ...`); write validation messages as next-step instructions.
   A recursive schema or a type JSON cannot carry (`z.date()`, `z.bigint()`) is an
   authoring error; a date is `z.iso.date()` or `z.iso.datetime()`.
+
+  With a `kugelaudio` LLM, every tool is sent as `strict`, so the endpoint decodes
+  the arguments under the schema and a required field is never left out. When the
+  endpoint refuses a schema as a strict grammar (a `.regex()` with a lookahead, for
+  example), Curb logs it once and sends that model's tools without `strict` from then
+  on; Zod still checks every call, and the model reads why a call was refused.
 - `onSubmit` returns a `ToolResult`: `{ ok: boolean, message?, data? }`.
   Schema validation failures are generated automatically from the Zod
   messages; for an answer of no ("That slot is taken") return `{ ok: false, message }`, for
@@ -278,7 +284,10 @@ Its one input, `goodbye`, is the closing line: the session says it once the
 call ran, and the transcript records it as the agent's reply. As before any
 tool call, Curb holds back the newest sentence the model writes in that step
 and drops it; sentences before that one were already said. An empty `goodbye`
-is refused like any invalid input, and the call stays up. So is an `end_call` in the
+is refused like any invalid input, and the call stays up. So is an `end_call` whose step
+had another call that did not go through: `end_call` runs after the step's other calls,
+and when one of them failed (a required field missing, `{ ok: false }`) the model reads
+that the call stays open, so it fixes the call or tells the caller before it hangs up. So is an `end_call` in the
 greeting of an inbound call (`firstTurn: "agent"`), before the caller has said a word: the
 model is told the call has just opened, and the greeting is said. An outbound call
 (`call.direction` is `outbound`) may hang up in its opening, to leave a message. The

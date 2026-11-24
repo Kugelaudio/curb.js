@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as ts from "typescript";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { FOLLOW_THROUGH_CHECK } from "../llm/follow-through.js";
 import { createTestProject } from "./test-project.js";
 import { resolveNodeTypes } from "./typecheck.js";
 
@@ -55,6 +56,8 @@ function answer(messages: Message[]): { content?: string; toolCall?: { name: str
   const at = lines.at(-1) ?? -1;
   if (messages.slice(at).some((message) => message.role === "tool")) return { content: "Done, that's on your list." };
   const said = text(messages[at]);
+  // The session's follow-through check after a statement: Juno announced nothing it did not do.
+  if (said.includes(FOLLOW_THROUGH_CHECK)) return { content: "" };
   if (/voice call has just connected/.test(said)) return { content: "Hi, I'm Juno, an AI assistant. What's on for today?" };
   if (/bye/i.test(said)) return { toolCall: { name: "end_call", arguments: JSON.stringify({ goodbye: "Bye, have a good day." }) } };
   if (/milk/i.test(said)) return { toolCall: { name: "add_task", arguments: JSON.stringify({ title: "buy milk" }) } };
