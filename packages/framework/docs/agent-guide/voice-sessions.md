@@ -151,8 +151,12 @@ two forms:
   description is not read. A name that says id, account, plan or code never is, and a field
   inside a phone-named object is not one by that alone.
   Any other field, an order or account number, matches only digit for digit, as written.
-  A phone field the check fills with no long number at all (`000`, `17:20`) is made up too,
-  and the call is dropped.
+  A phone field holds one phone number and nothing else: a value like `000`, `17:20`,
+  `unknown (030 123456)` or a blank one is made up, and the call is dropped. Its number must
+  be one the conversation gave as a phone number: named so by the words around it ("my
+  number is", "call me on", "Telefonnummer"), by its key in a tool result (`phone`), or, when
+  no word names it, written as one with a country code or a trunk zero. A number given as an
+  order, customer or account number never fills a phone field.
   Dates are not checked. Anything else the check writes is dropped, unsaid and out of the
   transcript. That is one more LLM request on those turns, counted
   in the usage `curb test` reports. It starts once the reply's last words have gone to

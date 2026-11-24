@@ -87,9 +87,37 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ phone: "000", topic: "callbacks" }, ["How do callbacks work?"])).toBe("000");
     expect(inventedNumber({ phone: "17:20" }, ["It is 17:20. How fast is the setup?"])).toBe("17:20");
     expect(inventedNumber({ phone: "unknown" }, ["How do callbacks work?"])).toBe("unknown");
-    expect(inventedNumber({ phone: "" }, ["How do callbacks work?"])).toBeUndefined();
     expect(inventedNumber({ topic: "000" }, ["How do callbacks work?"])).toBeUndefined();
     expect(inventedNumber({ phone: "0171 2345678" }, ["my number is 0171 2345678"])).toBeUndefined();
+  });
+
+  it("a phone field holds a phone number and nothing else, never a value that only contains one", () => {
+    const heard = ["my number is 030 1234567"];
+    expect(inventedNumber({ phone: "unknown (030 1234567)" }, heard)).toBe("unknown (030 1234567)");
+    expect(inventedNumber({ phone: "030 1234567 or later" }, heard)).toBe("030 1234567 or later");
+    expect(inventedNumber({ phone: "   " }, heard)).toBe("   ");
+    expect(inventedNumber({ phone: "" }, heard)).toBe("");
+    expect(inventedNumber({ phones: ["030 1234567", "call me"] }, heard)).toBe("call me");
+    expect(inventedNumber({ phone: " 030 1234567 " }, heard)).toBeUndefined();
+    expect(inventedNumber({ phone: "(030) 123 45 67" }, heard)).toBeUndefined();
+  });
+
+  it("a heard number backs a phone field only where it was given as a phone number, never as an id", () => {
+    expect(inventedNumber({ phone: "12345678" }, ["my order number is 12345678"])).toBe("12345678");
+    expect(inventedNumber({ phone: "12345678" }, ["my phone number is 12345678"])).toBeUndefined();
+    expect(inventedNumber({ order: "12345678" }, ["my order number is 12345678"])).toBeUndefined();
+    expect(inventedNumber({ phone: "12345678" }, ["12345678 is my order number"])).toBe("12345678");
+    expect(inventedNumber({ phone: "12345678" }, ["Alex Doe, 12345678, about my claim"])).toBe("12345678");
+    expect(inventedNumber({ phone: "0301234567" }, ["Kundennummer 0301234567"])).toBe("0301234567");
+    expect(inventedNumber({ phone: "0301234567" }, ["Telefonnummer 0301234567"])).toBeUndefined();
+    expect(inventedNumber({ phone: "0301234567" }, ["my contract 0301234567"])).toBe("0301234567");
+    // Without a word around it, a number written like a phone number (country code or trunk zero) is one.
+    expect(inventedNumber({ phone: "030 1234567" }, ["Alex Doe, +49 30 1234567"])).toBeUndefined();
+    expect(inventedNumber({ phone: "030 1234567" }, ["Alex Doe, 030 1234567"])).toBeUndefined();
+    // A tool result: the key says what the value is.
+    expect(inventedNumber({ phone: "030 1234567" }, [{ ok: true, order: "0301234567" }])).toBe("030 1234567");
+    expect(inventedNumber({ phone: "030 1234567" }, ['{"ok":true,"order":"0301234567"}'])).toBe("030 1234567");
+    expect(inventedNumber({ phone: "12345678" }, [{ ok: true, customer: { phone: "12345678" } }])).toBeUndefined();
   });
 
   it("leaves dates, times and short numbers alone", () => {

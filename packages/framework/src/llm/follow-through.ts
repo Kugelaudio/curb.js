@@ -113,24 +113,35 @@ const ID_NAME = /(?:^|[ _-])(?:id|ids|account|plan|contract|order|code|pin|ext|e
  * The first long number (six digits or more as written, leading zeros included, like
  * `+1 (202) 555-0142`, `030/1234567` or `012345`) in a check call's `input` that nothing in
  * `heard` holds, or undefined. `heard` is what the conversation holds: the instructions, the
- * caller's and the agent's words, tool results. A number in a phone field ({@link isPhoneField})
- * may be written with or without its country code (`+49 30 1234567`, `030 1234567`,
- * {@link samePhone}); a number in any other field, an order or account number, matches only
- * digit for digit, as written. A phone field holds a phone number: a value there with no long
- * number (`000`, `17:20`, `unknown`) is returned too, an empty one is not. A check that fills
- * such a value made it up, so its call is not run. Dates are left alone.
+ * caller's and the agent's words, tool results. A number in an order, account or any other
+ * field matches only digit for digit, as written. A phone field ({@link isPhoneField}) holds one
+ * phone number and nothing else (`000`, `17:20`, `unknown (030 1234567)` or an empty value are
+ * returned whole), and that number must be one the conversation gave as a phone number
+ * ({@link heardPhones}), with or without its country code ({@link samePhone}): an order number
+ * never backs a phone field. A check that fills such a value made it up, so its call is not run.
+ * Dates are left alone.
  */
 export function inventedNumber(input: unknown, heard: readonly unknown[], schema?: unknown): string | undefined {
-  const known = leafValues(heard).flatMap(writtenNumbers);
+  const known = leafValues(heard).flatMap((text) => writtenNumbers(text));
+  const phones = heardPhones(heard, undefined, new WeakSet());
   for (const { text, phone } of fieldValues(input, schema, false, new WeakSet())) {
+    if (phone) {
+      const number = wholeNumber(text);
+      if (number === undefined || !phones.some((said) => samePhone(number, said))) return text;
+      continue;
+    }
     const numbers = writtenNumbers(text).filter(({ digits }) => digits.length >= LONG_NUMBER_DIGITS);
-    // A phone field holds a phone number: a short or wordy value there ("000", "17:20") is made up.
-    if (phone && numbers.length === 0 && text.trim() !== "") return text;
-    const same = phone ? samePhone : sameDigits;
-    const invented = numbers.find((number) => !known.some((said) => same(number, said)));
+    const invented = numbers.find((number) => !known.some((said) => sameDigits(number, said)));
     if (invented) return invented.written;
   }
   return undefined;
+}
+
+/** `text` when it is one long number and nothing else, spaces around it aside. */
+function wholeNumber(text: string): WrittenNumber | undefined {
+  const trimmed = text.trim();
+  const [number] = writtenNumbers(trimmed);
+  return number?.written === trimmed && number.digits.length >= LONG_NUMBER_DIGITS ? number : undefined;
 }
 
 /** The strings and numbers in `value`, each with whether it sits in a phone field, read along
@@ -172,15 +183,77 @@ function schemaPart(schema: unknown, key: string): unknown {
   return schema !== null && typeof schema === "object" ? (schema as Record<string, unknown>)[key] : undefined;
 }
 
-function writtenNumbers(text: string): WrittenNumber[] {
+function writtenNumbers(text: string): (WrittenNumber & { index: number })[] {
   return [...text.matchAll(WRITTEN_NUMBER)]
-    .map(([written]) => ({
-      written,
-      digits: written.replace(/\D/g, ""),
-      international: written.startsWith("+"),
-      countryCode: COUNTRY_CODE.exec(written)?.[1],
+    .map((match) => ({
+      written: match[0],
+      index: match.index,
+      digits: match[0].replace(/\D/g, ""),
+      international: match[0].startsWith("+"),
+      countryCode: COUNTRY_CODE.exec(match[0])?.[1],
     }))
     .filter(({ written }) => !DATE.test(written));
+}
+
+/** A word that names an identifier: an order, account, customer or contract number. */
+const ID_WORD =
+  /^(?:ids?|orders?|accounts?|customers?|clients?|contracts?|invoices?|tickets?|ref|references?|bookings?|reservations?|polic(?:y|ies)|claims?|cases?|members?|membership|serial|tracking|iban|pins?|codes?|plans?|rooms?|(?:bestell|auftrag|kunde|konto|vertrag|rechnung|referenz|buchung|vorgang|police|versicherung|mitglied|sendung|zimmer)\p{L}*)$/u;
+/** A word that names a phone number or a call: `phone`, `call me`, `Telefon`, `Handynummer`. */
+const PHONE_WORD =
+  /^(?:(?:tele)?phones?|tel|cell(?:phone)?|mobiles?|calls?|called|reach|whatsapp|(?:telefon|handy|mobil|ruf|anruf|rückruf|zurückruf|erreich|festnetz)\p{L}*)$/u;
+/** A bare "number": a phone number unless an id word comes right before it ("order number"). */
+const NUMBER_WORD = /^(?:numbers?|nummer\p{L}*)$/u;
+/** How many words around a number may name it. */
+const CONTEXT_WORDS = 6;
+
+type NumberKind = "phone" | "id" | undefined;
+
+/**
+ * The numbers in `heard` given as phone numbers. In a tool result the key says it: a value under a
+ * phone key (`phone`, `callerPhone`) is one, under an id key (`orderId`, `account`) it is not. In
+ * words, the nearest word before the number, else after it, says it ({@link spokenKind}): "my
+ * number is", "call me on", "Telefonnummer" against "order number", "Kundennummer". A number no
+ * word names is a phone number when it is written as one: a country code or a trunk zero.
+ */
+function heardPhones(value: unknown, kind: NumberKind, seen: WeakSet<object>): WrittenNumber[] {
+  if (typeof value === "number" || typeof value === "bigint") return kind === "phone" ? writtenNumbers(String(value)) : [];
+  if (typeof value === "string") {
+    if (kind !== undefined) return kind === "phone" ? writtenNumbers(value) : [];
+    return writtenNumbers(value).filter((number) => spokenKind(value, number) === "phone");
+  }
+  if (value === null || typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  if (Array.isArray(value)) return value.flatMap((item) => heardPhones(item, kind, seen));
+  return Object.entries(value).flatMap(([name, item]) => heardPhones(item, keyKind(name), seen));
+}
+
+function keyKind(name: string): NumberKind {
+  if (isPhoneField(name, undefined)) return "phone";
+  return ID_NAME.test(name.replace(/([a-z])([A-Z])/g, "$1 $2")) ? "id" : undefined;
+}
+
+/** What the words around `number` in `text` call it; a number written as a phone number when none do. */
+function spokenKind(text: string, number: WrittenNumber & { index: number }): NumberKind {
+  const before = text.slice(0, number.index).split(/[.!?;\n](?=\s|$)/).pop() ?? "";
+  const after = text.slice(number.index + number.written.length).split(/[.!?;\n](?=\s|$)/)[0] ?? "";
+  const kind = wordKind(words(before).reverse()) ?? wordKind(words(after));
+  if (kind !== undefined) return kind;
+  return number.international || /^0[1-9]/.test(number.digits) ? "phone" : undefined;
+}
+
+function words(text: string): string[] {
+  return text.toLowerCase().match(/[\p{L}\d]+/gu) ?? [];
+}
+
+/** The kind the first naming word in `nearestFirst` gives; another number on the way ends the search. */
+function wordKind(nearestFirst: readonly string[]): NumberKind {
+  for (const [at, word] of nearestFirst.slice(0, CONTEXT_WORDS).entries()) {
+    if (/^\d/.test(word)) return undefined;
+    if (ID_WORD.test(word)) return "id";
+    if (PHONE_WORD.test(word)) return "phone";
+    if (NUMBER_WORD.test(word)) return ID_WORD.test(nearestFirst[at + 1] ?? "") ? "id" : "phone";
+  }
+  return undefined;
 }
 
 /** The same number, digit for digit as written: an order or account number. */
