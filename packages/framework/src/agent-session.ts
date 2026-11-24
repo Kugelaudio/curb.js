@@ -9,6 +9,7 @@ import {
   type AgentRunRequest,
   type AgentRunResponse,
   type AgentStreamPart,
+  type AgentToolCall,
   type AgentToolCallRecord,
   type AgentTurnError,
   type AgentTurnStreamEvent,
@@ -50,6 +51,7 @@ import {
   callStaysOpenAfter,
   FOLLOW_THROUGH_CHECK,
   followThroughTools,
+  inventedNumber,
   namedToolNote,
   needsFollowThroughCheck,
 } from "./llm/follow-through.js";
@@ -205,8 +207,10 @@ export class AgentSession {
   /** The running turn records no words ({@link AgentTurnOptions.unsaid}). */
   private unsaid = false;
   private readonly checkFollowThrough: boolean;
-  /** The tools that ran in the current turn, by name: a follow-through check never offers one again. */
+  /** The tools called in the current turn, by name: a follow-through check never offers one again. */
   private readonly ranThisTurn = new Set<string>();
+  /** The tools that succeeded in the current turn, by name: only an action that succeeded lets a check hang up. */
+  private readonly doneThisTurn = new Set<string>();
   /** The action waiting for the caller's yes (`<Tool confirm>`); null when none. */
   private pending: PendingConfirmation | null = null;
   /** How many inputs have arrived. A held action is answered only by a later one. */
@@ -529,6 +533,7 @@ export class AgentSession {
     }
     this.unsaid = options.unsaid === true;
     this.ranThisTurn.clear();
+    this.doneThisTurn.clear();
     this.blocks.turnStarted();
     const greets = options.kind === "synthetic" && this.inboundOpening();
     const newest = this.conversation.at(-1);
@@ -581,15 +586,16 @@ export class AgentSession {
           break;
         }
         stepCall = null;
-        const built = this.buildRequest(check ? [...messages, check] : messages, options.spoken === true);
+        // A check is built from the tools it may call, its instructions included.
+        const built = this.buildRequest(
+          check ? [...messages, check] : messages,
+          options.spoken === true,
+          check ? (tools) => followThroughTools(tools, this.ranThisTurn, this.doneThisTurn) : undefined,
+        );
         // A check runs on its own deadline, so that its failure never fails the turn (below).
         const deadline = check ? new AbortController() : controller;
         const signal = check ? AbortSignal.any([controller.signal, deadline.signal]) : controller.signal;
-        const request: AgentRunRequest = {
-          ...built,
-          ...(check ? { tools: followThroughTools(built.tools, this.ranThisTurn) } : {}),
-          signal,
-        };
+        const request: AgentRunRequest = { ...built, signal };
         stepCall = this.llmLog.sent(request);
         // Only speech is kept from saying tool names: a typed reply may write one.
         speech.startStep(options.spoken === true ? request.tools.map((tool) => tool.name) : []);
@@ -621,12 +627,17 @@ export class AgentSession {
           // The check found nothing to do: the turn ends as it was, and the note leaves no trace.
           const note = check;
           check = undefined;
-          // A call of a tool the check did not offer is never run: the model was told not to. A
+          // A call of a tool the check did not offer is never run: the model was told not to. Nor
+          // is one carrying a number the conversation never had: the check made it up. A
           // skip_turn beside an offered call is dropped, so it cannot end the turn before a
           // failed call is repaired; only the calls checked here run.
           const offered = new Set(request.tools.map((tool) => tool.name));
           const calls = response.toolCalls.filter((call) => call.name !== SKIP_TURN_TOOL_NAME);
-          if (calls.length === 0 || calls.some((call) => !offered.has(call.name))) {
+          if (
+            calls.length === 0 ||
+            calls.some((call) => !offered.has(call.name)) ||
+            this.inventsNumber(calls, request, messages)
+          ) {
             unrecorded = false;
             break;
           }
@@ -735,7 +746,7 @@ export class AgentSession {
             !this.unsaid &&
             options.kind !== "synthetic" &&
             steps < this.maxSteps &&
-            needsFollowThroughCheck(speech.reply, followThroughTools(request.tools, this.ranThisTurn));
+            needsFollowThroughCheck(speech.reply, followThroughTools(request.tools, this.ranThisTurn, this.doneThisTurn));
           if (!checks) break;
           checked = true;
           check = contextEvent(FOLLOW_THROUGH_CHECK);
@@ -865,16 +876,28 @@ export class AgentSession {
     return this.systemPromptOf(this.runtime.snapshot(), spoken);
   }
 
-  private systemPromptOf(snapshot: ReturnType<AgentSiteRuntime["snapshot"]>, spoken: boolean): string {
+  private systemPromptOf(
+    snapshot: ReturnType<AgentSiteRuntime["snapshot"]>,
+    spoken: boolean,
+    tools: readonly ToolDefinition[] = snapshot.context.tools,
+  ): string {
     const authored = snapshot.context.systemPrompt ?? "";
-    const spokenRules = spoken ? this.spokenRulesFor(snapshot.context.tools) : "";
+    const spokenRules = spoken ? this.spokenRulesFor(tools) : "";
     return spokenRules ? `${authored}\n\n${spokenRules}` : authored;
   }
 
-  private buildRequest(messages: AgentChatMessage[], spoken: boolean): AgentRunRequest {
+  /** `offer` narrows the tools a request carries, and the instructions follow it. */
+  private buildRequest(
+    messages: AgentChatMessage[],
+    spoken: boolean,
+    offer: (tools: ToolDefinition[]) => ToolDefinition[] = (tools) => tools,
+  ): AgentRunRequest {
     const snapshot = this.runtime.snapshot();
+    const tools = offer(
+      snapshot.context.tools.map((tool) => (this.runtime.confirms(tool.name) ? withConfirmNote(tool) : tool)),
+    );
     return {
-      systemPrompt: this.systemPromptOf(snapshot, spoken),
+      systemPrompt: this.systemPromptOf(snapshot, spoken, tools),
       skillTitle: snapshot.context.title,
       // Today's date and time lead the current context. Built here, per request, and never
       // rendered into the tree, so it causes no context events; kept out of the system
@@ -885,9 +908,29 @@ export class AgentSession {
         ...(this.pending ? [pendingLine(this.pending)] : []),
         ...snapshot.stateSnapshot,
       ],
-      tools: snapshot.context.tools.map((tool) => (this.runtime.confirms(tool.name) ? withConfirmNote(tool) : tool)),
+      tools,
       messages: capTranscript(messages, this.maxTranscriptMessages),
     };
+  }
+
+  /**
+   * Whether a follow-through check's calls carry a long number the conversation never held
+   * ({@link inventedNumber}). The reply was already said, so a conversation the guard cannot
+   * read drops the calls and keeps the turn answered.
+   */
+  private inventsNumber(calls: readonly AgentToolCall[], request: AgentRunRequest, messages: AgentChatMessage[]): boolean {
+    try {
+      const heard = [
+        request.systemPrompt,
+        request.stateSnapshot,
+        messages.map((message) => (message.role === "tool" ? [message.content, message.result] : message.content)),
+      ];
+      const schemaOf = (name: string) => request.tools.find((tool) => tool.name === name)?.inputSchema;
+      return calls.some((call) => inventedNumber(call.input, heard, schemaOf(call.name)) !== undefined);
+    } catch (error) {
+      console.warn("[curb] the follow-through check could not read the conversation; its calls are dropped:", error);
+      return true;
+    }
   }
 
   /** The spoken-reply rules for THIS turn: the session's suffix, plus the
@@ -1157,6 +1200,7 @@ export class AgentSession {
       () => this.runtime.snapshot().context.path,
       callTraceOf(this.runtime.info)?.context(),
     );
+    if (timed.outcome.result.ok !== false) this.doneThisTurn.add(toolCall.name);
     const skill = this.skillChange();
     return { ...timed, ...(skill ? { skill } : {}) };
   }
