@@ -6,8 +6,8 @@
  * One socket per stream, kept open across the caller's turns. The base class resamples room
  * audio to 16 kHz; it goes out as base64 PCM16 `audio_chunk` frames of 50 ms. The server
  * ends each turn itself (KugelTurn by default) and sends the turn's fast final, then a
- * revision (`alternatives` with `revises_final`): the whole turn decoded again, about 1.0 to
- * 1.3 s later. The REVISION is the turn's text, because the fast final can miss the start
+ * revision (`alternatives` with `revises_final`): the whole turn decoded again, usually within
+ * a second. The REVISION is the turn's text, because the fast final can miss the start
  * of a turn (in testing it held only the second of two German sentences). The
  * fast final stands in when no revision arrives within {@link REVISION_WAIT_MS}. Either way
  * the turn becomes one FINAL_TRANSCRIPT plus END_OF_SPEECH, the events the Azure plugin
@@ -54,7 +54,15 @@ const CHUNK_BYTES = (KUGEL_STT_SAMPLE_RATE * 2 * CHUNK_MS) / 1000;
 const RETRYABLE_CLOSES = new Set([1006, 1011, 1012, 1013]);
 /** How long the end of the call waits for the server to send the last turn and close. */
 const DRAIN_TIMEOUT_MS = 5000;
-/** How long a fast final waits for its revision before it stands as the turn's text. */
+/**
+ * How long a fast final waits for its revision before it stands as the turn's text.
+ *
+ * A shorter wait makes a turn faster only by dropping its revision, and the revisions that come
+ * late are the ones that change the most: on hosted calls waiting 600 ms, 5 of 15 turns lost
+ * theirs, and on those the fast final differed from the revision in 20% of its words (6% on
+ * the turns revised in time), a dropped clause or a misheard key word. At 2000 ms about one
+ * turn in a hundred loses it. `revisionWaitMs` trades accuracy for speed per agent.
+ */
 export const REVISION_WAIT_MS = 2000;
 /** Liveness: a ping this often, and a socket that has not answered the previous one is dead. */
 export const PING_INTERVAL_MS = 10_000;
@@ -99,6 +107,12 @@ export function kugelSttConfigFrame(config: KugelSttPluginConfig): Record<string
   if (config.turnDetectionLevel !== undefined && config.turnDetection === "vad") {
     throw new KugelSttError(
       'kugelaudio.stt({ turnDetectionLevel }) only works with turnDetection "kugelturn"; drop one of them.',
+    );
+  }
+  const wait = config.revisionWaitMs;
+  if (wait !== undefined && !(typeof wait === "number" && Number.isFinite(wait) && wait >= 0)) {
+    throw new KugelSttError(
+      `kugelaudio.stt({ revisionWaitMs }) is a number of milliseconds, 0 or more; got ${JSON.stringify(wait)}.`,
     );
   }
   const frame: Record<string, unknown> = {
@@ -157,7 +171,9 @@ export class KugelSpeechStream extends stt.SpeechStream {
   /** START_OF_SPEECH was sent for the current turn (by a partial or by its final). */
   private speechStarted = false;
   /** The fast final waiting for its revision. */
-  private pendingFinal: { text: string; timer: NodeJS.Timeout } | null = null;
+  private pendingFinal: { text: string; timer: NodeJS.Timeout; at: number } | null = null;
+  /** When the last non-empty fast final arrived, to time a revision that comes after its wait. */
+  private lastFinalAt: number | null = null;
   private resolveDrained: (() => void) | null = null;
   /** An audio_chunk went out on this attempt's socket; without one there is no turn to end. */
   private audioSent = false;
@@ -213,10 +229,14 @@ export class KugelSpeechStream extends stt.SpeechStream {
     const text = frame.partial_text?.trim() ?? "";
     if (frame.type === "alternatives" && frame.revises_final) {
       if (this.pendingFinal) {
+        logInfo("voice", `stt revision after ${Math.round(performance.now() - this.pendingFinal.at)} ms`);
+        this.lastFinalAt = null;
         this.settle(text);
       } else {
         // Its fast final was empty (the revision then invents words) or already stood in.
-        logInfo("voice", `stt revision without a waiting final, dropped: ${JSON.stringify(text)}`);
+        const late = this.lastFinalAt === null ? "" : ` ${Math.round(performance.now() - this.lastFinalAt)} ms after its final`;
+        this.lastFinalAt = null;
+        logInfo("voice", `stt revision without a waiting final${late}, dropped: ${JSON.stringify(text)}`);
       }
       return;
     }
@@ -229,6 +249,7 @@ export class KugelSpeechStream extends stt.SpeechStream {
       // A new final with one still waiting: the earlier turn's revision is not coming.
       if (this.pendingFinal) this.settle(this.pendingFinal.text);
       if (!text) {
+        this.lastFinalAt = null;
         this.speechStarted = false; // no speech in this turn; its revision is dropped above
         return;
       }
@@ -239,7 +260,8 @@ export class KugelSpeechStream extends stt.SpeechStream {
         logInfo("voice", `stt: no revision within ${waitMs} ms; the fast final stands`);
         this.settle(this.pendingFinal.text);
       }, waitMs);
-      this.pendingFinal = { text, timer };
+      this.lastFinalAt = performance.now();
+      this.pendingFinal = { text, timer, at: this.lastFinalAt };
       return;
     }
     if (frame.type === "partial") {

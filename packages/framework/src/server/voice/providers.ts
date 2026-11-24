@@ -232,6 +232,7 @@ export async function buildVoiceStt(options: {
           boostedPhrases: descriptor.options.boostedPhrases,
           dictionaryIds: descriptor.options.dictionaryIds,
           projectId: descriptor.options.projectId,
+          revisionWaitMs: descriptor.options.revisionWaitMs,
           reporter: options.reporter,
         }),
       });

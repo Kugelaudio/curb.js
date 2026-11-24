@@ -89,6 +89,10 @@ export type KugelaudioSttOptions = {
   /** KugelAudio project whose dictionaries apply, the number in your dashboard URL. Unset: the
    * API key's own project. */
   projectId?: number;
+  /** How long, in ms, a turn waits for the service's second, more accurate pass over it before
+   * the agent answers from the first pass. Default 2000. Lower answers sooner, but a turn whose
+   * second pass comes later is taken as first heard: long turns, names and numbers most. */
+  revisionWaitMs?: number;
 };
 export type AzureSttOptions = {
   /** Recognition language(s), e.g. "en" or "en,de". Default {@link DEFAULT_VOICE_LANGUAGE}. */

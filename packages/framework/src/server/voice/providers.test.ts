@@ -179,6 +179,7 @@ describe("buildVoiceStt / buildVoiceTts from descriptors", () => {
         language: "de, en",
         turnDetectionLevel: "conservative",
         boostedPhrases: ["Beispiel GmbH", "Modell X7"],
+        revisionWaitMs: 800,
       }),
       env: { ...ALL_KEYS, HTTPS_PROXY: "http://proxy.example:3128" },
     });
@@ -190,6 +191,7 @@ describe("buildVoiceStt / buildVoiceTts from descriptors", () => {
       language: ["de", "en"],
       turnDetectionLevel: "conservative",
       boostedPhrases: ["Beispiel GmbH", "Modell X7"],
+      revisionWaitMs: 800,
     });
     const plain = await buildVoiceStt({ descriptor: kugelaudio.stt(), env: { ...ALL_KEYS, KUGELAUDIO_API_BASE: undefined } });
     expect((plain as KugelSTT).config).toEqual({ apiBase: "https://api.kugelaudio.com", apiKey: "kugel-key" });
