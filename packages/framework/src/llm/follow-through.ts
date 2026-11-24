@@ -123,7 +123,7 @@ const ID_NAME = /(?:^|[ _-])(?:id|ids|account|plan|contract|order|code|pin|ext|e
  */
 export function inventedNumber(input: unknown, heard: readonly unknown[], schema?: unknown): string | undefined {
   const known = leafValues(heard).flatMap((text) => writtenNumbers(text));
-  const phones = heardPhones(heard, undefined, new WeakSet());
+  const phones = heardPhones(heard, "words", new WeakSet());
   for (const { text, phone } of fieldValues(input, schema, false, new WeakSet())) {
     if (phone) {
       const number = wholeNumber(text);
@@ -209,40 +209,46 @@ const CONTEXT_WORDS = 6;
 type NumberKind = "phone" | "id" | undefined;
 
 /**
- * The numbers in `heard` given as phone numbers. In a tool result the key says it: a value under a
- * phone key (`phone`, `callerPhone`) is one, under an id key (`orderId`, `account`) it is not. In
- * words, the nearest word before the number, else after it, says it ({@link spokenKind}): "my
- * number is", "call me on", "Telefonnummer" against "order number", "Kundennummer". A number no
- * word names is a phone number when it is written as one: a country code or a trunk zero.
+ * The numbers in `heard` given as phone numbers. In a tool result only a value under a phone key
+ * (`phone`, `callerPhone`) is one; a value under any other key (`customerNumber`, `orderId`,
+ * `note`) never is, whatever it looks like. In words, the nearest naming word on each side of
+ * the number says it ({@link spokenKind}). `place` is where `value` sits: in words, or under a
+ * phone key or another key of a tool result.
  */
-function heardPhones(value: unknown, kind: NumberKind, seen: WeakSet<object>): WrittenNumber[] {
-  if (typeof value === "number" || typeof value === "bigint") return kind === "phone" ? writtenNumbers(String(value)) : [];
+function heardPhones(value: unknown, place: "words" | "phone" | "other", seen: WeakSet<object>): WrittenNumber[] {
+  if (typeof value === "number" || typeof value === "bigint") return place === "phone" ? writtenNumbers(String(value)) : [];
   if (typeof value === "string") {
-    if (kind !== undefined) return kind === "phone" ? writtenNumbers(value) : [];
+    if (place !== "words") return place === "phone" ? writtenNumbers(value) : [];
     return writtenNumbers(value).filter((number) => spokenKind(value, number) === "phone");
   }
   if (value === null || typeof value !== "object" || seen.has(value)) return [];
   seen.add(value);
-  if (Array.isArray(value)) return value.flatMap((item) => heardPhones(item, kind, seen));
-  return Object.entries(value).flatMap(([name, item]) => heardPhones(item, keyKind(name), seen));
+  if (Array.isArray(value)) return value.flatMap((item) => heardPhones(item, place, seen));
+  return Object.entries(value).flatMap(([name, item]) =>
+    heardPhones(item, isPhoneField(name, undefined) ? "phone" : "other", seen),
+  );
 }
 
-function keyKind(name: string): NumberKind {
-  if (isPhoneField(name, undefined)) return "phone";
-  return ID_NAME.test(name.replace(/([a-z])([A-Z])/g, "$1 $2")) ? "id" : undefined;
-}
-
-/** What the words around `number` in `text` call it; a number written as a phone number when none do. */
+/**
+ * What the words around `number` in `text` call it. An id label on either side ("order number",
+ * "Kundennummer") makes it an id, whatever callback words stand on the other side; else a phone
+ * word on either side ("my number is", "call me on", "Telefonnummer") makes it a phone number.
+ * A label after the digits that another number follows names that number, not this one. A
+ * number no word names is a phone number when it is written as one: a country code or a trunk
+ * zero.
+ */
 function spokenKind(text: string, number: WrittenNumber & { index: number }): NumberKind {
-  const before = text.slice(0, number.index).split(/[.!?;\n](?=\s|$)/).pop() ?? "";
-  const after = text.slice(number.index + number.written.length).split(/[.!?;\n](?=\s|$)/)[0] ?? "";
-  const kind = wordKind(words(before).reverse()) ?? wordKind(words(after));
-  if (kind !== undefined) return kind;
+  const before = words(text.slice(0, number.index).split(/[.!?;\n](?=\s|$)/).pop() ?? "").reverse();
+  const after = words(text.slice(number.index + number.written.length).split(/[.!?;\n](?=\s|$)/)[0] ?? "");
+  const kinds = [wordKind(before), after.some((word) => /^\d/.test(word)) ? undefined : wordKind(after)];
+  if (kinds.includes("id")) return "id";
+  if (kinds.includes("phone")) return "phone";
   return number.international || /^0[1-9]/.test(number.digits) ? "phone" : undefined;
 }
 
+/** The words of `text`, lower case, camelCase split (`customerNumber`: customer number). */
 function words(text: string): string[] {
-  return text.toLowerCase().match(/[\p{L}\d]+/gu) ?? [];
+  return text.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2").toLowerCase().match(/[\p{L}\d]+/gu) ?? [];
 }
 
 /** The kind the first naming word in `nearestFirst` gives; another number on the way ends the search. */

@@ -120,6 +120,23 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ phone: "12345678" }, [{ ok: true, customer: { phone: "12345678" } }])).toBeUndefined();
   });
 
+  it("in a tool result only a value under a phone key backs a phone field, whatever the value looks like", () => {
+    expect(inventedNumber({ phone: "0301234567" }, [{ ok: true, customerNumber: "0301234567" }])).toBe("0301234567");
+    expect(inventedNumber({ phone: "+49 30 1234567" }, [{ ok: true, ref: "+49 30 1234567" }])).toBe("+49 30 1234567");
+    expect(inventedNumber({ phone: "0301234567" }, [{ ok: true, note: "call 0301234567" }])).toBe("0301234567");
+    expect(inventedNumber({ phone: "0301234567" }, [{ ok: true, phone: "0301234567" }])).toBeUndefined();
+    expect(inventedNumber({ customerNumber: "0301234567" }, [{ ok: true, customerNumber: "0301234567" }])).toBeUndefined();
+  });
+
+  it("an id label on either side of a number wins over callback words: it is never phone evidence", () => {
+    expect(inventedNumber({ phone: "12345678" }, ["Please call me about 12345678, my order number"])).toBe("12345678");
+    expect(inventedNumber({ phone: "0301234567" }, ["call me back, 0301234567 is my customer number"])).toBe("0301234567");
+    expect(inventedNumber({ phone: "12345678" }, ["Please call me on 12345678, my phone number"])).toBeUndefined();
+    // A label after the digits that names the next number is that number's label.
+    expect(inventedNumber({ phone: "030 1234567" }, ["call me on 030 1234567 and my order is 12345678"])).toBeUndefined();
+    expect(inventedNumber({ phone: "12345678" }, ["call me on 030 1234567 and my order is 12345678"])).toBe("12345678");
+  });
+
   it("leaves dates, times and short numbers alone", () => {
     expect(inventedNumber({ day: "2026-11-25", at: "2026-11-25T10:00:00Z", de: "25.11.2026" }, ["tomorrow at ten"])).toBeUndefined();
   });

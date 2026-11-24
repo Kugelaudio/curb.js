@@ -797,6 +797,29 @@ describe("AgentSession", () => {
       expect(turn.heard).toBe("Your policy covers water damage.");
     });
 
+    it("a tool result backs the check's phone field only under a phone key, never through its summary", async () => {
+      const run = async (data: Record<string, string>) => {
+        const { streamLlm } = scriptedStream([
+          { text: "I'm noting your callback." },
+          { toolCalls: [{ name: "request_callback", input: { name: "Alex Doe", phone: "0301234567", topic: "claim" } }] },
+          { text: "" },
+        ]);
+        const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, { streamLlm, checkFollowThrough: true });
+        const result = { ok: true, data };
+        session.restoreTranscript([
+          { role: "user", content: "I'm Alex Doe, look me up" },
+          { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "lookup", input: {} }] },
+          { role: "tool", content: `lookup: ${JSON.stringify(result)}`, toolCallId: "c1", toolName: "lookup", result, contextDiff: [] },
+          { role: "assistant", content: "Found you." },
+        ]);
+        const turn = await streamTurn(session, "please call me about my claim");
+        return turn.events.filter((event) => event.type === "tool").length;
+      };
+
+      expect(await run({ custno: "0301234567" })).toBe(0);
+      expect(await run({ phone: "0301234567" })).toBe(1);
+    });
+
     it("the check's instructions hold the hang-up rules only when the check may call end_call", async () => {
       const hangUp = vi.fn();
       const plain = createInsuranceDemoRuntime();
