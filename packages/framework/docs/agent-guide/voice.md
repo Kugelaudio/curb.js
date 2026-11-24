@@ -18,7 +18,7 @@ tree.
 | `anthropic(model)` | | `ANTHROPIC_API_KEY` |
 | `openai(model)` | | `OPENAI_API_KEY` |
 | `openaiCompatible({ baseURL, model, ... })` | `reasoningEffort`, `temperature`, `topP`, `body` | `AGENT_LLM_API_KEY`, else `OPENAI_API_KEY`, else none |
-| `kugelaudio.stt(...)` | `language`, `turnDetection`, `turnDetectionLevel`, `boostedPhrases`, `dictionaryIds`, `projectId` | `KUGELAUDIO_API_KEY` |
+| `kugelaudio.stt(...)` | `language`, `turnDetection`, `turnDetectionLevel`, `boostedPhrases`, `dictionaryIds`, `projectId`, `revisionWaitMs` | `KUGELAUDIO_API_KEY` |
 | `azure.stt(...)` | `language`, `region`, `segmentationMs` | `AZURE_SPEECH_KEY` (`AZURE_SPEECH_REGION` default region, else `eastus`) |
 | `deepgram.stt(...)` | `model`, `language` | `DEEPGRAM_API_KEY` |
 | `elevenlabs.stt(...)` / `elevenlabs.tts(...)` | `model` / `voice`, `model` | `ELEVEN_API_KEY` |

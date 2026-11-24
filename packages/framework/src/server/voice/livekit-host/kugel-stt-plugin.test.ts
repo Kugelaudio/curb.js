@@ -161,6 +161,13 @@ describe("kugel stt plugin", () => {
     );
   });
 
+  it("refuses a revision wait that is not a number of milliseconds, at construction", () => {
+    for (const revisionWaitMs of [-1, Number.NaN, Number.POSITIVE_INFINITY, "500" as unknown as number]) {
+      expect(() => new KugelSTT({ apiBase: "x", apiKey: "k", revisionWaitMs })).toThrow(/revisionWaitMs/);
+    }
+    expect(new KugelSTT({ apiBase: "x", apiKey: "k", revisionWaitMs: 0 }).config.revisionWaitMs).toBe(0);
+  });
+
   it("authenticates, sends the config, then base64 PCM16 audio chunks", async () => {
     const call = open();
     await server.until(() => server.received.length >= 3);
@@ -219,13 +226,20 @@ describe("kugel stt plugin", () => {
     ]);
   });
 
-  it("lets the fast final stand when no revision arrives in time", async () => {
+  it("lets the fast final stand when no revision arrives in time, and drops the late revision", async () => {
     const call = open({ revisionWaitMs: 50 });
     await server.until(() => server.received.length >= 1);
     await server.send(final("Hallo"));
     await server.until(() => call.events.some((e) => e.type === stt.SpeechEventType.FINAL_TRANSCRIPT));
+    await server.send(revision("Hallo, hier ist Max."));
+    await server.send(final("Danke"));
+    await server.send(revision("Danke."));
+    await server.until(() => call.events.filter((e) => e.type === stt.SpeechEventType.FINAL_TRANSCRIPT).length >= 2);
     await call.close();
-    expect(call.events.find((e) => e.type === stt.SpeechEventType.FINAL_TRANSCRIPT)?.alternatives?.[0]?.text).toBe("Hallo");
+    expect(call.events.filter((e) => e.type === stt.SpeechEventType.FINAL_TRANSCRIPT).map((e) => e.alternatives?.[0]?.text)).toEqual([
+      "Hallo",
+      "Danke.",
+    ]);
   });
 
   it("fails the stream when the connection is refused", async () => {

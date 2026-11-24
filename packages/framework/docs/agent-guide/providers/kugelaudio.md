@@ -39,6 +39,7 @@ Kugel Ear 1.
 | `boostedPhrases` | `string[]` | | Names and terms to spell the way you write them ([Pronunciation](../pronunciation.md)) |
 | `dictionaryIds` | `number[]` | every active dictionary | Dictionaries used as vocabulary; `[]` for none |
 | `projectId` | `number` | the key's project | The project whose dictionaries apply |
+| `revisionWaitMs` | `number` | `2000` | How long, in ms, a turn waits for the service's second, more accurate pass before the agent answers from the first. Lower answers sooner, but a turn whose second pass comes later is taken as first heard, which costs long turns, names and numbers most |
 
 ## `kugelaudio.tts(options?)`
 
@@ -60,6 +61,7 @@ Kugel Ear 1.
 
 | Version | Changes |
 |---|---|
+| Unreleased | `kugelaudio.stt()` takes `revisionWaitMs` |
 | Unreleased | `kugelaudio.llm()` takes `temperature`, `topP` and `seed` |
 | v1.11.9 | `kugelaudio.llm()` added |
 | v1.4.33 | `kugelaudio.stt()` added |
