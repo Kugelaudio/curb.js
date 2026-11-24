@@ -87,30 +87,51 @@ export function followThroughTools<T extends { scope: string; name: string }>(
 
 /** Fewer digits than this are left alone: a count, a time, a day or an amount, often said in words. */
 const LONG_NUMBER_DIGITS = 6;
+/** A country code or trunk prefix one side may leave out: at most this many leading digits. */
+const PREFIX_DIGITS = 3;
+/**
+ * A number as written: groups of digits, a leading `+`, a group in brackets, at most one space,
+ * dash, slash or dot between groups. Words between numbers keep them apart.
+ */
+const WRITTEN_NUMBER = /\+?(?:\(\d+\)|\d)(?:[ \u00a0./-]?(?:\(\d+\)|\d))*/g;
+/** A date is not a number someone gives: the check may write tomorrow's. */
+const DATE = /^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./]\d{1,2}[./]\d{2,4})$/;
 
 /**
- * The first long number (a phone, order or account number: six digits or more, spaces allowed
- * between them) in a check call's `input` that none of `heard` contains, or undefined. `heard`
- * is what the conversation holds: the instructions, the caller's and the agent's words, tool
- * results. A check that fills such a number made it up, so its call is not run.
+ * The first long number (a phone, order or account number: six digits or more, as written,
+ * like `+1 (202) 555-0142` or `030/1234567`) in a check call's `input` that nothing in `heard`
+ * holds, or undefined. `heard` is what the conversation holds: the instructions, the caller's
+ * and the agent's words, tool results. Numbers are compared whole, by their digits, one side
+ * allowed to leave out a country code or trunk prefix. A check that fills such a number made it
+ * up, so its call is not run. Dates are left alone.
  */
-export function inventedNumber(input: unknown, heard: readonly string[]): string | undefined {
-  const digits = heard.map((text) => text.replace(/\D/g, ""));
-  for (const value of leafValues(input)) {
-    for (const match of value.matchAll(/\d(?:[ \u00a0]?\d)*/g)) {
-      const number = match[0].replace(/\D/g, "");
-      if (number.length >= LONG_NUMBER_DIGITS && !digits.some((known) => known.includes(number))) return match[0];
-    }
+export function inventedNumber(input: unknown, heard: readonly unknown[]): string | undefined {
+  const known = leafValues(heard).flatMap((text) => writtenNumbers(text).map(({ digits }) => digits));
+  for (const { written, digits } of leafValues(input).flatMap(writtenNumbers)) {
+    if (digits.length >= LONG_NUMBER_DIGITS && !known.some((said) => sameNumber(digits, said))) return written;
   }
   return undefined;
 }
 
-function leafValues(value: unknown): string[] {
+function writtenNumbers(text: string): { written: string; digits: string }[] {
+  return [...text.matchAll(WRITTEN_NUMBER)]
+    .map(([written]) => ({ written, digits: written.replace(/\D/g, "").replace(/^0+/, "") }))
+    .filter(({ written }) => !DATE.test(written));
+}
+
+function sameNumber(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  return short.length >= LONG_NUMBER_DIGITS && long.length - short.length <= PREFIX_DIGITS && long.endsWith(short);
+}
+
+/** Every string and number in `value`, however deep; each object is read once. */
+function leafValues(value: unknown, seen = new WeakSet<object>()): string[] {
   if (typeof value === "string") return [value];
   if (typeof value === "number" || typeof value === "bigint") return [String(value)];
-  if (Array.isArray(value)) return value.flatMap(leafValues);
-  if (value !== null && typeof value === "object") return Object.values(value).flatMap(leafValues);
-  return [];
+  if (value === null || typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  return (Array.isArray(value) ? value : Object.values(value)).flatMap((item) => leafValues(item, seen));
 }
 
 /**

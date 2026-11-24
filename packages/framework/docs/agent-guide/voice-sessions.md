@@ -139,9 +139,11 @@ two forms:
   list. Goodbye."), and the call then hangs up after the words already said, without a
   second goodbye. After a turn that only answered, the check cannot hang up, so an answer it
   misreads as a goodbye never cuts the caller off. A tool call in the answer runs as
-  part of the same turn, unless its input carries a long number (six digits or more, like a
-  phone or order number) that the conversation never contained: the check made that up, so
-  the call is dropped. Anything else the check writes is dropped, unsaid and out of the
+  part of the same turn, unless its input carries a long number (six digits or more, as
+  written, like `+1 (202) 555-0142`: a phone, order or account number) that the conversation
+  never contained: the check made that up, so the call is dropped. Numbers are compared
+  whole, and a country code or leading zero one side leaves out still matches; dates are
+  not checked. Anything else the check writes is dropped, unsaid and out of the
   transcript. That is one more LLM request on those turns, counted
   in the usage `curb test` reports. It starts once the reply's last words have gone to
   speech. A check that fails or times out is logged and leaves the turn answered.

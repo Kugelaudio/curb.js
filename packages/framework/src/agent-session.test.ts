@@ -754,6 +754,57 @@ describe("AgentSession", () => {
       expect(hangUp).toHaveBeenCalledTimes(1);
     });
 
+    it("a restored tool result the guard cannot serialize never fails the answered turn", async () => {
+      const { streamLlm, requests } = scriptedStream([{ text: "Your policy covers water damage." }, { text: "" }]);
+      const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, { streamLlm, checkFollowThrough: true });
+      session.restoreTranscript([
+        { role: "user", content: "what is my claim number" },
+        { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "request_callback", input: {} }] },
+        {
+          role: "tool",
+          content: "noted",
+          toolCallId: "c1",
+          toolName: "request_callback",
+          result: { ok: true, data: { claim: 12345678901234567890n } },
+          contextDiff: [],
+        },
+        { role: "assistant", content: "Noted." },
+      ]);
+
+      const turn = await streamTurn(session, "does my policy cover water damage");
+
+      expect(requests).toHaveLength(2);
+      expect(turn.errors).toEqual([]);
+      expect(turn.heard).toBe("Your policy covers water damage.");
+    });
+
+    it("the check's instructions hold the hang-up rules only when the check may call end_call", async () => {
+      const hangUp = vi.fn();
+      const plain = createInsuranceDemoRuntime();
+      plain.setEndCallRequest(hangUp);
+      const answered = scriptedStream([{ text: "Your policy covers water damage." }, { text: "" }]);
+      await streamTurn(
+        new AgentSession(plain, idleLlm, { streamLlm: answered.streamLlm, checkFollowThrough: true, spokenStyleSuffix: "## Voice" }),
+        "does my policy cover water damage",
+      );
+      expect(answered.requests[0]!.systemPrompt).toContain(END_CALL_TOOL_NAME);
+      expect(answered.requests[1]!.systemPrompt).not.toContain(END_CALL_TOOL_NAME);
+
+      const acting = createInsuranceDemoRuntime();
+      acting.setEndCallRequest(hangUp);
+      const acted = scriptedStream([
+        { toolCalls: [{ name: "request_callback", input: callback }] },
+        { text: "An advisor calls you tomorrow. Goodbye." },
+        { text: "" },
+      ]);
+      await streamTurn(
+        new AgentSession(acting, idleLlm, { streamLlm: acted.streamLlm, checkFollowThrough: true, spokenStyleSuffix: "## Voice" }),
+        "I'm Alex Doe, 555 0100, call me about my claim status, bye",
+      );
+      expect(acted.requests[2]!.tools.map((tool) => tool.name)).toEqual([END_CALL_TOOL_NAME]);
+      expect(acted.requests[2]!.systemPrompt).toContain(END_CALL_TOOL_NAME);
+    });
+
     it("a check call carrying a number the conversation never had is not run: the check makes up no input", async () => {
       const runtime = createInsuranceDemoRuntime();
       const { streamLlm, requests } = scriptedStream([
