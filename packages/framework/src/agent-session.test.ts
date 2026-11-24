@@ -854,6 +854,20 @@ describe("AgentSession", () => {
       expect(await run({ name: "Alex Doe", phone: "+49 30 1234567", topic: "claim 0301234567" })).toBe(0);
     });
 
+    it("a check call with a short made-up phone value is not run", async () => {
+      const { streamLlm, requests } = scriptedStream([
+        { text: "The advisor notes the caller's name and number and calls back." },
+        { toolCalls: [{ name: "request_callback", input: { name: "Alex Doe", phone: "000", topic: "callbacks" } }] },
+        { text: "Your callback is noted." },
+      ]);
+      const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "I'm Alex Doe. Who calls a caller back?");
+
+      expect(requests).toHaveLength(2);
+      expect(turn.events.filter((event) => event.type === "tool")).toEqual([]);
+    });
+
     it("a check that finds nothing to do ends the turn as it was and leaves no trace", async () => {
       const runtime = createInsuranceDemoRuntime();
       const { streamLlm, requests } = scriptedStream([{ text: "Your policy covers water damage." }, { text: "Nothing to do." }]);

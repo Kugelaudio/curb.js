@@ -83,6 +83,15 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ order: "000123" }, ["where is my order?"])).toBe("000123");
   });
 
+  it("a phone field holds a phone number the conversation gave, never a short or made-up value", () => {
+    expect(inventedNumber({ phone: "000", topic: "callbacks" }, ["How do callbacks work?"])).toBe("000");
+    expect(inventedNumber({ phone: "17:20" }, ["It is 17:20. How fast is the setup?"])).toBe("17:20");
+    expect(inventedNumber({ phone: "unknown" }, ["How do callbacks work?"])).toBe("unknown");
+    expect(inventedNumber({ phone: "" }, ["How do callbacks work?"])).toBeUndefined();
+    expect(inventedNumber({ topic: "000" }, ["How do callbacks work?"])).toBeUndefined();
+    expect(inventedNumber({ phone: "0171 2345678" }, ["my number is 0171 2345678"])).toBeUndefined();
+  });
+
   it("leaves dates, times and short numbers alone", () => {
     expect(inventedNumber({ day: "2026-11-25", at: "2026-11-25T10:00:00Z", de: "25.11.2026" }, ["tomorrow at ten"])).toBeUndefined();
   });

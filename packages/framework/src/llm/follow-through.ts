@@ -116,37 +116,42 @@ const ID_NAME = /(?:^|[ _-])(?:id|ids|account|plan|contract|order|code|pin|ext|e
  * caller's and the agent's words, tool results. A number in a phone field ({@link isPhoneField})
  * may be written with or without its country code (`+49 30 1234567`, `030 1234567`,
  * {@link samePhone}); a number in any other field, an order or account number, matches only
- * digit for digit, as written. A check that fills such a number made it up, so its call is not run. Dates are
- * left alone.
+ * digit for digit, as written. A phone field holds a phone number: a value there with no long
+ * number (`000`, `17:20`, `unknown`) is returned too, an empty one is not. A check that fills
+ * such a value made it up, so its call is not run. Dates are left alone.
  */
 export function inventedNumber(input: unknown, heard: readonly unknown[], schema?: unknown): string | undefined {
   const known = leafValues(heard).flatMap(writtenNumbers);
-  for (const { number, phone } of fieldNumbers(input, schema, false, new WeakSet())) {
+  for (const { text, phone } of fieldValues(input, schema, false, new WeakSet())) {
+    const numbers = writtenNumbers(text).filter(({ digits }) => digits.length >= LONG_NUMBER_DIGITS);
+    // A phone field holds a phone number: a short or wordy value there ("000", "17:20") is made up.
+    if (phone && numbers.length === 0 && text.trim() !== "") return text;
     const same = phone ? samePhone : sameDigits;
-    if (number.digits.length >= LONG_NUMBER_DIGITS && !known.some((said) => same(number, said))) return number.written;
+    const invented = numbers.find((number) => !known.some((said) => same(number, said)));
+    if (invented) return invented.written;
   }
   return undefined;
 }
 
-/** The numbers in `value`, each with whether it sits in a phone field, read along `schema`. A
- * field is a phone field by its own marker only, never its parent object's; a list's items are
- * the field's values. */
-function fieldNumbers(
+/** The strings and numbers in `value`, each with whether it sits in a phone field, read along
+ * `schema`. A field is a phone field by its own marker only, never its parent object's; a list's
+ * items are the field's values. */
+function fieldValues(
   value: unknown,
   schema: unknown,
   phone: boolean,
   seen: WeakSet<object>,
-): { number: WrittenNumber; phone: boolean }[] {
+): { text: string; phone: boolean }[] {
   if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
-    return writtenNumbers(String(value)).map((number) => ({ number, phone }));
+    return [{ text: String(value), phone }];
   }
   if (value === null || typeof value !== "object" || seen.has(value)) return [];
   seen.add(value);
-  if (Array.isArray(value)) return value.flatMap((item) => fieldNumbers(item, schemaPart(schema, "items"), phone, seen));
+  if (Array.isArray(value)) return value.flatMap((item) => fieldValues(item, schemaPart(schema, "items"), phone, seen));
   const properties = schemaPart(schema, "properties");
   return Object.entries(value).flatMap(([name, item]) => {
     const field = schemaPart(properties, name);
-    return fieldNumbers(item, field, isPhoneField(name, field), seen);
+    return fieldValues(item, field, isPhoneField(name, field), seen);
   });
 }
 

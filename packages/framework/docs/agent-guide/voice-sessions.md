@@ -151,6 +151,8 @@ two forms:
   description is not read. A name that says id, account, plan or code never is, and a field
   inside a phone-named object is not one by that alone.
   Any other field, an order or account number, matches only digit for digit, as written.
+  A phone field the check fills with no long number at all (`000`, `17:20`) is made up too,
+  and the call is dropped.
   Dates are not checked. Anything else the check writes is dropped, unsaid and out of the
   transcript. That is one more LLM request on those turns, counted
   in the usage `curb test` reports. It starts once the reply's last words have gone to
