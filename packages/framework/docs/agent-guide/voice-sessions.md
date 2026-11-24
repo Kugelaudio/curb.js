@@ -122,8 +122,9 @@ outcome, with no separate signal.
 A model on a call sometimes says what it is doing without doing it. The session catches
 two forms:
 
-- **A tool call written as words.** A step whose text names one of its tools
-  (`add_to_list(reason=...)`) is never said from the name on. The model is asked once
+- **A tool call written as words.** A spoken step whose text names one of its tools
+  (`add_to_list(reason=...)`) is never said from the name on. A typed reply is not
+  filtered. The model is asked once
   more, with a note that the reply was not said; a second such step ends the turn with
   the fixed apology. Only names nobody says in a sentence are matched: ones with an
   underscore, a digit or an inner capital.
@@ -131,11 +132,13 @@ two forms:
   ("I'm removing you from our list now.") rather than a question, the session asks the
   model once whether that reply spoke of something one of its tools does without calling
   it. An offer or a suggestion ("I can show you a demo.") is not an action yet and gets
-  no call. A tool call in the answer runs as part of the same turn, and an `end_call` it leads to
+  no call. The check offers only `end_call` and the agent's tools that have not run in
+  that turn, a confirmed action included, so it never repeats one; a turn with nothing
+  left to offer is not checked. A tool call in the answer runs as part of the same turn, and an `end_call` it leads to
   hangs up after the words already said, without a second goodbye; anything else is
   dropped, unsaid and out of the transcript. That is one more LLM request on those turns, counted
   in the usage `curb test` reports. It starts once the reply's last words have gone to
-  speech.
+  speech. A check that fails or times out is logged and leaves the turn answered.
 
 ## Failure behavior
 

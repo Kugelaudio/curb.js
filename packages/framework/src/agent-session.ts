@@ -46,7 +46,13 @@ import { closeAbandonedStream, llmTimeoutFromEnv, LlmTimeoutError, untilAborted 
 import { LlmTrace } from "./llm/trace.js";
 import { TurnQueue } from "./llm/turn-queue.js";
 import { TurnSpeech } from "./llm/turn-speech.js";
-import { callStaysOpenAfter, FOLLOW_THROUGH_CHECK, namedToolNote, needsFollowThroughCheck } from "./llm/follow-through.js";
+import {
+  callStaysOpenAfter,
+  FOLLOW_THROUGH_CHECK,
+  followThroughTools,
+  namedToolNote,
+  needsFollowThroughCheck,
+} from "./llm/follow-through.js";
 import {
   END_CALL_TOOL_NAME,
   SKIP_TURN_TOOL_NAME,
@@ -199,6 +205,8 @@ export class AgentSession {
   /** The running turn records no words ({@link AgentTurnOptions.unsaid}). */
   private unsaid = false;
   private readonly checkFollowThrough: boolean;
+  /** The tools that ran in the current turn, by name: a follow-through check never offers one again. */
+  private readonly ranThisTurn = new Set<string>();
   /** The action waiting for the caller's yes (`<Tool confirm>`); null when none. */
   private pending: PendingConfirmation | null = null;
   /** How many inputs have arrived. A held action is answered only by a later one. */
@@ -520,6 +528,7 @@ export class AgentSession {
       yield { type: "error", error: { kind: "failed", message } };
     }
     this.unsaid = options.unsaid === true;
+    this.ranThisTurn.clear();
     this.blocks.turnStarted();
     const greets = options.kind === "synthetic" && this.inboundOpening();
     const newest = this.conversation.at(-1);
@@ -572,25 +581,38 @@ export class AgentSession {
           break;
         }
         stepCall = null;
+        const built = this.buildRequest(check ? [...messages, check] : messages, options.spoken === true);
+        // A check runs on its own deadline, so that its failure never fails the turn (below).
+        const deadline = check ? new AbortController() : controller;
+        const signal = check ? AbortSignal.any([controller.signal, deadline.signal]) : controller.signal;
         const request: AgentRunRequest = {
-          ...this.buildRequest(check ? [...messages, check] : messages, options.spoken === true),
-          signal: controller.signal,
+          ...built,
+          ...(check ? { tools: followThroughTools(built.tools, this.ranThisTurn) } : {}),
+          signal,
         };
         stepCall = this.llmLog.sent(request);
-        speech.startStep(request.tools.map((tool) => tool.name));
+        // Only speech is kept from saying tool names: a typed reply may write one.
+        speech.startStep(options.spoken === true ? request.tools.map((tool) => tool.name) : []);
         // Nothing of the check is said: its answer is a tool call or nothing.
         if (check) speech.mute();
         unrecorded = true;
-        const timer = setTimeout(
-          () => controller.abort(new LlmTimeoutError(this.llmTimeoutMs)),
-          this.llmTimeoutMs,
-        );
+        const timer = setTimeout(() => deadline.abort(new LlmTimeoutError(this.llmTimeoutMs)), this.llmTimeoutMs);
         let response: AgentRunResponse;
         try {
           response =
             streaming && this.streamLlm
-              ? yield* this.streamStep(this.streamLlm(request), speech, controller.signal)
-              : await untilAborted(this.llm(request), controller.signal);
+              ? yield* this.streamStep(this.streamLlm(request), speech, signal)
+              : await untilAborted(this.llm(request), signal);
+        } catch (error) {
+          // The reply was said to its end before the check: a check that fails or times out
+          // leaves the turn answered, and only the log and the check's trace entry hear of
+          // it. A cancelled turn is cancelled as before.
+          if (!check || controller.signal.aborted) throw error;
+          const cause: unknown = deadline.signal.aborted ? deadline.signal.reason : error;
+          console.warn("[curb] the follow-through check failed; the turn keeps its reply:", cause);
+          this.llmLog.failed(stepCall, describeError(cause));
+          unrecorded = false;
+          break;
         } finally {
           clearTimeout(timer);
         }
@@ -599,7 +621,10 @@ export class AgentSession {
           // The check found nothing to do: the turn ends as it was, and the note leaves no trace.
           const note = check;
           check = undefined;
-          if (!response.toolCalls.some((call) => call.name !== SKIP_TURN_TOOL_NAME)) {
+          // A call of a tool the check did not offer is never run: the model was told not to.
+          const offered = new Set(request.tools.map((tool) => tool.name));
+          const calls = response.toolCalls.filter((call) => call.name !== SKIP_TURN_TOOL_NAME);
+          if (calls.length === 0 || calls.some((call) => !offered.has(call.name))) {
             unrecorded = false;
             break;
           }
@@ -707,7 +732,7 @@ export class AgentSession {
             !this.unsaid &&
             options.kind !== "synthetic" &&
             steps < this.maxSteps &&
-            needsFollowThroughCheck(speech.reply, request.tools.map((tool) => tool.name));
+            needsFollowThroughCheck(speech.reply, followThroughTools(request.tools, this.ranThisTurn));
           if (!checks) break;
           checked = true;
           check = contextEvent(FOLLOW_THROUGH_CHECK);
@@ -1120,6 +1145,7 @@ export class AgentSession {
     toolCall: AgentToolCallRecord,
   ): Promise<{ outcome: ToolCallOutcome; durationMs?: number; skill?: SkillChange }> {
     if (toolCall.invalid) return { outcome: { result: { ok: false, message: toolCall.invalid }, contextDiff: [] } };
+    this.ranThisTurn.add(toolCall.name);
     // On a call the span joins the call's trace.
     const timed = await this.traceTool(
       toolCall,

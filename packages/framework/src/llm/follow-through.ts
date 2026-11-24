@@ -12,10 +12,10 @@
  *
  * The session refuses the first ({@link callStaysOpenAfter}), never says the second
  * ({@link namedTool}), and asks the model once more after the third ({@link FOLLOW_THROUGH_CHECK},
- * {@link needsFollowThroughCheck}).
+ * {@link followThroughTools}, {@link needsFollowThroughCheck}).
  */
 
-import { SKIP_TURN_TOOL_NAME } from "../types.js";
+import { END_CALL_TOOL_NAME } from "../types.js";
 
 /** What a refused `end_call` answers when another call of its step did not go through. */
 export function callStaysOpenAfter(failed: readonly string[]): string {
@@ -62,14 +62,23 @@ export const FOLLOW_THROUGH_CHECK =
   "not speak of.";
 
 /**
- * Whether a turn that ended on `reply` is checked: it said something, did not end on a question
- * (a reply that waits for the caller has nothing to follow through yet), and the model has a
- * tool that does something (skip_turn does nothing).
+ * The tools a follow-through check offers: the actions a reply can announce that its turn has
+ * not run yet (`ran`, by name). A tool that ran is never offered again, so a check cannot
+ * repeat its effect. The framework's own tools other than `end_call` (skip_turn, read_skill)
+ * do nothing a reply announces.
  */
-export function needsFollowThroughCheck(reply: string, toolNames: readonly string[]): boolean {
-  return (
-    reply.trim() !== "" &&
-    !/[?？]["'”’»)\]]*\s*$/.test(reply) &&
-    toolNames.some((name) => name !== SKIP_TURN_TOOL_NAME)
-  );
+export function followThroughTools<T extends { name: string; scope: string }>(
+  tools: readonly T[],
+  ran: ReadonlySet<string>,
+): T[] {
+  return tools.filter((tool) => !ran.has(tool.name) && (tool.scope !== "runtime" || tool.name === END_CALL_TOOL_NAME));
+}
+
+/**
+ * Whether a turn that ended on `reply` is checked: it said something, did not end on a question
+ * (a reply that waits for the caller has nothing to follow through yet), and the check has a
+ * tool to offer ({@link followThroughTools}).
+ */
+export function needsFollowThroughCheck(reply: string, offered: readonly unknown[]): boolean {
+  return reply.trim() !== "" && !/[?？]["'”’»)\]]*\s*$/.test(reply) && offered.length > 0;
 }

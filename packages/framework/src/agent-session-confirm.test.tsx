@@ -193,6 +193,22 @@ describe("a tool that asks the caller first (<Tool confirm>)", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
+  it("a spoken statement after the confirmed action sends no follow-through check that could run it again", async () => {
+    const { runtime, onSubmit } = bookingRuntime();
+    const { llm, requests } = scripted(
+      [callsBook(LISA), says("Done, see you on Tuesday at three."), callsBook(LISA)],
+      ["yes"],
+    );
+    const session = new AgentSession(runtime, llm, { checkFollowThrough: true });
+
+    await session.runTurn("Tuesday at three, lisa@example.com.", { spoken: true });
+    const reply = await session.runTurn("Ja, genau.", { spoken: true });
+
+    expect(reply).toBe("Done, see you on Tuesday at three.");
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveLength(2);
+  });
+
   it("a correction replaces the held action, and the yes runs only the corrected one", async () => {
     const lenaWednesday: Booking = { ...LENA, start: "Wednesday 10:00" };
     const { runtime, onSubmit } = bookingRuntime();
