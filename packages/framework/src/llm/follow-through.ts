@@ -69,26 +69,28 @@ export const FOLLOW_THROUGH_CHECK =
 
 /**
  * The tools a follow-through check offers: the actions a reply can announce that its turn has
- * not run yet (`ran`, by name). A tool that ran is never offered again, so a check cannot
- * repeat its effect. skip_turn and read_skill do nothing a reply announces. `end_call` is
- * offered only once the turn ran one of the agent's own actions: closing the call after an
- * action ("you are off the list, goodbye") is the goodbye a check repairs, while after a turn
- * that only answered, a check that misread the answer as a goodbye would cut the caller off.
+ * not tried yet (`ran`, by name). A tool that was called is never offered again, so a check
+ * cannot repeat its effect or retry a call that was refused. skip_turn and read_skill do
+ * nothing a reply announces. `end_call` is offered only once one of the agent's own actions
+ * succeeded in the turn (`done`): closing the call after an action ("you are off the list,
+ * goodbye") is the goodbye a check repairs, while after a turn that only answered, or whose
+ * action was refused, a check that misread the reply as a goodbye would cut the caller off.
  */
 export function followThroughTools<T extends { scope: string; name: string }>(
   tools: readonly T[],
   ran: ReadonlySet<string>,
+  done: ReadonlySet<string>,
 ): T[] {
-  const acted = tools.some((tool) => tool.scope !== "runtime" && ran.has(tool.name));
+  const acted = tools.some((tool) => tool.scope !== "runtime" && done.has(tool.name));
   return tools.filter(
     (tool) => !ran.has(tool.name) && (tool.scope !== "runtime" || (acted && tool.name === END_CALL_TOOL_NAME)),
   );
 }
 
-/** Fewer digits than this are left alone: a count, a time, a day or an amount, often said in words. */
+/** Fewer digits than this, as written, are left alone: a count, a time, a day or an amount. */
 const LONG_NUMBER_DIGITS = 6;
-/** A country code or trunk prefix one side may leave out: at most this many leading digits. */
-const PREFIX_DIGITS = 3;
+/** The most digits a country code has. */
+const COUNTRY_CODE_DIGITS = 3;
 /**
  * A number as written: groups of digits, a leading `+`, a group in brackets, at most one space,
  * dash, slash or dot between groups. Words between numbers keep them apart.
@@ -97,32 +99,43 @@ const WRITTEN_NUMBER = /\+?(?:\(\d+\)|\d)(?:[ \u00a0./-]?(?:\(\d+\)|\d))*/g;
 /** A date is not a number someone gives: the check may write tomorrow's. */
 const DATE = /^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./]\d{1,2}[./]\d{2,4})$/;
 
+/** A number's digits, and whether it was written with a leading `+` (a phone number with its country code). */
+type WrittenNumber = { written: string; digits: string; international: boolean };
+
 /**
- * The first long number (a phone, order or account number: six digits or more, as written,
- * like `+1 (202) 555-0142` or `030/1234567`) in a check call's `input` that nothing in `heard`
- * holds, or undefined. `heard` is what the conversation holds: the instructions, the caller's
- * and the agent's words, tool results. Numbers are compared whole, by their digits, one side
- * allowed to leave out a country code or trunk prefix. A check that fills such a number made it
- * up, so its call is not run. Dates are left alone.
+ * The first long number (a phone, order or account number: six digits or more as written,
+ * leading zeros included, like `+1 (202) 555-0142`, `030/1234567` or `012345`) in a check
+ * call's `input` that nothing in `heard` holds, or undefined. `heard` is what the conversation
+ * holds: the instructions, the caller's and the agent's words, tool results. Numbers are
+ * compared whole, by their digits. Only a phone number written with its country code (`+49 30
+ * 123456`) also matches the same number without it (`030 123456`, `30 123456`); any other
+ * number matches only digit for digit. A check that fills such a number made it up, so its
+ * call is not run. Dates are left alone.
  */
 export function inventedNumber(input: unknown, heard: readonly unknown[]): string | undefined {
-  const known = leafValues(heard).flatMap((text) => writtenNumbers(text).map(({ digits }) => digits));
-  for (const { written, digits } of leafValues(input).flatMap(writtenNumbers)) {
-    if (digits.length >= LONG_NUMBER_DIGITS && !known.some((said) => sameNumber(digits, said))) return written;
+  const known = leafValues(heard).flatMap(writtenNumbers);
+  for (const number of leafValues(input).flatMap(writtenNumbers)) {
+    if (number.digits.length >= LONG_NUMBER_DIGITS && !known.some((said) => sameNumber(number, said))) {
+      return number.written;
+    }
   }
   return undefined;
 }
 
-function writtenNumbers(text: string): { written: string; digits: string }[] {
+function writtenNumbers(text: string): WrittenNumber[] {
   return [...text.matchAll(WRITTEN_NUMBER)]
-    .map(([written]) => ({ written, digits: written.replace(/\D/g, "").replace(/^0+/, "") }))
+    .map(([written]) => ({ written, digits: written.replace(/\D/g, ""), international: written.startsWith("+") }))
     .filter(({ written }) => !DATE.test(written));
 }
 
-function sameNumber(a: string, b: string): boolean {
-  if (a === b) return true;
-  const [short, long] = a.length < b.length ? [a, b] : [b, a];
-  return short.length >= LONG_NUMBER_DIGITS && long.length - short.length <= PREFIX_DIGITS && long.endsWith(short);
+/** The same number: digit for digit, or a phone number with its country code and the same one without. */
+function sameNumber(a: WrittenNumber, b: WrittenNumber): boolean {
+  if (a.digits === b.digits) return true;
+  if (a.international === b.international) return false;
+  const [withCode, without] = a.international ? [a, b] : [b, a];
+  const national = without.digits.replace(/^0/, "");
+  const code = withCode.digits.length - national.length;
+  return national.length >= LONG_NUMBER_DIGITS && code >= 1 && code <= COUNTRY_CODE_DIGITS && withCode.digits.endsWith(national);
 }
 
 /** Every string and number in `value`, however deep; each object is read once. */

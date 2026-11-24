@@ -19,6 +19,19 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ phone: "030 123456" }, ["my number is +49 (30) 123456"])).toBeUndefined();
   });
 
+  it("matches an order or account number only whole; a country code is left out only on a phone number", () => {
+    expect(inventedNumber({ order: "99123456" }, ["my order is 123456"])).toBe("99123456");
+    expect(inventedNumber({ account: "123456" }, ["my account is 99123456"])).toBe("123456");
+    expect(inventedNumber({ order: "0123456" }, ["my order is 123456"])).toBe("0123456");
+    expect(inventedNumber({ phone: "+49 171 2345678" }, ["my number is 0171 2345678"])).toBeUndefined();
+    expect(inventedNumber({ phone: "+12 3456" }, ["room 3456"])).toBe("+12 3456");
+  });
+
+  it("counts the digits as written, leading zeros included", () => {
+    expect(inventedNumber({ order: "012345" }, ["where is my order?"])).toBe("012345");
+    expect(inventedNumber({ order: "000123" }, ["where is my order?"])).toBe("000123");
+  });
+
   it("leaves dates, times and short numbers alone", () => {
     expect(inventedNumber({ day: "2026-11-25", at: "2026-11-25T10:00:00Z", de: "25.11.2026" }, ["tomorrow at ten"])).toBeUndefined();
   });
@@ -37,7 +50,8 @@ describe("followThroughTools", () => {
     { name: "end_call", scope: "runtime" },
     { name: "skip_turn", scope: "runtime" },
   ];
-  const offered = (ran: string[]) => followThroughTools(tools, new Set(ran)).map((tool) => tool.name);
+  const offered = (ran: string[], done = ran) =>
+    followThroughTools(tools, new Set(ran), new Set(done)).map((tool) => tool.name);
 
   it("offers the agent's own tools that have not run, and no framework tool after a turn that only answered", () => {
     expect(offered([])).toEqual(["request_callback", "lookup_order"]);
@@ -46,5 +60,10 @@ describe("followThroughTools", () => {
   it("offers end_call too once the turn ran one of the agent's own actions, never a tool that ran", () => {
     expect(offered(["lookup_order"])).toEqual(["request_callback", "end_call"]);
     expect(offered(["lookup_order", "request_callback"])).toEqual(["end_call"]);
+  });
+
+  it("a call that was rejected or failed is not offered again, and is no action that unlocks end_call", () => {
+    expect(offered(["request_callback"], [])).toEqual(["lookup_order"]);
+    expect(offered(["request_callback", "lookup_order"], ["lookup_order"])).toEqual(["end_call"]);
   });
 });

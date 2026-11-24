@@ -754,6 +754,25 @@ describe("AgentSession", () => {
       expect(hangUp).toHaveBeenCalledTimes(1);
     });
 
+    it("a callback rejected before its handler ran is no action: the check cannot hang up after it", async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const hangUp = vi.fn();
+      runtime.setEndCallRequest(hangUp);
+      const { streamLlm, requests } = scriptedStream([
+        { toolCalls: [{ name: "request_callback", input: { name: "Alex Doe" } }] },
+        { text: "An advisor calls you tomorrow. Goodbye." },
+        { toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye: "Bye." } }] },
+      ]);
+      const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+      const turn = await streamTurn(session, "call me about my claim status, bye");
+
+      const rejected = turn.events.find((event) => event.type === "tool" && event.toolCall.name === "request_callback");
+      expect(rejected && rejected.type === "tool" ? rejected.ok : undefined).toBe(false);
+      expect(requests.slice(2).flatMap((request) => request.tools.map((tool) => tool.name))).not.toContain(END_CALL_TOOL_NAME);
+      expect(hangUp).toHaveBeenCalledTimes(0);
+    });
+
     it("a restored tool result the guard cannot serialize never fails the answered turn", async () => {
       const { streamLlm, requests } = scriptedStream([{ text: "Your policy covers water damage." }, { text: "" }]);
       const session = new AgentSession(createInsuranceDemoRuntime(), idleLlm, { streamLlm, checkFollowThrough: true });

@@ -134,16 +134,18 @@ two forms:
   it. An offer or a suggestion ("I can show you a demo.") is not an action yet and gets
   no call, and neither is an answer or a description of how something works. The check
   offers only the agent's own tools that have not run in that turn, a confirmed action
-  included, so it never repeats one; a turn with nothing left to offer is not checked. It
-  offers `end_call` only once the turn ran one of the agent's own tools ("You are off the
-  list. Goodbye."), and the call then hangs up after the words already said, without a
-  second goodbye. After a turn that only answered, the check cannot hang up, so an answer it
-  misreads as a goodbye never cuts the caller off. A tool call in the answer runs as
-  part of the same turn, unless its input carries a long number (six digits or more, as
-  written, like `+1 (202) 555-0142`: a phone, order or account number) that the conversation
-  never contained: the check made that up, so the call is dropped. Numbers are compared
-  whole, and a country code or leading zero one side leaves out still matches; dates are
-  not checked. Anything else the check writes is dropped, unsaid and out of the
+  included, so it never repeats or retries one; a turn with nothing left to offer is not
+  checked. It offers `end_call` only once one of the agent's own tools succeeded in that turn
+  ("You are off the list. Goodbye."), and the call then hangs up after the words already
+  said, without a second goodbye. After a turn that only answered, or whose tool call was
+  refused, the check cannot hang up, so a reply it misreads as a goodbye never cuts the
+  caller off. A tool call in the answer runs as
+  part of the same turn, unless its input carries a long number (six digits or more as
+  written, leading zeros included, like `+1 (202) 555-0142` or `012345`: a phone, order or
+  account number) that the conversation never contained: the check made that up, so the call
+  is dropped. Numbers are compared whole, digit for digit; only a phone number written with
+  its country code (`+49 30 123456`) also matches the same number without it (`030 123456`).
+  Dates are not checked. Anything else the check writes is dropped, unsaid and out of the
   transcript. That is one more LLM request on those turns, counted
   in the usage `curb test` reports. It starts once the reply's last words have gone to
   speech. A check that fails or times out is logged and leaves the turn answered.

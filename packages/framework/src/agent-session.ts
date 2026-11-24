@@ -207,8 +207,10 @@ export class AgentSession {
   /** The running turn records no words ({@link AgentTurnOptions.unsaid}). */
   private unsaid = false;
   private readonly checkFollowThrough: boolean;
-  /** The tools that ran in the current turn, by name: a follow-through check never offers one again. */
+  /** The tools called in the current turn, by name: a follow-through check never offers one again. */
   private readonly ranThisTurn = new Set<string>();
+  /** The tools that succeeded in the current turn, by name: only an action that succeeded lets a check hang up. */
+  private readonly doneThisTurn = new Set<string>();
   /** The action waiting for the caller's yes (`<Tool confirm>`); null when none. */
   private pending: PendingConfirmation | null = null;
   /** How many inputs have arrived. A held action is answered only by a later one. */
@@ -531,6 +533,7 @@ export class AgentSession {
     }
     this.unsaid = options.unsaid === true;
     this.ranThisTurn.clear();
+    this.doneThisTurn.clear();
     this.blocks.turnStarted();
     const greets = options.kind === "synthetic" && this.inboundOpening();
     const newest = this.conversation.at(-1);
@@ -587,7 +590,7 @@ export class AgentSession {
         const built = this.buildRequest(
           check ? [...messages, check] : messages,
           options.spoken === true,
-          check ? (tools) => followThroughTools(tools, this.ranThisTurn) : undefined,
+          check ? (tools) => followThroughTools(tools, this.ranThisTurn, this.doneThisTurn) : undefined,
         );
         // A check runs on its own deadline, so that its failure never fails the turn (below).
         const deadline = check ? new AbortController() : controller;
@@ -743,7 +746,7 @@ export class AgentSession {
             !this.unsaid &&
             options.kind !== "synthetic" &&
             steps < this.maxSteps &&
-            needsFollowThroughCheck(speech.reply, followThroughTools(request.tools, this.ranThisTurn));
+            needsFollowThroughCheck(speech.reply, followThroughTools(request.tools, this.ranThisTurn, this.doneThisTurn));
           if (!checks) break;
           checked = true;
           check = contextEvent(FOLLOW_THROUGH_CHECK);
@@ -1196,6 +1199,7 @@ export class AgentSession {
       () => this.runtime.snapshot().context.path,
       callTraceOf(this.runtime.info)?.context(),
     );
+    if (timed.outcome.result.ok !== false) this.doneThisTurn.add(toolCall.name);
     const skill = this.skillChange();
     return { ...timed, ...(skill ? { skill } : {}) };
   }
