@@ -200,6 +200,40 @@ describe("voice on a conversation connection", () => {
     }
   });
 
+  it("keeps a newer selection and its live call when an older conversation load finishes", async () => {
+    const loaded = deferred<AgentSessionBundle>();
+    const create = vi.fn<AgentHost["create"]>().mockResolvedValueOnce(makeBundle()).mockReturnValueOnce(loaded.promise);
+    const handle = voiceHandle();
+    const sent: ServerMessage[] = [];
+    const controller = new ConnectionController((message) => sent.push(message), {
+      ...makeBundle(),
+      agentHost: { ...agentHost, create },
+      voiceHost: { start: async () => handle },
+      history: {
+        list: () => [{ id: 1, agentId: "main", startedAt: 1, messageCount: 1 }],
+        messages: () => [{ role: "user", content: "An earlier message", at: 1 }],
+        systemPrompt: () => null,
+      },
+    });
+    const active = () => sent.filter((message) => message.type === "conversations").at(-1)!.active;
+    controller.start();
+    const first = active();
+    await controller.handle({ type: "reset" });
+    expect(active()).not.toBe(first);
+
+    const older = controller.handle({ type: "select_conversation", id: "stored-1" });
+    await controller.handle({ type: "select_conversation", id: first });
+    await controller.handle({ type: "voice_start" });
+    expect(active()).toBe(first);
+    expect(sent.filter(isLive)).toHaveLength(1);
+
+    loaded.resolve(makeBundle());
+    await older;
+    expect(active()).toBe(first);
+    expect(handle.close).not.toHaveBeenCalled();
+    expect(sent).not.toContainEqual({ type: "voice_session", live: false });
+  });
+
   it("binds a delayed voice start to the rebuilt session before sending its ticket", async () => {
     const rebuilt = makeBundle();
     const started = deferred<VoiceCallHandle>();

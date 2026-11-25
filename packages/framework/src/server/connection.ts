@@ -247,6 +247,7 @@ export class ConnectionController {
   /** Complete live session bundles retained for instant, stateful history
    * switching during this preview connection. Newest entries are appended. */
   private readonly conversations: RestorableConversation[];
+  private conversationActivation = 0;
   private activeConversationId: string;
   private nextConversationNumber = 2;
   private disposed = false;
@@ -460,7 +461,11 @@ export class ConnectionController {
    */
   private async materialise(
     conversation: RestorableConversation,
-    options: { continueRecording?: number; info: Readonly<Record<string, unknown>> },
+    options: {
+      continueRecording?: number;
+      info: Readonly<Record<string, unknown>>;
+      isCurrent?: () => boolean;
+    },
   ): Promise<string[] | null> {
     const agentId = conversation.agentId ?? this.activeAgentId;
     if (!this.agentHost || agentId === null) {
@@ -472,6 +477,7 @@ export class ConnectionController {
 
     try {
       const bundle = await this.createBundle(agentId, conversation.call);
+      if (options.isCurrent?.() === false) return null;
       // Before the transcript is restored onto it, so not one message goes to a new conversation.
       if (options.continueRecording !== undefined) {
         this.history?.continueRecording?.(bundle.session, options.continueRecording);
@@ -487,7 +493,9 @@ export class ConnectionController {
       conversation.agentId = agentId;
       return notes;
     } catch (error) {
-      this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+      if (options.isCurrent?.() !== false) {
+        this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+      }
       return null;
     }
   }
@@ -536,6 +544,8 @@ export class ConnectionController {
    * later restoration. The inspector follows the active agent, not the
    * conversation, so it resets only when the agent changes. */
   private async activateConversation(conversation: RestorableConversation): Promise<void> {
+    const activation = ++this.conversationActivation;
+    const isCurrent = () => !this.disposed && activation === this.conversationActivation;
     if (conversation.id === this.activeConversationId) {
       this.sendConversationsFrame();
       return;
@@ -553,12 +563,12 @@ export class ConnectionController {
     // the live one down with it: the user is still in a working session.
     let notes: string[] = [];
     if (!conversation.bundle) {
-      const restored = await this.materialise(conversation, { info: this.runtime.info.snapshot() });
+      const restored = await this.materialise(conversation, { info: this.runtime.info.snapshot(), isCurrent });
       if (restored === null) return;
       notes = restored;
     }
 
-    if (this.disposed) return;
+    if (!isCurrent()) return;
     if (this.session.isRunning) {
       this.send(errorFrame("protocol", "Cannot switch conversations while a turn is running."));
       return;
