@@ -94,7 +94,7 @@ export class KugelTtsSession {
   private readonly config: KugelTtsConfig;
   private readonly handlers: KugelTtsHandlers;
   private ws: WebSocket | null = null;
-  private connecting: Promise<WebSocket> | null = null;
+  private connecting: { socket: WebSocket; promise: Promise<WebSocket> } | null = null;
   /** Contexts still routing audio (input may already be closed). Frames for
    * ids not in here are late frames from a barge-in — dropped. */
   private readonly contexts = new Map<string, TurnContext>();
@@ -239,6 +239,13 @@ export class KugelTtsSession {
     this.closed = true;
     for (const timer of this.retryTimers) clearTimeout(timer);
     this.retryTimers.clear();
+    const connecting = this.connecting;
+    if (connecting) {
+      connecting.socket.terminate();
+      await connecting.promise.catch(() => {
+        // Terminating an upgrade rejects the handshake and unblocks queued writes.
+      });
+    }
     await this.flush();
     const ws = this.ws;
     this.ws = null;
@@ -263,7 +270,7 @@ export class KugelTtsSession {
   private ensureWs(): Promise<WebSocket> {
     if (this.closed) return Promise.reject(new Error("Kugel TTS session is closed."));
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return Promise.resolve(this.ws);
-    if (this.connecting) return this.connecting;
+    if (this.connecting) return this.connecting.promise;
 
     const base = this.config.apiBase
       .replace("https://", "wss://")
@@ -271,11 +278,11 @@ export class KugelTtsSession {
       .replace(/\/+$/, "");
     const url = `${base}/ws/tts/multi?api_key=${encodeURIComponent(this.config.apiKey)}`;
 
-    this.connecting = new Promise<WebSocket>((resolve, reject) => {
-      const ws = new WebSocket(
-        url,
-        this.config.proxyUrl ? { agent: new HttpsProxyAgent(this.config.proxyUrl) } : undefined,
-      );
+    const ws = new WebSocket(
+      url,
+      this.config.proxyUrl ? { agent: new HttpsProxyAgent(this.config.proxyUrl) } : undefined,
+    );
+    const promise = new Promise<WebSocket>((resolve, reject) => {
       let opened = false;
       ws.on("open", () => {
         opened = true;
@@ -288,9 +295,7 @@ export class KugelTtsSession {
       ws.on("error", (error) => {
         if (opened) return;
         this.connecting = null;
-        const message = `Kugel TTS connection failed: ${error.message}`;
-        if (!this.closed) this.handlers.onError(message);
-        reject(new Error(message));
+        reject(new Error(`Kugel TTS connection failed: ${error.message}`, { cause: error }));
       });
       ws.on("close", () => {
         if (this.ws === ws) this.ws = null;
@@ -309,7 +314,8 @@ export class KugelTtsSession {
         }
       });
     });
-    return this.connecting;
+    this.connecting = { socket: ws, promise };
+    return promise;
   }
 
   private handleFrame(ws: WebSocket, raw: string): void {
@@ -398,9 +404,12 @@ export class KugelTtsSession {
       logInfo("voice", `tts concurrency limit, retry ${context.retryAttempts} in ${delayMs}ms`);
       const timer = setTimeout(() => {
         this.retryTimers.delete(timer);
-        // KEEP-JUSTIFIED: a failed reconnect already reached `onError` in
-        // `ensureWs`, and the replay dropped its context.
-        this.replay(context).catch(() => undefined);
+        void this.replay(context).catch((error: unknown) => {
+          this.finishContext(context.contextId);
+          if (!this.closed) {
+            this.handlers.onError(error instanceof Error ? error.message : String(error), context.turnId);
+          }
+        });
       }, delayMs);
       this.retryTimers.add(timer);
     }
@@ -412,13 +421,7 @@ export class KugelTtsSession {
     return this.enqueue(async () => {
       // The turn may have been cancelled while it waited.
       if (this.closed || this.contexts.get(context.contextId) !== context) return;
-      let ws: WebSocket;
-      try {
-        ws = await this.ensureWs();
-      } catch (error) {
-        this.finishContext(context.contextId);
-        throw error;
-      }
+      const ws = await this.ensureWs();
       if (this.closed) return;
       context.socket = ws;
       context.awaitingRetry = false;

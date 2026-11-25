@@ -193,6 +193,7 @@ export async function* synthesizedFrames(engine: tts.TTS, text: string): AsyncGe
       resampler ??= new AudioResampler(frame.sampleRate, TRANSFER_AUDIO_SAMPLE_RATE, frame.channels);
       yield* resampler.push(frame);
     }
+    if (stream.error) throw stream.error;
     if (resampler) yield* resampler.flush();
   } finally {
     stream.close();

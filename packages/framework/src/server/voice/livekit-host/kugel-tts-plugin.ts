@@ -79,6 +79,7 @@ export class KugelTTS extends tts.TTS {
   }
 
   async close(): Promise<void> {
+    for (const stream of this.streams.values()) stream.close();
     await this.session.close();
     await super.close();
   }
@@ -267,6 +268,7 @@ class KugelChunkedStream extends tts.ChunkedStream {
   }
 
   protected async run(): Promise<void> {
+    if (this.abortSignal.aborted) return;
     const stream = this.createStream();
     const closeStream = () => stream.close();
     this.abortSignal.addEventListener("abort", closeStream, { once: true });
