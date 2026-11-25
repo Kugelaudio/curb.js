@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { followThroughTools, inventedNumber } from "./follow-through.js";
+import { FOLLOW_THROUGH_CHECK, followThroughActions, followThroughTools, inventedNumber } from "./follow-through.js";
 
 describe("inventedNumber: a check call fills no long number the conversation never had", () => {
   it("finds a phone number no one said, and passes one the caller said in any spacing", () => {
@@ -152,27 +152,43 @@ describe("inventedNumber: a check call fills no long number the conversation nev
   });
 });
 
-describe("followThroughTools", () => {
+describe("followThroughActions and followThroughTools", () => {
   const tools = [
     { name: "request_callback", scope: "global" },
     { name: "lookup_order", scope: "global" },
     { name: "end_call", scope: "runtime" },
     { name: "skip_turn", scope: "runtime" },
   ];
+  const runs = (ran: string[], done = ran) =>
+    followThroughActions(tools, new Set(ran), new Set(done)).map((tool) => tool.name);
   const offered = (ran: string[], done = ran) =>
     followThroughTools(tools, new Set(ran), new Set(done)).map((tool) => tool.name);
 
-  it("offers the agent's own tools that have not run, and no framework tool after a turn that only answered", () => {
-    expect(offered([])).toEqual(["request_callback", "lookup_order"]);
+  it("runs the agent's own tools that have not run, and no framework tool after a turn that only answered", () => {
+    expect(runs([])).toEqual(["request_callback", "lookup_order"]);
   });
 
-  it("offers end_call too once the turn ran one of the agent's own actions, never a tool that ran", () => {
-    expect(offered(["lookup_order"])).toEqual(["request_callback", "end_call"]);
-    expect(offered(["lookup_order", "request_callback"])).toEqual(["end_call"]);
+  it("runs end_call too once the turn ran one of the agent's own actions, never a tool that ran", () => {
+    expect(runs(["lookup_order"])).toEqual(["request_callback", "end_call"]);
+    expect(runs(["lookup_order", "request_callback"])).toEqual(["end_call"]);
+    expect(runs(["lookup_order", "end_call"])).toEqual(["request_callback"]);
   });
 
-  it("a call that was rejected or failed is not offered again, and is no action that unlocks end_call", () => {
-    expect(offered(["request_callback"], [])).toEqual(["lookup_order"]);
-    expect(offered(["request_callback", "lookup_order"], ["lookup_order"])).toEqual(["end_call"]);
+  it("a call that was rejected or failed is not run again, and is no action that unlocks end_call", () => {
+    expect(runs(["request_callback"], [])).toEqual(["lookup_order"]);
+    expect(runs(["request_callback", "lookup_order"], ["lookup_order"])).toEqual(["end_call"]);
+  });
+
+  it("always offers end_call, the answer to a reply that only says goodbye, and never a tool that ran", () => {
+    expect(offered([])).toEqual(["request_callback", "lookup_order", "end_call"]);
+    expect(offered(["request_callback"], [])).toEqual(["lookup_order", "end_call"]);
+    expect(offered(["lookup_order", "end_call"])).toEqual(["request_callback", "end_call"]);
+    expect(offered([], []).filter((name) => !runs([]).includes(name))).toEqual(["end_call"]);
+  });
+
+  it("tells the check that a goodbye calls end_call alone and that an earlier turn's action is done", () => {
+    expect(FOLLOW_THROUGH_CHECK).toContain("for it call end_call alone, never another tool");
+    expect(FOLLOW_THROUGH_CHECK).toContain("An action an earlier turn took is done: never call it again.");
+    expect(FOLLOW_THROUGH_CHECK).not.toContain("A goodbye is an action");
   });
 });
