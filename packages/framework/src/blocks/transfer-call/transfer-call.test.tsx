@@ -1,3 +1,6 @@
+import { once } from "node:events";
+import { initializeLogger, voice } from "@livekit/agents";
+import { WebSocketServer } from "ws";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Agent,
@@ -13,6 +16,8 @@ import { attachCallTrace, type CallTrace } from "../../call-trace.js";
 import type { OutgoingHostMessage } from "../../messages.js";
 import { CALL_TRANSFER_RESULT_MESSAGE, attachTransferAudio, transferToolResult, type TransferAudio } from "./index.js";
 import { decideTransferEnded } from "./ended.js";
+import { KugelTTS } from "../../server/voice/livekit-host/kugel-tts-plugin.js";
+import { createTransferAudio, synthesizedFrames } from "../../server/voice/livekit-host/transfer-audio.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -166,6 +171,59 @@ describe("useTransferCall", () => {
     await result(runtime, { transferId: "t-5", outcome: "answered", dialStatus: "ANSWER" });
     await expect(pending).resolves.toEqual({ outcome: "answered", transferId: "t-5" });
     expect(log.at(-1)).toBe("ringback stopped");
+  });
+
+  it("continues a transfer after synthesis fails without closing the LiveKit session", async () => {
+    initializeLogger({ pretty: false, level: "warn" });
+    const wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+    await once(wss, "listening");
+    const { port } = wss.address() as { port: number };
+    wss.on("connection", (socket) => {
+      socket.once("message", () => socket.send(JSON.stringify({ error: "Voice unavailable" })));
+    });
+    const engine = new KugelTTS({
+      apiBase: `http://127.0.0.1:${port}`,
+      apiKey: "test-key",
+      voiceId: 1072,
+      modelId: "kugel-3.5",
+      sampleRate: 24000,
+      language: "en",
+    });
+    const session = new voice.AgentSession({
+      tts: engine,
+      vad: null,
+      turnHandling: { turnDetection: null },
+      connOptions: { maxUnrecoverableErrors: 0 },
+    });
+    const audio = createTransferAudio({
+      publish: async () => ({
+        captureFrame: async () => { await new Promise((resolve) => setTimeout(resolve, 0)); },
+        waitForPlayout: async () => {},
+        clearQueue: () => {},
+        close: async () => {},
+      }),
+      synthesize: (text) => synthesizedFrames(engine, text),
+      log: () => {},
+    });
+    try {
+      await session.start({ agent: new voice.Agent({ instructions: "Handle a call." }) });
+      const { errors, runtime, sent, transfer } = phoneCall({
+        audio,
+        reply: () => {
+          queueMicrotask(() => void result(runtime, { transferId: "t-5", outcome: "answered", dialStatus: "ANSWER" }));
+          return { transferId: "t-5" };
+        },
+      });
+      await expect(transfer()({ to: "+493012345678", announce: ANNOUNCE })).resolves.toMatchObject({ outcome: "answered" });
+      expect(sent).toHaveLength(1);
+      expect(errors).toHaveBeenCalledWith(expect.stringContaining("Voice unavailable"));
+      expect(session._closingSignal.aborted).toBe(false);
+    } finally {
+      await audio.close();
+      await session.close();
+      await engine.close();
+      await new Promise<void>((resolve) => wss.close(() => resolve()));
+    }
   });
 
   it("says nothing without an announcement, but still rings", async () => {

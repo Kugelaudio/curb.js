@@ -11,6 +11,7 @@
 
 import {
   type APIConnectOptions,
+  APIError,
   AudioByteStream,
   shortuuid,
   tts,
@@ -42,9 +43,7 @@ export class KugelTTS extends tts.TTS {
       onAudio: (b64, turnId) => this.streams.get(turnId)?.handleAudio(b64),
       onDone: (turnId) => this.streams.get(turnId)?.handleDone(),
       onWordTimestamps: (turnId, words) => this.streams.get(turnId)?.handleWords(words),
-      onError: (message) => {
-        for (const stream of this.streams.values()) stream.handleError(message);
-      },
+      onError: (message, turnId) => this.streams.get(turnId)?.handleError(message),
     });
     // Prewarm the socket so the first reply skips the WS handshake.
     void this.session.connect().catch(() => {
@@ -54,15 +53,27 @@ export class KugelTTS extends tts.TTS {
   }
 
   stream(options?: { connOptions?: APIConnectOptions }): KugelSynthesizeStream {
+    return this.createStream(true, options?.connOptions);
+  }
+
+  private createStream(reportErrors: boolean, connOptions?: APIConnectOptions): KugelSynthesizeStream {
     const turnId = ++this.turnCounter;
-    const stream = new KugelSynthesizeStream(this, turnId, options?.connOptions);
+    const stream = new KugelSynthesizeStream(this, turnId, reportErrors, connOptions);
     this.streams.set(turnId, stream);
     return stream;
   }
 
   /** One-shot synthesis: drive a streaming segment with the full text. */
   synthesize(text: string, connOptions?: APIConnectOptions): tts.ChunkedStream {
-    return new KugelChunkedStream(this, text, connOptions);
+    return new KugelChunkedStream(this, text, () => this.createStream(false), connOptions);
+  }
+
+  /** Report playback failures to the caller of this stream, outside the session error budget. */
+  synthesizeForPlayback(text: string): KugelSynthesizeStream {
+    const stream = this.createStream(false);
+    stream.pushText(text);
+    stream.endInput();
+    return stream;
   }
 
   releaseStream(turnId: number): void {
@@ -70,6 +81,7 @@ export class KugelTTS extends tts.TTS {
   }
 
   async close(): Promise<void> {
+    for (const stream of this.streams.values()) stream.close();
     await this.session.close();
     await super.close();
   }
@@ -98,16 +110,23 @@ export class KugelSynthesizeStream extends tts.SynthesizeStream {
   private chunksIn = 0;
   private lastFrameB64: string | null = null;
   private done = false;
+  private failure?: APIError;
   private resolveDone!: () => void;
   private readonly doneFut = new Promise<void>((resolve) => {
     this.resolveDone = resolve;
   });
 
-  constructor(kugel: KugelTTS, turnId: number, connOptions?: APIConnectOptions) {
+  constructor(
+    kugel: KugelTTS,
+    turnId: number,
+    private readonly reportErrors: boolean,
+    connOptions?: APIConnectOptions,
+  ) {
     super(kugel, connOptions);
     this.kugel = kugel;
     this.turnId = turnId;
     this.bstream = new AudioByteStream(kugel.sampleRate, kugel.numChannels);
+    this.abortSignal.addEventListener("abort", () => this.resolveDone(), { once: true });
   }
 
   handleAudio(b64: string): void {
@@ -152,10 +171,16 @@ export class KugelSynthesizeStream extends tts.SynthesizeStream {
     this.resolveDone();
   }
 
+  override get error(): APIError | undefined {
+    return this.failure;
+  }
+
   handleError(message: string): void {
-    if (this.done) return;
+    if (this.done || this.closed) return;
     this.done = true;
-    if (!this.queue.closed) this.queue.put(tts.SynthesizeStream.END_OF_STREAM);
+    // LiveKit cannot replay a streaming input queue that has already been consumed.
+    this.failure = new APIError(message, { retryable: false });
+    if (!this.input.closed) this.input.close();
     this.resolveDone();
     logError("voice", `Kugel TTS stream error: ${message}`);
   }
@@ -195,6 +220,7 @@ export class KugelSynthesizeStream extends tts.SynthesizeStream {
     try {
       let sawText = false;
       for await (const data of this.input) {
+        if (this.failure || this.closed) break;
         if (data === tts.SynthesizeStream.FLUSH_SENTINEL) continue;
         if (!data) continue;
         sawText = true;
@@ -204,18 +230,21 @@ export class KugelSynthesizeStream extends tts.SynthesizeStream {
         await this.kugel.session.streamInput(this.turnId, data);
       }
       this.inputDoneAt = performance.now();
-      if (!sawText) {
-        this.handleDone();
-        return;
+      if (!this.failure && !this.closed) {
+        if (sawText) {
+          await this.kugel.session.endInput(this.turnId);
+          await this.doneFut; // audio keeps arriving until context_closed
+        } else {
+          this.handleDone();
+        }
       }
-      await this.kugel.session.endInput();
-      await this.doneFut; // audio keeps arriving until context_closed
+    } catch (error) {
+      this.handleError(error instanceof Error ? error.message : String(error));
     } finally {
-      if (!this.done) {
-        // Cancelled mid-synthesis (barge-in): cancel the server context so
-        // late frames are dropped at the source.
+      if (!this.done || this.failure) {
+        // Cancel only this turn so another stream can keep playing.
         this.done = true;
-        void this.kugel.session.flush().catch(() => {
+        void this.kugel.session.flush(this.turnId).catch(() => {
           // KEEP-JUSTIFIED: cancellation cleanup after the reply was already
           // abandoned; there is no consumer left to surface this to.
         });
@@ -223,26 +252,38 @@ export class KugelSynthesizeStream extends tts.SynthesizeStream {
       }
       this.kugel.releaseStream(this.turnId);
     }
+    if (this.failure && this.reportErrors) throw this.failure;
   }
 }
 
 /** One-shot wrapper: pipe the full text through a streaming segment. */
 class KugelChunkedStream extends tts.ChunkedStream {
   label = "kugelaudio.ChunkedStream";
-  private readonly kugel: KugelTTS;
 
-  constructor(kugel: KugelTTS, text: string, connOptions?: APIConnectOptions) {
+  constructor(
+    kugel: KugelTTS,
+    text: string,
+    private readonly createStream: () => KugelSynthesizeStream,
+    connOptions?: APIConnectOptions,
+  ) {
     super(text, kugel, connOptions);
-    this.kugel = kugel;
   }
 
   protected async run(): Promise<void> {
-    const stream = this.kugel.stream();
-    stream.pushText(this.inputText);
-    stream.endInput();
-    for await (const audio of stream) {
-      if (audio === tts.SynthesizeStream.END_OF_STREAM) break;
-      if (!this.queue.closed) this.queue.put(audio);
+    if (this.abortSignal.aborted) return;
+    const stream = this.createStream();
+    const closeStream = () => stream.close();
+    this.abortSignal.addEventListener("abort", closeStream, { once: true });
+    try {
+      stream.pushText(this.inputText);
+      stream.endInput();
+      for await (const audio of stream) {
+        if (audio === tts.SynthesizeStream.END_OF_STREAM) break;
+        if (!this.queue.closed) this.queue.put(audio);
+      }
+      if (stream.error) throw stream.error;
+    } finally {
+      this.abortSignal.removeEventListener("abort", closeStream);
     }
   }
 }
