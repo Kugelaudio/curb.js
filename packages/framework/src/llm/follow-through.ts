@@ -77,19 +77,21 @@ export const FOLLOW_THROUGH_CHECK =
  * reply announces. `end_call` runs only once one of the agent's own actions succeeded in the
  * turn (`done`): closing the call after an action ("you are off the list, goodbye") is the
  * goodbye a check repairs, while after a turn that only answered, or whose action was refused, a
- * check that misread the reply as a goodbye would cut the caller off.
+ * check that misread the reply as a goodbye would cut the caller off. With just one step left,
+ * `allowTask` limits the other actions to tools that can finish the turn with a read-back.
  */
 export function followThroughActions<T extends { scope: string; name: string }>(
   tools: readonly T[],
   ran: ReadonlySet<string>,
   done: ReadonlySet<string>,
+  allowTask?: (name: string) => boolean,
 ): T[] {
   const acted = tools.some((tool) => tool.scope !== "runtime" && done.has(tool.name));
   return tools.filter(
     (tool) =>
       tool.scope === "runtime"
         ? acted && tool.name === END_CALL_TOOL_NAME && !ran.has(tool.name)
-        : !ran.has(tool.name),
+        : !ran.has(tool.name) && (allowTask === undefined || allowTask(tool.name)),
   );
 }
 
@@ -104,8 +106,9 @@ export function followThroughTools<T extends { scope: string; name: string }>(
   tools: readonly T[],
   ran: ReadonlySet<string>,
   done: ReadonlySet<string>,
+  allowTask?: (name: string) => boolean,
 ): T[] {
-  const actions = new Set(followThroughActions(tools, ran, done));
+  const actions = new Set(followThroughActions(tools, ran, done, allowTask));
   return tools.filter((tool) => actions.has(tool) || tool.name === END_CALL_TOOL_NAME);
 }
 
@@ -113,6 +116,8 @@ export function followThroughTools<T extends { scope: string; name: string }>(
 const LONG_NUMBER_DIGITS = 6;
 /** A country code as written: one to three digits after the `+`, then a space, dash, dot, slash or bracket. */
 const COUNTRY_CODE = /^\+(\d{1,3})(?=[ \u00a0./(-])/;
+/** An optional trunk zero explicitly marked after the country code. */
+const OPTIONAL_TRUNK_ZERO = /^(\+\d{1,3})[ \u00a0./-]?\(0\)/;
 /**
  * A number as written: groups of digits, a leading `+`, a group in brackets, at most one space,
  * dash, slash or dot between groups. Words between numbers keep them apart.
@@ -197,8 +202,20 @@ function fieldValues(
 function isPhoneField(name: string, field: unknown): boolean {
   const words = name.replace(/([a-z])([A-Z])/g, "$1 $2");
   if (ID_NAME.test(words)) return false;
+  return PHONE_NAME.test(words) || hasPhoneFormat(field);
+}
+
+function hasPhoneFormat(field: unknown): boolean {
   const format = schemaPart(field, "format");
-  return PHONE_NAME.test(words) || (typeof format === "string" && PHONE_FORMAT.test(format));
+  if (typeof format === "string" && PHONE_FORMAT.test(format)) return true;
+  return [schemaPart(field, "anyOf"), schemaPart(field, "oneOf")].some(
+    (options) => {
+      if (!Array.isArray(options) || options.length !== 2) return false;
+      const [first, second] = options;
+      if (schemaPart(first, "type") === "null") return hasPhoneFormat(second);
+      return schemaPart(second, "type") === "null" && hasPhoneFormat(first);
+    },
+  );
 }
 
 function schemaPart(schema: unknown, key: string): unknown {
@@ -302,22 +319,28 @@ function sameDigits(written: WrittenNumber, said: WrittenNumber): boolean {
 }
 
 /**
- * The same phone number, in one canonical form: digit for digit, or a number written without a
- * country code that, its single trunk zero aside, is exactly the digits after the other one's
- * country code as written (`+49 89 1234567`: `49`). Two numbers that both carry a country code,
- * or a country code not written apart from the rest (`+49891234567`), match only in full; no
- * other digit is ever dropped.
+ * The same phone number, digit for digit or after removing an optional `(0)` written after the country code.
+ * International numbers match in full. A national number, with its single trunk zero
+ * removed, may also match the digits after a separately written country code (`+49 89 1234567`).
  */
 function samePhone(written: WrittenNumber, said: WrittenNumber): boolean {
-  if (written.digits === said.digits) return true;
+  if (sameDigits(written, said)) return true;
+  const writtenDigits = phoneDigits(written);
+  const saidDigits = phoneDigits(said);
+  if (writtenDigits === saidDigits) return true;
   if (written.international === said.international) return false;
-  const [withCode, without] = written.international ? [written, said] : [said, written];
-  const national = without.digits.replace(/^0/, "");
+  const { countryCode } = written.international ? written : said;
+  const [international, local] = written.international ? [writtenDigits, saidDigits] : [saidDigits, writtenDigits];
+  const national = local.replace(/^0/, "");
   return (
-    withCode.countryCode !== undefined &&
+    countryCode !== undefined &&
     national.length >= LONG_NUMBER_DIGITS &&
-    withCode.digits === withCode.countryCode + national
+    international === countryCode + national
   );
+}
+
+function phoneDigits(number: WrittenNumber): string {
+  return number.written.replace(OPTIONAL_TRUNK_ZERO, "$1").replace(/\D/g, "");
 }
 
 /** Every string and number in `value`, however deep; each object is read once. */

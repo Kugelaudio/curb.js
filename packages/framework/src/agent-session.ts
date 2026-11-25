@@ -573,10 +573,9 @@ export class AgentSession {
       let retriedEmpty = false;
       let retriedLeak = false;
       // The follow-through check runs at most once a turn; `check` is its note while it runs.
-      // `followedThrough`: it called a tool, after the reply had said its last words.
       let checked = false;
       let check: AgentChatMessage | undefined;
-      let followedThrough = false;
+      const confirms = (name: string) => this.runtime.confirms(name);
       while (true) {
         controller.signal.throwIfAborted();
         if (steps >= this.maxSteps) {
@@ -595,8 +594,10 @@ export class AgentSession {
           options.spoken === true,
           check
             ? (tools) => {
-                runs = new Set(followThroughActions(tools, this.ranThisTurn, this.doneThisTurn).map((tool) => tool.name));
-                return followThroughTools(tools, this.ranThisTurn, this.doneThisTurn);
+                const allowTask = steps + 1 >= this.maxSteps ? confirms : undefined;
+                const actions = followThroughActions(tools, this.ranThisTurn, this.doneThisTurn, allowTask);
+                runs = new Set(actions.map((tool) => tool.name));
+                return followThroughTools(tools, this.ranThisTurn, this.doneThisTurn, allowTask);
               }
             : undefined,
         );
@@ -631,6 +632,7 @@ export class AgentSession {
           clearTimeout(timer);
         }
 
+        const isCheck = check !== undefined;
         if (check) {
           // The check found nothing to do: the turn ends as it was, and the note leaves no trace.
           const note = check;
@@ -653,7 +655,6 @@ export class AgentSession {
           }
           response = { ...response, toolCalls: calls };
           messages = this.append(messages, note);
-          followedThrough = true;
         }
         if (!response.text.trim() && response.toolCalls.length === 0 && !speech.stepText) {
           // The model ended the turn saying nothing, which is never an answer: ask again once.
@@ -715,7 +716,8 @@ export class AgentSession {
         steps += 1;
 
         const asksCaller = response.toolCalls.some((call) => !call.error && this.runtime.confirms(call.name));
-        const outcome = await this.applyLlmResponse(response, speech.stepText, messages, asksCaller, greets);
+        const finalCheck = isCheck && steps >= this.maxSteps;
+        const outcome = await this.applyLlmResponse(response, speech.stepText, messages, asksCaller, greets, finalCheck);
         messages = outcome.messages;
         for (const executed of outcome.toolCalls) {
           const { skill, ...tool } = executed;
@@ -738,14 +740,18 @@ export class AgentSession {
           // A goodbye whose first sentences the step already said (the model wrote it as text
           // too) goes on from there; one that was said to its end adds nothing. A read-back
           // is always asked in full: it is the question the caller answers.
-          // After a follow-through check the reply has already said its closing words, so an
-          // end_call it led to hangs up after them without a second goodbye.
-          const line = outcome.held ? closing : followedThrough ? "" : speech.unheard(closing);
+          // An end_call from the check itself hangs up after the goodbye already spoken.
+          const line = outcome.held ? closing : isCheck ? "" : speech.unheard(closing);
           if (line) {
             const delta = speech.line(line);
             messages = this.keepSpokenText(messages, speech.stepText);
             if (streaming && delta) yield this.spokenDelta(delta, speech);
           }
+        }
+        // A refused hangup or read-back on the final check still leaves the spoken reply.
+        if (finalCheck) {
+          controller.signal.throwIfAborted();
+          break;
         }
         if (outcome.done) {
           const checks =
@@ -756,7 +762,12 @@ export class AgentSession {
             !this.unsaid &&
             options.kind !== "synthetic" &&
             steps < this.maxSteps &&
-            needsFollowThroughCheck(speech.reply, followThroughActions(request.tools, this.ranThisTurn, this.doneThisTurn));
+            needsFollowThroughCheck(
+              speech.reply,
+              followThroughActions(
+                request.tools, this.ranThisTurn, this.doneThisTurn, steps + 1 >= this.maxSteps ? confirms : undefined,
+              ),
+            );
           if (!checks) break;
           checked = true;
           check = contextEvent(FOLLOW_THROUGH_CHECK);
@@ -974,6 +985,7 @@ export class AgentSession {
     messages: AgentChatMessage[],
     asksCaller: boolean,
     greets: boolean,
+    finalCheck: boolean,
   ): Promise<{
     messages: AgentChatMessage[];
     done: boolean;
@@ -1036,15 +1048,19 @@ export class AgentSession {
       // An earlier call of this step may have changed the tool surface, so a
       // tool is known or unknown, and asks the caller or not, only now. The
       // record says how the call ended (refused, held, run); rewind reads it.
+      const confirms = this.runtime.confirms(toolCall.name);
       const refusal = toolCall.invalid
         ? undefined
         : (this.refusal(toolCall.name, asksCaller, greets, held) ??
+          (finalCheck && toolCall.name !== END_CALL_TOOL_NAME && !confirms
+            ? "Not run: this tool needs another model step to reply with its result."
+            : undefined) ??
           (toolCall.name === END_CALL_TOOL_NAME && failed.length > 0 ? callStaysOpenAfter(failed) : undefined));
       if (refusal) toolCall = { ...toolCall, invalid: refusal };
       let outcome: ToolCallOutcome;
       let durationMs: number | undefined;
       let skill: SkillChange | undefined;
-      if (!toolCall.invalid && this.runtime.confirms(toolCall.name)) {
+      if (!toolCall.invalid && confirms) {
         // The model's call of a `confirm` tool never runs it; runLoop asks the caller.
         const hold = await holdCall(this.runtime, toolCall, this.pending);
         toolCall = hold.toolCall;
