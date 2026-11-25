@@ -236,8 +236,10 @@ export class ConnectionController {
    * I/O modality of the SAME session: turns it runs land in the same
    * transcript the chat frames mirror. */
   private voiceCall: VoiceCallHandle | null = null;
-  /** Serializes voice_start against a racing second voice_start. */
-  private voiceStarting = false;
+  /** The generation of the start in flight, including any teardown after cancellation. */
+  private voiceStarting: number | null = null;
+  private voiceClosing = false;
+  private voiceGeneration = 0;
   /** Subscriptions tied to the CURRENT runtime/session — replaced on agent
    * switch. Global subscriptions (MCP) live in `globalUnsubscribers`. */
   private sessionUnsubscribers: Array<() => void> = [];
@@ -245,6 +247,7 @@ export class ConnectionController {
   /** Complete live session bundles retained for instant, stateful history
    * switching during this preview connection. Newest entries are appended. */
   private readonly conversations: RestorableConversation[];
+  private conversationActivation = 0;
   private activeConversationId: string;
   private nextConversationNumber = 2;
   private disposed = false;
@@ -458,7 +461,11 @@ export class ConnectionController {
    */
   private async materialise(
     conversation: RestorableConversation,
-    options: { continueRecording?: number; info: Readonly<Record<string, unknown>> },
+    options: {
+      continueRecording?: number;
+      info: Readonly<Record<string, unknown>>;
+      isCurrent?: () => boolean;
+    },
   ): Promise<string[] | null> {
     const agentId = conversation.agentId ?? this.activeAgentId;
     if (!this.agentHost || agentId === null) {
@@ -470,6 +477,7 @@ export class ConnectionController {
 
     try {
       const bundle = await this.createBundle(agentId, conversation.call);
+      if (options.isCurrent?.() === false) return null;
       // Before the transcript is restored onto it, so not one message goes to a new conversation.
       if (options.continueRecording !== undefined) {
         this.history?.continueRecording?.(bundle.session, options.continueRecording);
@@ -485,7 +493,9 @@ export class ConnectionController {
       conversation.agentId = agentId;
       return notes;
     } catch (error) {
-      this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+      if (options.isCurrent?.() !== false) {
+        this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+      }
       return null;
     }
   }
@@ -534,6 +544,8 @@ export class ConnectionController {
    * later restoration. The inspector follows the active agent, not the
    * conversation, so it resets only when the agent changes. */
   private async activateConversation(conversation: RestorableConversation): Promise<void> {
+    const activation = ++this.conversationActivation;
+    const isCurrent = () => !this.disposed && activation === this.conversationActivation;
     if (conversation.id === this.activeConversationId) {
       this.sendConversationsFrame();
       return;
@@ -543,8 +555,6 @@ export class ConnectionController {
       return;
     }
 
-    if (this.voiceCall || this.voiceStarting) await this.voiceStop();
-
     // MATERIALISE A STORED CONVERSATION ON FIRST OPEN: its recorded state goes back onto a
     // fresh runtime, so loaded skills and store data match where the conversation left off
     // and the next turn continues it rather than starting over.
@@ -553,10 +563,19 @@ export class ConnectionController {
     // the live one down with it: the user is still in a working session.
     let notes: string[] = [];
     if (!conversation.bundle) {
-      const restored = await this.materialise(conversation, { info: this.runtime.info.snapshot() });
+      const restored = await this.materialise(conversation, { info: this.runtime.info.snapshot(), isCurrent });
       if (restored === null) return;
       notes = restored;
     }
+
+    if (!isCurrent()) return;
+    if (this.session.isRunning) {
+      this.send(errorFrame("protocol", "Cannot switch conversations while a turn is running."));
+      return;
+    }
+    // Close any call started while the target loaded. Commit the new bundle before
+    // yielding so a later voice start can only use the new conversation.
+    const voiceStopped = this.voiceCall || this.voiceStarting !== null ? this.voiceStop() : undefined;
 
     for (const unsubscribe of this.sessionUnsubscribers) unsubscribe();
     this.sessionUnsubscribers = [];
@@ -577,6 +596,7 @@ export class ConnectionController {
     this.sendSessionSnapshot();
     this.sendConversationsFrame();
     if (notes.length > 0) this.send({ type: "notice", message: notes.join(" ") });
+    await voiceStopped;
   }
 
   private async newConversation(): Promise<void> {
@@ -810,24 +830,37 @@ export class ConnectionController {
       this.send({ type: "voice_session", live: true, transport, url, token, room });
       return;
     }
-    if (this.voiceStarting) return; // a start is already in flight
-    this.voiceStarting = true;
+    if (this.voiceClosing || (this.voiceStarting !== null && this.voiceStarting !== this.voiceGeneration)) {
+      this.send(errorFrame("voice", "The previous call is still closing. Try again in a moment."));
+      return;
+    }
+    if (this.voiceStarting !== null) return;
+    const generation = ++this.voiceGeneration;
+    this.voiceStarting = generation;
+    const bundle = { runtime: this.runtime, session: this.session };
     try {
       const call = await this.voiceHost.start({
-        bundle: { runtime: this.runtime, session: this.session },
+        bundle,
         agentId: this.activeAgentId,
         onClosed: () => {
           // Server-side end (hangup, room emptied): reflect it to the client.
-          if (this.voiceCall) {
+          if (generation === this.voiceGeneration && this.voiceCall) {
             this.voiceCall = null;
             this.send({ type: "voice_session", live: false });
           }
         },
       });
-      if (this.disposed) {
-        // Same reason as dispose(): nothing awaits this, so it owns its failure.
-        void call.close().catch((error) => this.reportCallCloseFailure(error));
+      if (this.disposed || generation !== this.voiceGeneration) {
+        await call.close().catch((error) => this.reportCallCloseFailure(error));
         return;
+      }
+      if (bundle.session !== this.session) {
+        try {
+          call.setBundle({ runtime: this.runtime, session: this.session });
+        } catch (error) {
+          await call.close().catch((failure) => this.reportCallCloseFailure(failure));
+          throw error;
+        }
       }
       this.voiceCall = call;
       this.send({
@@ -839,20 +872,30 @@ export class ConnectionController {
         room: call.room,
       });
     } catch (error) {
-      this.send(errorFrame("voice", error instanceof Error ? error.message : String(error)));
+      if (!this.disposed && generation === this.voiceGeneration) {
+        this.send(errorFrame("voice", error instanceof Error ? error.message : String(error)));
+      }
     } finally {
-      this.voiceStarting = false;
+      this.voiceStarting = null;
     }
   }
 
   /** Detach voice (hang up); the conversation continues by text. */
   private async voiceStop(): Promise<void> {
+    this.voiceGeneration += 1;
     const call = this.voiceCall;
     this.voiceCall = null;
+    if (call) this.voiceClosing = true;
     this.send({ type: "voice_session", live: false });
-    // Awaited, but a teardown failure must not fail the stop the user asked for:
-    // the call is already gone from this connection either way.
-    if (call) await call.close().catch((error) => this.reportCallCloseFailure(error));
+    if (!call) return;
+    try {
+      await call.close();
+    } catch (error) {
+      // The call is already detached; report a teardown failure without failing the stop.
+      this.reportCallCloseFailure(error);
+    } finally {
+      this.voiceClosing = false;
+    }
   }
 
   /** A voice call that would not close cleanly. Never fatal: by the time this
@@ -906,13 +949,14 @@ export class ConnectionController {
 
     // Still the same conversation, so still the same call: its identity moves to the rebuilt
     // runtime before the earlier turns replay onto it.
-    const call = this.conversations.find((candidate) => candidate.id === this.activeConversationId)?.call;
-    if (!call) throw new Error(`curb: the active conversation ${this.activeConversationId} is not on this connection.`);
+    const conversation = this.conversations.find((candidate) => candidate.id === this.activeConversationId);
+    if (!conversation) throw new Error(`curb: the active conversation ${this.activeConversationId} is not on this connection.`);
+    const sourceSession = this.session;
     let bundle: AgentSessionBundle;
     let skipped: string[];
     try {
       const rebuilt = await rebuildSessionAt({
-        create: (id) => this.createBundle(id, call),
+        create: (id) => this.createBundle(id, conversation.call),
         agentId: this.activeAgentId,
         sourceMessages: messages,
         index,
@@ -925,6 +969,8 @@ export class ConnectionController {
       this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
       return;
     }
+
+    if (this.disposed || this.session !== sourceSession) return;
 
     if (skipped.length > 0) {
       this.send(
@@ -939,10 +985,12 @@ export class ConnectionController {
     this.sessionUnsubscribers = [];
     this.runtime = bundle.runtime;
     this.session = bundle.session;
+    conversation.bundle = bundle;
     // A live call keeps running — on the rebuilt session.
     this.voiceCall?.setBundle(bundle);
     this.bindSession();
     this.sendSessionSnapshot();
+    this.sendConversationsFrame();
 
     // Retry: re-run the rewound message — it stays in the conversation and
     // gets a fresh answer from the reverted environment (spoken, when a call

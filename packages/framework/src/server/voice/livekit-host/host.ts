@@ -234,14 +234,45 @@ export function startVoiceAgent(options: VoiceAgentStartOptions): Promise<VoiceS
 async function startVoiceCall(options: VoiceAgentStartOptions): Promise<VoiceSessionHandle> {
   // `<Agent s2s>`: the model is the whole voice, so that call shares nothing below (see `../s2s/`).
   if (options.bundle.runtime.settings.s2s()) return startS2sCall(options);
+  // The caller's app may already be talking to the agent: serve it before the slow part
+  // (providers, VAD) rather than after.
+  options.client.bind(options.bundle.runtime);
+
+  // A warm runner hands both in; everything else builds them here from the conversation's
+  // effective settings (`<Agent stt tts>`, the active `<Skill>`'s override).
+  const initialProviders: VoiceProviders =
+    options.providers ??
+    (await buildVoiceProviders({
+      settings: options.bundle.runtime.settings.current(),
+      env: options.env,
+      reporter: options.reporter,
+    }));
+  try {
+    return await startCascadedCall(options, initialProviders);
+  } catch (error) {
+    if (!options.providers) {
+      const cleanup = await Promise.allSettled(
+        [initialProviders.stt, initialProviders.tts].map(async (provider) => provider.close?.()),
+      );
+      for (const result of cleanup) {
+        if (result.status === "rejected") {
+          logError("voice", `closing speech providers after startup failed for ${options.roomName}: ${String(result.reason)}`);
+        }
+      }
+    }
+    throw error;
+  }
+}
+
+async function startCascadedCall(
+  options: VoiceAgentStartOptions,
+  initialProviders: VoiceProviders,
+): Promise<VoiceSessionHandle> {
   const env = options.env ?? process.env;
   // Mutable: the connection swaps in a rebuilt bundle on rewind; every
   // handler reads it at call time.
   let bundle = options.bundle;
-  // The caller's app may already be talking to the agent: serve it before the slow part
-  // (providers, VAD) rather than after.
   const clientMessages = options.client;
-  clientMessages.bind(bundle.runtime);
   const clips = new ConversationClips();
   // Clip mapping: user clips close one per STT final; a committed turn may
   // merge several finals, so each turn claims the ordinal range it consumed.
@@ -253,15 +284,6 @@ async function startVoiceCall(options: VoiceAgentStartOptions): Promise<VoiceSes
   // they don't claim user audio clips.
   const pendingTyped: string[] = [];
 
-  // A warm runner hands both in; everything else builds them here from the conversation's
-  // effective settings (`<Agent stt tts>`, the active `<Skill>`'s override).
-  const initialProviders: VoiceProviders =
-    options.providers ??
-    (await buildVoiceProviders({
-      settings: bundle.runtime.settings.current(),
-      env,
-      reporter: options.reporter,
-    }));
   const { stt, tts } = initialProviders;
   const vad = options.vad ?? (await loadSileroVad());
 
@@ -581,6 +603,7 @@ async function startVoiceCall(options: VoiceAgentStartOptions): Promise<VoiceSes
     return closing;
   };
   const closeNow = async (graceMs: number) => {
+    watchdog.cancel();
     silence.stop();
     try {
       const outcome = await waitForCurrentReply(currentReply, graceMs);
@@ -644,9 +667,6 @@ async function startVoiceCall(options: VoiceAgentStartOptions): Promise<VoiceSes
       logError("voice", `end_call could not hang up room ${options.roomName}: ${detail}`);
     },
   });
-  bundle.runtime.setEndCallRequest(hangup.request);
-  attachTransferAudio(bundle.runtime.info, transferAudio);
-
   // Tear down when the human leaves (the browser tab closed / hung up).
   //
   // On a GRACE, not immediately. "Zero remote participants" means "the human hung up"
@@ -692,6 +712,9 @@ async function startVoiceCall(options: VoiceAgentStartOptions): Promise<VoiceSes
     emptyRoomMs: EMPTY_ROOM_GRACE_MS,
     noCallerMs: NO_CALLER_GRACE_MS,
   });
+
+  bundle.runtime.setEndCallRequest(hangup.request);
+  attachTransferAudio(bundle.runtime.info, transferAudio);
 
   room.onParticipantDisconnected((participant) => {
     logInfo(
