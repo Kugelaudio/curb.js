@@ -593,8 +593,10 @@ export class AgentSession {
           options.spoken === true,
           check
             ? (tools) => {
-                runs = new Set(followThroughActions(tools, this.ranThisTurn, this.doneThisTurn).map((tool) => tool.name));
-                return followThroughTools(tools, this.ranThisTurn, this.doneThisTurn);
+                const endCallOnly = steps + 1 >= this.maxSteps;
+                const actions = followThroughActions(tools, this.ranThisTurn, this.doneThisTurn, endCallOnly);
+                runs = new Set(actions.map((tool) => tool.name));
+                return endCallOnly ? actions : followThroughTools(tools, this.ranThisTurn, this.doneThisTurn);
               }
             : undefined,
         );
@@ -744,6 +746,8 @@ export class AgentSession {
             if (streaming && delta) yield this.spokenDelta(delta, speech);
           }
         }
+        // A refused end_call on the final check still leaves the turn's spoken reply.
+        if (isCheck && steps >= this.maxSteps) break;
         if (outcome.done) {
           const checks =
             speaks &&
@@ -752,9 +756,11 @@ export class AgentSession {
             options.spoken === true &&
             !this.unsaid &&
             options.kind !== "synthetic" &&
-            // Leave a step for the reply if the check runs a tool.
-            steps + 1 < this.maxSteps &&
-            needsFollowThroughCheck(speech.reply, followThroughActions(request.tools, this.ranThisTurn, this.doneThisTurn));
+            steps < this.maxSteps &&
+            needsFollowThroughCheck(
+              speech.reply,
+              followThroughActions(request.tools, this.ranThisTurn, this.doneThisTurn, steps + 1 >= this.maxSteps),
+            );
           if (!checks) break;
           checked = true;
           check = contextEvent(FOLLOW_THROUGH_CHECK);

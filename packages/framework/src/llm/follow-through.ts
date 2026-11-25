@@ -77,19 +77,21 @@ export const FOLLOW_THROUGH_CHECK =
  * reply announces. `end_call` runs only once one of the agent's own actions succeeded in the
  * turn (`done`): closing the call after an action ("you are off the list, goodbye") is the
  * goodbye a check repairs, while after a turn that only answered, or whose action was refused, a
- * check that misread the reply as a goodbye would cut the caller off.
+ * check that misread the reply as a goodbye would cut the caller off. With just one step left,
+ * only `end_call` can finish without needing another model reply.
  */
 export function followThroughActions<T extends { scope: string; name: string }>(
   tools: readonly T[],
   ran: ReadonlySet<string>,
   done: ReadonlySet<string>,
+  endCallOnly = false,
 ): T[] {
   const acted = tools.some((tool) => tool.scope !== "runtime" && done.has(tool.name));
   return tools.filter(
     (tool) =>
       tool.scope === "runtime"
         ? acted && tool.name === END_CALL_TOOL_NAME && !ran.has(tool.name)
-        : !ran.has(tool.name),
+        : !endCallOnly && !ran.has(tool.name),
   );
 }
 
@@ -206,7 +208,12 @@ function hasPhoneFormat(field: unknown): boolean {
   const format = schemaPart(field, "format");
   if (typeof format === "string" && PHONE_FORMAT.test(format)) return true;
   return [schemaPart(field, "anyOf"), schemaPart(field, "oneOf")].some(
-    (options) => Array.isArray(options) && options.some(hasPhoneFormat),
+    (options) => {
+      if (!Array.isArray(options) || options.length !== 2) return false;
+      const [first, second] = options;
+      if (schemaPart(first, "type") === "null") return hasPhoneFormat(second);
+      return schemaPart(second, "type") === "null" && hasPhoneFormat(first);
+    },
   );
 }
 

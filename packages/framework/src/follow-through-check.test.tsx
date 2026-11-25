@@ -51,7 +51,7 @@ describe("follow-through check in a spoken turn", () => {
     expect(reply).toContain("Your order ships tomorrow. Goodbye.");
   });
 
-  it("skips the check when only one model step remains", async () => {
+  it("skips a non-ending check when only one model step remains", async () => {
     let bookings = 0;
     const runtime = runtimeWith(
       <Tool
@@ -79,6 +79,54 @@ describe("follow-through check in a spoken turn", () => {
     expect(errors).toEqual([]);
     expect(bookings).toBe(0);
   });
+
+  it.each([false, true])("only offers end_call in the final step after an action (extra call: %s)", async (extraCall) => {
+    let unrelatedCalls = 0;
+    const runtime = runtimeWith(
+      <>
+        <Tool name="book_slot" description="Book a slot." onSubmit={() => ({ ok: true, message: "Booked." })} />
+        <Tool
+          name="send_reminder"
+          description="Send a reminder."
+          onSubmit={() => {
+            unrelatedCalls += 1;
+            return { ok: true };
+          }}
+        />
+      </>,
+    );
+    let hangups = 0;
+    runtime.setEndCallRequest(() => {
+      hangups += 1;
+    });
+    const respond = scripted([
+      { text: "", toolCalls: [{ name: "book_slot", input: {} }] },
+      { text: "You are booked. Goodbye.", toolCalls: [] },
+      {
+        text: "",
+        toolCalls: [
+          ...(extraCall ? [{ name: "send_reminder", input: {} }] : []),
+          { name: END_CALL_TOOL_NAME, input: { goodbye: "Bye." } },
+        ],
+      },
+    ]);
+    const requests: Parameters<AgentLlmClient>[0][] = [];
+    const session = new AgentSession(runtime, (request) => {
+      requests.push(request);
+      return respond(request);
+    }, { maxSteps: 3, checkFollowThrough: true });
+
+    const errors: unknown[] = [];
+    for await (const event of session.runTurnStream("Book a slot, please. Goodbye.", { spoken: true })) {
+      if (event.type === "error") errors.push(event);
+    }
+
+    expect(errors).toEqual([]);
+    expect(hangups).toBe(extraCall ? 0 : 1);
+    expect(requests).toHaveLength(3);
+    expect(requests[2]?.tools.map((tool) => tool.name)).toEqual([END_CALL_TOOL_NAME]);
+    expect(unrelatedCalls).toBe(0);
+  });
 });
 
 describe("inventedNumber: phone numbers in follow-through calls", () => {
@@ -96,5 +144,13 @@ describe("inventedNumber: phone numbers in follow-through calls", () => {
     expect(inventedNumber({ contact: "12345678" }, ["My order number is 12345678."], schema)).toBe("12345678");
     expect(inventedNumber({ contact: "12345678" }, ["My phone number is 12345678."], schema)).toBeUndefined();
     expect(inventedNumber({ contact: null }, [], schema)).toBeUndefined();
+  });
+
+  it("allows an identifier in a non-phone branch of a mixed schema", () => {
+    const [field] = zodSchemaToFields(z.object({
+      contact: z.union([z.string().meta({ format: "tel" }), z.number().int()]),
+    }));
+    const schema = { type: "object", properties: { contact: field!.jsonSchema } };
+    expect(inventedNumber({ contact: 12345678 }, ["My order number is 12345678."], schema)).toBeUndefined();
   });
 });
