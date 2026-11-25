@@ -160,15 +160,11 @@ describe("TTS stream lifecycle", () => {
   });
 
   it.each([
-    {
-      name: "preserves a turn waiting to replay when another turn's upgrade fails",
-      failReplay: false,
-    },
-    {
-      name: "reports a failed replay upgrade only for the replayed turn",
-      failReplay: true,
-    },
-  ])("$name", async ({ failReplay }) => {
+    { name: "preserves a pending replay after another turn's upgrade fails", failure: "upgrade" },
+    { name: "preserves a pending replay after a context-free server error", failure: "server frame" },
+    { name: "preserves a pending replay after a malformed server frame", failure: "malformed frame" },
+    { name: "reports a failed replay upgrade only for the replayed turn", failure: "replay" },
+  ])("$name", async ({ failure }) => {
     const server = createServer();
     const wss = new WebSocketServer({ noServer: true });
     let upgrades = 0;
@@ -177,20 +173,25 @@ describe("TTS stream lifecycle", () => {
 
     server.on("upgrade", (req, socket, head) => {
       const attempt = ++upgrades;
-      if (attempt === 2) {
+      if (attempt === 2 && (failure === "upgrade" || failure === "replay")) {
         socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
         return;
       }
       wss.handleUpgrade(req, socket, head, (ws) => {
+        let replayId: string | undefined;
         ws.on("message", (data) => {
           const frame = JSON.parse(data.toString());
           if (attempt === 1 && frame.voice_settings) {
             ws.once("close", refusalClosed);
             ws.send(JSON.stringify({ error: "Concurrent generation limit reached (1)" }));
             ws.close(4029);
-          } else if (attempt > 2 && frame.close_context) {
-            ws.send(JSON.stringify({ context_id: frame.context_id, audio: "QUJD" }));
-            ws.send(JSON.stringify({ context_id: frame.context_id, context_closed: true }));
+          } else if (frame.text === "Second turn.") {
+            ws.send(failure === "malformed frame" ? "invalid JSON" : JSON.stringify({ error: "Voice unavailable" }));
+          } else if (frame.text === "First turn.") {
+            replayId = frame.context_id;
+          } else if (frame.close_context && frame.context_id === replayId) {
+            ws.send(JSON.stringify({ context_id: replayId, audio: "QUJD" }));
+            ws.send(JSON.stringify({ context_id: replayId, context_closed: true }));
           }
         });
       });
@@ -203,13 +204,13 @@ describe("TTS stream lifecycle", () => {
     const session = new KugelTtsSession(
       config((server.address() as { port: number }).port),
       { onError, onAudio, onDone },
-      { firstDelayMs: failReplay ? 10 : 300, budgetMs: 1000 },
+      { firstDelayMs: failure === "replay" ? 10 : 300, budgetMs: 1000 },
     );
     try {
       await session.streamInput(1, "First turn.");
       await session.endInput(1);
       await refused;
-      if (failReplay) {
+      if (failure === "replay") {
         await vi.waitFor(() => expect(onError).toHaveBeenCalledExactlyOnceWith(
           expect.stringContaining("Unexpected server response: 503"),
           1,
@@ -217,10 +218,21 @@ describe("TTS stream lifecycle", () => {
         expect(onDone).not.toHaveBeenCalled();
         return;
       }
-      await expect(session.streamInput(2, "Second turn.")).rejects.toThrow("Unexpected server response: 503");
+      if (failure === "upgrade") {
+        await expect(session.streamInput(2, "Second turn.")).rejects.toThrow("Unexpected server response: 503");
+      } else {
+        await session.streamInput(2, "Second turn.");
+      }
       await vi.waitFor(() => expect(onDone).toHaveBeenCalledExactlyOnceWith(1));
       expect(onAudio).toHaveBeenCalledExactlyOnceWith("QUJD", 1);
-      expect(onError).not.toHaveBeenCalled();
+      if (failure === "upgrade") {
+        expect(onError).not.toHaveBeenCalled();
+      } else {
+        expect(onError).toHaveBeenCalledExactlyOnceWith(
+          expect.stringContaining(failure === "server frame" ? "Voice unavailable" : "invalid frame"),
+          2,
+        );
+      }
     } finally {
       await session.close();
       for (const socket of wss.clients) socket.terminate();

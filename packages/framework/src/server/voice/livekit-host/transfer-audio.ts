@@ -25,8 +25,9 @@ import {
   TrackSource,
   type Room,
 } from "@livekit/rtc-node";
-import type { tts } from "@livekit/agents";
+import { tts } from "@livekit/agents";
 import type { TransferAudio } from "../../../blocks/transfer-call/index.js";
+import { KugelTTS } from "./kugel-tts-plugin.js";
 
 export const TRANSFER_AUDIO_SAMPLE_RATE = 48_000;
 /** The European ringback: 425 Hz, 1 s on, 4 s off (ITU-T E.180 / ETSI ES 201 970). */
@@ -181,10 +182,11 @@ export async function publishTransferTrack(room: Room): Promise<TransferAudioSin
 
 /** `text` spoken by `engine`, resampled to {@link TRANSFER_AUDIO_SAMPLE_RATE}. */
 export async function* synthesizedFrames(engine: tts.TTS, text: string): AsyncGenerator<AudioFrame> {
-  const stream = engine.synthesize(text);
+  const stream = engine instanceof KugelTTS ? engine.synthesizeForPlayback(text) : engine.synthesize(text);
   let resampler: AudioResampler | undefined;
   try {
     for await (const audio of stream) {
+      if (audio === tts.SynthesizeStream.END_OF_STREAM) break;
       const frame = audio.frame;
       if (frame.sampleRate === TRANSFER_AUDIO_SAMPLE_RATE) {
         yield frame;

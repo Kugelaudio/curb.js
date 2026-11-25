@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
 import { KugelTtsSession, type KugelTtsConfig } from "./kugel-tts.js";
 
@@ -54,12 +54,14 @@ describe("KugelTtsSession wire protocol", () => {
   let session: KugelTtsSession;
   let audio: Array<{ b64: string; turnId: number }>;
   let errors: string[];
+  let done: number[];
 
   beforeEach(async () => {
     server = new MockTtsServer();
     await server.start();
     audio = [];
     errors = [];
+    done = [];
     session = new KugelTtsSession(
       {
         apiBase: `http://127.0.0.1:${server.port}`,
@@ -72,6 +74,7 @@ describe("KugelTtsSession wire protocol", () => {
       {
         onAudio: (b64, turnId) => audio.push({ b64, turnId }),
         onError: (message) => errors.push(message),
+        onDone: (turnId) => done.push(turnId),
       },
     );
   });
@@ -154,6 +157,25 @@ describe("KugelTtsSession wire protocol", () => {
     server.send({ context_id: server.frames[0].context_id, error: "voice 9999 not found" });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(errors).toEqual(["Kugel TTS server error: voice 9999 not found"]);
+  });
+
+  it("closes a failed context while another turn keeps receiving audio", async () => {
+    await session.streamInput(1, "First turn.");
+    await session.streamInput(2, "Second turn.");
+    await server.waitForFrames(2);
+    const [failed, other] = server.frames;
+    server.send({ context_id: failed.context_id, error: "Voice unavailable" });
+    server.send({ context_id: other.context_id, audio: "QUJD" });
+
+    await server.waitForFrames(3);
+    expect(server.frames[2]).toEqual({ close_context: true, context_id: failed.context_id, immediate: true });
+    await session.endInput(2);
+    await server.waitForFrames(5);
+    expect(server.frames[4]).toEqual({ close_context: true, context_id: other.context_id });
+    server.send({ context_id: other.context_id, context_closed: true });
+    await vi.waitFor(() => expect(done).toEqual([2]));
+    expect(audio).toEqual([{ b64: "QUJD", turnId: 2 }]);
+    expect(errors).toEqual(["Kugel TTS server error: Voice unavailable"]);
   });
 
   it("rebases chunk-relative word timestamps onto the turn timeline", async () => {
@@ -272,6 +294,7 @@ describe("KugelTtsSession concurrency limit", () => {
   let server: MockTtsServer;
   let audio: Array<{ b64: string; turnId: number }>;
   let errors: string[];
+  let errorTurns: number[];
   let done: number[];
 
   /** The ingress's answer when the key already runs its maximum of
@@ -293,7 +316,10 @@ describe("KugelTtsSession concurrency limit", () => {
       },
       {
         onAudio: (b64, turnId) => audio.push({ b64, turnId }),
-        onError: (message) => errors.push(message),
+        onError: (message, turnId) => {
+          errors.push(message);
+          errorTurns.push(turnId);
+        },
         onDone: (turnId) => done.push(turnId),
       },
       retry,
@@ -312,6 +338,7 @@ describe("KugelTtsSession concurrency limit", () => {
     await server.start();
     audio = [];
     errors = [];
+    errorTurns = [];
     done = [];
   });
 
@@ -353,6 +380,40 @@ describe("KugelTtsSession concurrency limit", () => {
     expect(done).toEqual([1]);
     expect(errors).toEqual([]);
     await session.close();
+  });
+
+  it("replays the refused turn without repeating audio from a turn already speaking", async () => {
+    const started: unknown[] = [];
+    server.onFrame = (socket, frame, connection) => {
+      if (frame.voice_settings) {
+        started.push(frame.text);
+        if (connection === 1 && frame.text === "First turn.") {
+          socket.send(JSON.stringify({ context_id: frame.context_id, audio: "QUJD" }));
+        } else if (connection === 1) {
+          refuse(socket);
+        }
+      }
+      if (connection > 1 && frame.close_context) {
+        socket.send(JSON.stringify({ context_id: frame.context_id, context_closed: true }));
+      }
+    };
+    const session = open();
+    try {
+      await session.streamInput(1, "First turn.");
+      await session.endInput(1);
+      await waitFor(() => audio.length === 1);
+      await session.streamInput(2, "Second turn.");
+      await session.endInput(2);
+      await waitFor(() => done.includes(2));
+
+      expect(started).toEqual(["First turn.", "Second turn.", "Second turn."]);
+      expect(done).toEqual([2]);
+      expect(audio).toEqual([{ b64: "QUJD", turnId: 1 }]);
+      expect(errors).toEqual([expect.stringContaining("already delivered audio")]);
+      expect(errorTurns).toEqual([1]);
+    } finally {
+      await session.close();
+    }
   });
 
   it("past the budget, fails the turn through the error path exactly once", async () => {

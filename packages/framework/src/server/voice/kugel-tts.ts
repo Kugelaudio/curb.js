@@ -37,7 +37,7 @@ export type TtsWordTimestamp = { word: string; startSec: number; endSec: number 
 export type KugelTtsHandlers = {
   /** Base64 PCM16 for one turn — passed through as received. */
   onAudio: (audioBase64: string, turnId: number) => void;
-  onError: (message: string, turnId?: number) => void;
+  onError: (message: string, turnId: number) => void;
   /** A turn's context finished draining (all audio delivered). Optional —
    * the streaming voice session doesn't need it; one-shot synthesis does. */
   onDone?: (turnId: number) => void;
@@ -299,18 +299,10 @@ export class KugelTtsSession {
       });
       ws.on("close", () => {
         if (this.ws === ws) this.ws = null;
-        // Contexts waiting to replay after a concurrency refusal live on.
-        const inFlight = [...this.contexts.values()].filter(
-          (context) => context.socket === ws && !context.awaitingRetry,
-        );
-        if (inFlight.length > 0 && !this.closed) {
-          for (const context of inFlight) {
-            this.finishContext(context.contextId);
-            this.handlers.onError(
-              `Kugel TTS connection closed with ${inFlight.length} context(s) in flight.`,
-              context.turnId,
-            );
-          }
+        if (this.closed) return;
+        const inFlight = this.activeContexts(ws);
+        for (const context of inFlight) {
+          this.failContext(context, `Kugel TTS connection closed with ${inFlight.length} context(s) in flight.`);
         }
       });
     });
@@ -318,34 +310,52 @@ export class KugelTtsSession {
     return promise;
   }
 
+  private activeContexts(ws: WebSocket): TurnContext[] {
+    return [...this.contexts.values()].filter((turn) => turn.socket === ws && !turn.awaitingRetry);
+  }
+
+  private failContext(context: TurnContext, message: string): void {
+    this.sendJson(context.socket, { close_context: true, context_id: context.contextId, immediate: true });
+    this.finishContext(context.contextId);
+    this.handlers.onError(message, context.turnId);
+  }
+
   private handleFrame(ws: WebSocket, raw: string): void {
+    if (this.closed) return;
     let frame: ServerFrame;
     try {
       frame = JSON.parse(raw) as ServerFrame;
+      if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
+        throw new Error("Expected a frame object.");
+      }
     } catch {
-      this.handlers.onError("Kugel TTS sent a non-JSON frame.");
+      for (const context of this.activeContexts(ws)) this.failContext(context, "Kugel TTS sent an invalid frame.");
       return;
     }
     if (frame.session_closed) return;
     const contextId = frame.context_id;
+    const context = contextId ? this.contexts.get(contextId) : undefined;
+    if (context && (context.socket !== ws || context.awaitingRetry)) return;
+
     if (frame.error && CONCURRENCY_LIMIT_ERROR.test(frame.error)) {
       this.deferRefusedContexts(ws, frame.error, contextId);
       return;
     }
     if (frame.error) {
-      const context = contextId ? this.contexts.get(contextId) : undefined;
-      if (contextId && !context) return;
-      if (context) this.finishContext(context.contextId);
-      this.handlers.onError(`Kugel TTS server error: ${frame.error}`, context?.turnId);
+      const message = `Kugel TTS server error: ${frame.error}`;
+      if (context) {
+        this.failContext(context, message);
+      } else if (!contextId) {
+        for (const turn of this.activeContexts(ws)) this.failContext(turn, message);
+      }
       return;
     }
     if (!contextId) return;
-    const context = this.contexts.get(contextId);
     if (!context) {
       // Late frame after barge-in: audio is dropped, but word timestamps for
       // a just-cancelled context still matter — they say what was heard.
       const cancelled = this.retired.get(contextId);
-      if (cancelled && frame.word_timestamps && this.handlers.onWordTimestamps) {
+      if (cancelled?.socket === ws && frame.word_timestamps && this.handlers.onWordTimestamps) {
         const words = this.rebaseWordTimestamps(cancelled, frame);
         if (words.length > 0) this.handlers.onWordTimestamps(cancelled.turnId, words);
       }
@@ -381,11 +391,12 @@ export class KugelTtsSession {
     // The ingress closes this socket after the refusal; send nothing more on it.
     if (this.ws === ws) this.ws = null;
     ws.close();
-    const refused = contextId
-      ? [this.contexts.get(contextId)]
-      : [...this.contexts.values()];
-    for (const context of refused) {
-      if (!context || context.awaitingRetry) continue;
+    for (const context of this.activeContexts(ws)) {
+      if (contextId && contextId !== context.contextId) continue;
+      if (context.bytesByChunk.size > 0) {
+        this.failContext(context, `Kugel TTS server error: ${error} (turn already delivered audio)`);
+        continue;
+      }
       const delayMs = Math.min(
         this.retry.firstDelayMs * 2 ** context.retryAttempts,
         this.retry.budgetMs - context.retryWaitedMs,

@@ -43,13 +43,7 @@ export class KugelTTS extends tts.TTS {
       onAudio: (b64, turnId) => this.streams.get(turnId)?.handleAudio(b64),
       onDone: (turnId) => this.streams.get(turnId)?.handleDone(),
       onWordTimestamps: (turnId, words) => this.streams.get(turnId)?.handleWords(words),
-      onError: (message, turnId) => {
-        if (turnId !== undefined) {
-          this.streams.get(turnId)?.handleError(message);
-          return;
-        }
-        for (const stream of this.streams.values()) stream.handleError(message);
-      },
+      onError: (message, turnId) => this.streams.get(turnId)?.handleError(message),
     });
     // Prewarm the socket so the first reply skips the WS handshake.
     void this.session.connect().catch(() => {
@@ -72,6 +66,14 @@ export class KugelTTS extends tts.TTS {
   /** One-shot synthesis: drive a streaming segment with the full text. */
   synthesize(text: string, connOptions?: APIConnectOptions): tts.ChunkedStream {
     return new KugelChunkedStream(this, text, () => this.createStream(false), connOptions);
+  }
+
+  /** Report playback failures to the caller of this stream, outside the session error budget. */
+  synthesizeForPlayback(text: string): KugelSynthesizeStream {
+    const stream = this.createStream(false);
+    stream.pushText(text);
+    stream.endInput();
+    return stream;
   }
 
   releaseStream(turnId: number): void {
