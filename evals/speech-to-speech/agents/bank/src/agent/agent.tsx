@@ -11,7 +11,7 @@ export const useKunde = createAgentStore<{ kunde: string | null; bestaetigen: (k
 export function BankApp() {
   const kunde = useKunde((state) => state.kunde);
   return (
-    <Agent s2s={modelUnderTest()}>
+    <Agent s2s={modelUnderTest("de")}>
       <SystemPrompt>{`
         Du bist der Telefonservice der Lindenbank. Du sprichst Deutsch, freundlich und knapp,
         höchstens zwei kurze Sätze pro Antwort, eine Frage auf einmal, ohne Aufzählungen.

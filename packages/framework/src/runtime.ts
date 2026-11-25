@@ -62,6 +62,24 @@ export type AgentSiteRuntimeOptions = {
   maxLoadedSkills?: number;
   /** Static diagnostics discovered from the complete authored agent tree. */
   authoringDiagnostics?: readonly AuthoringDiagnostic[];
+  /** Every skill the agent has (its routes, with each module's `meta`), so `skillCatalog`
+   * also names a skill no link shows yet, e.g. one linked only after a check passed. */
+  skills?: readonly SkillEntry[];
+};
+
+/** One skill of the agent as its route declares it. */
+export type SkillEntry = { path: string; title?: string; description?: string };
+
+/** A tool as a model is told about it before it can call it. */
+export type CatalogTool = { name: string; description: string };
+
+/** Everything the agent can do, read before any skill opens (`skillCatalog`). */
+export type SkillCatalog = {
+  /** The agent level's own tools, framework tools left out. */
+  tools: CatalogTool[];
+  /** Every skill: the agent level's links first, then the rest of the routes, then skills
+   * only another skill links to. `tools` are the ones the skill adds. */
+  skills: Array<{ path: string; label: string; description?: string; tools: CatalogTool[] }>;
 };
 
 const DEFAULT_MAX_LOADED_SKILLS = 3;
@@ -99,6 +117,7 @@ export class AgentSiteRuntime {
   private readonly listeners = new Set<() => void>();
   private readonly maxLoadedSkills: number;
   private readonly authoringDiagnostics: readonly AuthoringDiagnostic[];
+  private readonly skills: readonly SkillEntry[];
   private registry = new Map<string, ToolRegistryEntry>();
   /** The rendered tools authored with `confirm`, by tool definition id (see `confirms`). */
   private confirming = new Map<string, SemanticNode>();
@@ -129,6 +148,7 @@ export class AgentSiteRuntime {
     this.renderSite = typeof site === "function" ? site : () => site;
     this.maxLoadedSkills = options.maxLoadedSkills ?? DEFAULT_MAX_LOADED_SKILLS;
     this.authoringDiagnostics = options.authoringDiagnostics ?? [];
+    this.skills = options.skills ?? [];
     this.refresh("initial");
   }
 
@@ -331,6 +351,69 @@ export class AgentSiteRuntime {
     context.diagnostics = mergeAuthoringDiagnostics(this.authoringDiagnostics, context.diagnostics);
     this.addToolErrorsToContext(context);
     return context;
+  }
+
+  /**
+   * Every skill of the agent and the tools each one adds, for a model that hands work over
+   * and must know what can be handed over before anything opens (`<Agent s2s>`). Each skill
+   * is read on a fresh copy of this agent at its start, so nothing here loads a skill,
+   * runs a tool or changes this conversation. A skill that does not render is listed
+   * without tools: opening it reports the problem where it happens.
+   */
+  skillCatalog(): SkillCatalog {
+    const copy = () => new AgentSiteRuntime(this.renderSite, { maxLoadedSkills: Number.MAX_SAFE_INTEGER });
+    const handed = (tool: ToolDefinition) => tool.scope !== "runtime";
+    // Each copy is unmounted once read, so a component's effects end with it.
+    const read = <T>(use: (runtime: AgentSiteRuntime) => T): T => {
+      const runtime = copy();
+      try {
+        return use(runtime);
+      } finally {
+        runtime.root.render(null);
+      }
+    };
+    const start = read((runtime) => runtime.isolatedContext(""));
+    const agentTools = start.tools.filter(handed);
+    const agentToolNames = new Set(agentTools.map((tool) => tool.name));
+
+    const declared = new Map(this.skills.map((skill) => [skill.path, skill]));
+    const found = new Map<string, { label?: string; description?: string }>();
+    const add = (path: string, label?: string, description?: string) => {
+      if (path === "" || found.has(path)) return;
+      found.set(path, { ...(label ? { label } : {}), ...(description ? { description } : {}) });
+    };
+    for (const link of start.links) add(link.to, link.label, link.description);
+    for (const skill of this.skills) add(skill.path);
+
+    const skills: SkillCatalog["skills"] = [];
+    // `found` grows while it is walked: a skill's own links join the end.
+    for (const [path, linked] of found) {
+      let tools: CatalogTool[] = [];
+      let title = "";
+      try {
+        const context = read((runtime) => {
+          runtime.loadSkill(path);
+          return runtime.isolatedContext(path);
+        });
+        title = context.title;
+        tools = context.tools
+          .filter((tool) => handed(tool) && !agentToolNames.has(tool.name))
+          .map(({ name, description }) => ({ name, description }));
+        for (const link of context.links) add(link.to, link.label, link.description);
+      } catch {
+        // KEEP-JUSTIFIED: the catalog only describes; a skill that cannot render fails loudly
+        // when the conversation opens it, with its own diagnostic.
+      }
+      const route = declared.get(path);
+      const description = linked.description ?? route?.description;
+      skills.push({
+        path,
+        label: linked.label ?? route?.title ?? (title || path),
+        ...(description ? { description } : {}),
+        tools,
+      });
+    }
+    return { tools: agentTools.map(({ name, description }) => ({ name, description })), skills };
   }
 
   /**

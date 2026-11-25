@@ -4,7 +4,7 @@ import { modelUnderTest } from "../../../../harness/model-under-test.js";
 /** An outdoor clothing shop's phone line (fake shop, fake data): orders, returns, shipping. */
 export function ShopApp() {
   return (
-    <Agent s2s={modelUnderTest()}>
+    <Agent s2s={modelUnderTest("en")}>
       <SystemPrompt>{`
         You answer the phone for Larkfield Outdoor, an online shop for outdoor clothing.
         Speak English, friendly and brief: at most two short sentences per reply, one question at a time, no lists.

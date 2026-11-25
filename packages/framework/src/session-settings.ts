@@ -18,6 +18,7 @@
  */
 
 import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES } from "./authoring.js";
+import { agentLanguage, type AgentLanguage } from "./llm/localized.js";
 import { kugelaudio, type AgentProviderProps, type ProviderProps, type S2sDescriptor } from "./providers.js";
 import {
   ADJUSTABLE_PATHS,
@@ -87,6 +88,11 @@ export class SessionSettings {
   /** The speech-to-speech model of `<Agent s2s>`, or undefined. No skill or outside change moves it. */
   s2s(): S2sDescriptor | undefined {
     return this.props.s2s;
+  }
+
+  /** The language the agent speaks now, for the lines the framework writes itself (`agentLanguage`). */
+  language(): AgentLanguage {
+    return agentLanguage({ ...this.view(), s2s: this.props.s2s?.options });
   }
 
   /** The effective settings as the wire reports them (no credentials, no extra options). */

@@ -4,7 +4,7 @@ import { modelUnderTest } from "../../../../harness/model-under-test.js";
 /** A family practice's phone line (fake practice, fake data): appointments and practice info. */
 export function ClinicApp() {
   return (
-    <Agent s2s={modelUnderTest()}>
+    <Agent s2s={modelUnderTest("de")}>
       <SystemPrompt>{`
         Du bist die Telefonassistenz der Hausarztpraxis Dr. Sommer. Du sprichst Deutsch, freundlich und knapp,
         höchstens zwei kurze Sätze pro Antwort, eine Frage auf einmal, ohne Aufzählungen.

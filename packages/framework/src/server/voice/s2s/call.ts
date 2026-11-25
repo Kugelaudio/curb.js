@@ -25,16 +25,8 @@ import type { AgentSessionBundle } from "../../connection.js";
 import type { VoiceSessionHandle } from "../orchestration.js";
 import { createBackOffice } from "./back-office.js";
 import { createS2sCallRecord } from "./call-record.js";
+import { voiceInstructions } from "./instructions.js";
 import { s2sVoice, type S2sVoice } from "./voices.js";
-
-/** How the model works with the back office, after the agent's own prompt. */
-const BACK_OFFICE_RULES = [
-  "A back office works behind you: it can open the skills and run the tools listed here, and you cannot.",
-  "Hand over anything that needs one of them, and never say something was done until the back office reports it.",
-  "It can do more than this list shows, so hand over whatever you cannot do yourself, and never tell the caller something cannot be done.",
-  "When the back office gives you a question or a line to confirm, ask it. Keep every name, number, date and time exactly as written.",
-  "You cannot hang up. When the caller is finished or says goodbye, do not say goodbye yourself: hand that over, and the back office ends the call and gives you the goodbye to say.",
-].join(" ");
 
 /** How long a goodbye may take to start and play before the call ends anyway. */
 const GOODBYE_MS = 15_000;
@@ -48,29 +40,6 @@ const openWith = (line: string) => `Open the call with this line, in these words
 
 /** The model owns its playout: an opening it is asked for is not waited on. */
 const MODEL_SPEAKS: GreetingReply = { done: () => true, waitForPlayout: async () => {} };
-
-/** The model reads the agent's `<SystemPrompt>`: who it is and how it sounds. Everything else the
- * agent renders (an `<Instruction>`, text, a skill) is the procedure, which `llm` runs behind it;
- * the model only needs to know what to hand over, and learns the rest from commentary. */
-export function voiceInstructions(runtime: AgentSiteRuntime): string {
-  return [
-    runtime.snapshot().context.systemPrompt ?? "",
-    `${BACK_OFFICE_RULES}\n${backOfficeWork(runtime).map((work) => `- ${work}`).join("\n")}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-/** What the model hands over: the agent's tools and skills. */
-function backOfficeWork(runtime: AgentSiteRuntime): string[] {
-  const { tools, links } = runtime.snapshot().context;
-  return [
-    ...tools
-      .filter((tool) => tool.name !== "read_skill")
-      .map((tool) => tool.description ?? tool.name),
-    ...links.map((link) => `${link.label}${link.description ? `: ${link.description}` : ""}`),
-  ];
-}
 
 export async function startS2sCall(options: VoiceAgentStartOptions): Promise<VoiceSessionHandle> {
   const env = options.env ?? process.env;

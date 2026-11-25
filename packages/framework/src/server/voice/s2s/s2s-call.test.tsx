@@ -115,9 +115,9 @@ async function until(check: () => boolean, what: string, ms = 5000) {
 type Step = { text?: string; calls?: Array<{ name: string; input?: Record<string, unknown> }> };
 type CallOptions = { env?: Record<string, string>; firstLine?: string; steps?: Step[]; firstTurn?: "agent"; quietMs?: number; startFails?: boolean };
 
-async function call(options: CallOptions & { greeting?: string; drops?: boolean } = {}) {
+async function call(options: CallOptions & { greeting?: string; drops?: boolean; language?: string } = {}) {
   const model = await startFakeLiveModel({ greeting: options.greeting, drops: options.drops });
-  const s2s = openai.live({ baseURL: model.baseURL, voice: "marin" });
+  const s2s = openai.live({ baseURL: model.baseURL, voice: "marin", ...(options.language ? { language: options.language } : {}) });
   open.push(async () => void (await model.close()));
   const parts = await callOn(s2s, options, () => model.start() !== undefined);
   return { model, ...parts };
@@ -233,8 +233,18 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     expect(start.audio.output.voice).toBe("marin");
     expect(start.instructions).toContain("You answer the phone at an insurer.");
     expect(start.instructions).toContain("A back office works behind you");
-    expect(start.instructions).toContain("Report a claim");
-    expect(start.instructions).not.toContain("read_skill");
+    expect(start.instructions).toContain("The back office does this:\n- The caller's answer to a question the back office asked");
+    expect(start.instructions).toContain("- Report a claim: Reporting damage.\n  - verify_policy: Check the policy.");
+    expect(start.instructions).not.toMatch(/read_skill|end_call/);
+  });
+
+  it("tells a stock client's model the call's language, in that language, in the field the model reads", async () => {
+    const { model } = await call({ language: "de" });
+    const start = model.start();
+    expect(Object.keys(start).sort()).toEqual(LIVE_SESSION_FIELDS);
+    expect(start.instructions).toContain("Sprich mit dem Anrufer Deutsch. Hinter dir arbeitet ein Backoffice:");
+    expect(start.instructions).toContain("Das Backoffice übernimmt:\n- Die Antwort des Anrufers");
+    expect(start.instructions).not.toContain("A back office works behind you");
   });
 
   it("keeps the agent's <Instruction> procedure for llm, out of what the model reads", async () => {

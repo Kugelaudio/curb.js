@@ -29,6 +29,7 @@ in its own words. Three things follow:
 | `baseURL` | `string` | Another endpoint on the same protocol |
 | `apiKeyEnv` | `string` | The environment variable holding the endpoint's key, read when a call starts; default `OPENAI_API_KEY` |
 | `verbatim` | `boolean` | `openai.live()` only, on an endpoint that takes `expects_reply` on a commentary. The model says each reply of the back office word for word, and the caller's next finished turn goes back to `llm` |
+| `language` | `string` | The call's language as a tag (`"de"`, `"de-DE"`). The model is told to speak it, and the instructions Curb gives it about the back office are written in it. The lines Curb says itself use it too. Without it they are English |
 
 ## Example
 
@@ -40,6 +41,7 @@ in its own words. Three things follow:
 
 | Version | Changes |
 |---|---|
+| Unreleased | `language` on `openai.live()` and `openai.realtime()` added. The model's instructions list every skill with its tools by name, a skill linked only later included |
 | v1.18.0 | `verbatim` on `openai.live()`, and `apiKeyEnv` on `openai.live()` and `openai.realtime()`, added |
 | Unreleased | `openai.live()` and `openai.realtime()` added |
 | v1.2.6 | `openai` introduced |

@@ -4,7 +4,6 @@ import type { AgentFirstTurn } from "../config.js";
 import { experimentInfo, type ExperimentDeclaration } from "../experiments.js";
 import { assignExperiments } from "../experiments.node.js";
 import { declinedNote, unclearNote, type ConfirmationVerdict, type PendingConfirmation } from "../llm/confirmation.js";
-import { agentLanguage } from "../llm/localized.js";
 import type { AgentChatMessage } from "../llm/types.js";
 import { snapshotAgentStores } from "../agent-state.js";
 import type { AgentSiteRuntime, ToolFake } from "../runtime.js";
@@ -188,7 +187,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
       return hungUp || closed;
     },
     experiments,
-    language: agentLanguage(runtime.settings.view()),
+    language: runtime.settings.language(),
     model,
     record() {
       const errored = failure !== null;
