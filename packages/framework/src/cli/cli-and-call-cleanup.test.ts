@@ -156,6 +156,7 @@ describe("curb build --out", () => {
   it.each([
     ["it is followed by another flag", ["--out", "--no-verify", "--no-trace"]],
     ["it is the last argument", ["--no-verify", "--no-trace", "--out"]],
+    ["it is passed an empty argument", ["--out", ""]],
   ])("needs a value when %s", (_, args) => {
     const root = createTestProject({
       "src/agent/agent.tsx": `import { Agent, SystemPrompt, defineAgent } from "curb";
@@ -175,6 +176,7 @@ export const agent = defineAgent({ app: App });
       const result = curbBuild(root, args);
       expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
       expect(result.stderr).toContain("curb build: --out needs a value.");
+      expect(existsSync(join(root, "src", "agent", "agent.tsx"))).toBe(true);
       expect(existsSync(join(root, "--no-verify"))).toBe(false);
       expect(existsSync(join(root, ".curb", "standalone"))).toBe(false);
     } finally {

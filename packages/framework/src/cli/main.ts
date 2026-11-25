@@ -235,7 +235,7 @@ async function build(): Promise<void> {
     const index = args.indexOf(flag);
     if (index < 0) return undefined;
     const value = args[index + 1];
-    if (value === undefined || value.startsWith("--")) {
+    if (!value || value.startsWith("--")) {
       throw new Error(`curb build: ${flag} needs a value.`);
     }
     return value;
