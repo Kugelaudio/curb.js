@@ -238,6 +238,7 @@ export class ConnectionController {
   private voiceCall: VoiceCallHandle | null = null;
   /** The generation of the start in flight, including any teardown after cancellation. */
   private voiceStarting: number | null = null;
+  private voiceClosing = false;
   private voiceGeneration = 0;
   /** Subscriptions tied to the CURRENT runtime/session — replaced on agent
    * switch. Global subscriptions (MCP) live in `globalUnsubscribers`. */
@@ -558,6 +559,10 @@ export class ConnectionController {
     }
 
     if (this.disposed) return;
+    if (this.session.isRunning) {
+      this.send(errorFrame("protocol", "Cannot switch conversations while a turn is running."));
+      return;
+    }
     // Close any call started while the target loaded. Commit the new bundle before
     // yielding so a later voice start can only use the new conversation.
     const voiceStopped = this.voiceCall || this.voiceStarting !== null ? this.voiceStop() : undefined;
@@ -815,12 +820,11 @@ export class ConnectionController {
       this.send({ type: "voice_session", live: true, transport, url, token, room });
       return;
     }
-    if (this.voiceStarting !== null) {
-      if (this.voiceStarting !== this.voiceGeneration) {
-        this.send(errorFrame("voice", "The previous call is still closing. Try again in a moment."));
-      }
+    if (this.voiceClosing || (this.voiceStarting !== null && this.voiceStarting !== this.voiceGeneration)) {
+      this.send(errorFrame("voice", "The previous call is still closing. Try again in a moment."));
       return;
     }
+    if (this.voiceStarting !== null) return;
     const generation = ++this.voiceGeneration;
     this.voiceStarting = generation;
     const bundle = { runtime: this.runtime, session: this.session };
@@ -871,10 +875,17 @@ export class ConnectionController {
     this.voiceGeneration += 1;
     const call = this.voiceCall;
     this.voiceCall = null;
+    if (call) this.voiceClosing = true;
     this.send({ type: "voice_session", live: false });
-    // Awaited, but a teardown failure must not fail the stop the user asked for:
-    // the call is already gone from this connection either way.
-    if (call) await call.close().catch((error) => this.reportCallCloseFailure(error));
+    if (!call) return;
+    try {
+      await call.close();
+    } catch (error) {
+      // The call is already detached; report a teardown failure without failing the stop.
+      this.reportCallCloseFailure(error);
+    } finally {
+      this.voiceClosing = false;
+    }
   }
 
   /** A voice call that would not close cleanly. Never fatal: by the time this

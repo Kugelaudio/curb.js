@@ -96,6 +96,37 @@ describe("voice on a conversation connection", () => {
     expect(sent.filter(isLive)).toEqual([expect.objectContaining({ token: next.token })]);
   });
 
+  it("answers a retry while a previously live call is closing", async () => {
+    const closing = deferred<void>();
+    const previous = { ...voiceHandle(), close: vi.fn(() => closing.promise) };
+    const next = voiceHandle("next-token");
+    const start = vi.fn<VoiceHostAdapter["start"]>()
+      .mockResolvedValueOnce(previous)
+      .mockResolvedValue(next);
+    const sent: ServerMessage[] = [];
+    const controller = new ConnectionController((message) => sent.push(message), {
+      ...makeBundle(),
+      voiceHost: { start },
+      agentHost,
+    });
+    controller.start();
+    await controller.handle({ type: "voice_start" });
+    expect(sent.filter(isLive)).toHaveLength(1);
+
+    const stopping = controller.handle({ type: "voice_stop" });
+    await controller.handle({ type: "voice_start" });
+    const response = sent.at(-1);
+    const startsDuringClose = start.mock.calls.length;
+    closing.resolve();
+    await stopping;
+
+    expect(startsDuringClose).toBe(1);
+    expect(response).toMatchObject({ type: "error", scope: "voice", message: expect.stringMatching(/try again/i) });
+    await controller.handle({ type: "voice_start" });
+    expect(sent.filter(isLive).at(-1)).toMatchObject({ token: next.token });
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
   it.each(["pending", "live"] as const)("closes a %s voice start made during a conversation switch", async (state) => {
     const loaded = deferred<ReturnType<typeof makeBundle>>();
     const started = deferred<VoiceCallHandle>();
@@ -129,6 +160,44 @@ describe("voice on a conversation connection", () => {
     expect(sent.filter(isLive)).toHaveLength(state === "live" ? 1 : 0);
     expect(sent).toContainEqual({ type: "voice_session", live: false });
     expect(sent).toContainEqual(expect.objectContaining({ type: "conversations", active: "stored-1" }));
+  });
+
+  it("keeps the original conversation and voice call if a turn starts during a switch", async () => {
+    const loaded = deferred<AgentSessionBundle>();
+    const reply = deferred<{ text: string; toolCalls: [] }>();
+    const { runtime } = makeBundle();
+    const session = new AgentSession(runtime, () => reply.promise);
+    const handle = { ...voiceHandle(), sendText: async (text: string) => { await session.runTurn(text); } };
+    const sent: ServerMessage[] = [];
+    const controller = new ConnectionController((message) => sent.push(message), {
+      runtime,
+      session,
+      agentHost: { ...agentHost, create: () => loaded.promise },
+      voiceHost: { start: async () => handle },
+      history: {
+        list: () => [{ id: 1, agentId: "main", startedAt: 1, messageCount: 1 }],
+        messages: () => [{ role: "user", content: "An earlier message", at: 1 }],
+        systemPrompt: () => null,
+      },
+    });
+    const active = () => sent.filter((message) => message.type === "conversations").at(-1)?.active;
+    controller.start();
+    const original = active();
+    await controller.handle({ type: "voice_start" });
+    const switching = controller.handle({ type: "select_conversation", id: "stored-1" });
+    const turning = controller.handle({ type: "user_text", text: "A turn while the next conversation loads" });
+    try {
+      await vi.waitFor(() => expect(session.isRunning).toBe(true));
+      loaded.resolve(makeBundle());
+      await switching;
+      expect(sent.at(-1)).toMatchObject({ type: "error", scope: "protocol" });
+      expect(active()).toBe(original);
+      expect(handle.close).not.toHaveBeenCalled();
+      expect(sent).not.toContainEqual({ type: "voice_session", live: false });
+    } finally {
+      reply.resolve({ text: "Answer.", toolCalls: [] });
+      await turning;
+    }
   });
 
   it("binds a delayed voice start to the rebuilt session before sending its ticket", async () => {
