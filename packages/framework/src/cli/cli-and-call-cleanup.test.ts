@@ -130,7 +130,10 @@ export const agent = defineAgent({ app: App });
     dev.stderr.on("data", (chunk) => (output += String(chunk)));
     const read = () => (existsSync(seen) ? readFileSync(seen, "utf8") : "");
     try {
-      await until(read, "login-key", 45_000, () => output);
+      // The agent writes the key during import, before the supervisor receives "ready".
+      await until(() => String(output.includes("Ready in")), "true", 45_000, () => output);
+      expect(output).not.toContain("did not load");
+      expect(read()).toBe("login-key");
       writeFileSync(join(root, ".env"), "KUGELAUDIO_API_KEY=env-key\n");
       await until(() => String(/reloaded \.env/.test(output)), "true", 45_000, () => output);
       expect(read()).toBe("env-key");
