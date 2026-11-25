@@ -4,7 +4,6 @@ import { isLayerEscapeError, LAYER_ESCAPE_EXIT_CODE, layerEscapeLine } from "../
 import { resolveAgentDir, resolveProjectRoot } from "../project.node.js";
 import { curbVersion } from "../version.js";
 import { applyPortFlag, wantsHelp } from "./args.js";
-import { PROJECT_KEY_VARIABLE } from "./cloud/project-key.js";
 import { prepareProject } from "./prepare-project.js";
 import { runUpgrade } from "./upgrade.js";
 
@@ -99,9 +98,7 @@ async function dev(): Promise<void> {
   // The environment before the project's .env: the agent server loads the .env itself each
   // time it starts, so a changed key applies on save (see dev.ts).
   const baseEnv = { ...process.env };
-  const { projectRoot, loginKey } = prepareProject();
-  // The key `curb login` stored is not in the .env the agent server loads: it starts with it.
-  if (loginKey) baseEnv[PROJECT_KEY_VARIABLE] = loginKey.apiKey;
+  const { projectRoot } = prepareProject();
   applyPortFlag(process.argv.slice(3));
   // ONE port (default http://127.0.0.1:4000) for the preview, chat and voice; the agent
   // server runs behind it and reloads when the project's files change.
@@ -234,7 +231,6 @@ async function start(): Promise<void> {
 async function build(): Promise<void> {
   const { runCurbBuild } = await import("../bundler/index.js");
   const args = process.argv.slice(3);
-  const outFlag = args.indexOf("--out");
   const valueOf = (flag: string): string | undefined => {
     const index = args.indexOf(flag);
     if (index < 0) return undefined;
@@ -249,7 +245,7 @@ async function build(): Promise<void> {
 
   const result = await runCurbBuild({
     projectRoot: process.cwd(),
-    outDir: outFlag >= 0 ? args[outFlag + 1] : undefined,
+    outDir: valueOf("--out"),
     skipTrace: args.includes("--no-trace"),
     skipVerify: args.includes("--no-verify"),
     emitLayers,

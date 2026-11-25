@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { agentLoadFailure } from "../agent.node.js";
 import { keepHostModelKeyFresh, useHostModelKey } from "./cloud/host-model-key.js";
+import { useLoginKey } from "./cloud/project-key.js";
 import type { AgentServer } from "../server/main.js";
 import type { ChildMessage, DevChildOptions, SupervisorMessage } from "./dev-ipc.js";
 import { surviveLivekitTeardown } from "./livekit-teardown.js";
@@ -36,8 +37,10 @@ const envFile = join(options.projectRoot, ".env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 // A hosted workspace supplies the model key beside its platform token and renews it; this
 // server re-reads it, since it may outlive one key (cloud/host-model-key.ts).
-useHostModelKey();
-keepHostModelKeyFresh();
+if (!useLoginKey(options.projectRoot)) {
+  useHostModelKey();
+  keepHostModelKeyFresh();
+}
 
 let server: AgentServer | null = null;
 let stopping = false;

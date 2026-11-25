@@ -41,7 +41,7 @@ Options:
   --llm <provider>     kugelaudio | anthropic | openai | openai-compatible   (default kugelaudio)
   --tts <provider>     kugelaudio | cartesia | elevenlabs | openai (default kugelaudio)
   --model <id>         LLM model id (default qwen3.8-27b on KugelAudio)
-  --stt-model <id>     STT model id (provider default otherwise)
+  --stt-model <id>     STT model id (deepgram, elevenlabs, or openai only)
   --tts-model <id>     TTS model id (provider default otherwise)
   --llm-base-url <url> Endpoint for --llm openai-compatible
   --template <name>    default | support | booking (default default): Juno, a demo
@@ -294,6 +294,9 @@ function applyCliSelections() {
   if (cli.model) answers.agentModel = cli.model;
   if (answers.llm === "kugelaudio") validate("model", answers.agentModel, KUGELAUDIO_LLM_MODELS);
   if (cli.llmBaseUrl) answers.llmBaseUrl = cli.llmBaseUrl;
+  if (cli.sttModel !== undefined && (answers.stt === "kugelaudio" || answers.stt === "azure")) {
+    fail(`--stt-model does not apply to --stt ${answers.stt}. Omit --stt-model for this provider.`);
+  }
   // Models default to each provider's own default when not overridden.
   answers.sttModel = cli.sttModel ?? defaultSttModel(answers.stt);
   answers.ttsModel = cli.ttsModel ?? defaultTtsModel(answers.tts);
