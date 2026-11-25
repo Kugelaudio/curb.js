@@ -28,7 +28,7 @@ import { logError, logInfo } from "../../log.js";
 import { parseUrlOrNull } from "../../request-url.js";
 import type { VoiceCallRoom } from "../call-room.js";
 import type { CallParticipant } from "../livekit-host/call-opening.js";
-import { createSynchronizer, type TranscriptSink } from "./synchronizer.js";
+import { createSynchronizer, type Synchronizer, type TranscriptSink } from "./synchronizer.js";
 
 /** The page's participant: one browser tab, never a phone line or a transfer target. */
 const PAGE_PARTICIPANT: CallParticipant = { identity: "browser" };
@@ -213,6 +213,7 @@ export function createLocalVoiceCall(id = `local-${randomUUID().slice(0, 8)}`): 
   const lost = new Set<(reason: string) => void>();
   let input: PageAudioInput | null = null;
   let output: PageAudioOutput | null = null;
+  let synchronizer: Promise<Synchronizer> | null = null;
   let disconnected = false;
 
   const send: Send = (message) => {
@@ -245,12 +246,15 @@ export function createLocalVoiceCall(id = `local-${randomUUID().slice(0, 8)}`): 
     onParticipantDisconnected: (listener) => void left.add(listener),
     onDisconnected: (listener) => void lost.add(listener),
     startSession: async ({ session, agent }) => {
+      if (disconnected) throw new Error("the local call has ended");
       input = new PageAudioInput();
       output = new PageAudioOutput(send);
-      const synchronizer = await createSynchronizer(output, pageTranscriptSink(send));
+      synchronizer = createSynchronizer(output, pageTranscriptSink(send));
+      const sync = await synchronizer;
+      if (disconnected) throw new Error("the local call has ended");
       session.input.audio = input;
-      session.output.audio = synchronizer.audioOutput;
-      session.output.transcription = synchronizer.textOutput;
+      session.output.audio = sync.audioOutput;
+      session.output.transcription = sync.textOutput;
       // What the caller is saying, as RoomIO publishes it: one segment per final.
       let segment = 0;
       session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (event) => {
@@ -272,7 +276,13 @@ export function createLocalVoiceCall(id = `local-${randomUUID().slice(0, 8)}`): 
       output?.pageLeft();
       await input?.close();
       closing?.close(1000, "call ended");
-      for (const listener of lost) listener("call ended");
+      try {
+        // startSession reports initialization errors. Only a created synchronizer needs closing.
+        const sync = await synchronizer?.catch(() => null);
+        await sync?.close();
+      } finally {
+        for (const listener of lost) listener("call ended");
+      }
     },
   };
 

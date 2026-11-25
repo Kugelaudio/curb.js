@@ -598,70 +598,74 @@ export async function runHostedDirectJoin(config: DirectJoinConfig): Promise<voi
   // real calls that nothing is listening to. It is counted, not silent.
   const journal = new EventJournal();
   const eventsServer = await startManagementServer(null, { journal });
-  if (eventsServer !== null) emit("events-listening", { address: eventsServer.address });
-
-  // One reporter for this one call. A runner handed several calls builds one each. It
-  // writes to the journal only when something serves it, so a call nobody reads counts its
-  // records as undelivered and tells its agent there is no host.
-  const reporter =
-    config.reporter ??
-    createCallReporter({
-      journal: eventsServer === null ? undefined : journal,
-      producer: config.sessionId ?? "call",
-    });
-
-  const session = await joinRoomAndServe({ ...config, reporter });
-
-  // Hold the event loop open for the length of the call.
-  //
-  // Not decoration: the voice session lives behind rtc-node's native handles and a
-  // pending promise keeps nothing alive on its own. Without this the process can reach
-  // an idle loop and exit 0 mid-call, which is precisely the failure the hosted platform
-  // cannot see -- it records a healthy runner for a call that stopped answering.
-  const keepAlive = setInterval(() => {}, 60_000);
-
-  let stopping = false;
-  const stop = (signal: NodeJS.Signals): void => {
-    if (stopping) {
-      // A second signal means the operator is done waiting.
-      console.error(`curb: ${signal} received again while stopping; exiting now.`);
-      process.exit(1);
-    }
-    stopping = true;
-    emit("stopping", { room: session.roomName, signal });
-    void session.handle
-      .close()
-      .catch(async (error: unknown) => {
-        const detail = error instanceof Error ? error.message : String(error);
-        console.error(`curb: voice session ${session.roomName} did not close cleanly: ${detail}`);
-        // close() disconnects the room itself; when it failed part-way the room may
-        // still be joined, and a runner that leaves a participant behind holds the
-        // platform's room open.
-        await disconnectQuietly(session.connection, "an unclean shutdown");
-      });
-  };
-  const signals: NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
-  for (const signal of signals) process.on(signal, () => stop(signal));
-
-  let outcome = "completed";
+  let session: DirectJoinSession;
   try {
-    await session.ended;
-  } catch (error) {
-    outcome = "failed";
-    throw error;
-  } finally {
-    clearInterval(keepAlive);
-    for (const signal of signals) process.removeAllListeners(signal);
-    // LAST, and awaited. The terminal report and any events still batched go out here; a
-    // process that exited without this would drop the end of every call, which is the part
-    // anybody reviewing one reads first.
-    await reporter.finish(outcome);
-    if (reporter.undelivered > 0) {
-      console.error(
-        `curb: ${reporter.undelivered} conversation record(s) were not kept: this runner ` +
-          `has no events stream (set ${MANAGEMENT_ADDRESS_ENV} to serve one).`,
-      );
+    if (eventsServer !== null) emit("events-listening", { address: eventsServer.address });
+
+    // One reporter for this one call. A runner handed several calls builds one each. It
+    // writes to the journal only when something serves it, so a call nobody reads counts its
+    // records as undelivered and tells its agent there is no host.
+    const reporter =
+      config.reporter ??
+      createCallReporter({
+        journal: eventsServer === null ? undefined : journal,
+        producer: config.sessionId ?? "call",
+      });
+
+    session = await joinRoomAndServe({ ...config, reporter });
+
+    // Hold the event loop open for the length of the call.
+    //
+    // Not decoration: the voice session lives behind rtc-node's native handles and a
+    // pending promise keeps nothing alive on its own. Without this the process can reach
+    // an idle loop and exit 0 mid-call, which is precisely the failure the hosted platform
+    // cannot see -- it records a healthy runner for a call that stopped answering.
+    const keepAlive = setInterval(() => {}, 60_000);
+
+    let stopping = false;
+    const stop = (signal: NodeJS.Signals): void => {
+      if (stopping) {
+        // A second signal means the operator is done waiting.
+        console.error(`curb: ${signal} received again while stopping; exiting now.`);
+        process.exit(1);
+      }
+      stopping = true;
+      emit("stopping", { room: session.roomName, signal });
+      void session.handle
+        .close()
+        .catch(async (error: unknown) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          console.error(`curb: voice session ${session.roomName} did not close cleanly: ${detail}`);
+          // close() disconnects the room itself; when it failed part-way the room may
+          // still be joined, and a runner that leaves a participant behind holds the
+          // platform's room open.
+          await disconnectQuietly(session.connection, "an unclean shutdown");
+        });
+    };
+    const signals: NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
+    for (const signal of signals) process.on(signal, () => stop(signal));
+
+    let outcome = "completed";
+    try {
+      await session.ended;
+    } catch (error) {
+      outcome = "failed";
+      throw error;
+    } finally {
+      clearInterval(keepAlive);
+      for (const signal of signals) process.removeAllListeners(signal);
+      // LAST, and awaited. The terminal report and any events still batched go out here; a
+      // process that exited without this would drop the end of every call, which is the part
+      // anybody reviewing one reads first.
+      await reporter.finish(outcome);
+      if (reporter.undelivered > 0) {
+        console.error(
+          `curb: ${reporter.undelivered} conversation record(s) were not kept: this runner ` +
+            `has no events stream (set ${MANAGEMENT_ADDRESS_ENV} to serve one).`,
+        );
+      }
     }
+  } finally {
     // Ends every open events stream, flushing the terminal record to a reader that is behind,
     // before the entry exits the process.
     await eventsServer?.close();
