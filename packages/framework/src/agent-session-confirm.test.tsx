@@ -6,7 +6,7 @@ import { AgentSession } from "./agent-session.js";
 import { diagnoseAgentAuthoring } from "./authoring-diagnostics.js";
 import { sayCommand, type SayHost } from "./cli/say.js";
 import { defineAgent } from "./config.js";
-import { Agent, AgentAuthoringError, AgentSiteRuntime, Field, Skill, Skills, Tool, z, type AgentRoute } from "./index.js";
+import { Agent, AgentAuthoringError, AgentSiteRuntime, Field, Skill, Skills, Tool, useAgentInfo, z, type AgentRoute } from "./index.js";
 import { pendingLine } from "./llm/confirmation.js";
 import type { AgentRunResponse } from "./llm/types.js";
 import { rebuildSessionAt } from "./server/session-rewind.js";
@@ -205,6 +205,37 @@ describe("a tool that asks the caller first (<Tool confirm>)", () => {
     expect(requests).toHaveLength(2);
     expect(session.pendingConfirmation).toMatchObject({ toolName: "book_meeting", input: LISA, readBack: readBackOf(LISA) });
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a final-step follow-through tool that stopped requiring confirmation", async () => {
+    const onSubmit = vi.fn(booked);
+    function BookingTool() {
+      const confirm = useAgentInfo((info) => info["booking.skipConfirmation"] !== true);
+      return (
+        <Tool
+          name="book_meeting"
+          description="Book the chosen slot."
+          schema={bookSchema}
+          {...(confirm ? { confirm: readBackOf } : {})}
+          onSubmit={onSubmit}
+        />
+      );
+    }
+    const runtime = new AgentSiteRuntime(<Agent><BookingTool /></Agent>);
+    const { llm, requests } = scripted([says("I'll book Tuesday now."), callsBook(LISA)]);
+    const session = new AgentSession(runtime, async (request) => {
+      if (requests.length === 1) runtime.updateInfo({ "booking.skipConfirmation": true });
+      return llm(request);
+    }, { maxSteps: 2, checkFollowThrough: true });
+
+    const turn = await streamTurn(session, "Tuesday at three, lisa@example.com.");
+
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.tools.find((tool) => tool.name === "book_meeting")?.description).toContain("does not run it yet");
+    expect(runtime.confirms("book_meeting")).toBe(false);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(turn.events.filter((event) => event.type === "error")).toEqual([]);
+    expect(session.pendingConfirmation).toBeNull();
   });
 
   it("a spoken statement after the confirmed action sends no follow-through check that could run it again", async () => {

@@ -716,7 +716,8 @@ export class AgentSession {
         steps += 1;
 
         const asksCaller = response.toolCalls.some((call) => !call.error && this.runtime.confirms(call.name));
-        const outcome = await this.applyLlmResponse(response, speech.stepText, messages, asksCaller, greets);
+        const finalCheck = isCheck && steps >= this.maxSteps;
+        const outcome = await this.applyLlmResponse(response, speech.stepText, messages, asksCaller, greets, finalCheck);
         messages = outcome.messages;
         for (const executed of outcome.toolCalls) {
           const { skill, ...tool } = executed;
@@ -748,7 +749,7 @@ export class AgentSession {
           }
         }
         // A refused hangup or read-back on the final check still leaves the spoken reply.
-        if (isCheck && steps >= this.maxSteps) {
+        if (finalCheck) {
           controller.signal.throwIfAborted();
           break;
         }
@@ -984,6 +985,7 @@ export class AgentSession {
     messages: AgentChatMessage[],
     asksCaller: boolean,
     greets: boolean,
+    finalCheck: boolean,
   ): Promise<{
     messages: AgentChatMessage[];
     done: boolean;
@@ -1046,15 +1048,19 @@ export class AgentSession {
       // An earlier call of this step may have changed the tool surface, so a
       // tool is known or unknown, and asks the caller or not, only now. The
       // record says how the call ended (refused, held, run); rewind reads it.
+      const confirms = this.runtime.confirms(toolCall.name);
       const refusal = toolCall.invalid
         ? undefined
         : (this.refusal(toolCall.name, asksCaller, greets, held) ??
+          (finalCheck && toolCall.name !== END_CALL_TOOL_NAME && !confirms
+            ? "Not run: this tool needs another model step to reply with its result."
+            : undefined) ??
           (toolCall.name === END_CALL_TOOL_NAME && failed.length > 0 ? callStaysOpenAfter(failed) : undefined));
       if (refusal) toolCall = { ...toolCall, invalid: refusal };
       let outcome: ToolCallOutcome;
       let durationMs: number | undefined;
       let skill: SkillChange | undefined;
-      if (!toolCall.invalid && this.runtime.confirms(toolCall.name)) {
+      if (!toolCall.invalid && confirms) {
         // The model's call of a `confirm` tool never runs it; runLoop asks the caller.
         const hold = await holdCall(this.runtime, toolCall, this.pending);
         toolCall = hold.toolCall;

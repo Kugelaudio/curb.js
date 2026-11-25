@@ -319,11 +319,12 @@ function sameDigits(written: WrittenNumber, said: WrittenNumber): boolean {
 }
 
 /**
- * The same phone number, ignoring an optional `(0)` written after the country code.
- * International numbers match digit for digit. A national number, with its single trunk zero
+ * The same phone number, digit for digit or after removing an optional `(0)` written after the country code.
+ * International numbers match in full. A national number, with its single trunk zero
  * removed, may also match the digits after a separately written country code (`+49 89 1234567`).
  */
 function samePhone(written: WrittenNumber, said: WrittenNumber): boolean {
+  if (sameDigits(written, said)) return true;
   const writtenDigits = phoneDigits(written);
   const saidDigits = phoneDigits(said);
   if (writtenDigits === saidDigits) return true;

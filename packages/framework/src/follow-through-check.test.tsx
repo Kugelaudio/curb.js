@@ -133,6 +133,7 @@ describe("inventedNumber: phone numbers in follow-through calls", () => {
   it("accepts a number the caller gave with a (0) trunk prefix, in international or national form", () => {
     const heard = ["My phone number is +49 (0) 30 1234567."];
     expect(inventedNumber({ phone: "+49 30 1234567" }, heard)).toBeUndefined();
+    expect(inventedNumber({ phone: "+49 (030) 1234567" }, heard)).toBeUndefined();
     expect(inventedNumber({ phone: "030 1234567" }, heard)).toBeUndefined();
     expect(inventedNumber({ orderId: "+49 30 1234567" }, ["My order number is +49 (0) 30 1234567."]))
       .toBe("+49 30 1234567");
