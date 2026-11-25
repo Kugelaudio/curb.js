@@ -747,7 +747,10 @@ export class AgentSession {
           }
         }
         // A refused end_call on the final check still leaves the turn's spoken reply.
-        if (isCheck && steps >= this.maxSteps) break;
+        if (isCheck && steps >= this.maxSteps) {
+          controller.signal.throwIfAborted();
+          break;
+        }
         if (outcome.done) {
           const checks =
             speaks &&

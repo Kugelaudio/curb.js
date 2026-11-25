@@ -21,6 +21,7 @@ import { z } from "../../index.js";
 import type { AgentRunResponse, AgentTurnStreamEvent } from "../../llm/types.js";
 import type { OutgoingHostMessage } from "../../messages.js";
 import { kugelaudio } from "../../providers.js";
+import { END_CALL_TOOL_NAME } from "../../types.js";
 import { CALL_TRANSFER_RESULT_MESSAGE } from "../transfer-call/index.js";
 
 afterEach(() => {
@@ -441,6 +442,40 @@ describe("the session hands off on its own", () => {
     const busy = new AgentSession(limited.runtime, async () => greet(`g${++calls}`), { maxSteps: 1 });
     for (const input of ["one", "two", "three"]) await turn(busy, input);
     expect(limited.handoffs).toEqual([expect.objectContaining({ reason: "agent_failure", summary: expect.stringContaining("step_limit") })]);
+  });
+
+  it.each([false, true])("handles a refused final-step hangup (interrupted: %s)", async (interrupted) => {
+    const { runtime, handoffs } = call({ props: { afterErrors: 2 } });
+    const hangup = vi.fn();
+    runtime.setEndCallRequest(hangup);
+    const empty = { text: "", toolCalls: [] };
+    const steps = [
+      empty, empty,
+      greet("g1"),
+      { text: "That is all. Goodbye.", toolCalls: [] },
+      { text: "", toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye: " " } }] },
+      empty, empty,
+    ];
+    const target = new AgentSession(runtime, async () => steps.shift() ?? empty, { maxSteps: 3, checkFollowThrough: true });
+    await turn(target, "First question.");
+
+    const cancel = new AbortController();
+    const events: AgentTurnStreamEvent[] = [];
+    for await (const event of target.runTurnStream("Goodbye.", { spoken: true, signal: cancel.signal })) {
+      events.push(event);
+      if (interrupted && event.type === "tool" && event.toolCall.name === END_CALL_TOOL_NAME) cancel.abort();
+    }
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool",
+      toolCall: expect.objectContaining({ name: END_CALL_TOOL_NAME }),
+      ok: false,
+    }));
+    expect(events.filter((event) => event.type === "error")).toEqual([]);
+    expect(hangup).not.toHaveBeenCalled();
+    expect(handoffs).toHaveLength(0);
+
+    await turn(target, "Another question.");
+    expect(handoffs).toHaveLength(interrupted ? 1 : 0);
   });
 
   it("dials once in a turn where the tool and the turn thresholds are reached together", async () => {
