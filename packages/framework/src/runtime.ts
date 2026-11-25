@@ -284,17 +284,22 @@ export class AgentSiteRuntime {
   }
 
   /**
-   * The question `name` reads back to the caller for `input` (`<Tool confirm>`). The input
-   * is validated as for a call, and the tool does not run. A wrong input or a
-   * `ToolInputError` from `confirm` comes back as the failed result the model corrects
-   * from; any other error as the internal-failure result, with the error logged.
+   * The question `name` reads back to the caller for `input` (`<Tool confirm>`). The tool's
+   * limits are checked and the input is validated as for a call. The tool does not run.
+   * A limit refusal, wrong input or a `ToolInputError` from `confirm` returns a failed
+   * result the model can correct from. Other errors are logged and return an
+   * internal-failure result.
    */
   async readBack(name: string, input: Record<string, unknown>): Promise<ReadBackOutcome> {
-    const id = this.registry.get(name)?.definition.id;
-    const confirm = id === undefined ? undefined : this.confirming.get(id)?.props.confirm;
-    if (typeof confirm !== "function") {
+    const entry = this.registry.get(name);
+    const confirm = entry === undefined ? undefined : this.confirming.get(entry.definition.id)?.props.confirm;
+    if (!entry || typeof confirm !== "function") {
       throw new Error(`Tool "${name}" ${this.where} has no confirm to read back.`);
     }
+
+    const refusal = this.limitRefusal(name, entry);
+    if (refusal) return { result: { ok: false, message: refusal } };
+
     try {
       // The form's own read-back (components.tsx): validates, then asks the author's `confirm`.
       const readBack: string = await (confirm as (input: Record<string, unknown>) => Promise<string>)(input);
