@@ -154,6 +154,11 @@ export async function createAgentRuntime(
     {
       maxLoadedSkills: overrides?.maxLoadedSkills ?? definition.maxLoadedSkills,
       authoringDiagnostics: diagnostics,
+      skills: routes.map((route) => ({
+        path: route.path,
+        ...(route.meta?.title ? { title: route.meta.title } : {}),
+        ...(route.meta?.description ? { description: route.meta.description } : {}),
+      })),
     },
   );
   return { runtime, agentId: id, definition };

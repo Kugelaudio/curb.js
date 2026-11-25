@@ -1,4 +1,3 @@
-import { agentLanguage } from "../../llm/localized.js";
 import type { AgentSiteRuntime } from "../../runtime.js";
 import type { ToolResult } from "../../types.js";
 import type { BlockSession, OpenBlockSession } from "../session.js";
@@ -17,7 +16,7 @@ export const handoffSession: OpenBlockSession = (runtime): BlockSession => {
   // At most one handoff of its own a turn, whenever the session asks: a second dial to the same
   // number in the same turn would only ring the same person twice.
   let calledThisTurn = false;
-  const language = () => agentLanguage(runtime.settings.view());
+  const language = () => runtime.settings.language();
   return {
     turnStarted() {
       calledThisTurn = false;

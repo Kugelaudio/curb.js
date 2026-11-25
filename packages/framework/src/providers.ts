@@ -159,6 +159,12 @@ export type OpenaiS2sOptions = {
   verbatim?: boolean;
   /** Defaults to "gpt-live-1" for `openai.live()` and LiveKit's default for `openai.realtime()`. */
   model?: string;
+  /**
+   * The language the call is in, as a language tag ("de", "de-DE"). The model's instructions
+   * tell it to speak this language and carry Curb's rules for the back office in it, and the
+   * lines Curb says itself (a failed turn) use it. Without it they are English.
+   */
+  language?: string;
   voice?: string;
   /** Another endpoint on the same protocol. */
   baseURL?: string;
@@ -248,8 +254,19 @@ function s2sOptions(factory: string, options: OpenaiS2sOptions | undefined): Ope
       factory,
     );
   }
+  const { language } = given;
+  if (language !== undefined && (typeof language !== "string" || !LANGUAGE_TAG.test(language))) {
+    refuseOption(
+      `${factory}() language must be a language tag, and ${JSON.stringify(language)} is not one.`,
+      `Pass the call's language as a tag, for example ${factory}({ language: "de" }) or "de-DE".`,
+      factory,
+    );
+  }
   return given;
 }
+
+/** A language tag: "de", "de-DE", "pt-BR". */
+const LANGUAGE_TAG = /^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*$/i;
 
 export const kugelaudio = {
   /** KugelAudio's EU-hosted LLM. Key: `KUGELAUDIO_API_KEY`; endpoint: `KUGELAUDIO_API_BASE`,

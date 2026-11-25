@@ -76,15 +76,17 @@ const WORDING: Record<AgentLanguage, Wording> = {
 };
 
 /**
- * The language the agent speaks: the TTS language, else the first STT language, else
- * English. Read from the effective settings, so a skill with its own voice changes it. A
- * language without wording here gets English.
+ * The language the agent speaks: the speech-to-speech model's language (`<Agent s2s>`), else
+ * the TTS language, else the first STT language, else English. Read from the effective
+ * settings, so a skill with its own voice changes it. A language without wording here gets
+ * English.
  */
 export function agentLanguage(settings: {
   tts: { language?: string };
   stt: { language?: string };
+  s2s?: { language?: string };
 }): AgentLanguage {
-  const configured = settings.tts.language ?? settings.stt.language ?? "";
+  const configured = settings.s2s?.language ?? settings.tts.language ?? settings.stt.language ?? "";
   // "de,fr" lists several STT languages, the first expected; "de-DE" names a region.
   const primary = configured.split(",")[0]!.trim().toLowerCase().split(/[-_]/)[0]!;
   return (AGENT_LANGUAGES as readonly string[]).includes(primary) ? (primary as AgentLanguage) : "en";

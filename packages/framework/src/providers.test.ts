@@ -69,6 +69,13 @@ describe("curb/providers factories", () => {
     );
   });
 
+  it("take the call's language on a speech-to-speech model and refuse one that is not a tag", () => {
+    expect(openai.live({ language: "de-DE" }).options.language).toBe("de-DE");
+    expect(openai.realtime({ language: "de" }).options.language).toBe("de");
+    expect(() => openai.live({ language: "German" })).toThrow(/language must be a language tag/);
+    expect(() => openai.realtime({ language: "" })).toThrow(/openai\.realtime\(\) language/);
+  });
+
   it("refuse an empty model id or base URL", () => {
     expect(() => anthropic("")).toThrow(/needs a model id/);
     expect(() => openaiCompatible({ baseURL: " ", model: "llama3.3" })).toThrow(/needs a baseURL/);

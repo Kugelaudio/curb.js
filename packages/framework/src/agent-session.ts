@@ -34,7 +34,6 @@ import {
   type PendingConfirmation,
 } from "./llm/confirmation.js";
 import {
-  agentLanguage,
   dateLine,
   DEFAULT_TIME_ZONE,
   fallbackReplies,
@@ -888,7 +887,7 @@ export class AgentSession {
   /** The language the agent speaks now (TTS, else STT, else English). Read per use: a
    * skill with its own voice changes it mid-call. */
   private language(): AgentLanguage {
-    return agentLanguage(this.runtime.settings.view());
+    return this.runtime.settings.language();
   }
 
   /** The system prompt the model receives on the next turn as things stand: the agent's

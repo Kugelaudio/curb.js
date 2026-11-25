@@ -4,7 +4,7 @@ import { modelUnderTest } from "../../../../harness/model-under-test.js";
 /** An energy supplier's customer line (fake supplier, fake data): readings, tariffs, moving house. */
 export function EnergyApp() {
   return (
-    <Agent s2s={modelUnderTest()}>
+    <Agent s2s={modelUnderTest("en")}>
       <SystemPrompt>{`
         You answer the customer line of Fernbrook Energy, an electricity supplier.
         Speak English, friendly and brief: at most two short sentences per reply, one question at a time, no lists.
