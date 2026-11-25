@@ -50,6 +50,7 @@ import { TurnSpeech } from "./llm/turn-speech.js";
 import {
   callStaysOpenAfter,
   FOLLOW_THROUGH_CHECK,
+  followThroughActions,
   followThroughTools,
   inventedNumber,
   namedToolNote,
@@ -586,11 +587,18 @@ export class AgentSession {
           break;
         }
         stepCall = null;
-        // A check is built from the tools it may call, its instructions included.
+        // A check is built from the tools it is offered, its instructions included; `runs` are
+        // the ones among them it may run (see below).
+        let runs = new Set<string>();
         const built = this.buildRequest(
           check ? [...messages, check] : messages,
           options.spoken === true,
-          check ? (tools) => followThroughTools(tools, this.ranThisTurn, this.doneThisTurn) : undefined,
+          check
+            ? (tools) => {
+                runs = new Set(followThroughActions(tools, this.ranThisTurn, this.doneThisTurn).map((tool) => tool.name));
+                return followThroughTools(tools, this.ranThisTurn, this.doneThisTurn);
+              }
+            : undefined,
         );
         // A check runs on its own deadline, so that its failure never fails the turn (below).
         const deadline = check ? new AbortController() : controller;
@@ -627,15 +635,17 @@ export class AgentSession {
           // The check found nothing to do: the turn ends as it was, and the note leaves no trace.
           const note = check;
           check = undefined;
-          // A call of a tool the check did not offer is never run: the model was told not to. Nor
-          // is one carrying a number the conversation never had: the check made it up. A
-          // skip_turn beside an offered call is dropped, so it cannot end the turn before a
-          // failed call is repaired; only the calls checked here run.
-          const offered = new Set(request.tools.map((tool) => tool.name));
+          // A check's answer runs only when each of its calls is an action it may run. A tool it
+          // was not offered is never run: the model was told not to. An end_call it was offered
+          // only as a goodbye's answer runs nothing: it read the reply as a goodbye, and a
+          // goodbye never carries a task. Nor does a call run that carries a number the
+          // conversation never had: the check made it up. A skip_turn beside an offered call is
+          // dropped, so it cannot end the turn before a failed call is repaired; only the calls
+          // checked here run.
           const calls = response.toolCalls.filter((call) => call.name !== SKIP_TURN_TOOL_NAME);
           if (
             calls.length === 0 ||
-            calls.some((call) => !offered.has(call.name)) ||
+            calls.some((call) => !runs.has(call.name)) ||
             this.inventsNumber(calls, request, messages)
           ) {
             unrecorded = false;
@@ -746,7 +756,7 @@ export class AgentSession {
             !this.unsaid &&
             options.kind !== "synthetic" &&
             steps < this.maxSteps &&
-            needsFollowThroughCheck(speech.reply, followThroughTools(request.tools, this.ranThisTurn, this.doneThisTurn));
+            needsFollowThroughCheck(speech.reply, followThroughActions(request.tools, this.ranThisTurn, this.doneThisTurn));
           if (!checks) break;
           checked = true;
           check = contextEvent(FOLLOW_THROUGH_CHECK);

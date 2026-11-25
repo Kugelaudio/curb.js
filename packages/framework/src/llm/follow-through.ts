@@ -12,7 +12,8 @@
  *
  * The session refuses the first ({@link callStaysOpenAfter}), never says the second
  * ({@link namedTool}), and asks the model once more after the third ({@link FOLLOW_THROUGH_CHECK},
- * {@link followThroughTools}, {@link needsFollowThroughCheck}, {@link inventedNumber}).
+ * {@link followThroughTools}, {@link followThroughActions}, {@link needsFollowThroughCheck},
+ * {@link inventedNumber}).
  *
  * The check repairs a missed action; it must never add one the caller did not ask for. A plain
  * answer or a description ("the assistant notes the caller's number") can read like an
@@ -62,29 +63,50 @@ export const FOLLOW_THROUGH_CHECK =
   "Check your last reply before the caller answers. Did it say that you are doing something now, or have done it " +
   "(looking something up, booking, noting, removing, forwarding, ending the call), that one of your tools does, " +
   "without calling that tool in this turn? If so, call that tool now with the right input. If not, call no tool " +
-  "and write nothing. A goodbye is an action: it ends the call. An offer, a suggestion or a question to the caller is not an action yet: it waits for the caller's answer, so " +
+  "and write nothing. A goodbye, a thank-you or a closing wish (\"take care\", \"see you tomorrow\") only ends the " +
+  "call: for it call end_call alone, never another tool. An action an earlier turn took is done: never call it " +
+  "again. An offer, a suggestion or a question to the caller is not an action yet: it waits for the caller's answer, so " +
   "call no tool for it. An answer or a description of how something works, or of what someone else does, is not " +
   "an action you take now. Never call a tool the reply did not speak of, and never make up an input: if the " +
   "conversation does not give a value the tool needs, call no tool.";
 
 /**
- * The tools a follow-through check offers: the actions a reply can announce that its turn has
- * not tried yet (`ran`, by name). A tool that was called is never offered again, so a check
- * cannot repeat its effect or retry a call that was refused. skip_turn and read_skill do
- * nothing a reply announces. `end_call` is offered only once one of the agent's own actions
- * succeeded in the turn (`done`): closing the call after an action ("you are off the list,
- * goodbye") is the goodbye a check repairs, while after a turn that only answered, or whose
- * action was refused, a check that misread the reply as a goodbye would cut the caller off.
+ * The calls a follow-through check may run: the actions a reply can announce that its turn has
+ * not tried yet (`ran`, by name). A tool that was called is never run again, so a check cannot
+ * repeat its effect or retry a call that was refused. skip_turn and read_skill do nothing a
+ * reply announces. `end_call` runs only once one of the agent's own actions succeeded in the
+ * turn (`done`): closing the call after an action ("you are off the list, goodbye") is the
+ * goodbye a check repairs, while after a turn that only answered, or whose action was refused, a
+ * check that misread the reply as a goodbye would cut the caller off.
  */
-export function followThroughTools<T extends { scope: string; name: string }>(
+export function followThroughActions<T extends { scope: string; name: string }>(
   tools: readonly T[],
   ran: ReadonlySet<string>,
   done: ReadonlySet<string>,
 ): T[] {
   const acted = tools.some((tool) => tool.scope !== "runtime" && done.has(tool.name));
   return tools.filter(
-    (tool) => !ran.has(tool.name) && (tool.scope !== "runtime" || (acted && tool.name === END_CALL_TOOL_NAME)),
+    (tool) =>
+      tool.scope === "runtime"
+        ? acted && tool.name === END_CALL_TOOL_NAME && !ran.has(tool.name)
+        : !ran.has(tool.name),
   );
+}
+
+/**
+ * The tools a follow-through check is offered: its actions ({@link followThroughActions}) and,
+ * whenever the call has it, `end_call`. A reply that only says goodbye reads to the check as
+ * the action of ending the call; without `end_call` to answer with, it took the only actions
+ * there were and booked a callback again on "thanks, bye". An `end_call` the check may not run
+ * runs nothing of its answer: a goodbye never carries a task.
+ */
+export function followThroughTools<T extends { scope: string; name: string }>(
+  tools: readonly T[],
+  ran: ReadonlySet<string>,
+  done: ReadonlySet<string>,
+): T[] {
+  const actions = new Set(followThroughActions(tools, ran, done));
+  return tools.filter((tool) => actions.has(tool) || tool.name === END_CALL_TOOL_NAME);
 }
 
 /** Fewer digits than this, as written, are left alone: a count, a time, a day or an amount. */
@@ -309,9 +331,9 @@ function leafValues(value: unknown, seen = new WeakSet<object>()): string[] {
 
 /**
  * Whether a turn that ended on `reply` is checked: it said something, did not end on a question
- * (a reply that waits for the caller has nothing to follow through yet), and the check has a
- * tool to offer ({@link followThroughTools}).
+ * (a reply that waits for the caller has nothing to follow through yet), and the check has an
+ * action it may run (`actions`, {@link followThroughActions}).
  */
-export function needsFollowThroughCheck(reply: string, offered: readonly unknown[]): boolean {
-  return reply.trim() !== "" && !/[?？]["'”’»)\]]*\s*$/.test(reply) && offered.length > 0;
+export function needsFollowThroughCheck(reply: string, actions: readonly unknown[]): boolean {
+  return reply.trim() !== "" && !/[?？]["'”’»)\]]*\s*$/.test(reply) && actions.length > 0;
 }

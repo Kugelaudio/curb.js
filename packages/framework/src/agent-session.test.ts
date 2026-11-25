@@ -700,7 +700,7 @@ describe("AgentSession", () => {
       expect(notes(session)).toEqual([FOLLOW_THROUGH_CHECK]);
     });
 
-    it("after a plain answer the check never offers end_call: an answer it misreads as a goodbye cannot hang up", async () => {
+    it("after a plain answer the check's end_call never runs: an answer it misreads as a goodbye cannot hang up", async () => {
       for (const text of ["Your policy covers water damage.", "Alright, call us any time. Bye for now."]) {
         const runtime = createInsuranceDemoRuntime();
         const hangUp = vi.fn();
@@ -714,10 +714,78 @@ describe("AgentSession", () => {
         const turn = await streamTurn(session, "does my policy cover water damage");
 
         expect(requests).toHaveLength(2);
-        expect(requests[1]!.tools.map((tool) => tool.name)).not.toContain(END_CALL_TOOL_NAME);
         expect(turn.heard).toBe(text);
+        expect(turn.events.filter((event) => event.type === "tool")).toEqual([]);
         expect(hangUp).not.toHaveBeenCalled();
       }
+    });
+
+    describe("a goodbye runs no task tool, in English and German, with or without an earlier action", () => {
+      // What the default model did on 1.27.1 with a callback booked the turn before: the caller
+      // says goodbye, the reply says goodbye, and the check, offered only the agent's tools,
+      // booked the callback a second time. The check now has end_call to answer a goodbye with,
+      // and an answer that holds an end_call it may not run runs none of its calls.
+      const goodbyes = [
+        { caller: "Thanks, that's all, bye.", reply: "You're welcome, Alex. Take care." },
+        { caller: "Perfect, thank you. Goodbye!", reply: "Glad I could help. Have a great day." },
+        { caller: "Danke, tschüss.", reply: "Gern geschehen. Auf Wiederhören." },
+        { caller: "Alles klar, das war's. Danke, tschüss!", reply: "Alles klar, dann bis morgen. Passen Sie auf sich auf." },
+      ];
+      const checkAnswers: AgentToolCall[][] = [
+        [{ name: END_CALL_TOOL_NAME, input: { goodbye: "Bye." } }],
+        [{ name: "request_callback", input: callback }, { name: END_CALL_TOOL_NAME, input: { goodbye: "Bye." } }],
+      ];
+      const earlier = [
+        { name: "after a callback the turn before", steps: [{ toolCalls: [{ name: "request_callback", input: callback }] }, { text: "An advisor calls you tomorrow." }, {}] },
+        { name: "after a plain answer the turn before", steps: [{ text: "Your policy covers water damage." }, {}] },
+      ];
+
+      for (const before of earlier) {
+        it(before.name, async () => {
+          for (const goodbye of goodbyes) {
+            for (const answer of checkAnswers) {
+              const runtime = createInsuranceDemoRuntime();
+              const hangUp = vi.fn();
+              runtime.setEndCallRequest(hangUp);
+              const { streamLlm, requests } = scriptedStream([...before.steps, { text: goodbye.reply }, { toolCalls: answer }]);
+              const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+              await streamTurn(session, "I'm Alex Doe, 555 0100, please call me tomorrow about my claim status");
+              const asked = requests.length;
+              const turn = await streamTurn(session, goodbye.caller);
+
+              const check = requests[asked + 1]!;
+              expect(check.messages.at(-1)).toMatchObject({ role: "user", content: FOLLOW_THROUGH_CHECK });
+              expect(check.tools.map((tool) => tool.name)).toContain(END_CALL_TOOL_NAME);
+              expect(requests).toHaveLength(asked + 2);
+              expect(turn.events.filter((event) => event.type === "tool")).toEqual([]);
+              expect(turn.heard).toBe(goodbye.reply);
+              expect(hangUp).not.toHaveBeenCalled();
+            }
+          }
+        });
+      }
+
+      it("a goodbye after the turn's own action still ends the call, and books nothing twice", async () => {
+        for (const goodbye of goodbyes) {
+          const runtime = createInsuranceDemoRuntime();
+          const hangUp = vi.fn();
+          runtime.setEndCallRequest(hangUp);
+          const { streamLlm } = scriptedStream([
+            { toolCalls: [{ name: "request_callback", input: callback }] },
+            { text: goodbye.reply },
+            { toolCalls: [{ name: END_CALL_TOOL_NAME, input: { goodbye: "Bye." } }] },
+          ]);
+          const session = new AgentSession(runtime, idleLlm, { streamLlm, checkFollowThrough: true });
+
+          const turn = await streamTurn(session, `I'm Alex Doe, 555 0100, call me about my claim status. ${goodbye.caller}`);
+
+          const tools = turn.events.flatMap((event) => (event.type === "tool" ? [event.toolCall.name] : []));
+          expect(tools).toEqual(["request_callback", END_CALL_TOOL_NAME]);
+          expect(turn.heard).toBe(goodbye.reply);
+          expect(hangUp).toHaveBeenCalledTimes(1);
+        }
+      });
     });
 
     it("after the turn's own action, a goodbye without end_call is followed through: the check offers only end_call", async () => {
@@ -820,7 +888,7 @@ describe("AgentSession", () => {
       expect(await run({ phone: "0301234567" })).toBe(1);
     });
 
-    it("the check's instructions hold the hang-up rules only when the check may call end_call", async () => {
+    it("the check's instructions hold the hang-up rules with the end_call it is offered, which runs only after an action", async () => {
       const hangUp = vi.fn();
       const plain = createInsuranceDemoRuntime();
       plain.setEndCallRequest(hangUp);
@@ -830,7 +898,9 @@ describe("AgentSession", () => {
         "does my policy cover water damage",
       );
       expect(answered.requests[0]!.systemPrompt).toContain(END_CALL_TOOL_NAME);
-      expect(answered.requests[1]!.systemPrompt).not.toContain(END_CALL_TOOL_NAME);
+      expect(answered.requests[1]!.tools.map((tool) => tool.name)).toContain(END_CALL_TOOL_NAME);
+      expect(answered.requests[1]!.systemPrompt).toContain(END_CALL_TOOL_NAME);
+      expect(hangUp).not.toHaveBeenCalled();
 
       const acting = createInsuranceDemoRuntime();
       acting.setEndCallRequest(hangUp);
