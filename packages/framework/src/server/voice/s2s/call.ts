@@ -157,6 +157,7 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
 
   let closing: Promise<void> | null = null;
   const closeNow = async () => {
+    watchdog.cancel();
     silence.stop();
     record.close();
     bundle.runtime.setEndCallRequest(null);
@@ -170,6 +171,13 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
   };
   const close = () => (closing ??= closeNow());
   const closeFromRoom = () => void close();
+  const watchdog = createCallerWatchdog({
+    remoteCount: () => [...room.participants()].length,
+    giveUp: closeFromRoom,
+    log: (message) => logInfo("voice", `${roomName}: ${message}`),
+    emptyRoomMs: EMPTY_ROOM_GRACE_MS,
+    noCallerMs: NO_CALLER_GRACE_MS,
+  });
   session.on(voice.AgentSessionEventTypes.Close, closeFromRoom);
 
   /** The goodbye went to the model: wait for it to start speaking and to stop. It may be speaking
@@ -238,13 +246,6 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
   room.onParticipantConnected(() => runOpeningStep(() => opening.update(), options));
   runOpeningStep(() => opening.update(), options);
 
-  const watchdog = createCallerWatchdog({
-    remoteCount: () => [...room.participants()].length,
-    giveUp: closeFromRoom,
-    log: (message) => logInfo("voice", `${roomName}: ${message}`),
-    emptyRoomMs: EMPTY_ROOM_GRACE_MS,
-    noCallerMs: NO_CALLER_GRACE_MS,
-  });
   room.onParticipantConnected(() => watchdog.onParticipantJoined());
   room.onParticipantDisconnected(() => watchdog.onParticipantLeft());
   watchdog.armForArrival();

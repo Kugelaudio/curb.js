@@ -99,7 +99,10 @@ export function createTransferAudio(options: TransferAudioOptions): CallTransfer
   let closed = false;
 
   const ensureSink = () => {
-    published ??= options.publish().then((ready) => (sink = ready));
+    published ??= options.publish().then((ready) => (sink = ready)).catch((error: unknown) => {
+      published = null;
+      throw error;
+    });
     return published;
   };
 

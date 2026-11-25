@@ -238,6 +238,7 @@ export class ConnectionController {
   private voiceCall: VoiceCallHandle | null = null;
   /** Serializes voice_start against a racing second voice_start. */
   private voiceStarting = false;
+  private voiceGeneration = 0;
   /** Subscriptions tied to the CURRENT runtime/session — replaced on agent
    * switch. Global subscriptions (MCP) live in `globalUnsubscribers`. */
   private sessionUnsubscribers: Array<() => void> = [];
@@ -812,21 +813,21 @@ export class ConnectionController {
     }
     if (this.voiceStarting) return; // a start is already in flight
     this.voiceStarting = true;
+    const generation = ++this.voiceGeneration;
     try {
       const call = await this.voiceHost.start({
         bundle: { runtime: this.runtime, session: this.session },
         agentId: this.activeAgentId,
         onClosed: () => {
           // Server-side end (hangup, room emptied): reflect it to the client.
-          if (this.voiceCall) {
+          if (generation === this.voiceGeneration && this.voiceCall) {
             this.voiceCall = null;
             this.send({ type: "voice_session", live: false });
           }
         },
       });
-      if (this.disposed) {
-        // Same reason as dispose(): nothing awaits this, so it owns its failure.
-        void call.close().catch((error) => this.reportCallCloseFailure(error));
+      if (this.disposed || generation !== this.voiceGeneration) {
+        await call.close().catch((error) => this.reportCallCloseFailure(error));
         return;
       }
       this.voiceCall = call;
@@ -839,7 +840,9 @@ export class ConnectionController {
         room: call.room,
       });
     } catch (error) {
-      this.send(errorFrame("voice", error instanceof Error ? error.message : String(error)));
+      if (!this.disposed && generation === this.voiceGeneration) {
+        this.send(errorFrame("voice", error instanceof Error ? error.message : String(error)));
+      }
     } finally {
       this.voiceStarting = false;
     }
@@ -847,6 +850,7 @@ export class ConnectionController {
 
   /** Detach voice (hang up); the conversation continues by text. */
   private async voiceStop(): Promise<void> {
+    this.voiceGeneration += 1;
     const call = this.voiceCall;
     this.voiceCall = null;
     this.send({ type: "voice_session", live: false });
@@ -906,13 +910,14 @@ export class ConnectionController {
 
     // Still the same conversation, so still the same call: its identity moves to the rebuilt
     // runtime before the earlier turns replay onto it.
-    const call = this.conversations.find((candidate) => candidate.id === this.activeConversationId)?.call;
-    if (!call) throw new Error(`curb: the active conversation ${this.activeConversationId} is not on this connection.`);
+    const conversation = this.conversations.find((candidate) => candidate.id === this.activeConversationId);
+    if (!conversation) throw new Error(`curb: the active conversation ${this.activeConversationId} is not on this connection.`);
+    const sourceSession = this.session;
     let bundle: AgentSessionBundle;
     let skipped: string[];
     try {
       const rebuilt = await rebuildSessionAt({
-        create: (id) => this.createBundle(id, call),
+        create: (id) => this.createBundle(id, conversation.call),
         agentId: this.activeAgentId,
         sourceMessages: messages,
         index,
@@ -925,6 +930,8 @@ export class ConnectionController {
       this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
       return;
     }
+
+    if (this.disposed || this.session !== sourceSession) return;
 
     if (skipped.length > 0) {
       this.send(
@@ -939,10 +946,12 @@ export class ConnectionController {
     this.sessionUnsubscribers = [];
     this.runtime = bundle.runtime;
     this.session = bundle.session;
+    conversation.bundle = bundle;
     // A live call keeps running — on the rebuilt session.
     this.voiceCall?.setBundle(bundle);
     this.bindSession();
     this.sendSessionSnapshot();
+    this.sendConversationsFrame();
 
     // Retry: re-run the rewound message — it stays in the conversation and
     // gets a fresh answer from the reverted environment (spoken, when a call
