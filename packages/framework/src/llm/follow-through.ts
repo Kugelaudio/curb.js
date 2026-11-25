@@ -78,20 +78,20 @@ export const FOLLOW_THROUGH_CHECK =
  * turn (`done`): closing the call after an action ("you are off the list, goodbye") is the
  * goodbye a check repairs, while after a turn that only answered, or whose action was refused, a
  * check that misread the reply as a goodbye would cut the caller off. With just one step left,
- * only `end_call` can finish without needing another model reply.
+ * `allowTask` limits the other actions to tools that can finish the turn with a read-back.
  */
 export function followThroughActions<T extends { scope: string; name: string }>(
   tools: readonly T[],
   ran: ReadonlySet<string>,
   done: ReadonlySet<string>,
-  endCallOnly = false,
+  allowTask?: (name: string) => boolean,
 ): T[] {
   const acted = tools.some((tool) => tool.scope !== "runtime" && done.has(tool.name));
   return tools.filter(
     (tool) =>
       tool.scope === "runtime"
         ? acted && tool.name === END_CALL_TOOL_NAME && !ran.has(tool.name)
-        : !endCallOnly && !ran.has(tool.name),
+        : !ran.has(tool.name) && (allowTask === undefined || allowTask(tool.name)),
   );
 }
 
@@ -106,8 +106,9 @@ export function followThroughTools<T extends { scope: string; name: string }>(
   tools: readonly T[],
   ran: ReadonlySet<string>,
   done: ReadonlySet<string>,
+  allowTask?: (name: string) => boolean,
 ): T[] {
-  const actions = new Set(followThroughActions(tools, ran, done));
+  const actions = new Set(followThroughActions(tools, ran, done, allowTask));
   return tools.filter((tool) => actions.has(tool) || tool.name === END_CALL_TOOL_NAME);
 }
 

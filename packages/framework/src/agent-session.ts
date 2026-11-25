@@ -575,6 +575,7 @@ export class AgentSession {
       // The follow-through check runs at most once a turn; `check` is its note while it runs.
       let checked = false;
       let check: AgentChatMessage | undefined;
+      const confirms = (name: string) => this.runtime.confirms(name);
       while (true) {
         controller.signal.throwIfAborted();
         if (steps >= this.maxSteps) {
@@ -593,10 +594,10 @@ export class AgentSession {
           options.spoken === true,
           check
             ? (tools) => {
-                const endCallOnly = steps + 1 >= this.maxSteps;
-                const actions = followThroughActions(tools, this.ranThisTurn, this.doneThisTurn, endCallOnly);
+                const allowTask = steps + 1 >= this.maxSteps ? confirms : undefined;
+                const actions = followThroughActions(tools, this.ranThisTurn, this.doneThisTurn, allowTask);
                 runs = new Set(actions.map((tool) => tool.name));
-                return endCallOnly ? actions : followThroughTools(tools, this.ranThisTurn, this.doneThisTurn);
+                return followThroughTools(tools, this.ranThisTurn, this.doneThisTurn, allowTask);
               }
             : undefined,
         );
@@ -746,7 +747,7 @@ export class AgentSession {
             if (streaming && delta) yield this.spokenDelta(delta, speech);
           }
         }
-        // A refused end_call on the final check still leaves the turn's spoken reply.
+        // A refused hangup or read-back on the final check still leaves the spoken reply.
         if (isCheck && steps >= this.maxSteps) {
           controller.signal.throwIfAborted();
           break;
@@ -762,7 +763,9 @@ export class AgentSession {
             steps < this.maxSteps &&
             needsFollowThroughCheck(
               speech.reply,
-              followThroughActions(request.tools, this.ranThisTurn, this.doneThisTurn, steps + 1 >= this.maxSteps),
+              followThroughActions(
+                request.tools, this.ranThisTurn, this.doneThisTurn, steps + 1 >= this.maxSteps ? confirms : undefined,
+              ),
             );
           if (!checks) break;
           checked = true;

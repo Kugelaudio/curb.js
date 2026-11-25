@@ -193,6 +193,20 @@ describe("a tool that asks the caller first (<Tool confirm>)", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
+  it("speaks and holds the read-back when follow-through uses the final step", async () => {
+    const { runtime, onSubmit } = bookingRuntime();
+    const { llm, requests } = scripted([says("I'll book Tuesday now."), callsBook(LISA)]);
+    const session = new AgentSession(runtime, llm, { maxSteps: 2, checkFollowThrough: true });
+
+    const asked = await streamTurn(session, "Tuesday at three, lisa@example.com.");
+
+    expect(asked.deltas.join("")).toContain(readBackOf(LISA));
+    expect(asked.events.filter((event) => event.type === "error")).toEqual([]);
+    expect(requests).toHaveLength(2);
+    expect(session.pendingConfirmation).toMatchObject({ toolName: "book_meeting", input: LISA, readBack: readBackOf(LISA) });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("a spoken statement after the confirmed action sends no follow-through check that could run it again", async () => {
     const { runtime, onSubmit } = bookingRuntime();
     const { llm, requests } = scripted(
