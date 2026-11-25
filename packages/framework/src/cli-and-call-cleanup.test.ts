@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import { runHostedDirectJoin } from "./bundler/direct-join.js";
 import * as management from "./hosted/management-server.js";
 import { createLocalVoiceCall } from "./server/voice/local-host/local-call-room.js";
+import * as transcription from "./server/voice/local-host/synchronizer.js";
 
 initializeLogger({ pretty: false, level: "warn" });
 
@@ -31,6 +32,25 @@ it("closes the transcription synchronizer when a local voice call disconnects", 
     expect(synchronizer?.closed).toBe(true);
   } finally {
     if (synchronizer && !synchronizer.closed) await synchronizer.close();
+  }
+});
+
+it("disconnects after transcription synchronizer initialization fails", async () => {
+  const failure = new Error("could not initialize transcription");
+  const create = vi.spyOn(transcription, "createSynchronizer").mockRejectedValueOnce(failure);
+  const call = createLocalVoiceCall("test-call");
+  const onDisconnected = vi.fn();
+  call.room.onDisconnected(onDisconnected);
+  try {
+    await expect(call.room.startSession({
+      session: {} as voice.AgentSession,
+      agent: {} as voice.Agent,
+      onTypedText: async () => {},
+    })).rejects.toBe(failure);
+    await expect(call.room.disconnect()).resolves.toBeUndefined();
+    expect(onDisconnected).toHaveBeenCalledOnce();
+  } finally {
+    create.mockRestore();
   }
 });
 

@@ -1,4 +1,5 @@
-import { spawn, spawnSync } from "node:child_process";
+import { fork, spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -6,6 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { storeProjectKey } from "./cloud/credentials.js";
+import type { ChildMessage } from "./dev-ipc.js";
 import { createTestProject } from "./test-project.js";
 
 const BIN = fileURLToPath(new URL("../../bin/curb.js", import.meta.url));
@@ -13,7 +15,17 @@ const BIN = fileURLToPath(new URL("../../bin/curb.js", import.meta.url));
 /** The environment a project's `curb` runs in, without what this suite or its runner sets. */
 function projectEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
-  for (const name of ["AGENT_PROJECT_DIR", "TSX_TSCONFIG_PATH", "VITEST", "KUGELAUDIO_API_KEY", "CURB_PLATFORM_TOKEN_FILE"]) {
+  for (const name of [
+    "AGENT_PROJECT_DIR",
+    "TSX_TSCONFIG_PATH",
+    "VITEST",
+    "KUGELAUDIO_API_KEY",
+    "CURB_PLATFORM_TOKEN_FILE",
+    "LIVEKIT_URL",
+    "LIVEKIT_API_KEY",
+    "LIVEKIT_API_SECRET",
+    "CURB_REALTIME_SESSION_URL",
+  ]) {
     delete env[name];
   }
   return env;
@@ -58,6 +70,33 @@ export function App() {
 
 export const agent = defineAgent({ app: App });
 `;
+
+  it("sends a startup diagnostic when the dev child cannot read the project link", async () => {
+    const root = createTestProject({ ".curb/link.json": "{" });
+    const child = fork(fileURLToPath(new URL("./dev-child.ts", import.meta.url)), [
+      JSON.stringify({ projectRoot: root, publicUrl: "http://127.0.0.1", quiet: true }),
+    ], {
+      cwd: root,
+      env: projectEnv(),
+      execArgv: ["--import", import.meta.resolve("tsx")],
+      stdio: ["ignore", "ignore", "ignore", "ipc"],
+    });
+    try {
+      const messages: ChildMessage[] = [];
+      child.on("message", (message: ChildMessage) => messages.push(message));
+      const [code] = await once(child, "close");
+      expect(code).toBe(1);
+      expect(messages).toContainEqual(expect.objectContaining({
+        type: "failed",
+        diagnostic: expect.objectContaining({
+          message: expect.stringContaining(".curb/link.json is not valid JSON"),
+        }),
+      }));
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   it("runs on the login key until .env sets KUGELAUDIO_API_KEY, then on .env's key after the reload", async () => {
     const config = mkdtempSync(join(tmpdir(), "curb-config-"));

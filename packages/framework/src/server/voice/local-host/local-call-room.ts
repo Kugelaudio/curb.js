@@ -277,7 +277,9 @@ export function createLocalVoiceCall(id = `local-${randomUUID().slice(0, 8)}`): 
       await input?.close();
       closing?.close(1000, "call ended");
       try {
-        await (await synchronizer)?.close();
+        // startSession reports initialization errors. Only a created synchronizer needs closing.
+        const sync = await synchronizer?.catch(() => null);
+        await sync?.close();
       } finally {
         for (const listener of lost) listener("call ended");
       }

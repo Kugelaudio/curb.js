@@ -31,17 +31,6 @@ function send(message: ChildMessage): Promise<void> {
 process.on("disconnect", () => process.exit(0));
 surviveLivekitTeardown();
 
-// The environment came without the project's .env: read it now, as it is on disk. Values
-// already in the environment win, as they do for every other command.
-const envFile = join(options.projectRoot, ".env");
-if (existsSync(envFile)) process.loadEnvFile(envFile);
-// A hosted workspace supplies the model key beside its platform token and renews it; this
-// server re-reads it, since it may outlive one key (cloud/host-model-key.ts).
-if (!useLoginKey(options.projectRoot)) {
-  useHostModelKey();
-  keepHostModelKeyFresh();
-}
-
 let server: AgentServer | null = null;
 let stopping = false;
 
@@ -62,6 +51,17 @@ async function stop(files: string[]): Promise<void> {
 }
 
 try {
+  // The environment came without the project's .env: read it now, as it is on disk. Values
+  // already in the environment win, as they do for every other command.
+  const envFile = join(options.projectRoot, ".env");
+  if (existsSync(envFile)) process.loadEnvFile(envFile);
+  // A hosted workspace supplies the model key beside its platform token and renews it; this
+  // server re-reads it, since it may outlive one key (cloud/host-model-key.ts).
+  if (!useLoginKey(options.projectRoot)) {
+    useHostModelKey();
+    keepHostModelKeyFresh();
+  }
+
   const { createAgentServer } = await import("../server/main.js");
   server = await createAgentServer({
     dev: {
