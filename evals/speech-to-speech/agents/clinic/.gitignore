@@ -1,0 +1,15 @@
+node_modules/
+dist/
+
+# secrets — never commit these
+.env
+.env.local
+.env*.local
+.mcp-auth/
+
+# generated / runtime state
+.curb/
+.data/
+context/context.index.json
+
+.DS_Store
