@@ -113,6 +113,8 @@ export function followThroughTools<T extends { scope: string; name: string }>(
 const LONG_NUMBER_DIGITS = 6;
 /** A country code as written: one to three digits after the `+`, then a space, dash, dot, slash or bracket. */
 const COUNTRY_CODE = /^\+(\d{1,3})(?=[ \u00a0./(-])/;
+/** An optional trunk zero explicitly marked after the country code. */
+const OPTIONAL_TRUNK_ZERO = /^(\+\d{1,3})[ \u00a0./-]?\(0\)/;
 /**
  * A number as written: groups of digits, a leading `+`, a group in brackets, at most one space,
  * dash, slash or dot between groups. Words between numbers keep them apart.
@@ -197,8 +199,15 @@ function fieldValues(
 function isPhoneField(name: string, field: unknown): boolean {
   const words = name.replace(/([a-z])([A-Z])/g, "$1 $2");
   if (ID_NAME.test(words)) return false;
+  return PHONE_NAME.test(words) || hasPhoneFormat(field);
+}
+
+function hasPhoneFormat(field: unknown): boolean {
   const format = schemaPart(field, "format");
-  return PHONE_NAME.test(words) || (typeof format === "string" && PHONE_FORMAT.test(format));
+  if (typeof format === "string" && PHONE_FORMAT.test(format)) return true;
+  return [schemaPart(field, "anyOf"), schemaPart(field, "oneOf")].some(
+    (options) => Array.isArray(options) && options.some(hasPhoneFormat),
+  );
 }
 
 function schemaPart(schema: unknown, key: string): unknown {
@@ -302,22 +311,27 @@ function sameDigits(written: WrittenNumber, said: WrittenNumber): boolean {
 }
 
 /**
- * The same phone number, in one canonical form: digit for digit, or a number written without a
- * country code that, its single trunk zero aside, is exactly the digits after the other one's
- * country code as written (`+49 89 1234567`: `49`). Two numbers that both carry a country code,
- * or a country code not written apart from the rest (`+49891234567`), match only in full; no
- * other digit is ever dropped.
+ * The same phone number, ignoring an optional `(0)` written after the country code.
+ * International numbers match digit for digit. A national number, with its single trunk zero
+ * removed, may also match the digits after a separately written country code (`+49 89 1234567`).
  */
 function samePhone(written: WrittenNumber, said: WrittenNumber): boolean {
-  if (written.digits === said.digits) return true;
+  const writtenDigits = phoneDigits(written);
+  const saidDigits = phoneDigits(said);
+  if (writtenDigits === saidDigits) return true;
   if (written.international === said.international) return false;
-  const [withCode, without] = written.international ? [written, said] : [said, written];
-  const national = without.digits.replace(/^0/, "");
+  const { countryCode } = written.international ? written : said;
+  const [international, local] = written.international ? [writtenDigits, saidDigits] : [saidDigits, writtenDigits];
+  const national = local.replace(/^0/, "");
   return (
-    withCode.countryCode !== undefined &&
+    countryCode !== undefined &&
     national.length >= LONG_NUMBER_DIGITS &&
-    withCode.digits === withCode.countryCode + national
+    international === countryCode + national
   );
+}
+
+function phoneDigits(number: WrittenNumber): string {
+  return number.written.replace(OPTIONAL_TRUNK_ZERO, "$1").replace(/\D/g, "");
 }
 
 /** Every string and number in `value`, however deep; each object is read once. */

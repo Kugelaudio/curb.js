@@ -573,10 +573,8 @@ export class AgentSession {
       let retriedEmpty = false;
       let retriedLeak = false;
       // The follow-through check runs at most once a turn; `check` is its note while it runs.
-      // `followedThrough`: it called a tool, after the reply had said its last words.
       let checked = false;
       let check: AgentChatMessage | undefined;
-      let followedThrough = false;
       while (true) {
         controller.signal.throwIfAborted();
         if (steps >= this.maxSteps) {
@@ -631,6 +629,7 @@ export class AgentSession {
           clearTimeout(timer);
         }
 
+        const isCheck = check !== undefined;
         if (check) {
           // The check found nothing to do: the turn ends as it was, and the note leaves no trace.
           const note = check;
@@ -653,7 +652,6 @@ export class AgentSession {
           }
           response = { ...response, toolCalls: calls };
           messages = this.append(messages, note);
-          followedThrough = true;
         }
         if (!response.text.trim() && response.toolCalls.length === 0 && !speech.stepText) {
           // The model ended the turn saying nothing, which is never an answer: ask again once.
@@ -738,9 +736,8 @@ export class AgentSession {
           // A goodbye whose first sentences the step already said (the model wrote it as text
           // too) goes on from there; one that was said to its end adds nothing. A read-back
           // is always asked in full: it is the question the caller answers.
-          // After a follow-through check the reply has already said its closing words, so an
-          // end_call it led to hangs up after them without a second goodbye.
-          const line = outcome.held ? closing : followedThrough ? "" : speech.unheard(closing);
+          // An end_call from the check itself hangs up after the goodbye already spoken.
+          const line = outcome.held ? closing : isCheck ? "" : speech.unheard(closing);
           if (line) {
             const delta = speech.line(line);
             messages = this.keepSpokenText(messages, speech.stepText);
@@ -755,7 +752,8 @@ export class AgentSession {
             options.spoken === true &&
             !this.unsaid &&
             options.kind !== "synthetic" &&
-            steps < this.maxSteps &&
+            // Leave a step for the reply if the check runs a tool.
+            steps + 1 < this.maxSteps &&
             needsFollowThroughCheck(speech.reply, followThroughActions(request.tools, this.ranThisTurn, this.doneThisTurn));
           if (!checks) break;
           checked = true;
