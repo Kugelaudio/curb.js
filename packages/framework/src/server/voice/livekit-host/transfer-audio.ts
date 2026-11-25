@@ -27,6 +27,7 @@ import {
 } from "@livekit/rtc-node";
 import type { tts } from "@livekit/agents";
 import type { TransferAudio } from "../../../blocks/transfer-call/index.js";
+import { logError } from "../../log.js";
 
 export const TRANSFER_AUDIO_SAMPLE_RATE = 48_000;
 /** The European ringback: 425 Hz, 1 s on, 4 s off (ITU-T E.180 / ETSI ES 201 970). */
@@ -175,10 +176,17 @@ export async function publishTransferTrack(room: Room): Promise<TransferAudioSin
   // A microphone, like the agent's voice: LiveKit's participant egress records a participant's
   // camera and microphone tracks and mixes their audio, so a recording of the agent then holds
   // the announcement and ringback too. Published without a source, it would be left out.
-  await participant.publishTrack(
-    LocalAudioTrack.createAudioTrack(TRACK_NAME, source),
-    new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }),
-  );
+  let track: LocalAudioTrack | undefined;
+  try {
+    track = LocalAudioTrack.createAudioTrack(TRACK_NAME, source);
+    await participant.publishTrack(track, new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
+  } catch (error) {
+    const cleanup = await Promise.allSettled([track?.close(false), source.close()]);
+    for (const result of cleanup) {
+      if (result.status === "rejected") logError("voice", `closing unpublished transfer audio: ${String(result.reason)}`);
+    }
+    throw error;
+  }
   return source;
 }
 

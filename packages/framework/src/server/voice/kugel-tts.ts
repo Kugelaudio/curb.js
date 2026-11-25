@@ -252,6 +252,7 @@ export class KugelTtsSession {
 
   async close(): Promise<void> {
     this.closed = true;
+    if (this.ws?.readyState === WebSocket.CONNECTING) this.ws.terminate();
     for (const timer of this.retryTimers) clearTimeout(timer);
     this.retryTimers.clear();
     await this.flush();
@@ -276,6 +277,7 @@ export class KugelTtsSession {
   }
 
   private ensureWs(): Promise<WebSocket> {
+    if (this.closed) return Promise.reject(new Error("Kugel TTS session is closed."));
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return Promise.resolve(this.ws);
     if (this.connecting) return this.connecting;
 
@@ -290,8 +292,8 @@ export class KugelTtsSession {
         url,
         this.config.proxyUrl ? { agent: new HttpsProxyAgent(this.config.proxyUrl) } : undefined,
       );
+      this.ws = ws;
       ws.on("open", () => {
-        this.ws = ws;
         this.connecting = null;
         resolve(ws);
       });
@@ -300,7 +302,7 @@ export class KugelTtsSession {
         this.connecting = null;
         if (this.ws === ws) this.ws = null;
         const message = `Kugel TTS connection failed: ${error.message}`;
-        this.handlers.onError(message);
+        if (!this.closed) this.handlers.onError(message);
         reject(new Error(message));
       });
       ws.on("close", () => {

@@ -236,8 +236,8 @@ export class ConnectionController {
    * I/O modality of the SAME session: turns it runs land in the same
    * transcript the chat frames mirror. */
   private voiceCall: VoiceCallHandle | null = null;
-  /** Serializes voice_start against a racing second voice_start. */
-  private voiceStarting = false;
+  /** The generation of the start in flight, including any teardown after cancellation. */
+  private voiceStarting: number | null = null;
   private voiceGeneration = 0;
   /** Subscriptions tied to the CURRENT runtime/session — replaced on agent
    * switch. Global subscriptions (MCP) live in `globalUnsubscribers`. */
@@ -544,8 +544,6 @@ export class ConnectionController {
       return;
     }
 
-    if (this.voiceCall || this.voiceStarting) await this.voiceStop();
-
     // MATERIALISE A STORED CONVERSATION ON FIRST OPEN: its recorded state goes back onto a
     // fresh runtime, so loaded skills and store data match where the conversation left off
     // and the next turn continues it rather than starting over.
@@ -558,6 +556,11 @@ export class ConnectionController {
       if (restored === null) return;
       notes = restored;
     }
+
+    if (this.disposed) return;
+    // Close any call started while the target loaded. Commit the new bundle before
+    // yielding so a later voice start can only use the new conversation.
+    const voiceStopped = this.voiceCall || this.voiceStarting !== null ? this.voiceStop() : undefined;
 
     for (const unsubscribe of this.sessionUnsubscribers) unsubscribe();
     this.sessionUnsubscribers = [];
@@ -578,6 +581,7 @@ export class ConnectionController {
     this.sendSessionSnapshot();
     this.sendConversationsFrame();
     if (notes.length > 0) this.send({ type: "notice", message: notes.join(" ") });
+    await voiceStopped;
   }
 
   private async newConversation(): Promise<void> {
@@ -811,12 +815,18 @@ export class ConnectionController {
       this.send({ type: "voice_session", live: true, transport, url, token, room });
       return;
     }
-    if (this.voiceStarting) return; // a start is already in flight
-    this.voiceStarting = true;
+    if (this.voiceStarting !== null) {
+      if (this.voiceStarting !== this.voiceGeneration) {
+        this.send(errorFrame("voice", "The previous call is still closing. Try again in a moment."));
+      }
+      return;
+    }
     const generation = ++this.voiceGeneration;
+    this.voiceStarting = generation;
+    const bundle = { runtime: this.runtime, session: this.session };
     try {
       const call = await this.voiceHost.start({
-        bundle: { runtime: this.runtime, session: this.session },
+        bundle,
         agentId: this.activeAgentId,
         onClosed: () => {
           // Server-side end (hangup, room emptied): reflect it to the client.
@@ -829,6 +839,14 @@ export class ConnectionController {
       if (this.disposed || generation !== this.voiceGeneration) {
         await call.close().catch((error) => this.reportCallCloseFailure(error));
         return;
+      }
+      if (bundle.session !== this.session) {
+        try {
+          call.setBundle({ runtime: this.runtime, session: this.session });
+        } catch (error) {
+          await call.close().catch((failure) => this.reportCallCloseFailure(failure));
+          throw error;
+        }
       }
       this.voiceCall = call;
       this.send({
@@ -844,7 +862,7 @@ export class ConnectionController {
         this.send(errorFrame("voice", error instanceof Error ? error.message : String(error)));
       }
     } finally {
-      this.voiceStarting = false;
+      this.voiceStarting = null;
     }
   }
 
