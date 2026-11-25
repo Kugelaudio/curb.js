@@ -101,7 +101,7 @@ describe("KugelTtsSession wire protocol", () => {
 
   it("endInput flushes the sentence buffer then closes the context gracefully", async () => {
     await session.streamInput(1, "Hi.");
-    await session.endInput();
+    await session.endInput(1);
     await server.waitForFrames(3);
 
     const contextId = server.frames[0].context_id;
@@ -132,23 +132,20 @@ describe("KugelTtsSession wire protocol", () => {
     expect(errors).toEqual([]);
   });
 
-  it("a new turn supersedes a context still draining audio", async () => {
+  it("a new turn leaves an earlier turn draining audio", async () => {
     await session.streamInput(1, "First reply.");
-    await session.endInput();
+    await session.endInput(1);
     await server.waitForFrames(3);
     const firstContext = server.frames[0].context_id;
 
-    // Input closed but audio still draining (no context_closed yet) — the
-    // next turn must cancel it before opening its own context.
     await session.streamInput(2, "Second reply.");
-    await server.waitForFrames(5);
-    expect(server.frames[3]).toEqual({
-      close_context: true,
-      context_id: firstContext,
-      immediate: true,
-    });
-    expect(server.frames[4]).toMatchObject({ text: "Second reply." });
-    expect(server.frames[4].context_id).not.toBe(firstContext);
+    await server.waitForFrames(4);
+    expect(server.frames[3]).toMatchObject({ text: "Second reply." });
+    expect(server.frames[3].context_id).not.toBe(firstContext);
+
+    server.send({ context_id: firstContext, audio: "QUJD" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(audio).toEqual([{ b64: "QUJD", turnId: 1 }]);
   });
 
   it("surfaces server error frames instead of swallowing them", async () => {
@@ -343,7 +340,7 @@ describe("KugelTtsSession concurrency limit", () => {
     await waitFor(() => server.connections >= 2);
     // Deltas during the backoff collect and go out with the replay.
     await session.streamInput(1, "world.");
-    await session.endInput();
+    await session.endInput(1);
     await waitFor(() => done.length === 1);
 
     expect(server.connections).toBe(3);
@@ -366,7 +363,7 @@ describe("KugelTtsSession concurrency limit", () => {
     const session = open({ firstDelayMs: 10, budgetMs: 50 });
 
     await session.streamInput(1, "Hello.");
-    await session.endInput();
+    await session.endInput(1);
     await waitFor(() => errors.length > 0);
     // Room for a stray "connection closed" or a further retry to show up.
     await new Promise((resolve) => setTimeout(resolve, 150));

@@ -37,7 +37,7 @@ export type TtsWordTimestamp = { word: string; startSec: number; endSec: number 
 export type KugelTtsHandlers = {
   /** Base64 PCM16 for one turn — passed through as received. */
   onAudio: (audioBase64: string, turnId: number) => void;
-  onError: (message: string) => void;
+  onError: (message: string, turnId?: number) => void;
   /** A turn's context finished draining (all audio delivered). Optional —
    * the streaming voice session doesn't need it; one-shot synthesis does. */
   onDone?: (turnId: number) => void;
@@ -63,6 +63,7 @@ const CONCURRENCY_LIMIT_ERROR = /^Concurrent generation limit reached \(\d+\)$/;
 type TurnContext = {
   contextId: string;
   turnId: number;
+  socket: WebSocket;
   /** Audio bytes seen per sentence chunk — rebases each chunk's word
    * timestamps (chunk-relative) onto the turn's timeline. The service sends
    * a chunk's timestamps only after all of its audio frames. */
@@ -102,8 +103,7 @@ export class KugelTtsSession {
    * turn is exactly when the caller needs its word times. Audio for these
    * stays dropped. Bounded to the most recent few. */
   private readonly retired = new Map<string, TurnContext>();
-  /** Context currently accepting text input (null between turns). */
-  private inputContextId: string | null = null;
+  private readonly turns = new Map<number, TurnContext>();
   /** Serializes outbound frames: a context's first message carries the voice
    * config and must not interleave with later deltas. */
   private sendChain: Promise<void> = Promise.resolve();
@@ -131,13 +131,19 @@ export class KugelTtsSession {
   streamInput(turnId: number, text: string): Promise<void> {
     return this.enqueue(async () => {
       if (this.closed || !text) return;
-      const current = this.inputContextId === null ? undefined : this.contexts.get(this.inputContextId);
-      if (current?.awaitingRetry) {
+      const current = this.turns.get(turnId);
+      if (current?.inputEnded) return;
+      if (current) {
         current.text += text;
+        if (!current.awaitingRetry) {
+          this.sendJson(current.socket, { context_id: current.contextId, text });
+        }
         return;
       }
+
       const askedAt = performance.now();
       const ws = await this.ensureWs();
+      if (this.closed) return;
       const waited = performance.now() - askedAt;
       // Only when it cost something: a prewarmed socket returns instantly and
       // logging that every delta would bury the case that matters.
@@ -145,36 +151,22 @@ export class KugelTtsSession {
         logInfo("voice", `tts socket wait ${Math.round(waited)}ms @${Math.round(performance.now())}`);
       }
 
-      if (this.inputContextId === null) {
-        // A new turn supersedes any context still draining audio — otherwise
-        // two replies would interleave on the shared socket.
-        for (const [staleId, stale] of this.contexts) {
-          this.contexts.delete(staleId);
-          this.retire(staleId, stale);
-          // A context waiting to replay never reached this socket.
-          if (stale.awaitingRetry) continue;
-          this.sendJson(ws, { close_context: true, context_id: staleId, immediate: true });
-        }
-        const contextId = randomUUID().replaceAll("-", "").slice(0, 12);
-        this.inputContextId = contextId;
-        logInfo("voice", `tts context open @${Math.round(performance.now())}`);
-        this.contexts.set(contextId, {
-          contextId,
-          turnId,
-          bytesByChunk: new Map(),
-          text,
-          inputEnded: false,
-          awaitingRetry: false,
-          retryAttempts: 0,
-          retryWaitedMs: 0,
-        });
-        this.sendJson(ws, this.openFrame(contextId, text));
-        return;
-      }
-
-      const context = this.contexts.get(this.inputContextId);
-      if (context) context.text += text;
-      this.sendJson(ws, { context_id: this.inputContextId, text });
+      const contextId = randomUUID().replaceAll("-", "").slice(0, 12);
+      logInfo("voice", `tts context open @${Math.round(performance.now())}`);
+      const opened: TurnContext = {
+        contextId,
+        turnId,
+        socket: ws,
+        bytesByChunk: new Map(),
+        text,
+        inputEnded: false,
+        awaitingRetry: false,
+        retryAttempts: 0,
+        retryWaitedMs: 0,
+      };
+      this.contexts.set(contextId, opened);
+      this.turns.set(turnId, opened);
+      this.sendJson(ws, this.openFrame(contextId, text));
     });
   }
 
@@ -203,40 +195,33 @@ export class KugelTtsSession {
     };
   }
 
-  /** Close the current turn's input: flush the server's sentence buffer, then
-   * let the context drain gracefully (audio keeps arriving until
-   * `context_closed`). */
-  endInput(): Promise<void> {
+  /** Flush the turn's sentence buffer and let its audio drain. */
+  endInput(turnId: number): Promise<void> {
     return this.enqueue(async () => {
-      if (this.inputContextId === null) return;
-      const contextId = this.inputContextId;
-      this.inputContextId = null;
-      const context = this.contexts.get(contextId);
-      if (context) {
-        context.inputEnded = true;
-        // The replay sends flush + close itself.
-        if (context.awaitingRetry) return;
-      }
-      const ws = this.ws;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const context = this.turns.get(turnId);
+      if (!context || context.inputEnded) return;
+      context.inputEnded = true;
+      // A replay sends flush + close itself.
+      if (context.awaitingRetry) return;
+      const { contextId, socket } = context;
       logInfo("voice", `tts flush @${Math.round(performance.now())}`);
-      this.sendJson(ws, { context_id: contextId, text: "", flush: true });
-      this.sendJson(ws, { close_context: true, context_id: contextId });
+      this.sendJson(socket, { context_id: contextId, text: "", flush: true });
+      this.sendJson(socket, { close_context: true, context_id: contextId });
     });
   }
 
-  /** Barge-in: cancel every in-flight context server-side, drop late frames. */
-  flush(): Promise<void> {
+  /** Cancel one turn, or every in-flight turn when closing the session. */
+  flush(turnId?: number): Promise<void> {
     return this.enqueue(async () => {
-      const cancelled = [...this.contexts];
-      this.contexts.clear();
-      this.inputContextId = null;
-      for (const [contextId, context] of cancelled) this.retire(contextId, context);
-      const ws = this.ws;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      for (const [contextId, context] of cancelled) {
-        if (context.awaitingRetry) continue;
-        this.sendJson(ws, { close_context: true, context_id: contextId, immediate: true });
+      const context = turnId === undefined ? undefined : this.turns.get(turnId);
+      const cancelled = turnId === undefined ? [...this.contexts.values()] : context ? [context] : [];
+      for (const turn of cancelled) {
+        const { contextId, socket } = turn;
+        this.finishContext(contextId);
+        this.retire(contextId, turn);
+        if (!turn.awaitingRetry) {
+          this.sendJson(socket, { close_context: true, context_id: contextId, immediate: true });
+        }
       }
     });
   }
@@ -276,6 +261,7 @@ export class KugelTtsSession {
   }
 
   private ensureWs(): Promise<WebSocket> {
+    if (this.closed) return Promise.reject(new Error("Kugel TTS session is closed."));
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return Promise.resolve(this.ws);
     if (this.connecting) return this.connecting;
 
@@ -290,28 +276,36 @@ export class KugelTtsSession {
         url,
         this.config.proxyUrl ? { agent: new HttpsProxyAgent(this.config.proxyUrl) } : undefined,
       );
+      let opened = false;
       ws.on("open", () => {
-        this.ws = ws;
+        opened = true;
         this.connecting = null;
+        if (this.closed) ws.close();
+        else this.ws = ws;
         resolve(ws);
       });
       ws.on("message", (data) => this.handleFrame(ws, data.toString()));
       ws.on("error", (error) => {
+        if (opened) return;
         this.connecting = null;
-        if (this.ws === ws) this.ws = null;
         const message = `Kugel TTS connection failed: ${error.message}`;
-        this.handlers.onError(message);
+        if (!this.closed) this.handlers.onError(message);
         reject(new Error(message));
       });
       ws.on("close", () => {
         if (this.ws === ws) this.ws = null;
         // Contexts waiting to replay after a concurrency refusal live on.
-        const inFlight = [...this.contexts.values()].filter((context) => !context.awaitingRetry);
+        const inFlight = [...this.contexts.values()].filter(
+          (context) => context.socket === ws && !context.awaitingRetry,
+        );
         if (inFlight.length > 0 && !this.closed) {
-          this.handlers.onError(
-            `Kugel TTS connection closed with ${inFlight.length} context(s) in flight.`,
-          );
-          for (const context of inFlight) this.finishContext(context.contextId);
+          for (const context of inFlight) {
+            this.finishContext(context.contextId);
+            this.handlers.onError(
+              `Kugel TTS connection closed with ${inFlight.length} context(s) in flight.`,
+              context.turnId,
+            );
+          }
         }
       });
     });
@@ -333,8 +327,10 @@ export class KugelTtsSession {
       return;
     }
     if (frame.error) {
-      this.handlers.onError(`Kugel TTS server error: ${frame.error}`);
-      if (contextId) this.finishContext(contextId);
+      const context = contextId ? this.contexts.get(contextId) : undefined;
+      if (contextId && !context) return;
+      if (context) this.finishContext(context.contextId);
+      this.handlers.onError(`Kugel TTS server error: ${frame.error}`, context?.turnId);
       return;
     }
     if (!contextId) return;
@@ -392,6 +388,7 @@ export class KugelTtsSession {
         this.finishContext(context.contextId);
         this.handlers.onError(
           `Kugel TTS server error: ${error} (still refused after ${context.retryWaitedMs}ms of retries)`,
+          context.turnId,
         );
         continue;
       }
@@ -413,7 +410,7 @@ export class KugelTtsSession {
    * flush + close when its input already ended. */
   private replay(context: TurnContext): Promise<void> {
     return this.enqueue(async () => {
-      // Barge-in or a newer turn removed it while it waited.
+      // The turn may have been cancelled while it waited.
       if (this.closed || this.contexts.get(context.contextId) !== context) return;
       let ws: WebSocket;
       try {
@@ -422,6 +419,8 @@ export class KugelTtsSession {
         this.finishContext(context.contextId);
         throw error;
       }
+      if (this.closed) return;
+      context.socket = ws;
       context.awaitingRetry = false;
       context.bytesByChunk.clear();
       this.sendJson(ws, this.openFrame(context.contextId, context.text));
@@ -462,7 +461,9 @@ export class KugelTtsSession {
   }
 
   private finishContext(contextId: string): void {
+    const context = this.contexts.get(contextId);
+    if (!context) return;
     this.contexts.delete(contextId);
-    if (this.inputContextId === contextId) this.inputContextId = null;
+    this.turns.delete(context.turnId);
   }
 }
