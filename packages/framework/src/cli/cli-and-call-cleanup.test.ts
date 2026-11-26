@@ -153,13 +153,8 @@ describe("curb build --out", () => {
   const curbBuild = (cwd: string, args: string[]) =>
     spawnSync(process.execPath, [BIN, "build", ...args], { cwd, env: projectEnv(), encoding: "utf8", timeout: 120_000 });
 
-  it.each([
-    ["it is followed by another flag", ["--out", "--no-verify", "--no-trace"]],
-    ["it is the last argument", ["--no-verify", "--no-trace", "--out"]],
-    ["it is passed an empty argument", ["--out", ""]],
-  ])("needs a value when %s", (_, args) => {
-    const root = createTestProject({
-      "src/agent/agent.tsx": `import { Agent, SystemPrompt, defineAgent } from "curb";
+  const agentPath = "src/agent/agent.tsx";
+  const agentSource = `import { Agent, SystemPrompt, defineAgent } from "curb";
 
 export function App() {
   return (
@@ -170,8 +165,14 @@ export function App() {
 }
 
 export const agent = defineAgent({ app: App });
-`,
-    });
+`;
+
+  it.each([
+    ["it is followed by another flag", ["--out", "--no-verify", "--no-trace"]],
+    ["it is the last argument", ["--no-verify", "--no-trace", "--out"]],
+    ["it is passed an empty argument", ["--out", ""]],
+  ])("needs a value when %s", (_, args) => {
+    const root = createTestProject({ [agentPath]: agentSource });
     try {
       const result = curbBuild(root, args);
       expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
@@ -179,6 +180,21 @@ export const agent = defineAgent({ app: App });
       expect(existsSync(join(root, "src", "agent", "agent.tsx"))).toBe(true);
       expect(existsSync(join(root, "--no-verify"))).toBe(false);
       expect(existsSync(join(root, ".curb", "standalone"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 130_000);
+
+  it.each(["relative", "absolute"])("rejects the project root as a %s output path", (pathKind) => {
+    const sentinel = "Keep this file.\n";
+    const root = createTestProject({ [agentPath]: agentSource, "sentinel.txt": sentinel });
+    try {
+      const out = pathKind === "relative" ? "." : root;
+      const result = curbBuild(root, ["--out", out, "--no-verify", "--no-trace"]);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
+      expect(result.stderr).toContain("curb build: the output directory is the project root.");
+      expect(readFileSync(join(root, agentPath))).toEqual(Buffer.from(agentSource));
+      expect(readFileSync(join(root, "sentinel.txt"))).toEqual(Buffer.from(sentinel));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
