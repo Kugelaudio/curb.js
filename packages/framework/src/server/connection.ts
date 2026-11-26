@@ -540,12 +540,16 @@ export class ConnectionController {
     return this.history?.recordedId?.(this.session) ?? null;
   }
 
+  private isCurrentConversationActivation(activation: number): boolean {
+    return !this.disposed && activation === this.conversationActivation;
+  }
+
   /** Replace the active bundle while keeping every inactive bundle alive for
    * later restoration. The inspector follows the active agent, not the
    * conversation, so it resets only when the agent changes. */
-  private async activateConversation(conversation: RestorableConversation): Promise<void> {
-    const activation = ++this.conversationActivation;
-    const isCurrent = () => !this.disposed && activation === this.conversationActivation;
+  private async activateConversation(conversation: RestorableConversation, activation: number): Promise<void> {
+    const isCurrent = () => this.isCurrentConversationActivation(activation);
+    if (!isCurrent()) return;
     if (conversation.id === this.activeConversationId) {
       this.sendConversationsFrame();
       return;
@@ -607,6 +611,7 @@ export class ConnectionController {
       this.session.reset();
       return;
     }
+    const activation = ++this.conversationActivation;
     if (this.session.isRunning) {
       this.send(errorFrame("protocol", "Cannot start a new conversation while a turn is running."));
       return;
@@ -616,9 +621,12 @@ export class ConnectionController {
     try {
       bundle = await this.createConversationBundle(this.activeAgentId, call);
     } catch (error) {
-      this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+      if (this.isCurrentConversationActivation(activation)) {
+        this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+      }
       return;
     }
+    if (!this.isCurrentConversationActivation(activation)) return;
     const conversation: RestorableConversation = {
       id: `conversation-${this.nextConversationNumber++}`,
       agentId: this.activeAgentId,
@@ -627,7 +635,7 @@ export class ConnectionController {
       bundle,
     };
     this.conversations.push(conversation);
-    await this.activateConversation(conversation);
+    await this.activateConversation(conversation, activation);
   }
 
   private async selectConversation(id: string): Promise<void> {
@@ -636,7 +644,7 @@ export class ConnectionController {
       this.send(errorFrame("protocol", `Unknown conversation "${id}".`));
       return;
     }
-    await this.activateConversation(conversation);
+    await this.activateConversation(conversation, ++this.conversationActivation);
   }
 
   /** Swap this connection to another agent: fresh runtime + session (the old
@@ -647,14 +655,15 @@ export class ConnectionController {
       this.send(errorFrame("protocol", "This server hosts a single agent — select_agent is unavailable."));
       return;
     }
-    if (id === this.activeAgentId) {
-      this.sendAgentsFrame();
-      return;
-    }
     if (!this.agentHost.ids.includes(id)) {
       this.send(
         errorFrame("protocol", `Unknown agent "${id}". Available: ${this.agentHost.ids.join(", ")}.`),
       );
+      return;
+    }
+    const activation = ++this.conversationActivation;
+    if (id === this.activeAgentId) {
+      this.sendAgentsFrame();
       return;
     }
 
@@ -668,9 +677,12 @@ export class ConnectionController {
         bundle = await this.createConversationBundle(id, call);
       } catch (error) {
         // Keep the current session alive — a failed switch must not kill the connection.
-        this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+        if (this.isCurrentConversationActivation(activation)) {
+          this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+        }
         return;
       }
+      if (!this.isCurrentConversationActivation(activation)) return;
       conversation = {
         id: `conversation-${this.nextConversationNumber++}`,
         agentId: id,
@@ -680,7 +692,7 @@ export class ConnectionController {
       };
       this.conversations.push(conversation);
     }
-    await this.activateConversation(conversation);
+    await this.activateConversation(conversation, activation);
   }
 
   /** The persistent inspector runtime, created on first use. Session info is
@@ -971,6 +983,10 @@ export class ConnectionController {
     }
 
     if (this.disposed || this.session !== sourceSession) return;
+    if (sourceSession.isRunning || sourceSession.messages !== messages) {
+      this.send(errorFrame("protocol", "Cannot rewind after the conversation changed during replay."));
+      return;
+    }
 
     if (skipped.length > 0) {
       this.send(

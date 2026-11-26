@@ -34,14 +34,15 @@ function renderedCall(sent: ServerMessage[]): string | null {
 function previewConnection() {
   const llm = vi.fn<AgentLlmClient>(async () => ({ text: "Sure.", toolCalls: [] }));
   const created: AgentSessionBundle[] = [];
-  const create = async () => {
+  const create = vi.fn(async () => {
     const bundle = probeBundle(llm);
     created.push(bundle);
     return bundle;
-  };
+  });
   const initial = probeBundle(llm);
   const sent: ServerMessage[] = [];
   const voiceStarts: AgentSessionBundle[] = [];
+  const close = vi.fn(async () => {});
   const controller = new ConnectionController((message) => sent.push(message), {
     ...initial,
     agentHost: {
@@ -62,13 +63,13 @@ function previewConnection() {
           sendText: vi.fn(async () => {}),
           setBundle: vi.fn(),
           interrupt: vi.fn(),
-          close: vi.fn(async () => {}),
+          close,
         };
       },
     },
   });
   controller.start();
-  return { controller, sent, initial, created, voiceStarts };
+  return { controller, sent, initial, create, created, voiceStarts, close };
 }
 
 describe("a preview conversation's call identity", () => {
@@ -104,4 +105,31 @@ describe("a preview conversation's call identity", () => {
     const third = renderedCall(sent);
     expect(new Set([first, second, third]).size).toBe(3);
   });
+
+  it.each([{ type: "reset" }, { type: "select_agent", id: "other" }] as const)(
+    "keeps the newly selected conversation and call when $type finishes late",
+    async (request) => {
+      const { controller, sent, initial, create, voiceStarts, close } = previewConnection();
+      const initialId = sent.find((message) => message.type === "conversations")!.active;
+      await controller.handle({ type: "reset" });
+
+      let releaseBundle!: (bundle: AgentSessionBundle) => void;
+      create.mockReturnValueOnce(new Promise((resolve) => { releaseBundle = resolve; }));
+      const olderSelection = controller.handle(request);
+      expect(create).toHaveBeenCalledTimes(2);
+
+      await controller.handle({ type: "select_conversation", id: initialId });
+      await controller.handle({ type: "voice_start" });
+      expect(voiceStarts[0]?.session).toBe(initial.session);
+      expect(sent.at(-1)).toMatchObject({ type: "voice_session", live: true });
+      const framesBeforeRelease = sent.length;
+
+      releaseBundle(probeBundle(async () => ({ text: "Sure.", toolCalls: [] })));
+      await olderSelection;
+
+      expect.soft(close).not.toHaveBeenCalled();
+      expect.soft(sent.slice(framesBeforeRelease)).not.toContainEqual({ type: "voice_session", live: false });
+      expect(sent.filter((message) => message.type === "conversations").at(-1)?.active).toBe(initialId);
+    },
+  );
 });

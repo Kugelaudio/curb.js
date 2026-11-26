@@ -78,6 +78,24 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ caller: { mobileNumber: "0301234567" } }, heard)).toBeUndefined();
   });
 
+  it.each(["anyOf", "oneOf"])("applies phone matching only to the telephone branch of %s", (union) => {
+    const schema = {
+      type: "object",
+      properties: { value: { [union]: [{ type: "string", format: "tel" }, { type: "integer" }] } },
+    };
+    expect(inventedNumber({ value: "123456789" }, ["Order 123456789"], schema)).toBe("123456789");
+    expect(inventedNumber({ value: "123456789" }, ["My phone number is 123456789"], schema)).toBeUndefined();
+    expect(inventedNumber({ value: 123456789 }, ["Order 123456789"], schema)).toBeUndefined();
+  });
+
+  it("allows generic matching when a union also accepts an unformatted string", () => {
+    const schema = {
+      type: "object",
+      properties: { value: { anyOf: [{ type: "string", format: "tel" }, { type: "string" }] } },
+    };
+    expect(inventedNumber({ value: "123456789" }, ["Order 123456789"], schema)).toBeUndefined();
+  });
+
   it("counts the digits as written, leading zeros included", () => {
     expect(inventedNumber({ order: "012345" }, ["where is my order?"])).toBe("012345");
     expect(inventedNumber({ order: "000123" }, ["where is my order?"])).toBe("000123");
