@@ -50,6 +50,10 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
+      # The runner image puts no node or npm on PATH; every job brings its own.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.12'
       - id: affected
         run: node scripts/affected.mjs
       - run: npm run check:independence
