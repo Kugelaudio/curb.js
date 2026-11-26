@@ -577,7 +577,7 @@ async function disconnectQuietly(room: { disconnect(): Promise<unknown> }, why: 
  * The process is stopped by the platform's executor signalling the process group, so
  * SIGTERM and SIGINT are the normal end of a runner, not an exception.
  */
-export async function runHostedDirectJoin(config: DirectJoinConfig): Promise<void> {
+export async function runHostedDirectJoin(config: DirectJoinConfig, seams: JoinSeams = {}): Promise<void> {
   const leaked = scrubPlatformCredentials();
   if (leaked.length > 0) {
     // Loud, because it is a defect in whatever started this process, and silence would
@@ -612,7 +612,7 @@ export async function runHostedDirectJoin(config: DirectJoinConfig): Promise<voi
         producer: config.sessionId ?? "call",
       });
 
-    session = await joinRoomAndServe({ ...config, reporter });
+    session = await joinRoomAndServe({ ...config, reporter }, seams);
 
     // Hold the event loop open for the length of the call.
     //
@@ -642,8 +642,10 @@ export async function runHostedDirectJoin(config: DirectJoinConfig): Promise<voi
           await disconnectQuietly(session.connection, "an unclean shutdown");
         });
     };
-    const signals: NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
-    for (const signal of signals) process.on(signal, () => stop(signal));
+    const onTerminate = () => stop("SIGTERM");
+    const onInterrupt = () => stop("SIGINT");
+    process.on("SIGTERM", onTerminate);
+    process.on("SIGINT", onInterrupt);
 
     let outcome = "completed";
     try {
@@ -653,7 +655,8 @@ export async function runHostedDirectJoin(config: DirectJoinConfig): Promise<voi
       throw error;
     } finally {
       clearInterval(keepAlive);
-      for (const signal of signals) process.removeAllListeners(signal);
+      process.off("SIGTERM", onTerminate);
+      process.off("SIGINT", onInterrupt);
       // LAST, and awaited. The terminal report and any events still batched go out here; a
       // process that exited without this would drop the end of every call, which is the part
       // anybody reviewing one reads first.

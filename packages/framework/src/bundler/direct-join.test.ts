@@ -20,6 +20,7 @@ import {
   clientContextInfo,
   joinRoomAndServe,
   readDirectJoinConfig,
+  runHostedDirectJoin,
   scrubPlatformCredentials,
   warmVoiceRunner,
   type JoinSeams,
@@ -198,6 +199,57 @@ function fakeRoom(connect: () => Promise<void>) {
 }
 
 const fakeHandle = { close: vi.fn(async () => {}) } as unknown as VoiceSessionHandle;
+
+it("removes only the direct-join runner's signal handlers when the call ends", async () => {
+  const onInterrupt = () => {};
+  const onTerminate = () => {};
+  const listeners = () => ({
+    SIGINT: process.listeners("SIGINT"),
+    SIGTERM: process.listeners("SIGTERM"),
+  });
+  process.on("SIGINT", onInterrupt);
+  process.on("SIGTERM", onTerminate);
+  const before = listeners();
+
+  const room = fakeRoom(async () => {});
+  const bundle = fakeBundle("s2s", openai.live());
+  const warm: WarmVoiceRunner = {
+    definition: bundle.definition,
+    settings: null,
+    vad: FAKE_VAD,
+    takeBundle: async () => bundle,
+  };
+  const endCall = deferred<void>();
+  const running = runHostedDirectJoin(
+    { url: "ws://127.0.0.1:1", token: "jwt", sessionId: "sess-signal-cleanup", warm },
+    {
+      createRoom: () => room as unknown as Room,
+      startVoiceAgent: async ({ onClosed }) => {
+        void endCall.promise.then(() => onClosed?.());
+        return fakeHandle;
+      },
+      scratchRoot: SCRATCH_ROOT,
+    },
+  );
+  try {
+    await vi.waitFor(() => {
+      for (const signal of ["SIGINT", "SIGTERM"] as const) {
+        expect(process.listeners(signal)).toHaveLength(before[signal].length + 1);
+      }
+    });
+    endCall.resolve();
+    await running;
+    expect(listeners()).toEqual(before);
+  } finally {
+    endCall.resolve();
+    try {
+      await running;
+    } finally {
+      process.off("SIGINT", onInterrupt);
+      process.off("SIGTERM", onTerminate);
+    }
+  }
+});
 
 describe("joinRoomAndServe on a warm runner", () => {
   it("starts the provider connections alongside the room connect, not after it", async () => {
