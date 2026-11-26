@@ -1,6 +1,6 @@
 import { fork, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -197,6 +197,27 @@ export const agent = defineAgent({ app: App });
       expect(readFileSync(join(root, "sentinel.txt"))).toEqual(Buffer.from(sentinel));
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  }, 130_000);
+
+  it("rejects an output directory containing the project root", () => {
+    const parent = mkdtempSync(join(tmpdir(), "curb-build-parent-"));
+    const root = join(parent, "project");
+    const source = join(root, agentPath);
+    const sentinelPath = join(parent, "sentinel.txt");
+    const sentinel = "Keep the parent directory.\n";
+    try {
+      mkdirSync(join(root, "src", "agent"), { recursive: true });
+      writeFileSync(source, agentSource);
+      writeFileSync(sentinelPath, sentinel);
+
+      const result = curbBuild(root, ["--out", parent, "--no-verify", "--no-trace"]);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
+      expect(result.stderr).toContain("curb build: the output directory contains the project root.");
+      expect(readFileSync(source)).toEqual(Buffer.from(agentSource));
+      expect(readFileSync(sentinelPath)).toEqual(Buffer.from(sentinel));
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
     }
   }, 130_000);
 });
