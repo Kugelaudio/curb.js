@@ -54,6 +54,7 @@ import type { SessionSettings } from "../session-settings.js";
 import {
   checkProviders,
   printStartupReport,
+  startupCheckOff,
   type StartupProblem,
   type StartupProviders,
 } from "../server/startup-check.js";
@@ -193,8 +194,8 @@ export async function warmVoiceRunner(steps: WarmupSteps = {}): Promise<WarmVoic
 
   const checkStartup =
     steps.checkStartup ??
-    ((providers: StartupProviders, target: NodeJS.ProcessEnv) =>
-      checkProviders({ providers, env: target, missingKeys: "skip" }));
+    (async (providers: StartupProviders, target: NodeJS.ProcessEnv) =>
+      startupCheckOff(target) ? [] : checkProviders({ providers, env: target, missingKeys: "skip" }));
 
   const step = async <T>(what: string, run: () => Promise<T>): Promise<T> => {
     try {

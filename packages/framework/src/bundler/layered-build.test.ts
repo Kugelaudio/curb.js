@@ -133,6 +133,8 @@ describe("curb build --emit-layers", () => {
       // A runner refuses to start without the key its agent's LLM needs. Warming never
       // calls the model, so a placeholder is enough here.
       KUGELAUDIO_API_KEY: "placeholder-for-warmup",
+      // The placeholder is no key a provider accepts, and the test stays offline.
+      CURB_STARTUP_CHECK: "off",
     };
     const child = spawn(process.execPath, [join(emitted.outDir, manifest().entrypoint)], {
       cwd: emitted.outDir,

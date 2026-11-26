@@ -40,7 +40,8 @@ import {
 /** How long one provider may take to answer. Several are asked at once. */
 export const STARTUP_CHECK_TIMEOUT_MS = 5_000;
 
-/** `off` skips the check where a worker starts (`curb start`, a built artifact's worker), for a
+/** `off` skips the check where a worker starts (`curb start`, a built artifact's worker, a managed
+ * runner's warmup), for a
  * machine that must run without the provider keys, like `curb build`'s own start of the artifact.
  * The readiness probes ignore it: they run the check because they were asked to. */
 export const STARTUP_CHECK_VAR = "CURB_STARTUP_CHECK";

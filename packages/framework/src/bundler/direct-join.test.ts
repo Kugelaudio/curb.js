@@ -195,6 +195,20 @@ describe("warmVoiceRunner", () => {
     errors.mockRestore();
   });
 
+  it("warms without asking the providers when the startup check is off", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const warm = await warmVoiceRunner({
+      env: { CURB_STARTUP_CHECK: "off", KUGELAUDIO_API_KEY: "placeholder", ANTHROPIC_API_KEY: "placeholder" },
+      createBundle: async () => fakeBundle(),
+      loadVad: async () => FAKE_VAD,
+      preloadPlugins: async () => {},
+    });
+    expect(warm.vad).toBe(FAKE_VAD);
+    expect(fetch).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("rejects when any warmup step fails, so the runner never says ready", async () => {
     await expect(
       warmVoiceRunner({

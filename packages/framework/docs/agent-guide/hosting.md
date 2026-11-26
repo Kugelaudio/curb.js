@@ -425,7 +425,7 @@ The check asks nothing of the greeting, so an agent whose caller speaks first pa
 same way. A managed runner checks the keys it holds during warmup and never announces
 `ready` when one is refused; a key that arrives with the call is checked when the call
 starts. Set `CURB_STARTUP_CHECK=off` only on a machine that must start the agent without
-its keys, as `curb build` does when it starts the artifact to confirm it boots.
+working keys, as `curb build` does when it starts the artifact to confirm it boots.
 
 ## Next steps
 
