@@ -76,10 +76,12 @@ describe("runGreetingCheck", () => {
     expect(spoken).toEqual(["Praxis Doe, guten Tag."]);
   });
 
-  it("still asks the model when the caller speaks first", async () => {
+  it("asks no greeting of an agent whose caller speaks first", async () => {
+    const spoken: string[] = [];
     const made = bundle({});
-    expect((await runGreetingCheck(seams(made, voice([480])))).ok).toBe(true);
-    expect(made.prompts).toEqual(["OPENING PROMPT"]);
+    expect(await runGreetingCheck(seams(made, voice([], spoken)))).toEqual({ ok: true, callerSpeaksFirst: true });
+    expect(made.prompts).toEqual([]);
+    expect(spoken).toEqual([]);
   });
 
   it("fails at the agent when the bundle refuses a missing model key", async () => {
