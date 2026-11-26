@@ -58,7 +58,15 @@ tools and skills, and it answers what it can alone.
 Anything else it hands over. Curb then runs an ordinary turn on `llm`, with the agent's skills, tools
 and held actions, and gives the model the outcome to say. So an agent with `s2s` still needs `llm`,
 and that key too. `llm` has no `skip_turn` here: it hears only what is handed over, so every hand-over
-ends in a tool call or a reply.
+ends in a tool call or a reply, and it is told to act on what it was handed rather than ask the caller
+to confirm it again.
+
+The model may hand a line over before the caller finished it. When the rest of that line comes in
+within a few seconds, `llm` answers the whole line and the model says only that answer. When a reply
+of `llm` asks the caller something and the model hands their answer over to nobody (a short "yes",
+which none of the agent's tools needs), Curb takes that answer itself after 1.5 seconds, so a
+confirmation always reaches the agent. On `openai.live({ verbatim: true })` the endpoint hands the
+answer back on its own. A short rate limit on `llm` is waited out, as on a cascaded call.
 
 ## Split the prompt between the model and `llm`
 
