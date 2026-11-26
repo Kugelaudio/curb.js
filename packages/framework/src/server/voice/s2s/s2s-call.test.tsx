@@ -384,6 +384,8 @@ describe("a call on <Agent s2s>", { timeout: 12_000 }, () => {
     const [request] = llm.mock.calls[0] as unknown as [{ tools: Array<{ name: string }> }];
     expect(request.tools.map((tool) => tool.name)).not.toContain("skip_turn");
     expect(JSON.stringify(request)).toContain("never with nothing");
+    expect(JSON.stringify(request)).toContain("call it now instead of asking the caller to confirm it again");
+    expect(JSON.stringify(request)).toContain("unless you called that tool in this turn");
     expect(model.start().instructions).not.toContain("never with nothing");
   });
 
