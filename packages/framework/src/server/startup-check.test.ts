@@ -25,7 +25,7 @@ function network(status: (url: string) => number | Error = () => 200): StartupFe
     const answer = status(input);
     if (answer instanceof Error) throw answer;
     return new Response(answer === 204 ? null : "{}", { status: answer });
-  }) as StartupFetch & { seen: Seen[] };
+  }) as unknown as StartupFetch & { seen: Seen[] };
   fetch.seen = seen;
   return fetch;
 }
