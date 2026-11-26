@@ -15,6 +15,7 @@ import { anthropic, azure, kugelaudio, openai } from "../providers.js";
 import { AppMessages, HostUnavailableError } from "../messages.js";
 import { createCallReporter, type HostedCallReporter } from "../hosted/call-reporter.js";
 import { EventJournal, type JournalRecord } from "../hosted/event-journal.js";
+import { MANAGEMENT_ADDRESS_ENV } from "../hosted/management-server.js";
 import {
   PLATFORM_CREDENTIAL_VARS,
   clientContextInfo,
@@ -220,6 +221,8 @@ it("removes only the direct-join runner's signal handlers when the call ends", a
     takeBundle: async () => bundle,
   };
   const endCall = deferred<void>();
+  vi.stubEnv(MANAGEMENT_ADDRESS_ENV, undefined);
+  for (const name of PLATFORM_CREDENTIAL_VARS) vi.stubEnv(name, undefined);
   const running = runHostedDirectJoin(
     { url: "ws://127.0.0.1:1", token: "jwt", sessionId: "sess-signal-cleanup", warm },
     {
@@ -247,6 +250,7 @@ it("removes only the direct-join runner's signal handlers when the call ends", a
     } finally {
       process.off("SIGINT", onInterrupt);
       process.off("SIGTERM", onTerminate);
+      vi.unstubAllEnvs();
     }
   }
 });
