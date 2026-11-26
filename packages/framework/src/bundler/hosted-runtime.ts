@@ -11,5 +11,6 @@ export { runVoiceWorkerJob } from "../server/voice/livekit-host/worker.js";
 export { voiceWorkerAgentName } from "../server/voice/worker-name.js";
 export { setBundledSynchronizerModule } from "../server/voice/local-host/synchronizer.js";
 export { runHostedRenderCheck } from "./render-check.js";
+export { runHostedGreetingCheck } from "./greeting-check.js";
 export { readDirectJoinConfig, runHostedDirectJoin } from "./direct-join.js";
 export { readManagedConfig, runManaged } from "./managed-runner.js";
