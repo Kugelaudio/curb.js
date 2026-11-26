@@ -112,8 +112,9 @@ export async function readyForCall(bundle: VoiceAgentBundle): Promise<VoiceAgent
  */
 export async function createPreviewAgentBundle(
   agentId?: string,
+  options?: { recordConversation?: boolean },
 ): Promise<VoiceAgentBundle & { missingLlmKey: AuthoringDiagnostic | null }> {
-  const bundle = await buildBundle(agentId);
+  const bundle = await buildBundle(agentId, undefined, options);
   const s2s = bundle.runtime.settings.s2s();
   return {
     ...bundle,
@@ -122,7 +123,11 @@ export async function createPreviewAgentBundle(
   };
 }
 
-async function buildBundle(agentId: string | undefined, wrap?: LlmTransportWrap): Promise<VoiceAgentBundle> {
+async function buildBundle(
+  agentId: string | undefined,
+  wrap?: LlmTransportWrap,
+  options?: { recordConversation?: boolean },
+): Promise<VoiceAgentBundle> {
   const hosted = await getHostedAgent(agentId);
   // Bound once the session exists; no turn can run before that.
   let runtime: AgentSiteRuntime | null = null;
@@ -140,6 +145,7 @@ async function buildBundle(agentId: string | undefined, wrap?: LlmTransportWrap)
     llmTimeoutMs: used.llmTimeoutMs,
     // A spoken turn that says it is doing something a tool does gets one more step to call it.
     checkFollowThrough: true,
+    recordConversation: options?.recordConversation,
   });
   runtime = bundle.runtime;
   // Outside settings changes may switch the LLM; one whose key this process lacks is refused.

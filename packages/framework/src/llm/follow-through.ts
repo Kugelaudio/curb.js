@@ -189,7 +189,7 @@ function fieldValues(
   const properties = schemaPart(schema, "properties");
   return Object.entries(value).flatMap(([name, item]) => {
     const field = schemaPart(properties, name);
-    return fieldValues(item, field, isPhoneField(name, field), seen);
+    return fieldValues(item, field, isPhoneField(name, field, item), seen);
   });
 }
 
@@ -199,23 +199,26 @@ function fieldValues(
  * number and describe another value ("Account ID for the caller's phone number"). A name that
  * says id, account, plan or code is never a phone field.
  */
-function isPhoneField(name: string, field: unknown): boolean {
+function isPhoneField(name: string, field?: unknown, value?: unknown): boolean {
   const words = name.replace(/([a-z])([A-Z])/g, "$1 $2");
   if (ID_NAME.test(words)) return false;
-  return PHONE_NAME.test(words) || hasPhoneFormat(field);
+  return PHONE_NAME.test(words) || hasPhoneFormat(field, value);
 }
 
-function hasPhoneFormat(field: unknown): boolean {
+function hasPhoneFormat(field: unknown, value: unknown): boolean {
   const format = schemaPart(field, "format");
   if (typeof format === "string" && PHONE_FORMAT.test(format)) return true;
-  return [schemaPart(field, "anyOf"), schemaPart(field, "oneOf")].some(
-    (options) => {
-      if (!Array.isArray(options) || options.length !== 2) return false;
-      const [first, second] = options;
-      if (schemaPart(first, "type") === "null") return hasPhoneFormat(second);
-      return schemaPart(second, "type") === "null" && hasPhoneFormat(first);
-    },
-  );
+  // A telephone format in a union describes a string branch. Only require
+  // phone evidence when the type rules out the other, non-telephone branches.
+  if (typeof value !== "string") return false;
+  return [schemaPart(field, "anyOf"), schemaPart(field, "oneOf")].some((options) => {
+    if (!Array.isArray(options)) return false;
+    const strings = options.filter((option) => {
+      const type = schemaPart(option, "type");
+      return type === undefined || type === "string" || (Array.isArray(type) && type.includes("string"));
+    });
+    return strings.length > 0 && strings.every((option) => hasPhoneFormat(option, value));
+  });
 }
 
 function schemaPart(schema: unknown, key: string): unknown {
@@ -264,7 +267,7 @@ function heardPhones(value: unknown, place: "words" | "phone" | "other", seen: W
   seen.add(value);
   if (Array.isArray(value)) return value.flatMap((item) => heardPhones(item, place, seen));
   return Object.entries(value).flatMap(([name, item]) =>
-    heardPhones(item, isPhoneField(name, undefined) ? "phone" : "other", seen),
+    heardPhones(item, isPhoneField(name) ? "phone" : "other", seen),
   );
 }
 

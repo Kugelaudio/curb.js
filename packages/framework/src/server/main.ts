@@ -16,6 +16,7 @@ import { conversationState } from "./conversation-restore.js";
 import { resolveProjectRoot } from "../project.node.js";
 import { readProjectPackageName } from "./voice/worker-name.js";
 import {
+  attachConversationSink,
   continueRecordedConversation,
   describeConversationStore,
   detachConversationRecorder,
@@ -55,7 +56,7 @@ import { LocalVoiceCalls } from "./voice/local-host/local-call-room.js";
 import type { VoiceSessionHandle } from "./voice/orchestration.js";
 import type { VoiceTransport } from "./protocol.js";
 import { llmCredentialDiagnostic } from "../llm/ai-sdk.js";
-import { createPreviewAgentBundle, createVoiceAgentBundle } from "../voice-host.js";
+import { createPreviewAgentBundle, readyForCall } from "../voice-host.js";
 import type { CallRegistrar } from "../hosted/call-link.js";
 import { openCallManagement, serveCall } from "../hosted/serve-call.js";
 import { logError, logInfo } from "./log.js";
@@ -344,27 +345,6 @@ const createVoiceHostAdapter = (options: {
     }
   },
 });
-
-/** Everything one connection needs for one agent: runtime + session bound to
- * that agent's model. Every session carries the framework's spoken-reply
- * rules as a per-turn suffix — applied only when a turn is spoken; the
- * authored `<SystemPrompt>` itself is never touched. */
-async function buildAgentBundle(agentId?: string): Promise<AgentSessionBundle & { id: string }> {
-  const { runtime, session, agentId: id } = await createVoiceAgentBundle(agentId);
-  return { id, runtime, session };
-}
-
-/**
- * `curb dev`'s bundle: built even when the agent's LLM has no key in this process, so the
- * page shows what the agent is (its context renders from source and needs no model), with
- * the missing key as a banner. `curb server` refuses such a session instead.
- */
-async function buildPreviewAgentBundle(
-  agentId: string,
-): Promise<AgentSessionBundle & { id: string; missingLlmKey: AuthoringDiagnostic | null }> {
-  const { runtime, session, agentId: id, missingLlmKey } = await createPreviewAgentBundle(agentId);
-  return { id, runtime, session, missingLlmKey };
-}
 
 /** The project's package name, which the preview calls a single agent by; undefined when the
  * project has none. */
@@ -723,26 +703,31 @@ async function handleConnection(
     }
   };
 
-  // Every session this connection creates (new conversations, agent switches, rewinds).
+  // Every session this connection accepts (new conversations, agent switches, rewinds).
   // When the connection ends, so do they, and each one's conversation recording is
   // finished: a last retry of any write the sink refused, then an error-level report of
   // whatever it still refuses.
   const sessions: AgentSession[] = [];
+  let ended = false;
   const build = async (agentId: string) => {
-    let bundle: AgentSessionBundle & { id: string };
+    const bundle = await createPreviewAgentBundle(agentId, { recordConversation: false });
     if (context.dev) {
-      const preview = await buildPreviewAgentBundle(agentId);
       // Before the frames that show the agent: the page knows from the start that it cannot answer.
-      send({ type: "missing_keys", agentId: preview.id, diagnostics: preview.missingLlmKey ? [preview.missingLlmKey] : [] });
-      bundle = preview;
+      send({ type: "missing_keys", agentId: bundle.agentId, diagnostics: bundle.missingLlmKey ? [bundle.missingLlmKey] : [] });
     } else {
-      bundle = await buildAgentBundle(agentId);
+      await readyForCall(bundle);
     }
+    return bundle;
+  };
+  const startRecording = (bundle: AgentSessionBundle, agentId: string) => {
+    if (ended) return;
+    const sink = getConversationSink();
+    if (!sink) return;
+    attachConversationSink(sink, bundle.session, agentId, () => bundle.runtime.info.snapshot());
     sessions.push(bundle.session);
     // Recorded with the transcript, after every turn: a reload, or the conversation list,
     // continues the conversation from it without running its tools again.
     keepConversationState(bundle.session, () => conversationState(bundle.runtime, bundle.session));
-    return bundle;
   };
   const endRecordings = () => {
     // Never rejects: detach logs and counts its own failures, and the socket is gone.
@@ -786,7 +771,6 @@ async function handleConnection(
     else early.push({ data, isBinary });
   });
 
-  let ended = false;
   const end = () => {
     if (ended) return;
     ended = true;
@@ -827,13 +811,16 @@ async function handleConnection(
   let ready: ConnectionController;
   try {
     const initial = await build(context.defaultAgentId);
+    if (ended) return;
+    startRecording(initial, initial.agentId);
     ready = new ConnectionController(send, {
       runtime: initial.runtime,
       session: initial.session,
       agentHost: {
         ids: context.agentIds,
-        initialId: initial.id,
-        create: (id) => build(id),
+        initialId: initial.agentId,
+        create: build,
+        startRecording,
         createRuntime: async (id, options) => (await createAgentRuntime(id, options)).runtime,
         preview: context.preview,
       },

@@ -45,6 +45,8 @@ export type AgentHost = {
   initialId: string;
   /** Build a fresh bundle for the given agent id. */
   create: (id: string) => Promise<AgentSessionBundle>;
+  /** Start recording a fresh bundle once the connection accepts it. */
+  startRecording?: (bundle: AgentSessionBundle, agentId: string) => void;
   /** Build a standalone runtime for the given agent id — used as the
    * connection's INSPECTOR (sidebar browsing + tool forms), so the preview
    * never mutates the live agent session. The inspector passes
@@ -389,14 +391,17 @@ export class ConnectionController {
       return;
     }
     this.rememberPageInfo(info);
-    const notes = await this.materialise(conversation, { continueRecording: recordedId, info });
-    if (notes === null) return;
+    const restored = await this.materialise(conversation, { continueRecording: recordedId, info });
+    if (restored === null) return;
+    const { bundle, agentId, notes } = restored;
+    conversation.bundle = bundle;
+    conversation.agentId = agentId;
     // The fresh conversation this connection opened with was never used: it leaves the list.
     const fresh = this.conversations.findIndex((candidate) => candidate.id === this.activeConversationId);
     if (fresh >= 0) this.conversations.splice(fresh, 1);
-    this.runtime = conversation.bundle!.runtime;
-    this.session = conversation.bundle!.session;
-    this.activeAgentId = conversation.agentId;
+    this.runtime = bundle.runtime;
+    this.session = bundle.session;
+    this.activeAgentId = agentId;
     this.activeConversationId = conversation.id;
     this.resumeNotice = notes.length > 0 ? notes.join(" ") : null;
   }
@@ -448,8 +453,8 @@ export class ConnectionController {
    * Turn a stored conversation into a live bundle, or explain why it could not be. Its
    * recorded state (open skills, store data, page info) and transcript are restored onto a
    * fresh runtime (`restoreConversation`), and none of its tool calls runs again: a booking
-   * or an email happened once, when the conversation ran. Returns what could not be
-   * restored, one note each, or null when nothing was.
+   * or an email happened once, when the conversation ran. Returns the prepared bundle
+   * with any restoration notes, or null on failure.
    *
    * It needs the agent registry, to build a fresh runtime for the recorded agent, so a host
    * without one cannot restore, and says so instead of appearing to work and then answering
@@ -466,7 +471,7 @@ export class ConnectionController {
       info: Readonly<Record<string, unknown>>;
       isCurrent?: () => boolean;
     },
-  ): Promise<string[] | null> {
+  ): Promise<{ bundle: AgentSessionBundle; agentId: string; notes: string[] } | null> {
     const agentId = conversation.agentId ?? this.activeAgentId;
     if (!this.agentHost || agentId === null) {
       this.send(
@@ -480,6 +485,7 @@ export class ConnectionController {
       if (options.isCurrent?.() === false) return null;
       // Before the transcript is restored onto it, so not one message goes to a new conversation.
       if (options.continueRecording !== undefined) {
+        this.agentHost.startRecording?.(bundle, agentId);
         this.history?.continueRecording?.(bundle.session, options.continueRecording);
       }
       const state = conversation.storedId === undefined ? null : (this.history?.state?.(conversation.storedId) ?? null);
@@ -489,9 +495,7 @@ export class ConnectionController {
         { skillPaths: this.agentHost.preview(agentId).skills.map((skill) => skill.path), info: options.info },
       );
       this.assignExperiments(bundle, agentId, conversation.call, { restored: true });
-      conversation.bundle = bundle;
-      conversation.agentId = agentId;
-      return notes;
+      return { bundle, agentId, notes };
     } catch (error) {
       if (options.isCurrent?.() !== false) {
         this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
@@ -540,12 +544,16 @@ export class ConnectionController {
     return this.history?.recordedId?.(this.session) ?? null;
   }
 
+  private isCurrentConversationActivation(activation: number): boolean {
+    return !this.disposed && activation === this.conversationActivation;
+  }
+
   /** Replace the active bundle while keeping every inactive bundle alive for
    * later restoration. The inspector follows the active agent, not the
    * conversation, so it resets only when the agent changes. */
-  private async activateConversation(conversation: RestorableConversation): Promise<void> {
-    const activation = ++this.conversationActivation;
-    const isCurrent = () => !this.disposed && activation === this.conversationActivation;
+  private async activateConversation(conversation: RestorableConversation, activation: number): Promise<void> {
+    const isCurrent = () => this.isCurrentConversationActivation(activation);
+    if (!isCurrent()) return;
     if (conversation.id === this.activeConversationId) {
       this.sendConversationsFrame();
       return;
@@ -561,17 +569,21 @@ export class ConnectionController {
     //
     // Left where it is on failure. A conversation that cannot be restored must not take
     // the live one down with it: the user is still in a working session.
-    let notes: string[] = [];
+    let restored;
     if (!conversation.bundle) {
-      const restored = await this.materialise(conversation, { info: this.runtime.info.snapshot(), isCurrent });
+      restored = await this.materialise(conversation, { info: this.runtime.info.snapshot(), isCurrent });
       if (restored === null) return;
-      notes = restored;
     }
 
     if (!isCurrent()) return;
     if (this.session.isRunning) {
       this.send(errorFrame("protocol", "Cannot switch conversations while a turn is running."));
       return;
+    }
+    if (restored) {
+      this.agentHost?.startRecording?.(restored.bundle, restored.agentId);
+      conversation.bundle = restored.bundle;
+      conversation.agentId = restored.agentId;
     }
     // Close any call started while the target loaded. Commit the new bundle before
     // yielding so a later voice start can only use the new conversation.
@@ -595,7 +607,7 @@ export class ConnectionController {
     this.sendAgentsFrame();
     this.sendSessionSnapshot();
     this.sendConversationsFrame();
-    if (notes.length > 0) this.send({ type: "notice", message: notes.join(" ") });
+    if (restored?.notes.length) this.send({ type: "notice", message: restored.notes.join(" ") });
     await voiceStopped;
   }
 
@@ -607,6 +619,7 @@ export class ConnectionController {
       this.session.reset();
       return;
     }
+    const activation = ++this.conversationActivation;
     if (this.session.isRunning) {
       this.send(errorFrame("protocol", "Cannot start a new conversation while a turn is running."));
       return;
@@ -616,9 +629,13 @@ export class ConnectionController {
     try {
       bundle = await this.createConversationBundle(this.activeAgentId, call);
     } catch (error) {
-      this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+      if (this.isCurrentConversationActivation(activation)) {
+        this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+      }
       return;
     }
+    if (!this.isCurrentConversationActivation(activation)) return;
+    this.agentHost.startRecording?.(bundle, this.activeAgentId);
     const conversation: RestorableConversation = {
       id: `conversation-${this.nextConversationNumber++}`,
       agentId: this.activeAgentId,
@@ -627,7 +644,7 @@ export class ConnectionController {
       bundle,
     };
     this.conversations.push(conversation);
-    await this.activateConversation(conversation);
+    await this.activateConversation(conversation, activation);
   }
 
   private async selectConversation(id: string): Promise<void> {
@@ -636,7 +653,7 @@ export class ConnectionController {
       this.send(errorFrame("protocol", `Unknown conversation "${id}".`));
       return;
     }
-    await this.activateConversation(conversation);
+    await this.activateConversation(conversation, ++this.conversationActivation);
   }
 
   /** Swap this connection to another agent: fresh runtime + session (the old
@@ -647,14 +664,15 @@ export class ConnectionController {
       this.send(errorFrame("protocol", "This server hosts a single agent — select_agent is unavailable."));
       return;
     }
-    if (id === this.activeAgentId) {
-      this.sendAgentsFrame();
-      return;
-    }
     if (!this.agentHost.ids.includes(id)) {
       this.send(
         errorFrame("protocol", `Unknown agent "${id}". Available: ${this.agentHost.ids.join(", ")}.`),
       );
+      return;
+    }
+    const activation = ++this.conversationActivation;
+    if (id === this.activeAgentId) {
+      this.sendAgentsFrame();
       return;
     }
 
@@ -668,9 +686,13 @@ export class ConnectionController {
         bundle = await this.createConversationBundle(id, call);
       } catch (error) {
         // Keep the current session alive — a failed switch must not kill the connection.
-        this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+        if (this.isCurrentConversationActivation(activation)) {
+          this.send(errorFrame("llm", error instanceof Error ? error.message : String(error)));
+        }
         return;
       }
+      if (!this.isCurrentConversationActivation(activation)) return;
+      this.agentHost.startRecording?.(bundle, id);
       conversation = {
         id: `conversation-${this.nextConversationNumber++}`,
         agentId: id,
@@ -680,7 +702,7 @@ export class ConnectionController {
       };
       this.conversations.push(conversation);
     }
-    await this.activateConversation(conversation);
+    await this.activateConversation(conversation, activation);
   }
 
   /** The persistent inspector runtime, created on first use. Session info is
@@ -971,7 +993,12 @@ export class ConnectionController {
     }
 
     if (this.disposed || this.session !== sourceSession) return;
+    if (sourceSession.isRunning || sourceSession.messages !== messages) {
+      this.send(errorFrame("protocol", "Cannot rewind after the conversation changed during replay."));
+      return;
+    }
 
+    this.agentHost.startRecording?.(bundle, this.activeAgentId);
     if (skipped.length > 0) {
       this.send(
         errorFrame(

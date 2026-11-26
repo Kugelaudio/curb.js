@@ -579,7 +579,13 @@ describe("ConnectionController voice attachment", () => {
     };
   }
 
-  function makeVoiceController(llm: AgentLlmClient = idleLlm) {
+  function makeVoiceController(
+    llm: AgentLlmClient = idleLlm,
+    create = async () => {
+      const runtime = createInsuranceDemoRuntime();
+      return { runtime, session: new AgentSession(runtime, llm) };
+    },
+  ) {
     const runtime = createInsuranceDemoRuntime();
     const session = new AgentSession(runtime, llm);
     const call = makeVoiceCall();
@@ -595,7 +601,7 @@ describe("ConnectionController voice attachment", () => {
       agentHost: {
         ids: ["insurance"],
         initialId: "insurance",
-        create: async () => ({ runtime: createInsuranceDemoRuntime(), session: new AgentSession(createInsuranceDemoRuntime(), llm) }),
+        create,
         createRuntime: async () => createInsuranceDemoRuntime(),
         preview,
       },
@@ -726,6 +732,57 @@ describe("ConnectionController voice attachment", () => {
     expect(call.setBundle).toHaveBeenCalledOnce();
     // The retry is spoken: routed through the call, not the chat turn.
     expect(call.sendText).toHaveBeenCalledWith("first message");
+  });
+
+  it("keeps the live turn and call when a turn starts during rewind replay", async () => {
+    let markReplayStarted!: () => void;
+    let releaseReplay!: () => void;
+    const replayStarted = new Promise<void>((resolve) => { markReplayStarted = resolve; });
+    const replayBlocked = new Promise<void>((resolve) => { releaseReplay = resolve; });
+    let markTurnStarted!: () => void;
+    let releaseTurn!: () => void;
+    const turnStarted = new Promise<void>((resolve) => { markTurnStarted = resolve; });
+    const turnBlocked = new Promise<void>((resolve) => { releaseTurn = resolve; });
+    const llm = vi.fn<AgentLlmClient>(idleLlm)
+      .mockResolvedValueOnce({ text: "", toolCalls: [{ name: "read_skill", input: { skill: "/member-portal" } }] })
+      .mockResolvedValueOnce({ text: "First reply.", toolCalls: [] })
+      .mockResolvedValueOnce({ text: "Earlier reply.", toolCalls: [] })
+      .mockImplementationOnce(async () => {
+        markTurnStarted();
+        await turnBlocked;
+        return { text: "Live reply.", toolCalls: [] };
+      });
+    const { controller, call, session, sent } = makeVoiceController(llm, async () => {
+      const runtime = createInsuranceDemoRuntime();
+      const callTool = runtime.callTool.bind(runtime);
+      vi.spyOn(runtime, "callTool").mockImplementationOnce(async (name, input) => {
+        markReplayStarted();
+        await replayBlocked;
+        return callTool(name, input);
+      });
+      return { runtime, session: new AgentSession(runtime, llm) };
+    });
+    controller.start();
+    await controller.handle({ type: "user_text", text: "Open the member portal" });
+    await controller.handle({ type: "user_text", text: "Earlier question" });
+    const index = session.messages.findIndex((message) => message.content === "Earlier question");
+    expect(index).toBeGreaterThan(0);
+
+    const rewind = controller.handle({ type: "rewind", index, rerun: false });
+    await replayStarted;
+    const turn = controller.handle({ type: "user_text", text: "Live question" });
+    await turnStarted;
+    expect(session.isRunning).toBe(true);
+    await controller.handle({ type: "voice_start" });
+    releaseReplay();
+    await rewind;
+
+    expect.soft(call.setBundle).not.toHaveBeenCalled();
+    expect.soft(sent.filter((message) => message.type === "running").at(-1)).toEqual({ type: "running", value: true });
+    releaseTurn();
+    await turn;
+    expect(sent.filter((message) => message.type === "messages").at(-1)?.messages.at(-1))
+      .toMatchObject({ role: "assistant", content: "Live reply." });
   });
 
   it("dispose tears the call down", async () => {
