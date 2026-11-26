@@ -29,6 +29,7 @@ export class KugelTTS extends tts.TTS {
   readonly session: KugelTtsSession;
   private readonly streams = new Map<number, KugelSynthesizeStream>();
   private turnCounter = 0;
+  private closing = false;
 
   constructor(config: KugelTtsConfig) {
     // `alignedTranscript` is the flag that makes the timed transcripts below
@@ -65,7 +66,14 @@ export class KugelTTS extends tts.TTS {
 
   /** One-shot synthesis: drive a streaming segment with the full text. */
   synthesize(text: string, connOptions?: APIConnectOptions): tts.ChunkedStream {
-    return new KugelChunkedStream(this, text, () => this.createStream(false), connOptions);
+    // LiveKit starts the one-shot task after this method returns. It can run
+    // after close() has already cancelled all registered streams.
+    return new KugelChunkedStream(
+      this,
+      text,
+      () => this.closing ? undefined : this.createStream(false),
+      connOptions,
+    );
   }
 
   /** Report playback failures to the caller of this stream, outside the session error budget. */
@@ -81,6 +89,7 @@ export class KugelTTS extends tts.TTS {
   }
 
   async close(): Promise<void> {
+    this.closing = true;
     for (const stream of this.streams.values()) stream.close();
     await this.session.close();
     await super.close();
@@ -263,7 +272,7 @@ class KugelChunkedStream extends tts.ChunkedStream {
   constructor(
     kugel: KugelTTS,
     text: string,
-    private readonly createStream: () => KugelSynthesizeStream,
+    private readonly createStream: () => KugelSynthesizeStream | undefined,
     connOptions?: APIConnectOptions,
   ) {
     super(text, kugel, connOptions);
@@ -272,6 +281,7 @@ class KugelChunkedStream extends tts.ChunkedStream {
   protected async run(): Promise<void> {
     if (this.abortSignal.aborted) return;
     const stream = this.createStream();
+    if (!stream) return;
     const closeStream = () => stream.close();
     this.abortSignal.addEventListener("abort", closeStream, { once: true });
     try {

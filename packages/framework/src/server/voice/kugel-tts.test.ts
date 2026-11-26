@@ -1,6 +1,10 @@
+import { initializeLogger } from "@livekit/agents";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
 import { KugelTtsSession, type KugelTtsConfig } from "./kugel-tts.js";
+import { KugelTTS } from "./livekit-host/kugel-tts-plugin.js";
+
+initializeLogger({ pretty: false, level: "silent" });
 
 type Frame = Record<string, unknown>;
 
@@ -48,6 +52,36 @@ class MockTtsServer {
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
   }
 }
+
+it("settles one-shot output when the provider closes before a context can open", async () => {
+  const server = new MockTtsServer();
+  await server.start();
+  const provider = new KugelTTS({
+    apiBase: `http://127.0.0.1:${server.port}`,
+    apiKey: "test-key",
+    voiceId: 1072,
+    modelId: "kugel-3",
+    sampleRate: 24000,
+    language: "en",
+  });
+  // The socket handshake and the one-shot task both start asynchronously.
+  // Close in the same turn, before either can open a context.
+  const output = provider.synthesize("Hello.");
+  const closing = provider.close();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const deadline = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("One-shot output did not settle after provider close.")), 1000);
+    });
+    await Promise.race([closing, deadline]);
+    await expect(Promise.race([output.next(), deadline])).resolves.toMatchObject({ done: true });
+    expect(server.frames).toEqual([]);
+  } finally {
+    clearTimeout(timeout);
+    output.close();
+    await server.stop();
+  }
+});
 
 describe("KugelTtsSession wire protocol", () => {
   let server: MockTtsServer;
