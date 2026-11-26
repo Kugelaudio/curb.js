@@ -89,6 +89,15 @@ export function createWarmAgentBundle(agentId?: string): Promise<VoiceAgentBundl
   return buildBundle(agentId);
 }
 
+/**
+ * The platform's greeting check (`CURB_READINESS_GREETING=1`): the bundle a call takes, key
+ * check included, recording nothing. The check is a conversation with no caller, so it leaves
+ * no conversation behind.
+ */
+export async function createProbeAgentBundle(agentId?: string): Promise<VoiceAgentBundle> {
+  return readyForCall(await buildBundle(agentId, undefined, { recordConversation: false }));
+}
+
 /** `bundle`, once its LLM has a key in this process; rejects naming the key otherwise. */
 export async function readyForCall(bundle: VoiceAgentBundle): Promise<VoiceAgentBundle> {
   try {

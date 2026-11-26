@@ -76,6 +76,7 @@ These apply to a built artifact, and to `curb dev` and `curb start` with a manag
 | `CURB_REALTIME_URL`, `CURB_REALTIME_TOKEN` | Join this one room directly and serve one call |
 | `CURB_SESSION_ID` | The call's id on a direct join. Default: the room name |
 | `CURB_READINESS_PROBE` | `1` loads the bundle, builds the agent and exits |
+| `CURB_READINESS_GREETING` | `1` beside the probe also says the agent's greeting in its own voice and exits at the first audio |
 
 ## `package.json`
 
