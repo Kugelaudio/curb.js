@@ -11,7 +11,7 @@ npx curb build [--out <dir>] [--no-verify] [--emit-layers <dir>] [--dependency-l
 
 | Option | What it does |
 |---|---|
-| `--out <dir>` | Another output directory |
+| `--out <dir>` | Another output directory. It cannot be the project root or contain it. |
 | `--no-verify` | Skips starting the artifact |
 | `--emit-layers <dir>` | Also records the dependency layer split, for a hosted builder |
 | `--dependency-layer <file>` | Builds only the app layer from that descriptor. Exits 75 when the project reaches past the recorded inputs |

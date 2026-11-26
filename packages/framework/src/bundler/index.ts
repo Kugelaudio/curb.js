@@ -1,7 +1,7 @@
-import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createRequire } from "node:module";
 import * as esbuild from "esbuild";
 import { generateAgentModulesCode } from "./agent-modules.js";
@@ -215,6 +215,16 @@ export async function runCurbBuild(options: BuildOptions): Promise<BuildResult> 
       `curb build: ${projectRoot} has no src/agent directory.\n` +
         `  A curb project keeps its agent and skills there. Run this from a project root.`,
     );
+  }
+
+  if (existsSync(outDir)) {
+    const projectFromOutput = relative(await realpath(outDir), await realpath(projectRoot));
+    if (projectFromOutput === "") {
+      throw new Error("curb build: the output directory is the project root. Choose a separate directory with --out.");
+    }
+    if (!isAbsolute(projectFromOutput) && projectFromOutput !== ".." && !projectFromOutput.startsWith(".." + sep)) {
+      throw new Error("curb build: the output directory contains the project root. Choose a separate directory with --out.");
+    }
   }
 
   const emitLayersDir = options.emitLayers === undefined ? undefined : resolve(options.emitLayers);

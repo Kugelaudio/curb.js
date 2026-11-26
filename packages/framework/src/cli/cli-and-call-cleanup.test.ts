@@ -1,6 +1,6 @@
 import { fork, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -153,13 +153,8 @@ describe("curb build --out", () => {
   const curbBuild = (cwd: string, args: string[]) =>
     spawnSync(process.execPath, [BIN, "build", ...args], { cwd, env: projectEnv(), encoding: "utf8", timeout: 120_000 });
 
-  it.each([
-    ["it is followed by another flag", ["--out", "--no-verify", "--no-trace"]],
-    ["it is the last argument", ["--no-verify", "--no-trace", "--out"]],
-    ["it is passed an empty argument", ["--out", ""]],
-  ])("needs a value when %s", (_, args) => {
-    const root = createTestProject({
-      "src/agent/agent.tsx": `import { Agent, SystemPrompt, defineAgent } from "curb";
+  const agentPath = "src/agent/agent.tsx";
+  const agentSource = `import { Agent, SystemPrompt, defineAgent } from "curb";
 
 export function App() {
   return (
@@ -170,8 +165,14 @@ export function App() {
 }
 
 export const agent = defineAgent({ app: App });
-`,
-    });
+`;
+
+  it.each([
+    ["it is followed by another flag", ["--out", "--no-verify", "--no-trace"]],
+    ["it is the last argument", ["--no-verify", "--no-trace", "--out"]],
+    ["it is passed an empty argument", ["--out", ""]],
+  ])("needs a value when %s", (_, args) => {
+    const root = createTestProject({ [agentPath]: agentSource });
     try {
       const result = curbBuild(root, args);
       expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
@@ -181,6 +182,42 @@ export const agent = defineAgent({ app: App });
       expect(existsSync(join(root, ".curb", "standalone"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  }, 130_000);
+
+  it.each(["relative", "absolute"])("rejects the project root as a %s output path", (pathKind) => {
+    const sentinel = "Keep this file.\n";
+    const root = createTestProject({ [agentPath]: agentSource, "sentinel.txt": sentinel });
+    try {
+      const out = pathKind === "relative" ? "." : root;
+      const result = curbBuild(root, ["--out", out, "--no-verify", "--no-trace"]);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
+      expect(result.stderr).toContain("curb build: the output directory is the project root.");
+      expect(readFileSync(join(root, agentPath))).toEqual(Buffer.from(agentSource));
+      expect(readFileSync(join(root, "sentinel.txt"))).toEqual(Buffer.from(sentinel));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 130_000);
+
+  it("rejects an output directory containing the project root", () => {
+    const parent = mkdtempSync(join(tmpdir(), "curb-build-parent-"));
+    const root = join(parent, "project");
+    const source = join(root, agentPath);
+    const sentinelPath = join(parent, "sentinel.txt");
+    const sentinel = "Keep the parent directory.\n";
+    try {
+      mkdirSync(join(root, "src", "agent"), { recursive: true });
+      writeFileSync(source, agentSource);
+      writeFileSync(sentinelPath, sentinel);
+
+      const result = curbBuild(root, ["--out", parent, "--no-verify", "--no-trace"]);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
+      expect(result.stderr).toContain("curb build: the output directory contains the project root.");
+      expect(readFileSync(source)).toEqual(Buffer.from(agentSource));
+      expect(readFileSync(sentinelPath)).toEqual(Buffer.from(sentinel));
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
     }
   }, 130_000);
 });
