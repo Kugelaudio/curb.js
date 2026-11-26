@@ -8,7 +8,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createTestProject } from "../cli/test-project.js";
 import * as voiceHost from "../voice-host.js";
-import { ConversationStore, detachConversationRecorder, setConversationSink } from "./conversation-store.js";
+import {
+  ConversationStore,
+  detachConversationRecorder,
+  recordedConversationId,
+  setConversationSink,
+} from "./conversation-store.js";
 import { createAgentServer } from "./main.js";
 import type { ServerMessage } from "./protocol.js";
 
@@ -101,6 +106,9 @@ describe("preview conversation recording", () => {
           const closed = once(socket, "close");
           socket.close();
           await closed;
+          // The client's close can land before the server's socket emits its own; the server
+          // has seen the disconnect once it detached the live session's recorder.
+          await vi.waitFor(() => expect(recordedConversationId(session)).toBeNull());
         } else {
           session.recordHeard("assistant", "The live transcript advanced.");
         }
