@@ -9,7 +9,7 @@ import type { VoiceAgentBundle } from "../voice-host.js";
  * its opening, and say it in the agent's own voice until the first audio frame arrives.
  *
  * A hosted platform runs it once after each activation, before it shows the version as live
- * (`CURB_READINESS_PROBE=greeting`). The render check proves the bundle loads; it says nothing
+ * (`CURB_READINESS_GREETING=1` beside `CURB_READINESS_PROBE=1`). The render check proves the bundle loads; it says nothing
  * about the model key being set or the voice answering, and a version that loads but cannot
  * speak is the failure callers meet as silence. Nothing joins a room and nothing is recorded:
  * the check is a conversation with no caller.

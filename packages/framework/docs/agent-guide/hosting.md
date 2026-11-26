@@ -142,7 +142,7 @@ The built entrypoint picks its mode from the environment, one of four:
 | Environment | Mode |
 |---|---|
 | `CURB_READINESS_PROBE=1` | load the bundle, construct the agent, exit 0; touches no media |
-| `CURB_READINESS_PROBE=greeting` | the same, then open a conversation with no caller and say the agent's greeting in its own voice: exit 0 at the first audio frame, 69 when the agent could not greet (the log line names the step: `agent`, `greeting` or `voice`). Needs the call's keys, never a room; records nothing and never prints what the agent said |
+| `CURB_READINESS_PROBE=1` + `CURB_READINESS_GREETING=1` | the same, then open a conversation with no caller and say the agent's greeting in its own voice: exit 0 at the first audio frame, 69 when the agent could not greet (the log line names the step: `agent`, `greeting` or `voice`). Needs the call's keys, never a room; records nothing and never prints what the agent said |
 | `CURB_MANAGEMENT_ADDR` (+ `CURB_MANAGEMENT_TOKEN`) | managed runner, below; with `CURB_RUNNER_ROLE=hooks`, a [hook runner](#hook-runner) |
 | `CURB_REALTIME_URL` + `CURB_REALTIME_TOKEN` | direct join: join that one already-created room, serve one call, exit |
 | none of the above | LiveKit worker, exactly like `npm start` (needs the three `LIVEKIT_*` variables): the same job, under the same name (`CURB_AGENT_NAME`, otherwise the package name `curb build` baked in) |

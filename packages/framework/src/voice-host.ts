@@ -90,7 +90,7 @@ export function createWarmAgentBundle(agentId?: string): Promise<VoiceAgentBundl
 }
 
 /**
- * The platform's greeting check (`CURB_READINESS_PROBE=greeting`): the bundle a call takes, key
+ * The platform's greeting check (`CURB_READINESS_GREETING=1`): the bundle a call takes, key
  * check included, recording nothing. The check is a conversation with no caller, so it leaves
  * no conversation behind.
  */
