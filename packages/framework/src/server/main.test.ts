@@ -1,11 +1,15 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import { rmSync, writeFileSync } from "node:fs";
 import { connect, createServer, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createTestProject } from "../cli/test-project.js";
+import * as voiceHost from "../voice-host.js";
+import { ConversationStore, detachConversationRecorder, setConversationSink } from "./conversation-store.js";
+import { createAgentServer } from "./main.js";
 import type { ServerMessage } from "./protocol.js";
 
 /** An agent that loads but throws when it renders. */
@@ -37,6 +41,95 @@ function freePort(): Promise<number> {
     });
   });
 }
+
+function nextFrame<T extends ServerMessage["type"]>(socket: WebSocket, type: T) {
+  return new Promise<Extract<ServerMessage, { type: T }>>((resolve) => {
+    const receive = (data: WebSocket.RawData) => {
+      const frame = JSON.parse(String(data)) as ServerMessage;
+      if (frame.type !== type) return;
+      socket.off("message", receive);
+      resolve(frame as Extract<ServerMessage, { type: T }>);
+    };
+    socket.on("message", receive);
+  });
+}
+
+describe("preview conversation recording", () => {
+  it.each(["superseded reset", "disconnected reset", "aborted rewind"])(
+    "skips recording after a %s",
+    async (scenario) => {
+      const store = new ConversationStore(":memory:");
+      setConversationSink(store);
+      const build = voiceHost.createPreviewAgentBundle;
+      const create = vi.spyOn(voiceHost, "createPreviewAgentBundle");
+      let server: Awaited<ReturnType<typeof createAgentServer>> | undefined;
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => { release = resolve; });
+
+      try {
+        server = await createAgentServer({
+          dev: { publicUrl: "http://127.0.0.1:4000", onActivity: () => {}, quiet: true },
+        });
+        await server.listen();
+        const socket = new WebSocket(`ws://127.0.0.1:${server.port()}/`);
+        const active = (await nextFrame(socket, "conversations")).active;
+        const { session } = await create.mock.results[0]!.value;
+        session.recordHeard("user", "First question");
+        session.recordHeard("assistant", "First answer");
+        session.recordHeard("user", "Second question");
+        session.recordHeard("assistant", "Second answer");
+        await vi.waitFor(() => expect(store.listConversations(10)).toHaveLength(1));
+
+        let markBuilt!: (bundle: Awaited<ReturnType<typeof build>>) => void;
+        const built = new Promise<Awaited<ReturnType<typeof build>>>((resolve) => { markBuilt = resolve; });
+        create.mockImplementationOnce(async (...args) => {
+          const bundle = await build(...args);
+          markBuilt(bundle);
+          await blocked;
+          return bundle;
+        });
+
+        const request = scenario === "aborted rewind" ? { type: "rewind", index: 2, rerun: false } : { type: "reset" };
+        socket.send(JSON.stringify(request));
+        const abandoned = await built;
+
+        if (scenario === "superseded reset") {
+          const selected = nextFrame(socket, "conversations");
+          socket.send(JSON.stringify({ type: "select_conversation", id: active }));
+          expect((await selected).active).toBe(active);
+        } else if (scenario === "disconnected reset") {
+          const closed = once(socket, "close");
+          socket.close();
+          await closed;
+        } else {
+          session.recordHeard("assistant", "The live transcript advanced.");
+        }
+
+        const refused = scenario === "aborted rewind" ? nextFrame(socket, "error") : undefined;
+        release();
+        if (refused) expect(await refused).toMatchObject({ scope: "protocol" });
+        else await new Promise<void>((resolve) => setImmediate(resolve));
+
+        // A retained recorder would still persist a message from this abandoned session.
+        if (scenario !== "aborted rewind") abandoned.session.recordHeard("user", "Abandoned message");
+        await detachConversationRecorder(abandoned.session);
+        const records = store.listConversations(10);
+        expect(records).toHaveLength(1);
+        if (scenario === "aborted rewind") {
+          await vi.waitFor(() => expect(store.listMessages(records[0]!.id).at(-1)?.content)
+            .toBe("The live transcript advanced."));
+        }
+      } finally {
+        release();
+        await server?.reload([]);
+        create.mockRestore();
+        setConversationSink(null);
+        store.close();
+      }
+    },
+    15_000,
+  );
+});
 
 /**
  * `curb server` is a server for clients other than the preview: a client it cannot start a

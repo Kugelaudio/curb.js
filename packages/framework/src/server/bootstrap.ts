@@ -168,7 +168,7 @@ export async function createAgentSession(
   llm: AgentLlmClient,
   streamLlm?: AgentLlmStreamStep,
   agentId?: string,
-  options?: { spokenStyleSuffix?: string; llmTimeoutMs?: number; checkFollowThrough?: boolean },
+  options?: { spokenStyleSuffix?: string; llmTimeoutMs?: number; checkFollowThrough?: boolean; recordConversation?: boolean },
 ): Promise<HostedSession> {
   const { runtime, agentId: id, definition } = await createAgentRuntime(agentId);
   const session = new AgentSession(runtime, llm, {
@@ -201,7 +201,9 @@ export async function createAgentSession(
   // A sink that rejects never fails the session: the write is logged, counted and retried.
   // The host ends the recording with `detachConversationRecorder(session)` when the session
   // ends, which retries once more and reports anything still unwritten.
-  const sink = await resolveConversationSink();
-  if (sink) attachConversationSink(sink, session, id, () => runtime.info.snapshot());
+  if (options?.recordConversation !== false) {
+    const sink = await resolveConversationSink();
+    if (sink) attachConversationSink(sink, session, id, () => runtime.info.snapshot());
+  }
   return { runtime, session, agentId: id, definition };
 }
