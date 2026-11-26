@@ -399,6 +399,16 @@ export function assertLlmCredential(descriptor: LlmDescriptor): void {
   if (diagnostic) throw new AgentAuthoringError(diagnostic);
 }
 
+/** The Anthropic key the transport would use (the environment, else a local secrets file), or
+ * null. The startup check sends it to Anthropic once; nothing prints it. */
+export function anthropicApiKeyOrNull(): string | null {
+  try {
+    return getAnthropicApiKey();
+  } catch {
+    return null;
+  }
+}
+
 function getAnthropicApiKey(): string {
   const envKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (envKey) return envKey;

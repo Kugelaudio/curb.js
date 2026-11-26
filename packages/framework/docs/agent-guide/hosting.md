@@ -142,7 +142,8 @@ The built entrypoint picks its mode from the environment, one of four:
 | Environment | Mode |
 |---|---|
 | `CURB_READINESS_PROBE=1` | load the bundle, construct the agent, exit 0; touches no media |
-| `CURB_READINESS_PROBE=1` + `CURB_READINESS_GREETING=1` | the same, then open a conversation with no caller and say the agent's greeting in its own voice: exit 0 at the first audio frame, 69 when the agent could not greet (the log line names the step: `agent`, `greeting` or `voice`). Needs the call's keys, never a room; records nothing and never prints what the agent said |
+| `CURB_READINESS_PROBE=1` + `CURB_READINESS_STARTUP=1` | the same, then run the [startup check](#startup-check): exit 0 when the agent can work, 78 with the reason when it cannot. Needs the call's keys, never a room |
+| `CURB_READINESS_PROBE=1` + `CURB_READINESS_GREETING=1` | the startup check, then open a conversation with no caller and say the agent's greeting in its own voice: exit 0 at the first audio frame, 69 when the agent could not greet (the log line names the step: `agent`, `greeting` or `voice`). Needs the call's keys, never a room; records nothing and never prints what the agent said |
 | `CURB_MANAGEMENT_ADDR` (+ `CURB_MANAGEMENT_TOKEN`) | managed runner, below; with `CURB_RUNNER_ROLE=hooks`, a [hook runner](#hook-runner) |
 | `CURB_REALTIME_URL` + `CURB_REALTIME_TOKEN` | direct join: join that one already-created room, serve one call, exit |
 | none of the above | LiveKit worker, exactly like `npm start` (needs the three `LIVEKIT_*` variables): the same job, under the same name (`CURB_AGENT_NAME`, otherwise the package name `curb build` baked in) |
@@ -378,6 +379,53 @@ When `curb start` serves a management port (`CURB_MANAGEMENT_ADDR` and
 `CURB_MANAGEMENT_TOKEN`), every call is registered on it under its room name, the agent's
 `useSend().toHost` reaches the events stream, and the host can send messages, change
 settings and end the call. See [Hosting a Curb agent yourself](./hosting.md#management-port-in-dev-and-worker-mode).
+
+## Startup check
+
+An agent that cannot answer a call stops before it reports ready, with one line that names
+the setting and how to set it. `npm start`, a built artifact in worker mode and the readiness
+probe with `CURB_READINESS_STARTUP=1` all run the same check:
+
+- the agent renders without authoring errors;
+- every key its providers need is set, and each provider accepts it, asked with the
+  cheapest request the key allows (listing models or reading the voice), 5 seconds at most;
+- the model and the voice it is configured with exist.
+
+A key that is missing makes the start look like this, and the process exits with code 78:
+
+```text
+curb: startup check failed: KUGELAUDIO_API_KEY is not set, and the agent's providers need it. Run `npx curb login` in the project, or set KUGELAUDIO_API_KEY to an API key from the dashboard. A hosted agent gets it from the platform.
+curb-startup-check {"ok":false,"problems":[{"setting":"KUGELAUDIO_API_KEY","reason":"missing","message":"..."}]}
+```
+
+A configuration that works prints:
+
+```text
+curb: startup check passed; the agent renders and every provider it starts with accepted its key
+curb-startup-check {"ok":true,"problems":[]}
+```
+
+The `curb-startup-check` line is for your deployment tooling. `reason` is one of `missing`,
+`rejected` (the provider refused the key), `not_found` (no such model or voice),
+`unreachable` (the provider's address did not answer in time) or `invalid_agent`, and
+`setting` names what to change. Key values never appear in the output. A provider that is
+reachable but having an outage of its own does not stop the agent.
+
+To check a deployment before it takes traffic, run the artifact as a probe with the keys it
+will run with:
+
+```bash
+cd dist
+CURB_READINESS_PROBE=1 CURB_READINESS_STARTUP=1 KUGELAUDIO_API_KEY=... \
+  node "$(node -p 'require("./curb.bundle.json").entrypoint')"
+echo $?   # 0 when the agent can work, 78 when it cannot
+```
+
+The check asks nothing of the greeting, so an agent whose caller speaks first passes it the
+same way. A managed runner checks the keys it holds during warmup and never announces
+`ready` when one is refused; a key that arrives with the call is checked when the call
+starts. Set `CURB_STARTUP_CHECK=off` only on a machine that must start the agent without
+its keys, as `curb build` does when it starts the artifact to confirm it boots.
 
 ## Next steps
 

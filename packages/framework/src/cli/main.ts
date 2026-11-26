@@ -195,6 +195,16 @@ async function start(): Promise<void> {
         "Add the LiveKit credentials to the project's .env or hosting secret store.",
     );
   }
+  // Before the worker registers: an agent that cannot work (a missing or refused key, a voice
+  // that does not exist) stops here with the reason, instead of taking calls it answers with silence.
+  const { assertAgentStartup, StartupCheckError, startupCheckOff } = await import("../server/startup-check.js");
+  try {
+    if (!startupCheckOff()) await assertAgentStartup();
+  } catch (error) {
+    if (!(error instanceof StartupCheckError)) throw error;
+    process.stderr.write("", () => process.exit(78)); // EX_CONFIG; the report is printed
+    await new Promise(() => {});
+  }
   const { loadVoiceWorkerConfig } = await import("../orchestration.node.js");
   const { entry, agentName } = await loadVoiceWorkerConfig(projectRoot);
   const { cli: livekitCli, ServerOptions } = await import("@livekit/agents");
