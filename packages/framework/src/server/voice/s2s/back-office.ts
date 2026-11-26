@@ -13,6 +13,7 @@
 import type { AgentSession } from "../../../agent-session.js";
 import type { CallReporter } from "../../../hosted/call-reporter.js";
 import type { AgentTurnStreamEvent } from "../../../llm/types.js";
+import { growsHeardLine } from "../../../heard-line.js";
 import { END_CALL_TOOL_NAME } from "../../../types.js";
 import { reportTurnEvent } from "../turn-report.js";
 
@@ -45,6 +46,23 @@ export function commentaryPieces(text: string): string[] {
  * arrive in either order, so a call this close to the answer is about that same answer. */
 const ANSWER_WINDOW_MS = 4000;
 
+/** A model may hand a turn over before the caller's last words, which its transcript of the line
+ * then brings, seconds later. A transcript that grows the words of a delegation this recent is the
+ * whole of that turn. */
+const LATE_WORDS_MS = 4000;
+
+/** A reply of the back office that asks the caller something waits for their answer, but the
+ * model need not hand that answer over: a short yes needs none of the work it was told about. A
+ * delegation comes before the transcript of its line, so a caller's line this long after its
+ * transcript with none is an answer the model kept, and Curb takes it itself. */
+const HAND_BACK_WAIT_MS = 1500;
+
+/** A question this old is no longer what the caller answers. */
+const QUESTION_STALE_MS = 60_000;
+
+/** The reply ends on a question to the caller. */
+const asksCaller = (reply: string) => /\?[\s"'»«“”„)\]]*$/u.test(reply.trim());
+
 /** A transcript lags its speech by seconds, so a start this old belongs to no line still coming. */
 const SPEECH_START_STALE_MS = 30_000;
 
@@ -60,6 +78,19 @@ const ALREADY_REPORTED = "The back office has reported this already. Say nothing
 const sameWords = (text: string) => text.trim().toLowerCase();
 
 const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+
+/** The newest delegation's turn: `whole` is the caller's line its words turned out to be the start
+ * of while it ran, which a turn answers next; `id` is the delegation its reply goes to, null for a
+ * caller's answer Curb took itself (`own`) until a delegation comes for it. */
+type HandedOver = {
+  id: string | null;
+  own: boolean;
+  words: string;
+  at: number;
+  running: boolean;
+  whole: { words: string; transcribed: boolean } | null;
+  done: Promise<void>;
+};
 
 export function createBackOffice(options: {
   session: () => AgentSession;
@@ -88,6 +119,12 @@ export function createBackOffice(options: {
   let heldSince: number | null = null;
   /** The words of replies said as written whose transcript has not all come in. */
   const unheardVerbatim: string[][] = [];
+  /** The newest delegation's words; `whole` is the caller's line they turned out to be the start
+   * of, while that turn still runs. */
+  let handedOver: HandedOver | null = null;
+  /** When the back office last asked the caller something on its way back from a delegation,
+   * until a delegation or a caller's line answers it. */
+  let question: { at: number } | null = null;
 
   const noteHeld = () => {
     if (!options.session().pendingConfirmation) heldSince = null;
@@ -107,15 +144,20 @@ export function createBackOffice(options: {
 
   /** `request` is the model's own wording, which no caller said; anything else is the caller's.
    * `saidAsWritten` keeps the reply as said. `observe` sees the events of a turn this call starts,
-   * after the call's record did. */
+   * after the call's record did. `transcribed`: the transcript of these words came in already. */
   const turnFor = (
     words: string,
-    { request = false, saidAsWritten = false, observe }: { request?: boolean; saidAsWritten?: boolean; observe?: (event: AgentTurnStreamEvent) => void } = {},
+    {
+      request = false,
+      saidAsWritten = false,
+      transcribed = false,
+      observe,
+    }: { request?: boolean; saidAsWritten?: boolean; transcribed?: boolean; observe?: (event: AgentTurnStreamEvent) => void } = {},
   ): Promise<string> => {
     const key = sameWords(words);
     const known = turns.get(key);
     if (known) return known;
-    if (!request) taken.add(key);
+    if (!request && !transcribed) taken.add(key);
     const turn = options
       .session()
       .runTurn(words, { unsaid: !saidAsWritten, ...(request ? { kind: "synthetic" as const } : { heard: true }) }, (event) => {
@@ -144,6 +186,8 @@ export function createBackOffice(options: {
     // An empty turn has nothing to say, so its note stays a note to the model.
     const verbatim = saysAsWritten(delegationId) && reply.trim() !== "";
     if (verbatim) unheardVerbatim.push(wordsOf(reply));
+    // On `verbatim` the endpoint hands the answer back itself (`expects_reply`).
+    else if (delegationId !== null && !options.verbatim && asksCaller(reply)) question = { at: Date.now() };
     for (const piece of commentaryPieces(reply || NOTHING_TO_ADD)) {
       options.voice()?.appendCommentary(piece, { delegationId, ...(verbatim ? { expectsReply: true } : {}) });
     }
@@ -167,6 +211,79 @@ export function createBackOffice(options: {
 
   const ask = (words: string, delegationId: string | null): Promise<void> =>
     counted(turnFor(words, { saidAsWritten: saysAsWritten(delegationId) }).then((reply) => tell(reply, delegationId)));
+
+  /** A delegation's turn. When the caller's line turns out to go on past its words while it runs,
+   * its reply answers a fragment ("order three nine nine five" of "… five zero"), so a turn on the
+   * whole line answers instead. That turn sees what the first one ran, so nothing runs twice.
+   * `transcribed`: the transcript of `words` came in already. */
+  const handOver = (id: string | null, words: string, { guessed = false, transcribed = false } = {}): Promise<void> => {
+    const turn = handedOver;
+    if (turn && Date.now() - turn.at <= LATE_WORDS_MS) {
+      const same = sameWords(words) === sameWords(turn.whole?.words ?? turn.words);
+      if (turn.running && (same || growsHeardLine(turn.words, words))) {
+        // The model handed the same line over again, perhaps with its end: the running turn
+        // answers this delegation, and the one before has nothing to add.
+        if (turn.id !== null) tell("", turn.id);
+        turn.id = id ?? turn.id;
+        if (!same) turn.whole = { words, transcribed };
+        return turn.done;
+      }
+      // A delegation with no words of its own, right after its line was answered, is that line,
+      // and so is one for an answer Curb took itself, whose reply went out already.
+      if (!turn.running && same && id !== null && (guessed || turn.own)) {
+        tell("", id);
+        return Promise.resolve();
+      }
+    }
+    const next: HandedOver = { id, own: id === null, words, at: Date.now(), running: true, whole: null, done: Promise.resolve() };
+    handedOver = next;
+    const saidAsWritten = saysAsWritten(id);
+    const run = async () => {
+      try {
+        let reply = await turnFor(words, { saidAsWritten, transcribed });
+        while (next.whole !== null) {
+          const whole = next.whole;
+          next.whole = null;
+          next.words = whole.words;
+          reply = await turnFor(whole.words, { saidAsWritten, transcribed: whole.transcribed });
+        }
+        return reply;
+      } finally {
+        next.running = false;
+      }
+    };
+    next.done = counted(run().then((reply) => tell(reply, next.id)));
+    return next.done;
+  };
+
+  /** A finished caller line that is the newest delegation's words and more: the rest of that turn. */
+  const lateWords = (line: string): void => {
+    const turn = handedOver;
+    if (!turn || Date.now() - turn.at > LATE_WORDS_MS) return;
+    // The line a delegation handed over again, which its transcript now brings.
+    if (turn.whole && sameWords(turn.whole.words) === sameWords(line)) turn.whole.transcribed = true;
+    if (!growsHeardLine(turn.whole?.words ?? turn.words, line)) return;
+    if (turn.running) turn.whole = { words: line, transcribed: true };
+    // The fragment's reply went out already: the whole line still gets its answer.
+    else void handOver(turn.id, line, { transcribed: true }).catch(() => undefined);
+  };
+
+  /** A caller's line after the back office asked them something. When no delegation comes for
+   * it, it is the answer the model kept, and Curb runs it as the model would have handed it over. */
+  const answerQuestion = (line: string, startedAt: number | undefined): void => {
+    const asked = question;
+    if (!asked || (startedAt ?? Date.now()) <= asked.at) return;
+    question = null;
+    if (Date.now() - asked.at > QUESTION_STALE_MS) return;
+    const since = handedOver;
+    void counted(
+      new Promise<void>((resolve) => setTimeout(resolve, HAND_BACK_WAIT_MS)).then(async () => {
+        // A delegation came for this line, or for one after it.
+        if (handedOver !== since) return;
+        await handOver(null, line, { transcribed: true });
+      }),
+    ).catch(() => undefined);
+  };
 
   /** The caller answered a held action: a tool call waiting for it gets the outcome, else the model is told. */
   const answerHeld = (words: string) => {
@@ -195,7 +312,9 @@ export function createBackOffice(options: {
     /** The model handed a turn over. Its transcript may lag: the newest line stands in for it. */
     delegated(delegationId: string, pendingTranscript: string): Promise<void> {
       latest = delegationId;
-      return ask(pendingTranscript.trim() || lastCallerLine, delegationId);
+      question = null;
+      const words = pendingTranscript.trim();
+      return handOver(delegationId, words || lastCallerLine, { guessed: !words });
     },
     /** The model called its tool: the same turn, with the outcome as the tool's result. */
     async asked(request: string): Promise<string> {
@@ -230,8 +349,13 @@ export function createBackOffice(options: {
       flush();
       noteHeld();
       if (role === "user" && heldSince !== null && startedAt !== undefined && startedAt >= heldSince) {
+        question = null;
         answerHeld(text);
+        return;
       }
+      if (role !== "user") return;
+      lateWords(text);
+      answerQuestion(text, startedAt);
     },
     /** Nobody spoke for a while after the model's line: the call may be over. This turn may act,
      * but it speaks only to end the call: anything else it writes would be said over a caller who

@@ -762,9 +762,11 @@ export class AgentSiteRuntime {
 }
 
 /** For `llm` behind a speech-to-speech model, which words no turn of its own: a turn left empty
- * would end the job with the caller still waiting. */
+ * would end the job with the caller still waiting. What it is handed is a transcript, so asking
+ * the caller to confirm it again adds a turn the model may not hand back; and the model says its
+ * reply, so a reply that claims an action no tool ran is told to the caller as done. */
 const HANDED_OVER_RULE =
-  "You hear only what the voice model hands over, and nothing runs again until the next hand-over. End every turn with a tool call or a short reply for the caller, never with nothing. If what you were handed does not let you act yet, reply with one short question for what you still need.";
+  "You hear only what the voice model hands over, and nothing runs again until the next hand-over. End every turn with a tool call or a short reply for the caller, never with nothing. Act on what you have: when what you were handed gives a tool what it needs, call it now instead of asking the caller to confirm it again. Never say that you did, are doing or will do something a tool does unless you called that tool in this turn. Ask one short question only for what you still need.";
 
 /** What the model reads when a tool handler throws something other than a
  * `ToolInputError`: it failed, the input was not the cause, and what to do

@@ -33,6 +33,11 @@ export function continuesHeardLine(line: string, part: string): boolean {
   return repeats(said, next) || grows(said, next);
 }
 
+/** `part` is all of `line` and more words: a later transcript of the same line, with its end. */
+export function growsHeardLine(line: string, part: string): boolean {
+  return grows(words(line), words(part));
+}
+
 /** `line` with `part` added: kept as it is when `part` repeats it, replaced when `part` grows it. */
 export function joinHeardLine(line: string, part: string): string {
   const said = words(line);

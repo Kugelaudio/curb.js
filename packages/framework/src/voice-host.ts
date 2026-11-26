@@ -14,6 +14,7 @@ import {
   getHostedAgent,
   type HostedSession,
 } from "./server/bootstrap.js";
+import { Throttle, withRetries, withStreamRetries, type RetryOptions } from "./llm/resilience.js";
 import { s2sCredentialDiagnostic } from "./s2s-diagnostics.js";
 import { detachConversationRecorder } from "./server/conversation-store.js";
 import { VOICE_STYLE } from "./voice-style.js";
@@ -52,6 +53,32 @@ export type LlmTransportOptions = Pick<AiSdkAgentOptions, "onUsage" | "maxRetrie
 export type LlmTransportWrap = (
   transports: (options?: LlmTransportOptions) => LlmTransports,
 ) => LlmTransports & { llmTimeoutMs?: number };
+
+/**
+ * How long one LLM request of a live call waits for its provider's rate limit to lift before the
+ * turn fails. A caller is on the line, so this is seconds, not the minutes a test run waits: a
+ * rate limit that names no pause is tried again after about 2, 4 and 8 seconds, and one that names
+ * a longer pause than is left fails at once. The turn's own deadline (`AGENT_LLM_TIMEOUT_MS`) still
+ * holds over all of it.
+ */
+export const LIVE_RATE_LIMIT_PATIENCE_MS = 15_000;
+
+/**
+ * The LLM transports of a live call (every bundle a host builds without a wrap of its own): a
+ * request the provider rate limits is sent again after the pause it asks for, so a short burst of
+ * 429s (several calls on one key, a speech model's back office asking at once) does not end a turn
+ * in the fallback line. The provider SDK's own retries are off, since they do not wait out a rate
+ * limit; other errors a retry can get past are tried as often as the SDK did. `retry` stands in for
+ * the clock (a `throttle` on a clock of its own), the waiting and the dice in tests.
+ */
+export function liveTransportWrap(retry: Pick<RetryOptions, "sleep" | "random" | "throttle"> = {}): LlmTransportWrap {
+  return (transports) => {
+    const { llm, streamLlm } = transports({ maxRetries: 0 });
+    // One call's requests share what the provider said about its limit.
+    const options: RetryOptions = { throttle: new Throttle(), ...retry, attempts: 3, rateLimitPatienceMs: LIVE_RATE_LIMIT_PATIENCE_MS };
+    return { llm: withRetries(llm, options), streamLlm: withStreamRetries(streamLlm, options) };
+  };
+}
 
 /**
  * A hosted runner's warmup: the bundle without the LLM key check. The platform saves its
@@ -107,7 +134,7 @@ async function buildBundle(agentId: string | undefined, wrap?: LlmTransportWrap)
     llm: (request) => runAiSdkAgent(request, { llm: llm(), ...options }),
     streamLlm: (request) => streamAiSdkAgent(request, { llm: llm(), ...options }),
   });
-  const used: ReturnType<LlmTransportWrap> = wrap ? wrap(transports) : transports();
+  const used: ReturnType<LlmTransportWrap> = (wrap ?? liveTransportWrap())(transports);
   const bundle = await createAgentSession(used.llm, used.streamLlm, hosted.id, {
     spokenStyleSuffix: VOICE_STYLE.join("\n"),
     llmTimeoutMs: used.llmTimeoutMs,
