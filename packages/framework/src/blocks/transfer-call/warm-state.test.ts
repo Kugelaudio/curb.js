@@ -191,6 +191,24 @@ describe("warm transfer states", () => {
     });
   });
 
+  it("gives a reply heard in time one grace to be read, and asks nothing again in it", () => {
+    const late = run(...consulting, { type: "consult_timeout", replyPending: true });
+    expect(late).toEqual({ state: { phase: "consulting", unclear: 0, overtime: true }, effects: [{ type: "grace" }] });
+    expect(step(late.state, decide("yes")).state).toEqual({ phase: "connecting" });
+    expect(step(late.state, decide("no")).state).toMatchObject({ outcome: "declined", reason: "declined" });
+    expect(step(late.state, decide("voicemail")).state).toMatchObject({ outcome: "no_answer", reason: "voicemail" });
+    const timedOut = {
+      state: { phase: "ended", outcome: "no_answer", reason: "consult_timeout" },
+      effects: [{ type: "end_consult", decision: "no_answer", reason: "consult_timeout", send: true, farewell: false }],
+    };
+    expect(step(late.state, decide("unclear"))).toEqual(timedOut);
+    // The grace runs out, with the reply still pending or not.
+    expect(step(late.state, { type: "consult_timeout", replyPending: true })).toEqual(timedOut);
+    expect(step(late.state, { type: "consult_timeout" })).toEqual(timedOut);
+    // Nobody spoke: the deadline is the end.
+    expect(run(...consulting, { type: "consult_timeout", replyPending: false })).toEqual(timedOut);
+  });
+
   it("reads a person who hangs up during the consultation as declined", () => {
     expect(run(...consulting, { type: "target_left" }).effects).toEqual([
       {

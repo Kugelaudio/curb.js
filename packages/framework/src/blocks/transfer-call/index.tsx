@@ -80,7 +80,8 @@ export interface TransferCallRequest {
    * the agent calls the number, says `brief` and listens. Their yes, in any words, puts the
    * caller through. A no, an unclear answer after one more question, a mailbox, or no answer
    * within `consultTimeoutSeconds` (10 to 120, default 45, from their pickup) ends their call,
-   * and the agent is back with the caller with the outcome. Default: no consultation.
+   * and the agent is back with the caller with the outcome. A reply given in time is still read,
+   * for up to 10 s more. Default: no consultation.
    */
   warm?: { brief: string; consultTimeoutSeconds?: number };
 }
@@ -495,7 +496,8 @@ export interface TransferCallToolProps {
   onEnded?: TransferEndedOption;
   /** Ask the person at the number first: the tool then also takes a `brief` the model writes,
    * said to them before they take the call. `{ consultTimeoutSeconds }` (10 to 120, default 45)
-   * bounds the consultation from their pickup. Default: no consultation. */
+   * bounds waiting for their answer from their pickup; a reply given in time is still read.
+   * Default: no consultation. */
   warm?: boolean | { consultTimeoutSeconds?: number };
 }
 

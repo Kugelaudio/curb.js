@@ -8,6 +8,11 @@
  * often a reply was unclear is counted here, never by the model: the first unclear reply is asked
  * again, the second declines.
  *
+ * The consultation time bounds the wait for the person, never the agent's own reading: a reply
+ * heard before it ran out and not decided yet gets one grace to be read. A yes, a no or a
+ * voicemail then counts as ever; anything else, or a grace that runs out too, ends the
+ * consultation unanswered, without asking again.
+ *
  * `step` takes the state and one event and returns the next state and what to do: ask again,
  * or end the consultation with a decision for the host (`call.transfer.decide`). `warm.ts` runs
  * the effects.
@@ -56,7 +61,10 @@ export type WarmEvent =
   | { type: "dial_result"; outcome: WarmDialResult }
   /** The model's reading of one reply of the person. */
   | { type: "decision"; decision: ConsultDecision }
-  | { type: "consult_timeout" }
+  /** The consultation time ran out. `replyPending`: a reply of the person heard before it ran out
+   * is not decided yet (the model is reading it, or it waits for the agent's line to finish). The
+   * same event again ends the grace that pending reply got. */
+  | { type: "consult_timeout"; replyPending?: boolean }
   /** The person hung up during the consultation. */
   | { type: "target_left" }
   /** The model, the voice or the room failed. */
@@ -70,8 +78,9 @@ export type WarmEvent =
 export type WarmState =
   | { phase: "requesting" }
   | { phase: "dialing" }
-  /** `unclear`: how many replies so far were unclear. */
-  | { phase: "consulting"; unclear: number }
+  /** `unclear`: how many replies so far were unclear. `overtime`: the consultation time ran out
+   * while a reply was being read; that reading is the last. */
+  | { phase: "consulting"; unclear: number; overtime?: true }
   | { phase: "connecting" }
   | { phase: "handed_off" }
   | {
@@ -83,6 +92,8 @@ export type WarmState =
 export type WarmEffect =
   /** Ask the person once more whether they can take the call. */
   | { type: "ask_again" }
+  /** The consultation time ran out while a reply was being read: give it the grace. */
+  | { type: "grace" }
   /**
    * The consultation is over. `send`: tell the host with `call.transfer.decide`; false when the
    * host itself reported the end (a dial result). `farewell`: the person heard the question and
@@ -217,6 +228,7 @@ export function step(state: WarmState, event: WarmEvent): WarmStep {
             case "voicemail":
               return end("no_answer", "no_answer", "voicemail");
             case "unclear":
+              if (state.overtime) return end("no_answer", "no_answer", "consult_timeout");
               if (state.unclear === 0)
                 return {
                   state: { phase: "consulting", unclear: 1 },
@@ -228,6 +240,8 @@ export function step(state: WarmState, event: WarmEvent): WarmStep {
           }
           return stay(state);
         case "consult_timeout":
+          if (event.replyPending && !state.overtime)
+            return { state: { ...state, overtime: true }, effects: [{ type: "grace" }] };
           return end("no_answer", "no_answer", "consult_timeout");
         case "target_left":
           return end("declined", "decline", "target_left");

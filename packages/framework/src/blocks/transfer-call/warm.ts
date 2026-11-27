@@ -113,12 +113,15 @@ export interface WarmTiming {
   connectMs: number;
   /** After the end: how long a late `call.transfer.result` is still taken. */
   lingerMs: number;
+  /** After the consultation time ran out: how long a reply heard before it may still be read. */
+  graceMs: number;
 }
 
 const TIMING: WarmTiming = {
   greetingMs: 2_500,
   connectMs: 30_000,
   lingerMs: 15_000,
+  graceMs: 10_000,
 };
 
 /** A validated warm transfer request. */
@@ -230,7 +233,7 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
   // What the closures below change, kept on one object so every read sees the latest.
   const live: {
     leg: ConsultLeg | null;
-    asking: { seq: number; controller: AbortController } | null;
+    asking: { seq: number; controller: AbortController; at: number } | null;
     speaking: { seq: number; controller: AbortController } | null;
     /** An ended consultation waiting for its closing line to play before the host hears it. */
     ending: Extract<WarmEffect, { type: "end_consult" }> | null;
@@ -376,7 +379,7 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
       live.asking?.controller.abort();
       const asked = ++seq;
       const controller = new AbortController();
-      live.asking = { seq: asked, controller };
+      live.asking = { seq: asked, controller, at: Date.now() };
       unheard = 0;
       host.ask(consultDecisionRequest(turns), controller.signal).then(
         (response) =>
@@ -419,6 +422,15 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
       for (const effect of next.effects) {
         if (effect.type === "ask_again") {
           sayToTarget(live.reading?.say ?? request.brief);
+          continue;
+        }
+        if (effect.type === "grace") {
+          // The time bounds waiting for the person, not reading what they said in it.
+          const why = live.asking
+            ? `while the model read a reply (for ${Date.now() - live.asking.at} ms)`
+            : "while a reply waited for the agent's line to finish";
+          log(`[curb] warm transfer ${id}: the consultation time ran out ${why}; it may take ${timing.graceMs} ms more`);
+          consultTimer = after(timing.graceMs, { kind: "timer", which: "consult" });
           continue;
         }
         cancel(dialTimer);
@@ -499,8 +511,12 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
               break;
             }
             unheard += 1;
+            if (state.phase === "consulting" && state.overtime) {
+              // Past the time, the reading under way is the last: words after it never restart it.
+              if (!live.asking && !live.speaking) askModel();
+            }
             // A reading of the words before these is stale: read them all again.
-            if (live.asking || !live.speaking) askModel();
+            else if (live.asking || !live.speaking) askModel();
           } else if (event.type === "left") {
             apply({ type: "target_left" });
           } else {
@@ -532,7 +548,9 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
             apply({ type: "dial_timeout" });
           } else if (input.which === "consult") {
             consultTimer = null;
-            apply({ type: "consult_timeout" });
+            if (state.phase === "consulting" && state.overtime)
+              log(`[curb] warm transfer ${id}: the reply was not read within the grace either`);
+            apply({ type: "consult_timeout", replyPending: live.asking !== null || unheard > 0 });
           } else {
             apply({ type: "connect_timeout" });
           }

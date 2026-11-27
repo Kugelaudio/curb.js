@@ -200,9 +200,11 @@ What happens:
    to the person, leaves, and the call is theirs, as with a cold transfer.
 4. Otherwise the person's leg ends and the agent is back with the caller. A no, or a reply that
    is still unclear after the agent asked once more, is `declined`; a mailbox, nobody answering,
-   or no decision within `consultTimeoutSeconds` (default 45, 10 to 120) is `no_answer`; a dial
-   or room that fails is `failed`. The tool tells the model what the person said, so it can
-   tell the caller and offer a callback.
+   or no reply within `consultTimeoutSeconds` (default 45, 10 to 120, from their pickup) is
+   `no_answer`; a dial or room that fails is `failed`. That time bounds waiting for the person,
+   not the agent's reading: a reply given in time is still read, for up to 10 s more, and
+   counts if it is a yes, a no or a mailbox. The tool tells the model what the person said, so
+   it can tell the caller and offer a callback.
 
 If the caller hangs up during the consultation, the person's leg ends too. The result carries
 `targetReply`, what the person said, as heard. A warm transfer needs a voice call on a host that

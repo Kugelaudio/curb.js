@@ -24,8 +24,9 @@ const BRIEF = "Hello, this is the booking assistant. I have a caller about a dam
 
 type Reading = { decision: string; say?: string } | Error;
 
-/** The voice host's side, recording into `log`. The model answers each reading from `readings`. */
-function fakeHost(readings: Reading[] = [], options: { join?: "fail" } = {}) {
+/** The voice host's side, recording into `log`. The model answers each reading from `readings`,
+ * after `askMs`; each line plays for `sayMs`. */
+function fakeHost(readings: Reading[] = [], options: { join?: "fail"; askMs?: number; sayMs?: number } = {}) {
   const log: string[] = [];
   const requests: AgentRunRequest[] = [];
   const callerLeft = new Set<() => void>();
@@ -38,6 +39,7 @@ function fakeHost(readings: Reading[] = [], options: { join?: "fail" } = {}) {
     },
     say: async (text) => {
       log.push(`say ${text}`);
+      if (options.sayMs) await new Promise((resolve) => setTimeout(resolve, options.sayMs));
     },
     close: async () => {
       log.push("leave consultation");
@@ -65,8 +67,18 @@ function fakeHost(readings: Reading[] = [], options: { join?: "fail" } = {}) {
       if (options.join === "fail") throw new Error("the room refused the token");
       return leg;
     },
-    ask: async (request): Promise<AgentRunResponse> => {
+    ask: async (request, signal): Promise<AgentRunResponse> => {
       requests.push(request);
+      if (options.askMs) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, options.askMs);
+          signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            log.push("reading aborted");
+            reject(new Error("aborted"));
+          });
+        });
+      }
       const next = readings.shift() ?? { decision: "unclear" };
       if (next instanceof Error) throw next;
       return { text: "", toolCalls: [{ id: `c-${requests.length}`, name: CONSULT_DECISION_TOOL, input: { say: "", ...next } }] };
@@ -270,6 +282,74 @@ describe("warm transfer", () => {
     await expect(outcome).resolves.toMatchObject({ outcome: "no_answer", transferId: "t-1" });
     expect(call.decisions()).toEqual([{ transferId: "t-1", decision: "no_answer" }]);
     expect(events.at(-1)).toMatchObject({ kind: "ended", decision: "no_answer", reason: "consult_timeout", durationMs: 10_000 });
+  });
+
+  it("takes a yes the model was still reading when the consultation time ran out", async () => {
+    vi.useFakeTimers();
+    const call = phoneCall();
+    const fake = fakeHost([{ decision: "yes" }], { askMs: 4_000 });
+    const { outcome, events, lines } = start(call, fake, { ...REQUEST, consultTimeoutSeconds: 10 });
+    await vi.advanceTimersByTimeAsync(0);
+    fake.joined();
+    await vi.advanceTimersByTimeAsync(8_000);
+    fake.says("Yes, of course, put them through.");
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(call.decisions()).toEqual([{ transferId: "t-1", decision: "connect" }]);
+    expect(events.filter((event) => event.kind === "decision")).toMatchObject([{ decision: "yes", attempt: 1 }]);
+    expect(lines.some((line) => line.includes("ran out while the model read"))).toBe(true);
+    fake.handOff();
+    await expect(outcome).resolves.toMatchObject({ outcome: "answered", targetReply: "Yes, of course, put them through." });
+  });
+
+  it("reads a reply heard in time once its own line has played, even past the consultation time", async () => {
+    vi.useFakeTimers();
+    const call = phoneCall();
+    const fake = fakeHost([{ decision: "yes" }], { askMs: 2_000, sayMs: 9_000 });
+    const { outcome } = start(call, fake, { ...REQUEST, consultTimeoutSeconds: 10 });
+    await vi.advanceTimersByTimeAsync(0);
+    fake.joined();
+    await vi.advanceTimersByTimeAsync(8_000);
+    // The brief is still playing (until 9 s); the reading starts once it has.
+    fake.says("Yes, put them through.");
+    await vi.advanceTimersByTimeAsync(3_100);
+    expect(call.decisions()).toEqual([{ transferId: "t-1", decision: "connect" }]);
+    fake.handOff();
+    await expect(outcome).resolves.toMatchObject({ outcome: "answered" });
+  });
+
+  it("gives a reading one grace past the consultation time, and no more", async () => {
+    vi.useFakeTimers();
+    const call = phoneCall();
+    const fake = fakeHost([{ decision: "yes" }], { askMs: 30_000 });
+    const { outcome, events } = start(call, fake, { ...REQUEST, consultTimeoutSeconds: 10 });
+    await vi.advanceTimersByTimeAsync(0);
+    fake.joined();
+    await vi.advanceTimersByTimeAsync(8_000);
+    fake.says("Yes, sure.");
+    await vi.advanceTimersByTimeAsync(11_990);
+    expect(call.decisions()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(outcome).resolves.toMatchObject({ outcome: "no_answer", targetReply: "Yes, sure." });
+    expect(call.decisions()).toEqual([{ transferId: "t-1", decision: "no_answer" }]);
+    expect(fake.log).toContain("reading aborted");
+    expect(events.some((event) => event.kind === "decision")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ kind: "ended", reason: "consult_timeout", durationMs: 20_000 });
+  });
+
+  it("asks nothing again once the consultation time ran out", async () => {
+    vi.useFakeTimers();
+    const call = phoneCall();
+    const fake = fakeHost([{ decision: "unclear", say: "Sorry, can you take the call now?" }], { askMs: 4_000 });
+    const { outcome, events } = start(call, fake, { ...REQUEST, consultTimeoutSeconds: 10 });
+    await vi.advanceTimersByTimeAsync(0);
+    fake.joined();
+    await vi.advanceTimersByTimeAsync(8_000);
+    fake.says("Hmm?");
+    await vi.advanceTimersByTimeAsync(4_000);
+    await expect(outcome).resolves.toMatchObject({ outcome: "no_answer" });
+    expect(fake.log).not.toContain("say Sorry, can you take the call now?");
+    expect(events.filter((event) => event.kind === "decision")).toMatchObject([{ decision: "unclear" }]);
+    expect(events.at(-1)).toMatchObject({ kind: "ended", decision: "no_answer", reason: "consult_timeout", durationMs: 12_000 });
   });
 
   it("takes the host's own dial result while it rings, without a decision", async () => {

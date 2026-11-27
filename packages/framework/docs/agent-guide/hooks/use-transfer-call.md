@@ -16,7 +16,7 @@ function useTransferCall(): (request: TransferCallRequest) => Promise<TransferOu
 | `ringTimeoutSeconds` | `number` | `30` | How long it rings, 10 to 60 seconds |
 | `announce` | `string` | none | Said to the caller before it dials |
 | `onEnded` | decision or function | the agent takes the call back | What happens when the person hangs up and the caller stays ([When the person hangs up](../human-handoff.md#when-the-person-hangs-up)) |
-| `warm` | `{ brief, consultTimeoutSeconds? }` | none | Ask the person at the number first: the agent tells them `brief` and puts the caller through only on their yes. `consultTimeoutSeconds` is 10 to 120, default 45 ([Warm transfer](../human-handoff.md#warm-transfer)) |
+| `warm` | `{ brief, consultTimeoutSeconds? }` | none | Ask the person at the number first: the agent tells them `brief` and puts the caller through only on their yes. `consultTimeoutSeconds` is 10 to 120, default 45: how long they have to answer from their pickup; a reply given in time is still read ([Warm transfer](../human-handoff.md#warm-transfer)) |
 
 ## Returns
 

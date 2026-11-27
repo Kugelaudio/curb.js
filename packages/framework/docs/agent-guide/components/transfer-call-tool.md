@@ -18,7 +18,7 @@ function TransferCallTool(props: TransferCallToolProps): ReactNode;
 | `description` | `string` | says what it does | When the model should call it |
 | `ringTimeoutSeconds` | `number` | `30` | How long it rings, 10 to 60 seconds |
 | `onEnded` | decision or function | the agent takes the call back | What happens when the person hangs up and the caller stays ([When the person hangs up](../human-handoff.md#when-the-person-hangs-up)) |
-| `warm` | `true` or `{ consultTimeoutSeconds? }` | off | Ask the person at the number first ([Warm transfer](../human-handoff.md#warm-transfer)). The model then also writes a `brief`, what the agent tells them; `consultTimeoutSeconds` (10 to 120, default 45) is how long they have to decide |
+| `warm` | `true` or `{ consultTimeoutSeconds? }` | off | Ask the person at the number first ([Warm transfer](../human-handoff.md#warm-transfer)). The model then also writes a `brief`, what the agent tells them; `consultTimeoutSeconds` (10 to 120, default 45) is how long they have to answer from their pickup; a reply given in time is still read |
 
 ## Example
 
