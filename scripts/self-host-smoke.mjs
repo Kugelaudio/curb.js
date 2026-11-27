@@ -115,6 +115,8 @@ function runnerEnv(address, token) {
     CURB_MANAGEMENT_ADDR: address,
     CURB_MANAGEMENT_TOKEN: token,
     KUGELAUDIO_API_KEY: "kugel-placeholder-for-warmup",
+    // The placeholder is no key the provider accepts; the smoke run checks the protocol.
+    CURB_STARTUP_CHECK: "off",
   };
   for (const name of ["PATH", "HOME", "TMPDIR", "LANG"]) {
     if (process.env[name] !== undefined) env[name] = process.env[name];

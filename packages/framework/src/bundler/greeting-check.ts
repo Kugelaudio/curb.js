@@ -25,6 +25,8 @@ export type GreetingCheckStep = "agent" | "greeting" | "voice";
 
 export type GreetingCheckResult =
   | { ok: true; /** From the start of the greeting to the voice's first frame. */ firstAudioMs: number }
+  /** The caller speaks first, so there is no greeting to say: the agent passes on its keys. */
+  | { ok: true; callerSpeaksFirst: true }
   | { ok: false; step: GreetingCheckStep; message: string };
 
 export type GreetingCheckSeams = {
@@ -40,19 +42,17 @@ export type GreetingCheckSeams = {
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
- * What the agent says first on a call. A fixed line (`firstTurn: { say }`) needs no model; a
- * greeting the model writes (`firstTurn: "agent"`) and an agent the caller speaks to first both
- * run the opening prompt, so a missing or refused model key fails here and not on a caller.
+ * What the agent says first on a call, or null when the caller speaks first. A fixed line
+ * (`firstTurn: { say }`) needs no model; a greeting the model writes (`firstTurn: "agent"`) runs
+ * the opening prompt, so a missing or refused model key fails here and not on a caller. An
+ * agent whose caller speaks first is never asked to greet: a call does not ask it either.
  */
 async function openingLine(
   session: AgentSession,
   firstTurn: AgentFirstTurn | undefined,
   prompt: () => Promise<string>,
-): Promise<string> {
-  if (firstTurn !== "agent") {
-    const line = session.open();
-    if (line !== null) return line;
-  }
+): Promise<string | null> {
+  if (firstTurn !== "agent") return session.open();
   let reply = "";
   for await (const event of session.runTurnStream(await prompt(), { spoken: true, kind: "synthetic" })) {
     if (event.type === "error" && event.error.kind !== "step_limit") throw new Error(event.error.message);
@@ -88,7 +88,7 @@ export async function runGreetingCheck(seams: GreetingCheckSeams): Promise<Greet
   const now = seams.now ?? (() => performance.now());
   let step: GreetingCheckStep = "agent";
   let voice: tts.TTS | null = null;
-  const run = async (): Promise<number> => {
+  const run = async (): Promise<number | null> => {
     const bundle = await seams.createBundle();
     if (bundle.runtime.settings.s2s()) {
       // A speech-to-speech model greets in its own voice over a live connection; the bundle
@@ -98,6 +98,7 @@ export async function runGreetingCheck(seams: GreetingCheckSeams): Promise<Greet
     step = "greeting";
     const started = now();
     const line = await openingLine(bundle.session, bundle.definition.firstTurn, seams.firstTurnPrompt);
+    if (line === null) return null;
     step = "voice";
     voice = await seams.buildTts(bundle.runtime.settings.current().tts);
     await firstFrame(voice, line);
@@ -105,7 +106,7 @@ export async function runGreetingCheck(seams: GreetingCheckSeams): Promise<Greet
   };
   try {
     const firstAudioMs = await withDeadline(run(), seams.timeoutMs ?? GREETING_CHECK_TIMEOUT_MS);
-    return { ok: true, firstAudioMs };
+    return firstAudioMs === null ? { ok: true, callerSpeaksFirst: true } : { ok: true, firstAudioMs };
   } catch (error) {
     return { ok: false, step, message: message(error) };
   } finally {

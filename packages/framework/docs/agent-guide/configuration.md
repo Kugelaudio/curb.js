@@ -76,7 +76,9 @@ These apply to a built artifact, and to `curb dev` and `curb start` with a manag
 | `CURB_REALTIME_URL`, `CURB_REALTIME_TOKEN` | Join this one room directly and serve one call |
 | `CURB_SESSION_ID` | The call's id on a direct join. Default: the room name |
 | `CURB_READINESS_PROBE` | `1` loads the bundle, builds the agent and exits |
-| `CURB_READINESS_GREETING` | `1` beside the probe also says the agent's greeting in its own voice and exits at the first audio |
+| `CURB_READINESS_STARTUP` | `1` beside the probe also runs the [startup check](./hosting.md#startup-check): exit 0 when the agent can work, 78 with the reason when it cannot |
+| `CURB_READINESS_GREETING` | `1` beside the probe also runs the startup check, then says the agent's greeting in its own voice and exits at the first audio. An agent whose caller speaks first passes with no greeting |
+| `CURB_STARTUP_CHECK` | `off` starts the worker or a managed runner without the [startup check](./hosting.md#startup-check), for a machine that holds no working provider keys |
 
 ## `package.json`
 

@@ -89,4 +89,19 @@ describe("the hosted worker job", () => {
     // Quoted as data: a name can never become code in the entry.
     expect(entry('a"b')).toContain('voiceWorkerAgentName(process.env, "a\\"b");');
   });
+
+  // An agent that cannot work exits 78 with the reason before it registers, so a deploy that
+  // runs it fails at once instead of a call meeting silence.
+  it("checks the agent's startup before registering, once, in the worker and not in its jobs", () => {
+    const source = entry("concierge");
+    const check = source.indexOf("await runHostedStartupCheck()", source.indexOf("__curbAgentPath ="));
+    expect(check).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(source.indexOf("cli.runApp"));
+    expect(source).toContain(
+      'if (process.argv[2] !== __curbAgentPath && process.env.CURB_STARTUP_CHECK !== "off") {',
+    );
+    expect(source).toContain("if (problems.length > 0) process.exit(78);");
+    // The readiness probe runs the same check when asked for it.
+    expect(source).toContain('process.env.CURB_READINESS_STARTUP === "1"');
+  });
 });

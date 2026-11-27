@@ -58,6 +58,9 @@ export function hostKeyPendingFix(env: Env): string | null {
     : null;
 }
 
+/** The Azure Speech region of an `azure.stt()` without `region` when `AZURE_SPEECH_REGION` is unset. */
+export const DEFAULT_AZURE_SPEECH_REGION = "eastus";
+
 /** Where KugelAudio's speech API (TTS, STT, the voice list) is served when `KUGELAUDIO_API_BASE`
  * is unset. */
 export const DEFAULT_KUGELAUDIO_SPEECH_BASE = "https://api.kugelaudio.com";

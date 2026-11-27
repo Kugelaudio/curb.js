@@ -14,7 +14,7 @@ import { AzureSTT } from "./livekit-host/azure-stt-plugin.js";
 import { KugelSTT } from "./livekit-host/kugel-stt-plugin.js";
 import { KugelTTS } from "./livekit-host/kugel-tts-plugin.js";
 import type { CallReporter } from "../../hosted/call-reporter.js";
-import { hostKeyPendingFix, kugelaudioSpeechBase, SPEECH_KEYS } from "../../provider-keys.js";
+import { DEFAULT_AZURE_SPEECH_REGION, hostKeyPendingFix, kugelaudioSpeechBase, SPEECH_KEYS } from "../../provider-keys.js";
 
 /**
  * Voice provider resolution: a `curb/providers` descriptor (`azure.stt()`,
@@ -36,7 +36,6 @@ export type VoiceProviderSettings = { stt: SttDescriptor; tts: TtsDescriptor };
 export class VoiceProviderError extends Error {}
 
 export const KUGEL_TTS_SAMPLE_RATE = 24000; // Kugel emits PCM16 @24 kHz
-const DEFAULT_AZURE_SPEECH_REGION = "eastus";
 const DEFAULT_KUGEL_TTS_MODEL = "kugel-3.5";
 /** The languages kugel-ear-1 transcribes (Speech to Text API, "Supported languages"). */
 const KUGEL_STT_LANGUAGES = new Set(["de", "en", "fr", "it", "es", "pt", "nl", "pl", "ro"]);

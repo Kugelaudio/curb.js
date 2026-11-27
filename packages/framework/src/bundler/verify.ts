@@ -180,6 +180,9 @@ function verificationEnv(extra?: Record<string, string>): Record<string, string>
     LIVEKIT_API_KEY: "curb-build-verify",
     LIVEKIT_API_SECRET: "curb-build-verify-secret",
     CURB_AGENT_NAME: "curb-build-verify",
+    // The build holds no provider keys and must stay offline; the startup check is the
+    // deployment's, run with its keys (`CURB_READINESS_STARTUP=1`).
+    CURB_STARTUP_CHECK: "off",
     ...extra,
   };
 }

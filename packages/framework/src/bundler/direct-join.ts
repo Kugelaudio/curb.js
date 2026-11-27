@@ -51,6 +51,13 @@ import { createCallReporter, recordClientTraffic, type HostedCallReporter } from
 import { attachClientMessages } from "../server/voice/livekit-host/messages.js";
 import type { AppMessages } from "../messages.js";
 import type { SessionSettings } from "../session-settings.js";
+import {
+  checkProviders,
+  printStartupReport,
+  startupCheckOff,
+  type StartupProblem,
+  type StartupProviders,
+} from "../server/startup-check.js";
 import { EventJournal } from "../hosted/event-journal.js";
 import { MANAGEMENT_ADDRESS_ENV, startManagementServer } from "../hosted/management-server.js";
 import { openCallScratch } from "../hosted/call-scratch.js";
@@ -164,6 +171,8 @@ export type WarmupSteps = {
   readyForCall?: (bundle: VoiceAgentBundle) => Promise<VoiceAgentBundle>;
   loadVad?: () => Promise<VAD>;
   preloadPlugins?: (settings: VoiceProviderSettings, env: NodeJS.ProcessEnv) => Promise<void>;
+  /** The providers' startup check. A key the runner does not hold yet is the call's to bring. */
+  checkStartup?: (providers: StartupProviders, env: NodeJS.ProcessEnv) => Promise<StartupProblem[]>;
 };
 
 /**
@@ -182,6 +191,11 @@ export async function warmVoiceRunner(steps: WarmupSteps = {}): Promise<WarmVoic
     steps.preloadPlugins ??
     ((settings: VoiceProviderSettings, target: NodeJS.ProcessEnv) =>
       preloadVoicePlugins(settings, { env: target }));
+
+  const checkStartup =
+    steps.checkStartup ??
+    (async (providers: StartupProviders, target: NodeJS.ProcessEnv) =>
+      startupCheckOff(target) ? [] : checkProviders({ providers, env: target, missingKeys: "skip" }));
 
   const step = async <T>(what: string, run: () => Promise<T>): Promise<T> => {
     try {
@@ -203,7 +217,16 @@ export async function warmVoiceRunner(steps: WarmupSteps = {}): Promise<WarmVoic
     }),
     step("load the Silero VAD model", loadVad),
   ]);
-  const { stt, tts } = bundle.runtime.settings.current();
+  const { llm, stt, tts } = bundle.runtime.settings.current();
+  // A key the providers refuse, or a model or voice they lack, fails warmup, so the runner
+  // never says ready for calls it cannot answer.
+  const problems = await step("check the agent's providers", () =>
+    checkStartup({ llm, stt, tts, s2s: bundle.runtime.settings.s2s() ?? null }, env),
+  );
+  if (problems.length > 0) {
+    printStartupReport(problems);
+    throw new Error(`warmup could not start the agent: ${problems.map((problem) => problem.message).join(" ")}`);
+  }
 
   let spare: VoiceAgentBundle | null = bundle;
   return {

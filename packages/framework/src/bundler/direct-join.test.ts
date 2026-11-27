@@ -176,6 +176,39 @@ describe("warmVoiceRunner", () => {
     expect(warm.vad).toBe(FAKE_VAD);
   });
 
+  it("rejects a key its provider refuses, so the runner never says ready", async () => {
+    const checkStartup = vi.fn(async () => [
+      { setting: "KUGELAUDIO_API_KEY", reason: "rejected" as const, message: "KugelAudio refused KUGELAUDIO_API_KEY (HTTP 401)." },
+    ]);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(
+      warmVoiceRunner({
+        env: {},
+        createBundle: async () => fakeBundle(),
+        loadVad: async () => FAKE_VAD,
+        preloadPlugins: async () => {},
+        checkStartup,
+      }),
+    ).rejects.toThrow(/refused KUGELAUDIO_API_KEY/);
+    expect(checkStartup).toHaveBeenCalledWith(expect.objectContaining({ stt: SETTINGS.stt, tts: SETTINGS.tts }), {});
+    expect(errors).toHaveBeenCalledWith(expect.stringMatching(/^curb: startup check failed: /));
+    errors.mockRestore();
+  });
+
+  it("warms without asking the providers when the startup check is off", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const warm = await warmVoiceRunner({
+      env: { CURB_STARTUP_CHECK: "off", KUGELAUDIO_API_KEY: "placeholder", ANTHROPIC_API_KEY: "placeholder" },
+      createBundle: async () => fakeBundle(),
+      loadVad: async () => FAKE_VAD,
+      preloadPlugins: async () => {},
+    });
+    expect(warm.vad).toBe(FAKE_VAD);
+    expect(fetch).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("rejects when any warmup step fails, so the runner never says ready", async () => {
     await expect(
       warmVoiceRunner({
