@@ -12,6 +12,25 @@ import {
   type TransferEndedOption,
 } from "./ended.js";
 import { ToolInputError, type ToolResult } from "../../types.js";
+import {
+  CALL_TRANSFER_MESSAGE,
+  CALL_TRANSFER_RESULT_MESSAGE,
+  DEFAULT_TRANSFER_RING_TIMEOUT_SECONDS,
+  PHONE_CALLS_ONLY,
+  TRANSFER_REPLY_TIMEOUT_MS,
+  TRANSFER_RESULT_MARGIN_MS,
+  errorText,
+  isRecord,
+  readRefusal,
+} from "./protocol.js";
+import {
+  MAX_CONSULT_TIMEOUT_SECONDS,
+  MIN_CONSULT_TIMEOUT_SECONDS,
+  warmTransfer,
+  warmTransferHostOf,
+  type WarmRequest,
+  type WarmTransferHost,
+} from "./warm.js";
 
 /**
  * Call transfer: put the caller of a hosted phone call through to another number.
@@ -31,19 +50,13 @@ import { ToolInputError, type ToolResult } from "../../types.js";
  * per call by `livekit-host/host.ts`): the request's `announce`, played to its end before
  * anything is dialed, then a ringback tone until the outcome is known.
  *
+ * With `warm`, the person at the number is asked first, in a consultation room the caller
+ * cannot hear, and the caller is put through only on their yes (`warm.ts`).
+ *
  * Browser-safe: no Node imports, because `src/index.ts` exports the hook and the tool.
  */
 
-/** The host channel message names of a transfer. */
-export const CALL_TRANSFER_MESSAGE = "call.transfer";
-export const CALL_TRANSFER_RESULT_MESSAGE = "call.transfer.result";
-
-/** How long the platform may take to accept or refuse a transfer (one collector pass). */
-export const TRANSFER_REPLY_TIMEOUT_MS = 20_000;
-/** The ring time the platform uses when the request names none. */
-export const DEFAULT_TRANSFER_RING_TIMEOUT_SECONDS = 30;
-/** How long after the ring time ends the result may take to arrive. */
-const TRANSFER_RESULT_MARGIN_MS = 30_000;
+export { CALL_TRANSFER_MESSAGE, CALL_TRANSFER_RESULT_MESSAGE, DEFAULT_TRANSFER_RING_TIMEOUT_SECONDS, TRANSFER_REPLY_TIMEOUT_MS };
 const MIN_RING_TIMEOUT_SECONDS = 10;
 const MAX_RING_TIMEOUT_SECONDS = 60;
 
@@ -62,6 +75,14 @@ export interface TransferCallRequest {
    * stays: `{ action: "end_call", goodbye? }`, `{ action: "continue", instruction? }`, or a
    * function returning one. Default: the agent takes the call back. */
   onEnded?: TransferEndedOption;
+  /**
+   * Ask the person at the number first. The caller hears the announcement, then hold audio;
+   * the agent calls the number, says `brief` and listens. Their yes, in any words, puts the
+   * caller through. A no, an unclear answer after one more question, a mailbox, or no answer
+   * within `consultTimeoutSeconds` (10 to 120, default 45, from their pickup) ends their call,
+   * and the agent is back with the caller with the outcome. Default: no consultation.
+   */
+  warm?: { brief: string; consultTimeoutSeconds?: number };
 }
 
 /**
@@ -88,17 +109,20 @@ export function attachTransferAudio(info: AgentInfoStore, audio: TransferAudio |
 
 /**
  * What became of a transfer. `answered`: the target picked up and the call is handed off.
- * `no_answer`, `busy`, `failed`: the caller is still with the agent. `refused`: nothing was
- * dialed; `code` says why (`upgrade_required`, `transfer_unsupported_session`,
- * `transfer_unsupported_number`, `transfer_in_progress`, `callback_phone_invalid`,
- * `callback_destination_blocked`). A failed transfer with code `transfer_no_reply` got no
- * reply or no result from the host in time.
+ * `no_answer`, `busy`, `failed`: the caller is still with the agent. `declined`: a warm
+ * transfer's person said no, or twice nothing clear. `refused`: nothing was dialed; `code` says
+ * why (`upgrade_required`, `transfer_unsupported_session`, `transfer_unsupported_number`,
+ * `transfer_in_progress`, `callback_phone_invalid`, `callback_destination_blocked`, and for a
+ * warm transfer `warm_transfer_unsupported` or `consult_unavailable`). A failed transfer with
+ * code `transfer_no_reply` got no reply or no result from the host in time.
  */
 export interface TransferOutcome {
-  outcome: "answered" | "no_answer" | "busy" | "failed" | "refused";
+  outcome: "answered" | "declined" | "no_answer" | "busy" | "failed" | "refused";
   code?: string;
   message?: string;
   transferId?: string;
+  /** A warm transfer's consultation: what the person at the number said, as heard. */
+  targetReply?: string;
 }
 
 /** `useTransferCall()`. Never rejects for an outcome; throws `TypeError` for a bad request. */
@@ -106,9 +130,9 @@ export type TransferCall = (request: TransferCallRequest) => Promise<TransferOut
 
 const DIAL_OUTCOMES = ["answered", "no_answer", "busy", "failed"] as const;
 
-const PHONE_CALLS_ONLY =
-  "Call transfer works on phone calls only: this session has no phone caller " +
-  "(a browser session, an API session or the curb dev preview).";
+const WARM_UNSUPPORTED =
+  "A warm transfer needs a voice call on a host that can join the agent to a consultation room; " +
+  "this call has none. Transfer without warm, or run the call on such a host.";
 
 /** What `transferCall` needs from its runtime. */
 export interface TransferDeps {
@@ -119,6 +143,8 @@ export interface TransferDeps {
   /** The call's trace, read when the transfer starts: the transfer is a span in it. */
   trace?: () => CallTrace | undefined;
   error?: (line: string) => void;
+  /** The voice host's side of a warm transfer, read when one starts. */
+  warm?: () => WarmTransferHost | undefined;
   /** Where an accepted transfer is tracked until it ends unanswered, so the voice host applies
    * the request's `onEnded` once its target leaves (`ended.ts`). */
   tracking?: {
@@ -131,15 +157,53 @@ export interface TransferDeps {
 export async function transferCall(deps: TransferDeps, request: TransferCallRequest): Promise<TransferOutcome> {
   // A span from the request on. An answered transfer stays open until the agent has the call
   // back or the call ends, which the voice host reports (`call-trace.ts`).
-  const span = deps.trace?.()?.transfer(typeof request?.to === "string" ? request.to.trim() : "");
+  const warm = isRecord(request) && request.warm !== undefined;
+  const to = typeof request?.to === "string" ? request.to.trim() : "";
+  const callTrace = deps.trace?.();
+  const span = warm ? callTrace?.transfer(to, { warm: true }) : callTrace?.transfer(to);
   try {
-    const outcome = await dialTransfer(deps, request);
+    const outcome = warm ? await askFirst(deps, request) : await dialTransfer(deps, request);
     span?.outcome(outcome.outcome);
     return outcome;
   } catch (error) {
     span?.outcome("failed");
     throw error;
   }
+}
+
+/** A warm transfer: the request checked, then `warm.ts`. */
+async function askFirst(deps: TransferDeps, request: TransferCallRequest): Promise<TransferOutcome> {
+  const payload = transferPayload(request);
+  const warm = warmOptions(request);
+  const announcement = announceLine(request);
+  const logError = deps.error ?? ((line: string) => console.error(line));
+  const refused = (code: string, message: string): TransferOutcome => {
+    logError(`[curb] call transfer refused (${code}): ${message}`);
+    return { outcome: "refused", code, message };
+  };
+  const phoneNumber = deps.info()["caller.phoneNumber"];
+  if (!deps.messages.hostConnected || typeof phoneNumber !== "string" || phoneNumber.trim() === "") {
+    return refused("transfer_unsupported_session", PHONE_CALLS_ONLY);
+  }
+  const host = deps.warm?.();
+  if (!host) return refused("warm_transfer_unsupported", WARM_UNSUPPORTED);
+  const warmRequest: WarmRequest = {
+    ...payload,
+    ...warm,
+    ...(announcement === undefined ? {} : { announce: announcement }),
+    ...(request.onEnded === undefined ? {} : { onEnded: request.onEnded }),
+  };
+  return warmTransfer(
+    {
+      messages: deps.messages,
+      host,
+      audio: deps.audio?.(),
+      trace: deps.trace?.(),
+      log: logError,
+      ...(deps.tracking ? { tracking: deps.tracking } : {}),
+    },
+    warmRequest,
+  );
 }
 
 async function dialTransfer(deps: TransferDeps, request: TransferCallRequest): Promise<TransferOutcome> {
@@ -204,20 +268,8 @@ async function dialTransfer(deps: TransferDeps, request: TransferCallRequest): P
       throw error;
     }
 
-    if (typeof reply.code === "string") {
-      const platformMessage = typeof reply.message === "string" ? reply.message : "";
-      if (reply.code === "upgrade_required") {
-        const feature = typeof reply.feature === "string" ? reply.feature : "outbound-calls";
-        return refused(
-          reply.code,
-          `Call transfer needs a paid plan (plan feature ${feature}).${platformMessage ? ` ${platformMessage}` : ""}`,
-        );
-      }
-      if (reply.code === "transfer_unsupported_session") {
-        return refused(reply.code, platformMessage ? `${PHONE_CALLS_ONLY} ${platformMessage}` : PHONE_CALLS_ONLY);
-      }
-      return refused(reply.code, platformMessage || `the host refused the transfer with ${reply.code}.`);
-    }
+    const refusal = readRefusal(reply);
+    if (refusal) return refused(refusal.code, refusal.message);
     if (typeof reply.transferId !== "string" || reply.transferId === "") {
       logError(`[curb] call transfer failed (transfer_invalid_reply): the host's reply names no transferId or code`);
       return {
@@ -288,8 +340,30 @@ export function transferAnnouncement(input: Record<string, unknown>): string | u
   return line || undefined;
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** The request's `warm`, checked: the brief trimmed. TypeError for a bad one. */
+function warmOptions(request: TransferCallRequest): { brief: string; consultTimeoutSeconds?: number } {
+  const warm: unknown = request.warm;
+  const brief = isRecord(warm) && typeof warm.brief === "string" ? warm.brief.trim() : "";
+  if (!brief) {
+    throw new TypeError(
+      'transfer() needs warm.brief as what the agent tells the person at the number before they take the call, for example ' +
+        '"Hello, this is the booking assistant. I have Ms. Example on the line about a damaged parcel. Can you take the call now?"; ' +
+        `got ${JSON.stringify(warm)}.`,
+    );
+  }
+  const timeout = isRecord(warm) ? warm.consultTimeoutSeconds : undefined;
+  if (
+    timeout !== undefined &&
+    (typeof timeout !== "number" ||
+      !Number.isInteger(timeout) ||
+      timeout < MIN_CONSULT_TIMEOUT_SECONDS ||
+      timeout > MAX_CONSULT_TIMEOUT_SECONDS)
+  ) {
+    throw new TypeError(
+      `transfer() needs warm.consultTimeoutSeconds as a whole number from ${MIN_CONSULT_TIMEOUT_SECONDS} to ${MAX_CONSULT_TIMEOUT_SECONDS}; got ${JSON.stringify(timeout)}.`,
+    );
+  }
+  return { brief, ...(timeout === undefined ? {} : { consultTimeoutSeconds: timeout }) };
 }
 
 /** Whether `value` reads as a phone number: digits with an optional leading +, spaces and
@@ -302,7 +376,7 @@ export function isPhoneNumber(value: string): boolean {
 export function transferPayload(request: TransferCallRequest): { to: string; ringTimeoutSeconds?: number } {
   if (!isRecord(request)) {
     throw new TypeError(
-      'transfer() takes { to, ringTimeoutSeconds?, announce?, onEnded? }, for example transfer({ to: "+493012345678" }).',
+      'transfer() takes { to, ringTimeoutSeconds?, announce?, onEnded?, warm? }, for example transfer({ to: "+493012345678" }).',
     );
   }
   const to = typeof request.to === "string" ? request.to.trim() : "";
@@ -322,10 +396,6 @@ export function transferPayload(request: TransferCallRequest): { to: string; rin
   }
   checkTransferEndedOption(request.onEnded);
   return { to, ...(ring === undefined ? {} : { ringTimeoutSeconds: ring }) };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -353,6 +423,7 @@ export function useTransferCall(): TransferCall {
           info: info.snapshot,
           audio: () => transferAudioByRuntime.get(info),
           trace: () => callTraceOf(info),
+          warm: () => warmTransferHostOf(info),
           tracking: {
             track: (transfer) => trackTransfer(info, transfer),
             untrack: (transferId) => untrackTransfer(info, transferId),
@@ -366,7 +437,12 @@ export function useTransferCall(): TransferCall {
 
 /** What the model reads after a transfer, so it can tell the caller in plain words. */
 export function transferToolResult(outcome: TransferOutcome): ToolResult {
-  const stayWithCaller = " The caller is still on the line with you: tell them, and offer another way to help.";
+  const said = outcome.targetReply ? ` They said: "${outcome.targetReply}".` : "";
+  // After a consultation the caller waited on hold for someone who could not take the call.
+  const stayWithCaller =
+    outcome.targetReply !== undefined || outcome.outcome === "declined"
+      ? " The caller is back on the line with you: tell them, and offer a callback or another way to help."
+      : " The caller is still on the line with you: tell them, and offer another way to help.";
   switch (outcome.outcome) {
     case "answered":
       return {
@@ -375,21 +451,30 @@ export function transferToolResult(outcome: TransferOutcome): ToolResult {
           "The call was put through: the person at the transfer number answered and is now talking with the caller. " +
           "You are handed off: say nothing more and call skip_turn. If they leave while the caller stays, you will be told.",
       };
+    case "declined":
+      return { ok: true, message: `The person at the transfer number cannot take the call now.${said}${stayWithCaller}` };
     case "no_answer":
-      return { ok: true, message: `Nobody answered at the transfer number.${stayWithCaller}` };
+      return {
+        ok: true,
+        message: outcome.targetReply
+          ? `Nobody at the transfer number gave an answer in time.${said}${stayWithCaller}`
+          : `Nobody answered at the transfer number.${stayWithCaller}`,
+      };
     case "busy":
       return { ok: true, message: `The line at the transfer number was busy.${stayWithCaller}` };
     case "failed":
-      return { ok: false, message: `The transfer call could not be connected.${stayWithCaller}` };
+      return { ok: false, message: `The transfer call could not be connected.${said}${stayWithCaller}` };
     case "refused": {
       const why =
         outcome.code === "transfer_unsupported_session"
           ? "Calls can only be transferred on a phone call, and this is not one."
-          : outcome.code === "transfer_in_progress"
-            ? "Another transfer of this call is already under way."
-            : outcome.code === "upgrade_required"
-              ? "Transferring calls is not available on this agent's plan."
-              : "The transfer was refused.";
+          : outcome.code === "warm_transfer_unsupported" || outcome.code === "consult_unavailable"
+            ? "Asking the person at the transfer number first is not available on this call."
+            : outcome.code === "transfer_in_progress"
+              ? "Another transfer of this call is already under way."
+              : outcome.code === "upgrade_required"
+                ? "Transferring calls is not available on this agent's plan."
+                : "The transfer was refused.";
       return { ok: false, message: `${why} Nobody was called.${stayWithCaller}` };
     }
   }
@@ -408,7 +493,17 @@ export interface TransferCallToolProps {
   /** What happens when the person hangs up while the caller stays; see
    * {@link TransferCallRequest.onEnded}. Default: the agent takes the call back. */
   onEnded?: TransferEndedOption;
+  /** Ask the person at the number first: the tool then also takes a `brief` the model writes,
+   * said to them before they take the call. `{ consultTimeoutSeconds }` (10 to 120, default 45)
+   * bounds the consultation from their pickup. Default: no consultation. */
+  warm?: boolean | { consultTimeoutSeconds?: number };
 }
+
+const BRIEF_DESCRIPTION =
+  "What you tell the person at the transfer number before they take the call, in their language: who is calling, " +
+  "what about, and what was already done, ending with whether they can take the call now. For example " +
+  '"Hello, this is the booking assistant. I have Ms. Example on the line about a damaged parcel; the order number is ' +
+  'checked. Can you take the call now?" The caller does not hear it.';
 
 /**
  * A ready tool that transfers the phone call to `to` and tells the model what happened
@@ -417,17 +512,25 @@ export interface TransferCallToolProps {
  * ```tsx
  * <TransferCallTool to="+493012345678" description="Put the caller through to the claims team when they ask for a person." />
  * <TransferCallTool to="+493012345678" onEnded={{ action: "end_call", goodbye: "Thank you for calling. Goodbye!" }} />
+ * <TransferCallTool to="+493012345678" warm />
  * ```
  */
-export function TransferCallTool({ to, name, description, ringTimeoutSeconds, onEnded }: TransferCallToolProps) {
+export function TransferCallTool({ to, name, description, ringTimeoutSeconds, onEnded, warm }: TransferCallToolProps) {
   const transfer = useTransferCall();
   const request: TransferCallRequest = {
     to,
     ...(ringTimeoutSeconds === undefined ? {} : { ringTimeoutSeconds }),
     ...(onEnded === undefined ? {} : { onEnded }),
   };
+  const asksFirst = warm === true || isRecord(warm);
+  const consultTimeoutSeconds = isRecord(warm) ? warm.consultTimeoutSeconds : undefined;
   try {
     transferPayload(request);
+    if (warm !== undefined && typeof warm !== "boolean" && !isRecord(warm)) {
+      throw new TypeError(`warm takes true or { consultTimeoutSeconds }; got ${JSON.stringify(warm)}.`);
+    }
+    // The brief comes from the model at call time; the timeout is the author's, checked now.
+    if (asksFirst) warmOptions({ to, warm: { brief: "-", ...(consultTimeoutSeconds === undefined ? {} : { consultTimeoutSeconds }) } });
   } catch (error) {
     if (!(error instanceof TypeError)) throw error;
     // A wrong prop is the author's to fix, before the model can ever call the tool.
@@ -438,7 +541,8 @@ export function TransferCallTool({ to, name, description, ringTimeoutSeconds, on
       location: { component: "TransferCallTool" },
       fix:
         'Pass to="+493012345678" (international format) and, if at all, ringTimeoutSeconds from 10 to 60 and ' +
-        'onEnded={{ action: "end_call", goodbye: "Goodbye!" }} or { action: "continue", instruction }.',
+        'onEnded={{ action: "end_call", goodbye: "Goodbye!" }} or { action: "continue", instruction }, and warm or ' +
+        "warm={{ consultTimeoutSeconds }} from 10 to 120.",
     });
   }
   const ring = ringTimeoutSeconds ?? DEFAULT_TRANSFER_RING_TIMEOUT_SECONDS;
@@ -450,9 +554,14 @@ export function TransferCallTool({ to, name, description, ringTimeoutSeconds, on
       name={toolName}
       description={
         description ??
-        "Put the caller through to a person. The caller first hears your announcement, then a ringback " +
-          `while the transfer number rings (up to ${ring} seconds); when someone answers they take over the ` +
-          "call and you stop speaking. Call it only when the caller wants to speak to a person."
+        (asksFirst
+          ? "Put the caller through to a person, asking them first. The caller hears your announcement, then hold " +
+            `audio while you call the transfer number (it rings up to ${ring} seconds) and tell the person your brief. ` +
+            "If they agree, they take over the call and you stop speaking; if not, you are back with the caller and " +
+            "told what happened. Call it only when the caller wants to speak to a person."
+          : "Put the caller through to a person. The caller first hears your announcement, then a ringback " +
+            `while the transfer number rings (up to ${ring} seconds); when someone answers they take over the ` +
+            "call and you stop speaking. Call it only when the caller wants to speak to a person.")
       }
       inputSchema={{
         type: "object",
@@ -463,8 +572,9 @@ export function TransferCallTool({ to, name, description, ringTimeoutSeconds, on
               "The one sentence you say to the caller before connecting them, in their language, " +
               'for example "One moment, I am connecting you to our sales team." The caller hears it in full before the dial starts.',
           },
+          ...(asksFirst ? { brief: { type: "string", description: BRIEF_DESCRIPTION } } : {}),
         },
-        required: ["announce"],
+        required: asksFirst ? ["announce", "brief"] : ["announce"],
         additionalProperties: false,
       }}
       onCall={async (input) => {
@@ -475,7 +585,20 @@ export function TransferCallTool({ to, name, description, ringTimeoutSeconds, on
               `for example "One moment, I am connecting you to our sales team." Nobody was called; call ${toolName} again with it.`,
           );
         }
-        return transferToolResult(await transfer({ ...request, announce }));
+        if (!asksFirst) return transferToolResult(await transfer({ ...request, announce }));
+        const brief = typeof input.brief === "string" ? input.brief.trim() : "";
+        if (!brief) {
+          throw new ToolInputError(
+            `${toolName} needs brief: ${BRIEF_DESCRIPTION} Nobody was called; call ${toolName} again with it.`,
+          );
+        }
+        return transferToolResult(
+          await transfer({
+            ...request,
+            announce,
+            warm: { brief, ...(consultTimeoutSeconds === undefined ? {} : { consultTimeoutSeconds }) },
+          }),
+        );
       }}
     />
   );

@@ -29,6 +29,9 @@
  *   with a system note, or ends the call, as the transfer's `onEnded` decides.
  * - transfer audio (`transfer-audio.ts`): while a phone call is transferred the caller hears
  *   the transfer's announcement, then a ringback until the outcome, on a track of their own.
+ * - warm transfer (`warm-consult.ts`): while the person at the transfer number is asked first,
+ *   in a consultation room of its own, the caller hears a hold tone and the agent neither
+ *   listens nor speaks to them.
  * - typed input mid-call: `handle.sendText` feeds a typed message through
  *   the same pipeline, so the reply is spoken like any other.
  * - clip mapping: each transcript message is annotated with the clip
@@ -64,12 +67,14 @@ import { CurbLLMStub, CurbVoiceAgent } from "./curb-agent.js";
 import { voiceAgentClass, voiceSessionOptions } from "./pipeline.js";
 import { createProviderSwitch } from "./provider-swap.js";
 import { attachTransferAudio } from "../../../blocks/transfer-call/index.js";
+import { attachWarmTransferHost } from "../../../blocks/transfer-call/warm.js";
 import { callTraceOf } from "../../../call-trace.js";
 import { traceCall } from "../call-tracing.js";
 import { livekitCallRoom } from "./livekit-call-room.js";
 import { startS2sCall } from "../s2s/call.js";
 import { createTransferAudio, synthesizedFrames } from "./transfer-audio.js";
 import { reportVoiceLatencies } from "./latency.js";
+import { createWarmTransferHost, openConsultLeg } from "./warm-consult.js";
 import {
   TRANSFER_ENDED_PROMPT,
   callerSide,
@@ -325,6 +330,7 @@ async function startCascadedCall(
       if (active.agentState === "speaking") active.interrupt({ force: true });
       options.reporter?.event("transfer_handed_off", {});
       callTraceOf(bundle.runtime.info)?.transferHandedOff();
+      warmHost.handedOff();
     },
     resume: () => {
       const active = session;
@@ -367,6 +373,31 @@ async function startCascadedCall(
       const detail = error instanceof Error ? error.message : String(error);
       logError("voice", `${options.roomName}: silence check-in failed: ${detail}`);
     },
+  });
+
+  // A warm transfer asks the person at the number first, in a room of its own (warm-consult.ts).
+  const warmHost = createWarmTransferHost({
+    hold: () => transferAudio.hold(),
+    pause: () => {
+      // The transfer runs inside the agent's turn: a caller speaking now would interrupt it.
+      silence.cancel();
+      session?.input.setAudioEnabled(false);
+      return () => {
+        // Handed off, the target is on the line and the hand-off decides when the agent is back.
+        if (closing !== null || handoff.handedOff()) return;
+        session?.input.setAudioEnabled(true);
+      };
+    },
+    ask: (request, signal) => bundle.session.ask(request, signal),
+    openConsult: (ticket, transferId) =>
+      openConsultLeg({
+        ticket,
+        transferId,
+        settings: bundle.runtime.settings.current(),
+        vad,
+        env,
+        log: (message) => logError("voice", `${options.roomName}: consultation ${transferId}: ${message}`),
+      }),
   });
 
   /** One spoken turn on the shared session. Typed and synthetic inputs claim
@@ -618,7 +649,10 @@ async function startCascadedCall(
     unfollowSettings();
     // There is no call to end any more — take end_call back out of context.
     bundle.runtime.setEndCallRequest(null);
+    // A consultation under way ends with the call: its person is hung up.
+    warmHost.callerLeft();
     attachTransferAudio(bundle.runtime.info, null);
+    attachWarmTransferHost(bundle.runtime.info, null);
     const cleanup = [
       // First: a ringback still playing stops with the call.
       transferAudio.close(),
@@ -715,6 +749,7 @@ async function startCascadedCall(
 
   bundle.runtime.setEndCallRequest(hangup.request);
   attachTransferAudio(bundle.runtime.info, transferAudio);
+  attachWarmTransferHost(bundle.runtime.info, warmHost);
 
   room.onParticipantDisconnected((participant) => {
     logInfo(
@@ -724,6 +759,7 @@ async function startCascadedCall(
     );
     watchdog.onParticipantLeft();
     if (participant) followHandoff(() => handoff.onParticipantLeft(participant));
+    if (callerSide(room.participants()).length === 0) followHandoff(() => warmHost.callerLeft());
   });
   room.onParticipantConnected((participant) => {
     logInfo("voice", `participant joined ${options.roomName}: ${participant?.identity ?? "unknown"}`);
@@ -766,6 +802,7 @@ async function startCascadedCall(
       // the rebuilt runtime — otherwise end_call would quietly vanish.
       bundle.runtime.setEndCallRequest(null);
       attachTransferAudio(bundle.runtime.info, null);
+      attachWarmTransferHost(bundle.runtime.info, null);
       // A transfer under way goes on in the rebuilt runtime, with its onEnded.
       moveTrackedTransfer(bundle.runtime.info, next.runtime.info);
       bundle = next;
@@ -774,6 +811,7 @@ async function startCascadedCall(
       unfollowSettings = followSettings();
       bundle.runtime.setEndCallRequest(hangup.request);
       attachTransferAudio(bundle.runtime.info, transferAudio);
+      attachWarmTransferHost(bundle.runtime.info, warmHost);
     },
     interrupt: () => {
       silence.cancel();

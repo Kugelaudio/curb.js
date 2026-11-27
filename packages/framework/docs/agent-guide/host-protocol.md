@@ -158,7 +158,12 @@ record writes none of them.
 | `curb.tool` | every tool call, when it ends | `{name, arguments, ok, skillPath?, heldFor?, result?}` (`ToolEventPayload` in the schema); `result` is `{message?, data?, truncated?}`, what the tool answered (see below); `durationMs` is how long the handler ran |
 | `curb.skill` | the active skill changed | `{action: "loaded" \| "exited", path, title?}` |
 | `curb.procedure` | a `<Procedure>` moved | `{action: "started" \| "step_completed" \| "completed" \| "left", title, step, steps, stepTitle?, stepTitles?}`; `stepTitles` is every step's title, on `started` |
-| `curb.transfer` | a transfer request got its outcome | `{outcome: "answered" \| "no_answer" \| "busy" \| "failed" \| "refused", to?}`; `durationMs` is the time since the request, `to` the number the request named, as written |
+| `curb.transfer` | a transfer request got its outcome | `{outcome: "answered" \| "declined" \| "no_answer" \| "busy" \| "failed" \| "refused", to?, warm?}`; `durationMs` is the time since the request, `to` the number the request named, as written, `warm: true` for a [warm transfer](#warm-transfer-on-your-own-host), the only kind that can end `declined` |
+| `curb.transfer_consult_started` | a warm transfer's target is being dialed into its consultation room | `{transferId}` |
+| `curb.transfer_consult_answered` | the target joined the consultation room | `{transferId}`; `durationMs` is how long it rang |
+| `curb.transfer_consult_turn` | one line of the consultation | `{transferId, speaker: "agent" \| "target", text}`; the target's lines are never caller turns |
+| `curb.transfer_consult_decision` | the model read one reply of the target | `{transferId, decision: "yes" \| "no" \| "unclear" \| "voicemail", attempt: 1 \| 2}` |
+| `curb.transfer_consult_ended` | the consultation is over | `{transferId, decision: "connect" \| "decline" \| "no_answer" \| "failed", reason}`; `reason` is `confirmed`, `declined`, `unclear_twice`, `voicemail`, `consult_timeout`, `target_left`, `dial_no_answer`, `dial_busy`, `dial_failed`, `join_failed`, `error` or `caller_left`; `durationMs` is how long it ran since the target answered, absent when nobody did |
 | `curb.transfer_handed_off` | the transfer target is on the line and the agent stays quiet | `{}` |
 | `curb.transfer_resumed`, `curb.transfer_ended_call` | the target left: the agent has the call back, or the transfer ended the call | `{}` |
 | `curb.message_to_client` | every `useSend().toClient` message that left for the caller's app | `{key, id, payload, truncated?}` |
@@ -392,6 +397,30 @@ that sends no reply in time gives the agent the outcome `failed`, with the code
 `transfer_no_reply`. A direct-join runner takes no host messages, so a transfer there ends the
 same way.
 
+### Warm transfer on your own host
+
+A [warm transfer](./human-handoff.md#warm-transfer) asks the target first, in a consultation room
+of its own. The agent joins that room as a second participant of the same call and talks to the
+target there, while the caller hears a hold tone in the call's room. The brief stays in the agent:
+the host never receives it.
+
+| Direction | Name | Payload |
+|---|---|---|
+| Agent to host | `call.transfer.warm` | `{ to, ringTimeoutSeconds?, consultTimeoutSeconds? }` |
+| Host to agent, as the reply | `call.transfer.accepted` | `{ transferId, consult: { url, token } }`: the consultation room's ticket, the same kind a call's own join takes |
+| Host to agent, as the reply | `call.transfer.refused` | `{ code, message }`; `consult_unavailable` when the host cannot open a consultation room |
+| Agent to host | `call.transfer.decide` | `{ transferId, decision }`, with `decision` one of `connect`, `decline`, `no_answer`, `failed`; sent once, when the consultation is over |
+| Host to agent | `call.transfer.result` | `{ transferId, outcome, dialStatus }`, with `outcome` one of `answered`, `declined`, `no_answer`, `busy`, `failed` |
+
+On acceptance, dial the target into the consultation room. The agent joins it with the ticket
+within 15 s, or ends the transfer `failed`; it never logs the token. On `connect`, move the target
+into the call's room: their arrival there hands the call to them and the agent leaves the
+consultation. On any other decision, hang the target up. A `call.transfer.result` the host sends
+before a decision (nobody answered, the line was busy) ends the consultation with that outcome.
+When the caller hangs up during the consultation, the agent sends `call.transfer.decide` with
+`failed`, and the host ends the target's leg. A call whose session cannot join a second room (a
+speech-to-speech model) refuses warm transfers itself, with `warm_transfer_unsupported`.
+
 ### Client side
 
 The wire format is plain LiveKit, so `livekit-client` and the native SDKs work without a
@@ -514,7 +543,7 @@ Binary frames are one stream byte followed by little-endian 16-bit mono PCM:
 |---|---|---|
 | `0` | Relay to agent | The caller the agent listens to, at 16 kHz |
 | `0` | Agent to relay | The agent's voice, at 24 kHz |
-| `1` | Agent to relay | A transfer's announcement and ringback, at 48 kHz |
+| `1` | Agent to relay | A transfer's announcement, ringback and hold tone, at 48 kHz |
 
 Text frames are JSON. `src/relay-wire.ts` is the source for every message. The first frame the agent
 expects is `joined`, with the room's name and who is there, and it gives up after 15 seconds.
@@ -540,6 +569,10 @@ any other call: `agent_text` and `caller_text` as transcripts and `agent_state` 
 
 The relay forwards only the participant named by the latest `listen` message. A call through a
 relay has no WebRTC in the agent, so stats and tracks from the room are not available to agent code.
+
+A [warm transfer](#warm-transfer-on-your-own-host)'s consultation ticket may name a relay too
+(`curb-relay+wss://`, with a token for the consultation room): the agent then opens a second relay
+WebSocket for that room, with the same messages, and closes it when the consultation is over.
 
 ## Live session settings
 

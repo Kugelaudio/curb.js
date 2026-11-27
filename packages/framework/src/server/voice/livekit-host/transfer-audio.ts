@@ -1,7 +1,7 @@
 /**
  * What the caller of a phone call hears while it is transferred (`blocks/transfer-call/`): the
  * agent's announcement, played to its end before anything is dialed, then a ringback tone
- * until the outcome is known.
+ * until the outcome is known, or, while a warm transfer asks the person first, a hold tone.
  *
  * Both play on an audio track of their own, published by the agent beside its voice as a second
  * microphone, so a participant recording of the agent carries them (`publishTransferTrack`). The
@@ -63,6 +63,42 @@ export function* ringbackFrames(): Generator<AudioFrame> {
   }
 }
 
+/** The hold tone: two soft notes, a falling third, every 4 s. Not a ringback: the caller is
+ * waiting for the agent, not for a phone to be answered. */
+export const HOLD_FREQUENCIES_HZ = [659.25, 523.25] as const;
+const HOLD_NOTE_MS = 240;
+const HOLD_GAP_MS = 60;
+const HOLD_CYCLE_MS = 4000;
+/** -26 dBFS: softer than the ringback, for a wait that can last a minute. */
+const HOLD_LEVEL = 0.05;
+
+function toneSamples(frequency: number, ms: number, level: number): Int16Array {
+  const count = (TRANSFER_AUDIO_SAMPLE_RATE * ms) / 1000;
+  const samples = new Int16Array(count);
+  for (let i = 0; i < count; i += 1) {
+    const ramp = Math.min(1, i / RAMP_SAMPLES, (count - 1 - i) / RAMP_SAMPLES);
+    const phase = (2 * Math.PI * frequency * i) / TRANSFER_AUDIO_SAMPLE_RATE;
+    samples[i] = Math.trunc(32767 * level * ramp * Math.sin(phase));
+  }
+  return samples;
+}
+
+/** The hold tone as 20 ms mono frames at {@link TRANSFER_AUDIO_SAMPLE_RATE}, without end. */
+export function* holdFrames(): Generator<AudioFrame> {
+  const cycle = new Int16Array((TRANSFER_AUDIO_SAMPLE_RATE * HOLD_CYCLE_MS) / 1000);
+  let at = 0;
+  for (const frequency of HOLD_FREQUENCIES_HZ) {
+    const note = toneSamples(frequency, HOLD_NOTE_MS, HOLD_LEVEL);
+    cycle.set(note, at);
+    at += note.length + (TRANSFER_AUDIO_SAMPLE_RATE * HOLD_GAP_MS) / 1000;
+  }
+  for (;;) {
+    for (let start = 0; start < cycle.length; start += FRAME_SAMPLES) {
+      yield new AudioFrame(cycle.slice(start, start + FRAME_SAMPLES), TRANSFER_AUDIO_SAMPLE_RATE, 1, FRAME_SAMPLES);
+    }
+  }
+}
+
 /** Where the transfer audio goes. rtc-node's `AudioSource` fits. */
 export type TransferAudioSink = {
   /** Queue one frame; resolves once the queue has room for the next. */
@@ -86,6 +122,8 @@ export type TransferAudioOptions = {
 export type CallTransferAudio = TransferAudio & {
   /** Publish the track ahead of need, so the caller's side has subscribed before it plays. */
   prepare(): Promise<void>;
+  /** Play the hold tone until the returned function is called, or something else plays. */
+  hold(): () => void;
   /** Stop whatever plays (the transfer target joined). */
   stop(): void;
   /** The call ended: stop, and play nothing again. */
@@ -133,6 +171,17 @@ export function createTransferAudio(options: TransferAudioOptions): CallTransfer
     }
   };
 
+  /** A tone without end, until stopped. */
+  const loop = (what: string, frames: Iterable<AudioFrame>) => {
+    const playback = start();
+    void play(playback, frames).catch((error: unknown) => {
+      // KEEP-JUSTIFIED: a tone that cannot play must not fail the transfer it accompanies;
+      // the caller waits in silence, and the cause is in the log.
+      options.log(`${what} failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+    return () => stopPlayback(playback);
+  };
+
   return {
     prepare: async () => {
       if (closed) return;
@@ -147,15 +196,8 @@ export function createTransferAudio(options: TransferAudioOptions): CallTransfer
         if (current === playback) current = null;
       }
     },
-    ringback: () => {
-      const playback = start();
-      void play(playback, ringbackFrames()).catch((error: unknown) => {
-        // KEEP-JUSTIFIED: a ringback that cannot play must not fail the transfer it
-        // accompanies; the caller waits in silence, and the cause is in the log.
-        options.log(`ringback failed: ${error instanceof Error ? error.message : String(error)}`);
-      });
-      return () => stopPlayback(playback);
-    },
+    ringback: () => loop("ringback", ringbackFrames()),
+    hold: () => loop("hold tone", holdFrames()),
     stop: () => {
       if (current) stopPlayback(current);
     },

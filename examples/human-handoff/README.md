@@ -2,7 +2,9 @@
 
 A support line that puts the caller through to a person within opening hours, and takes a
 callback request when nobody can answer. It shows `<Handoff>`: the transfer, the hours, the
-callback request, and the handoff the framework makes on its own when tools keep failing.
+callback request, and the handoff the framework makes on its own when tools keep failing. A
+billing dispute goes to a specialist by warm transfer (`<TransferCallTool warm>`): the agent asks
+the specialist first and puts the caller through only when they say yes.
 
 - `src/agent/agent.tsx`: the whole agent.
 - `src/agent/handoff.scenario.ts`: a handoff that reaches nobody, played without dialing anyone.

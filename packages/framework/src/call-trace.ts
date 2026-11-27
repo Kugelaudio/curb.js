@@ -21,10 +21,23 @@ export type CallbackRequestRecord = { name: string; phone: string; reason: strin
 
 /** One transfer under way, from the request to its end. */
 export type TransferTrace = {
-  /** What the dial came to: `answered`, `no_answer`, `busy`, `failed`, `refused`. Any outcome
-   * but `answered` ends the transfer. */
+  /** What the dial came to: `answered`, `no_answer`, `busy`, `failed`, `refused`, or `declined`
+   * after a warm transfer's consultation. Any outcome but `answered` ends the transfer. */
   outcome(outcome: string): void;
 };
+
+/**
+ * One step of a warm transfer's consultation with the person at the transfer number, as the
+ * call's record shows it (`curb.transfer_consult_<kind>`). `durationMs`: for `answered`, how long
+ * it rang since `started`; for `ended`, how long the consultation ran since `answered`, absent
+ * when nobody answered. What was said (`turn`) goes to the observer only, never onto a span.
+ */
+export type ConsultTraceEvent =
+  | { kind: "started"; transferId: string }
+  | { kind: "answered"; transferId: string; durationMs: number }
+  | { kind: "turn"; transferId: string; speaker: "agent" | "target"; text: string }
+  | { kind: "decision"; transferId: string; decision: string; attempt: 1 | 2 }
+  | { kind: "ended"; transferId: string; decision: string; reason: string; durationMs?: number };
 
 export type CallTrace = {
   /** The context a span of this call starts in: the active one when it already belongs to this
@@ -37,8 +50,11 @@ export type CallTrace = {
   /** The active skill changed: the stay in the one before ends, a stay in the new one starts. */
   skill(change: SkillChange): void;
   procedure(change: ProcedureChange): void;
-  /** A transfer to `to`, the number as the request names it, was asked for. */
-  transfer(to: string): TransferTrace;
+  /** A transfer to `to`, the number as the request names it, was asked for. `warm`: the person
+   * at the number is asked first. */
+  transfer(to: string, options?: { warm?: boolean }): TransferTrace;
+  /** A step of a warm transfer's consultation. */
+  consult(event: ConsultTraceEvent): void;
   /** The transfer target is on the line and the agent stays quiet. */
   transferHandedOff(): void;
   /** The handed-off transfer is over: the agent took the call back, or it ended the call. */
@@ -59,7 +75,9 @@ export type CallTrace = {
 export type CallTraceObserver = {
   /** A transfer request to `to` got its outcome, `durationMs` after it was asked for. The
    * number goes to the observer only, never onto a span. */
-  transfer?(outcome: string, durationMs: number, to: string): void;
+  transfer?(outcome: string, durationMs: number, to: string, options?: { warm?: boolean }): void;
+  /** A step of a warm transfer's consultation (`curb.transfer_consult_<kind>` in the call's record). */
+  consult?(event: ConsultTraceEvent): void;
   /** A handoff was decided (`curb.handoff` in the call's record). */
   handoff?(record: HandoffRecord): void;
   /** The caller left a callback request (`curb.callback_request` in the call's record). */

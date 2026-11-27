@@ -127,9 +127,9 @@ export function Handover() {
 }
 ```
 
-- `transfer({ to, ringTimeoutSeconds?, announce?, onEnded? })` resolves
-  `{ outcome, code?, message?, transferId? }` with `outcome` one of `answered`, `no_answer`,
-  `busy`, `failed`, `refused`. It never rejects for an outcome; a bad `to`, a
+- `transfer({ to, ringTimeoutSeconds?, announce?, onEnded?, warm? })` resolves
+  `{ outcome, code?, message?, transferId?, targetReply? }` with `outcome` one of `answered`,
+  `no_answer`, `busy`, `failed`, `refused`, and `declined` for a [warm transfer](#warm-transfer). It never rejects for an outcome; a bad `to`, a
   `ringTimeoutSeconds` outside 10 to 60, a blank `announce` or an `onEnded` that is not one
   ([below](#when-the-person-hangs-up)) throws `TypeError` (on `<TransferCallTool>`, an
   authoring error when it renders).
@@ -164,6 +164,53 @@ A refused transfer comes back as `outcome: "refused"` with a `code`:
 | `transfer_unsupported_number` | The call's number is from your own Twilio or Telnyx account |
 | `transfer_in_progress` | Another transfer of this call is still ringing |
 | `callback_destination_blocked` | The number is outside Germany, Austria and Switzerland, or premium-rate |
+| `warm_transfer_unsupported` | A [warm transfer](#warm-transfer) on a call that cannot run one (a speech-to-speech model, a typed session) |
+| `consult_unavailable` | A warm transfer, and the host cannot open a consultation room for it |
+
+## Warm transfer
+
+A warm transfer asks the person at the number first, and puts the caller through only when they
+say yes. Turn it on with `warm`:
+
+```tsx
+<TransferCallTool to="+493012345678" warm />
+```
+
+The model then writes two things when it calls the tool: `announce` for the caller, and `brief`
+for the person at the number ("Hello, this is the booking assistant. I have a caller about a
+damaged parcel; the order number is checked. Can you take the call now?"). From your own code,
+pass the brief yourself:
+
+```tsx
+const { outcome, targetReply } = await transfer({
+  to: "+493012345678",
+  announce: "One moment, I am asking a colleague whether they can take your call.",
+  warm: { brief: "I have a caller about a damaged parcel. Can you take the call now?" },
+});
+```
+
+What happens:
+
+1. The caller hears `announce`, then a soft hold tone. The agent neither listens to them nor
+   speaks to them until the transfer is over.
+2. The number is dialed into a consultation room the caller is not in. When the person answers,
+   the agent waits for their greeting, says the brief, and listens.
+3. Each reply gets one decision from the model: yes, no, unclear, or a mailbox. Their yes, in any
+   words ("Sure, put them through", "Ja, gerne"), puts the caller through; the agent says one line
+   to the person, leaves, and the call is theirs, as with a cold transfer.
+4. Otherwise the person's leg ends and the agent is back with the caller. A no, or a reply that
+   is still unclear after the agent asked once more, is `declined`; a mailbox, nobody answering,
+   or no decision within `consultTimeoutSeconds` (default 45, 10 to 120) is `no_answer`; a dial
+   or room that fails is `failed`. The tool tells the model what the person said, so it can
+   tell the caller and offer a callback.
+
+If the caller hangs up during the consultation, the person's leg ends too. The result carries
+`targetReply`, what the person said, as heard. A warm transfer needs a voice call on a host that
+opens consultation rooms ([Host protocol](./host-protocol.md#warm-transfer-on-your-own-host));
+elsewhere it is refused with `warm_transfer_unsupported` and nobody is dialed.
+
+On a hosted call the record shows both legs: `curb.transfer_consult_started`, `_answered`,
+each `_turn` and `_decision`, and `_ended` with the reason, then `curb.transfer` with `warm: true`.
 
 ## When the person hangs up
 
