@@ -302,3 +302,18 @@ test("stamps the version into the tarball and ships the release notes", () => {
   assert.equal(stamped.version, "1.15.0");
   assert.equal(readFileSync(join(unpacked, "package/RELEASE_NOTES.md"), "utf8"), "## Added\n");
 });
+
+test("creates an output directory that does not exist yet", () => {
+  const work = mkdtempSync(join(tmpdir(), "curb-npm-test-"));
+  const release = join(work, "package");
+  mkdirSync(release);
+  writeFileSync(join(release, "README.md"), "# Curb\n");
+  const manifest = { name: "curb", version: "1.0.0", private: true, files: ["README.md"], ...PAGE };
+  writeFileSync(join(release, "package.json"), JSON.stringify(manifest));
+  execFileSync("tar", ["-czf", join(work, "release.tgz"), "-C", work, "package"]);
+  const out = join(work, "missing", "out");
+
+  const tarball = stampTarball(join(work, "release.tgz"), out, { version: "1.15.0" });
+  assert.equal(tarball, join(out, "curb.js-1.15.0.tgz"));
+  assert.ok(existsSync(tarball));
+});

@@ -18,7 +18,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -155,6 +155,7 @@ export function stampTarball(tarball, outDir, { version, notes, name }) {
   const readme = existsSync(readmePath) ? readFileSync(readmePath, "utf8") : undefined;
   const problems = npmPageProblems(manifest, readme);
   if (problems.length > 0) throw new Error(`${manifest.name} would lose its npm page: ${problems.join(", ")}`);
+  mkdirSync(resolve(outDir), { recursive: true });
   const destination = join(resolve(outDir), `${manifest.name}-${version}.tgz`);
   copyFileSync(result, destination);
   return destination;
