@@ -417,6 +417,9 @@ within 15 s, or ends the transfer `failed`; it never logs the token. On `connect
 into the call's room: their arrival there hands the call to them and the agent leaves the
 consultation. On any other decision, hang the target up. A `call.transfer.result` the host sends
 before a decision (nobody answered, the line was busy) ends the consultation with that outcome.
+The room and the messages are separate channels, so the room may end first: when it ends, or
+cannot be joined, before the target answers, the agent waits up to 15 s for that result and
+uses it, and only without one ends the transfer `failed`.
 When the caller hangs up during the consultation, the agent sends `call.transfer.decide` with
 `failed`, and the host ends the target's leg. A call whose session cannot join a second room (a
 speech-to-speech model) refuses warm transfers itself, with `warm_transfer_unsupported`.

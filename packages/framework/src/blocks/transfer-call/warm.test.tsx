@@ -141,12 +141,13 @@ function fakeTrace() {
 }
 
 const REQUEST: WarmRequest = { to: "+493012345678", brief: BRIEF, consultTimeoutSeconds: 30, announce: "One moment please." };
-const TIMING = { greetingMs: 5, connectMs: 200, lingerMs: 0 };
+const TIMING = { greetingMs: 5, connectMs: 200, lingerMs: 0, resultWaitMs: 20 };
 
 function start(
   call: ReturnType<typeof phoneCall>,
   fake: ReturnType<typeof fakeHost>,
   request: WarmRequest = REQUEST,
+  timing: Partial<typeof TIMING> = {},
 ) {
   const { trace, events } = fakeTrace();
   const lines: string[] = [];
@@ -160,7 +161,7 @@ function start(
       },
       trace,
       log: (line) => lines.push(line),
-      timing: TIMING,
+      timing: { ...TIMING, ...timing },
     },
     request,
   );
@@ -362,6 +363,50 @@ describe("warm transfer", () => {
     expect(call.decisions()).toEqual([]);
     expect(events.at(-1)).toEqual({ kind: "ended", transferId: "t-1", decision: "no_answer", reason: "dial_no_answer" });
     expect(fake.log.slice(-3)).toEqual(["leave consultation", "hold stopped", "resume"]);
+  });
+
+  it("takes the host's result when the room ends first while the phone still rings", async () => {
+    vi.useFakeTimers();
+    const call = phoneCall();
+    const fake = fakeHost();
+    const { outcome, events, lines } = start(call, fake, REQUEST, { resultWaitMs: 15_000 });
+    await vi.advanceTimersByTimeAsync(0);
+    // The host ends the room right after the dial, and sends its result a few seconds later.
+    fake.target({ type: "lost", message: "the agent lost the consultation room (room deleted)" });
+    await vi.advanceTimersByTimeAsync(4_600);
+    expect(call.decisions()).toEqual([]);
+    await call.result({ transferId: "t-1", outcome: "no_answer", dialStatus: "NOANSWER" });
+    await expect(outcome).resolves.toEqual({ outcome: "no_answer", transferId: "t-1" });
+    expect(call.decisions()).toEqual([]);
+    expect(events.at(-1)).toMatchObject({ kind: "ended", decision: "no_answer", reason: "dial_no_answer" });
+    expect(lines.some((line) => line.includes("waiting up to 15000 ms for the host's result"))).toBe(true);
+  });
+
+  it("takes the host's result when the room is gone before the agent could join it", async () => {
+    vi.useFakeTimers();
+    const call = phoneCall();
+    const fake = fakeHost([], { join: "fail" });
+    const { outcome } = start(call, fake, REQUEST, { resultWaitMs: 15_000 });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(call.decisions()).toEqual([]);
+    await call.result({ transferId: "t-1", outcome: "busy", dialStatus: "BUSY" });
+    await expect(outcome).resolves.toEqual({ outcome: "busy", transferId: "t-1" });
+    expect(call.decisions()).toEqual([]);
+  });
+
+  it("fails when the room ended while ringing and no result came in time", async () => {
+    vi.useFakeTimers();
+    const call = phoneCall();
+    const fake = fakeHost();
+    const { outcome, events } = start(call, fake, REQUEST, { resultWaitMs: 15_000 });
+    await vi.advanceTimersByTimeAsync(0);
+    fake.target({ type: "lost", message: "the agent lost the consultation room (room deleted)" });
+    await vi.advanceTimersByTimeAsync(14_990);
+    expect(call.decisions()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(outcome).resolves.toMatchObject({ outcome: "failed", transferId: "t-1" });
+    expect(call.decisions()).toEqual([{ transferId: "t-1", decision: "failed" }]);
+    expect(events.at(-1)).toMatchObject({ kind: "ended", decision: "failed", reason: "error" });
   });
 
   it("ends the person's call when the caller hangs up during the consultation", async () => {

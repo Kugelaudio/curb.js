@@ -115,6 +115,9 @@ export interface WarmTiming {
   lingerMs: number;
   /** After the consultation time ran out: how long a reply heard before it may still be read. */
   graceMs: number;
+  /** The consultation room ended, or could not be joined, while the phone still rang: how long
+   * the host's own result is awaited before the transfer fails. */
+  resultWaitMs: number;
 }
 
 const TIMING: WarmTiming = {
@@ -122,6 +125,7 @@ const TIMING: WarmTiming = {
   connectMs: 30_000,
   lingerMs: 15_000,
   graceMs: 10_000,
+  resultWaitMs: 15_000,
 };
 
 /** A validated warm transfer request. */
@@ -155,7 +159,7 @@ type Input =
   | { kind: "result"; outcome: WarmDialResult; dialStatus?: string }
   | { kind: "caller_left" }
   | { kind: "handed_off" }
-  | { kind: "timer"; which: "dial" | "consult" | "connect" | "greeting" }
+  | { kind: "timer"; which: "dial" | "consult" | "connect" | "greeting" | "room_gone" }
   | { kind: "decided"; seq: number; reading: ConsultReading | null }
   | { kind: "decide_failed"; seq: number; message: string }
   | { kind: "said"; seq: number; failed?: string };
@@ -239,6 +243,8 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
     ending: Extract<WarmEffect, { type: "end_consult" }> | null;
     endingSeq: number;
     reading: ConsultReading | null;
+    /** The room ended before anyone answered: what ends the transfer if the host's result does not. */
+    roomGone: WarmEvent | null;
   } = {
     leg: null,
     asking: null,
@@ -246,6 +252,7 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
     ending: null,
     endingSeq: -1,
     reading: null,
+    roomGone: null,
   };
   let legClosed = false;
   const closeLeg = () => {
@@ -346,6 +353,7 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
     });
     let consultTimer: ReturnType<typeof setTimeout> | null = null;
     let greetingTimer: ReturnType<typeof setTimeout> | null = null;
+    let roomGoneTimer: ReturnType<typeof setTimeout> | null = null;
 
     const turns: ConsultTurn[] = [];
     const targetLines: string[] = [];
@@ -416,6 +424,21 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
       closeLeg();
       if (decision === "connect") after(timing.connectMs, { kind: "timer", which: "connect" });
     };
+    /**
+     * The room ended, or could not be joined. While the phone still rings, that is most often the
+     * host ending the dial, and its result says how (no answer, busy) on a channel of its own
+     * that may arrive later: it is awaited for a while before `event` decides.
+     */
+    const roomEnded = (event: WarmEvent, what: string) => {
+      if (state.phase !== "dialing") {
+        apply(event);
+        return;
+      }
+      if (live.roomGone) return;
+      live.roomGone = event;
+      log(`[curb] warm transfer ${id}: ${what} while the phone still rang; waiting up to ${timing.resultWaitMs} ms for the host's result`);
+      roomGoneTimer = after(timing.resultWaitMs, { kind: "timer", which: "room_gone" });
+    };
     const apply = (event: WarmEvent) => {
       const next = step(state, event);
       state = next.state;
@@ -436,7 +459,8 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
         cancel(dialTimer);
         cancel(consultTimer);
         cancel(greetingTimer);
-        dialTimer = consultTimer = greetingTimer = null;
+        cancel(roomGoneTimer);
+        dialTimer = consultTimer = greetingTimer = roomGoneTimer = null;
         live.asking?.controller.abort();
         live.asking = null;
         const farewell = effect.farewell ? live.reading?.say : undefined;
@@ -466,7 +490,7 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
           break;
         case "leg_failed":
           log(`[curb] warm transfer ${id}: could not join the consultation room: ${input.message}`);
-          apply({ type: "join_failed" });
+          roomEnded({ type: "join_failed" }, "the consultation room could not be joined");
           break;
         case "target": {
           const event = input.event;
@@ -521,7 +545,7 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
             apply({ type: "target_left" });
           } else {
             log(`[curb] warm transfer ${id}: the consultation room failed: ${event.message}`);
-            apply({ type: "error" });
+            roomEnded({ type: "error" }, "the consultation room ended");
           }
           break;
         }
@@ -542,6 +566,12 @@ export async function warmTransfer(deps: WarmDeps, request: WarmRequest): Promis
             if (stage === "greeting" && state.phase === "consulting") {
               stage = "briefing";
               sayToTarget(request.brief);
+            }
+          } else if (input.which === "room_gone") {
+            roomGoneTimer = null;
+            if (live.roomGone && state.phase === "dialing") {
+              log(`[curb] warm transfer ${id}: no result from the host within ${timing.resultWaitMs} ms`);
+              apply(live.roomGone);
             }
           } else if (input.which === "dial") {
             dialTimer = null;
