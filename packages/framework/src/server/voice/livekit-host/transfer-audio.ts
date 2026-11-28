@@ -21,14 +21,17 @@ import {
   AudioResampler,
   AudioSource,
   LocalAudioTrack,
+  RoomEvent,
   TrackPublishOptions,
   TrackSource,
+  type RemoteParticipant,
   type Room,
 } from "@livekit/rtc-node";
 import { tts } from "@livekit/agents";
 import type { TransferAudio } from "../../../blocks/transfer-call/index.js";
 import { logError } from "../../log.js";
 import { KugelTTS } from "./kugel-tts-plugin.js";
+import { callerSide } from "./transfer-handoff.js";
 
 export const TRANSFER_AUDIO_SAMPLE_RATE = 48_000;
 /** The European ringback: 425 Hz, 1 s on, 4 s off (ITU-T E.180 / ETSI ES 201 970). */
@@ -178,33 +181,89 @@ export async function publishTransferTrack(room: Room): Promise<TransferAudioSin
   // A microphone, like the agent's voice: LiveKit's participant egress records a participant's
   // camera and microphone tracks and mixes their audio, so a recording of the agent then holds
   // the announcement and ringback too. Published without a source, it would be left out.
+  // Counted from before the publish, so a caller who leaves while it is under way is counted too.
+  let departures = 0;
+  const left = (participant: RemoteParticipant) => void (departures += callerSide([participant]).length);
+  room.on(RoomEvent.ParticipantDisconnected, left);
   let track: LocalAudioTrack | undefined;
   try {
     track = LocalAudioTrack.createAudioTrack(TRACK_NAME, source);
     await participant.publishTrack(track, new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
   } catch (error) {
+    room.off(RoomEvent.ParticipantDisconnected, left);
     const cleanup = await Promise.allSettled([track?.close(false), source.close()]);
     for (const result of cleanup) {
       if (result.status === "rejected") logError("voice", `closing unpublished transfer audio: ${String(result.reason)}`);
     }
     throw error;
   }
-  return roomTrack(source, () => room.isConnected);
+  const sink = roomTrack(source, {
+    connected: () => room.isConnected,
+    present: () => callerSide(room.remoteParticipants.values()).length > 0,
+    departures: () => departures,
+  });
+  return {
+    ...sink,
+    close: async () => {
+      room.off(RoomEvent.ParticipantDisconnected, left);
+      await sink.close();
+    },
+  };
+}
+
+/** The caller's side of a call, as a track's playout needs it. */
+export type CallerSide = {
+  /** Someone of the caller's side (a caller, not a transfer target) is in the call now. */
+  present: () => boolean;
+  /** How many of the caller's side have left so far. */
+  departures: () => number;
+};
+
+/**
+ * Whether the audio a track queued since its last wait or clear reached a caller: one was in the
+ * call at its first frame, and none of the caller's side left before it drained. An empty room's
+ * drain is not a playout.
+ */
+export function callerHearing(side: CallerSide) {
+  let start: { present: boolean; departures: number } | null = null;
+  const now = () => ({ present: side.present(), departures: side.departures() });
+  return {
+    /** A frame was queued. */
+    queued: () => void (start ??= now()),
+    /** The queue was dropped. */
+    cleared: () => void (start = null),
+    /** The wait for the queue to drain begins: what to ask once it has drained. */
+    waiting: () => {
+      const at = start ?? now();
+      start = null;
+      return () => at.present && side.departures() === at.departures;
+    },
+  };
 }
 
 /** `source` as the room's track: its playout counts as complete only with no clear since the wait
- * began and the agent still in the room (a cleared `AudioSource` releases its waiter at once). */
-export function roomTrack(source: Pick<AudioSource, "captureFrame" | "waitForPlayout" | "clearQueue" | "close">, connected: () => boolean): TransferAudioSink {
+ * began, the agent still in the room, and a caller who heard all of it ({@link callerHearing}; a
+ * cleared `AudioSource` releases its waiter at once). */
+export function roomTrack(
+  source: Pick<AudioSource, "captureFrame" | "waitForPlayout" | "clearQueue" | "close">,
+  call: CallerSide & { connected: () => boolean },
+): TransferAudioSink {
   let clears = 0;
+  const hearing = callerHearing(call);
   return {
-    captureFrame: (frame) => source.captureFrame(frame),
+    captureFrame: (frame) => {
+      hearing.queued();
+      return source.captureFrame(frame);
+    },
     waitForPlayout: async () => {
       const before = clears;
+      const heard = hearing.waiting();
       await source.waitForPlayout();
-      return clears === before && connected();
+      return clears === before && call.connected() && heard();
     },
     clearQueue: () => {
       clears += 1;
+      hearing.cleared();
       source.clearQueue();
     },
     close: () => source.close(),

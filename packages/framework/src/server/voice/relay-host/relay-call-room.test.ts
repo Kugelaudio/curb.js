@@ -314,8 +314,11 @@ describe("publishTransferTrack", () => {
     await expect(sink).rejects.toThrow(/no permission/);
   });
 
-  it("sends audio on its own stream, waits for playout, clears and closes", async () => {
-    const pending = openSink();
+  it("sends audio on its own stream, waits for playout to a caller, clears and closes", async () => {
+    const opened = await open();
+    relay.say({ type: "participant_connected", participant: CALLER });
+    await vi.waitFor(() => expect([...opened.room.participants()]).toHaveLength(1));
+    const pending = opened.room.publishTransferTrack();
     await relay.until(() => relay.received.some((m) => m.type === "transfer_open"));
     relay.say({ type: "transfer_ready" });
     const sink = await pending;
@@ -379,6 +382,44 @@ describe("publishTransferTrack", () => {
     sink.clearQueue();
     relay.say({ type: "transfer_played", id: wait.id as number });
     await expect(playout).resolves.toBe(false);
+  });
+
+  /** A sink with `who` in the call, one frame of it already playing, and `who` then gone. */
+  type Who = { identity: string; kind: ParticipantKind };
+  const TARGET: Who = { identity: `${TRANSFER_TARGET_IDENTITY_PREFIX}1`, kind: ParticipantKind.SIP };
+
+  /** A line played to `inCall`, `leaving` hanging up before its first frame or mid-line: the relay then says it played. */
+  async function played(inCall: Who[], leaving: Who, when: "before" | "mid-line") {
+    const opened = await open();
+    for (const who of inCall) relay.say({ type: "participant_connected", participant: who });
+    await vi.waitFor(() => expect([...opened.room.participants()]).toHaveLength(inCall.length));
+    const pending = opened.room.publishTransferTrack();
+    await relay.message("transfer_open");
+    relay.say({ type: "transfer_ready" });
+    const sink = await pending;
+    const leave = async () => {
+      relay.say({ type: "participant_disconnected", identity: leaving.identity });
+      await vi.waitFor(() => expect([...opened.room.participants()]).toHaveLength(inCall.length - 1));
+    };
+    if (when === "before") await leave();
+    await sink.captureFrame(frame(20));
+    if (when === "mid-line") await leave();
+    const playout = sink.waitForPlayout();
+    const wait = await relay.message("transfer_wait");
+    relay.say({ type: "transfer_played", id: wait.id as number });
+    return playout;
+  }
+
+  it("a caller who hung up mid-line did not hear it, though the relay then says it played", async () => {
+    await expect(played([CALLER], CALLER, "mid-line")).resolves.toBe(false);
+  });
+
+  it("a line drained in a room the last caller had left before it began was not heard", async () => {
+    await expect(played([CALLER], CALLER, "before")).resolves.toBe(false);
+  });
+
+  it("a transfer target leaving mid-line leaves the caller's playout complete", async () => {
+    await expect(played([CALLER, TARGET], TARGET, "mid-line")).resolves.toBe(true);
   });
 });
 

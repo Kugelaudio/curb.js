@@ -285,7 +285,7 @@ it("releases a failed transfer track and reuses the sink published for a later a
   const publishTrack = vi.fn<(track: LocalAudioTrack) => Promise<void>>()
     .mockRejectedValueOnce(failure)
     .mockResolvedValue(undefined);
-  const room = { localParticipant: { publishTrack } } as unknown as Room;
+  const room = { localParticipant: { publishTrack }, remoteParticipants: new Map(), on: () => room, off: () => room } as unknown as Room;
   const trackClose = vi.spyOn(LocalAudioTrack.prototype, "close");
   const sourceClose = vi.spyOn(AudioSource.prototype, "close");
   const capture = vi.spyOn(AudioSource.prototype, "captureFrame").mockResolvedValue(undefined);

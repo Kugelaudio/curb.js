@@ -25,8 +25,8 @@ import { logError, logInfo } from "../../log.js";
 import type { VoiceCallRoom } from "../call-room.js";
 import { isCaller, type CallParticipant } from "../livekit-host/call-opening.js";
 import type { MessagingRoom } from "../livekit-host/messages.js";
-import type { TransferAudioSink } from "../livekit-host/transfer-audio.js";
-import { isTransferTarget } from "../livekit-host/transfer-handoff.js";
+import { callerHearing, type TransferAudioSink } from "../livekit-host/transfer-audio.js";
+import { callerSide, isTransferTarget } from "../livekit-host/transfer-handoff.js";
 import { PageAudioInput, PageAudioOutput } from "../local-host/local-call-room.js";
 import { createSynchronizer, type TranscriptSink } from "../local-host/synchronizer.js";
 
@@ -111,6 +111,8 @@ export async function openRelayCall(
   let nextId = 1;
   let lost: string | null = null;
   let left = false;
+  /** How many of the caller's side have left: a line playing when one leaves was not heard by them. */
+  let departures = 0;
 
   const sendMessage = (message: RelayAgentMessage) => {
     if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
@@ -173,6 +175,7 @@ export async function openRelayCall(
         const participant = participants.get(message.identity);
         participants.delete(message.identity);
         if (linked === message.identity) linked = null;
+        if (participant) departures += callerSide([participant]).length;
         for (const listener of leftListeners) listener(participant);
         return;
       }
@@ -351,29 +354,34 @@ export async function openRelayCall(
     });
     let playsUntil = 0;
     let clears = 0;
+    const hearing = callerHearing({ present: () => callerSide(participants.values()).length > 0, departures: () => departures });
     return {
       captureFrame: async (frame: AudioFrame) => {
         if (frame.sampleRate !== RELAY_TRANSFER_SAMPLE_RATE || frame.channels !== 1) {
           throw new Error(`a transfer plays ${RELAY_TRANSFER_SAMPLE_RATE} Hz mono, got ${frame.sampleRate} Hz x${frame.channels}`);
         }
+        hearing.queued();
         sendAudio(RELAY_STREAM.transfer, new Uint8Array(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength));
         const now = Date.now();
         playsUntil = Math.max(playsUntil, now) + (frame.samplesPerChannel / frame.sampleRate) * 1000;
         const ahead = playsUntil - now - TRANSFER_LEAD_MS;
         if (ahead > 0) await new Promise((resolve) => setTimeout(resolve, ahead));
       },
-      // Played only on the relay's `transfer_played`, with no clear since: a lost relay heard nothing.
+      // Played only on the relay's `transfer_played`, with no clear since and a caller who heard all
+      // of it (callerHearing): a lost relay heard nothing.
       waitForPlayout: () => {
         const before = clears;
+        const heard = hearing.waiting();
         return new Promise<boolean>((resolve) => {
           if (lost !== null) return resolve(false);
           const id = nextId++;
-          pendingPlayout.set(id, (played) => resolve(played && clears === before));
+          pendingPlayout.set(id, (played) => resolve(played && clears === before && heard()));
           sendMessage({ type: "transfer_wait", id });
         });
       },
       clearQueue: () => {
         clears += 1;
+        hearing.cleared();
         playsUntil = 0;
         sendMessage({ type: "transfer_clear" });
       },
