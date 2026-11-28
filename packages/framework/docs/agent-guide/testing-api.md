@@ -63,6 +63,8 @@ Conversation recording is off, and the framework's own log lines go to stderr.
 | `fakes` | Tools that must not run for real, as in a scenario |
 | `client` | Page info the call starts with |
 | `experiments` | The variant per experiment, `{ greeting: "casual" }`, or a function of the agent's experiments (`[{ name, variants: [{ name, weight }] }]`) that returns them. An experiment left out draws its variant as a call would |
+| `start` | `{ skills, info }`: call info set and skills opened before the opening and turn 1, as in a scenario ([Starting inside a skill](./testing.md#starting-inside-a-skill)). A skill that is not one of the agent's, or more skills than the agent keeps loaded, is refused |
+| `spoken` | `false` plays every turn as typed text, without the spoken-reply rules, as a host's `user_text` does without a live call. Default: `true` |
 | `host` | What the agent runs on. Default: [`projectHost()`](#projecthost) |
 
 | `Call` | What it is |
@@ -72,7 +74,7 @@ Conversation recording is off, and the framework's own log lines go to stderr.
 | `turns` | Every turn so far |
 | `state(store)` | The data of a `createAgentStore` store now, by its key |
 | `context` | The agent's rendered context now, line by line: its knowledge, the skills it can open (`available_skill: ...`) and its tools |
-| `systemPrompt` | The system prompt the agent's model receives on the caller's next turn: the agent's `<SystemPrompt>` and the framework's spoken-reply rules |
+| `systemPrompt` | The system prompt the agent's model receives on the caller's next turn: the agent's `<SystemPrompt>` and, unless `spoken: false`, the framework's spoken-reply rules |
 | `ended` | The agent hung up, or the call was closed |
 | `experiments`, `language`, `model` | The call's variants, the agent's language, the agent's model as `provider:model` |
 | `record()` | The call as a [conversation record](./test-runs.md#a-conversation-record), `source: "call"` |

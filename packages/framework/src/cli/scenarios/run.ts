@@ -108,6 +108,8 @@ export async function playRun(
     host,
     ...(scenario.fakes ? { fakes: scenario.fakes } : {}),
     ...(scenario.client ? { client: scenario.client } : {}),
+    ...(scenario.start ? { start: scenario.start } : {}),
+    ...(scenario.spoken === undefined ? {} : { spoken: scenario.spoken }),
     experiments: (declared) => {
       params.onDeclared?.(declared);
       return runVariants({ file, name }, declared, scenario, run);
