@@ -52,6 +52,15 @@ export type TestReport = {
   /** This run against the newest earlier run of another version of the agent that played its
    * scenarios: absent when there is none, and on a re-judge. */
   since?: RunComparison;
+  /** What `--changed <ref>` picked: the ref, the commit the branch left it at, the files changed
+   * since, and the scenarios it ran and skipped, each with why. Absent without `--changed`. */
+  changed?: {
+    since: string;
+    base: string;
+    files: string[];
+    ran: Array<{ name: string; file: string; why: string }>;
+    skipped: Array<{ name: string; file: string; why: string }>;
+  };
 };
 
 export const isResult = (report: ScenarioReport): report is ScenarioResult => "runs" in report;
@@ -246,6 +255,16 @@ const named = (reports: readonly ScenarioReport[]) => reports.map((report) => `$
 
 /** What ends the terminal report: the style numbers, the tokens, where the run is saved, and
  * one line that sorts the scenarios into passed, failed every run, flaky, and not assessed. */
+/** What `--changed` ran and skipped, and why. */
+function formatChanged(changed: NonNullable<TestReport["changed"]>): string[] {
+  const total = changed.ran.length + changed.skipped.length;
+  return [
+    `Changed since ${changed.since} (${changed.base.slice(0, 7)}): ${changed.files.length} file(s); ran ${changed.ran.length} of ${total} scenario(s).`,
+    ...changed.ran.map((entry) => `  ran      ${entry.name} (${entry.file}): ${entry.why}`),
+    ...changed.skipped.map((entry) => `  skipped  ${entry.name} (${entry.file}): ${entry.why}`),
+  ];
+}
+
 export function formatSummary(report: TestReport): string {
   const results = report.scenarios.filter(isResult);
   const lines: string[] = [""];
@@ -257,6 +276,7 @@ export function formatSummary(report: TestReport): string {
   if (report.throttled) lines.push(throttledLine(report.throttled));
   if (report.savedTo) lines.push(`Saved: ${report.savedTo} (check it again without running the agent: npx curb test --rejudge latest)`);
   if (report.since) lines.push(...formatSince(report.since));
+  if (report.changed) lines.push(...formatChanged(report.changed));
   if (lines.length > 1) lines.push("");
 
   // A flaky scenario is listed as flaky whether its rate was enough to pass or not.

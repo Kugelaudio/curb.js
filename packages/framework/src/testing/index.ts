@@ -49,6 +49,7 @@ export { callerFromCall, replayCall } from "./from-call.js";
 export { callersFor } from "./callers.js";
 export { compare, compareRuns, type RunComparison, type SideBySide } from "./compare.js";
 export { judgeAgreement, type JudgeAgreement } from "./agreement.js";
+export { affectedScenarios, type AffectedScenario } from "./changed.js";
 
 // Layer 3.
 export { scenario } from "./scenario.js";

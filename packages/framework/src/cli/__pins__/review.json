@@ -182,7 +182,7 @@
     ],
     "notes": [],
     "judgeModel": "openai:gpt-5.4-mini",
-    "judgePromptVersion": "3",
+    "judgePromptVersion": "4",
     "usage": {
       "agent": null,
       "caller": null,
@@ -199,17 +199,17 @@
   "requests": {
     "caller": [],
     "judge": [
-      "36771199431b29bf",
-      "3f2d9afe5fe58a1c",
-      "4e921b67e1d80d45",
-      "60ccbc5f741c1cf6",
-      "60ccbc5f741c1cf6",
-      "70a9c5fb1c6b546b",
-      "75051046eca917a0",
-      "838f36b804c615e4",
-      "cdc5a9453bce3f7f",
-      "d1e73a062092ab34",
-      "dbab94f20be0979d"
+      "2d75a3cfd46e3726",
+      "3da392845438764b",
+      "50e6480be91c86ab",
+      "61edb77b839c6663",
+      "9497f1cdb488b424",
+      "a0d4f0e14f32b1f6",
+      "a0d4f0e14f32b1f6",
+      "b3490a534aba7948",
+      "cfcacf0e4362f7b6",
+      "dbeb452cdde53d7a",
+      "df9b1d6a9bcbd2c6"
     ],
     "grouping": [
       "b18b8d1c0c092c12"

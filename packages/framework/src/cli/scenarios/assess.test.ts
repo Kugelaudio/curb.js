@@ -39,7 +39,7 @@ describe("pass, fail or error", () => {
       detail: "The booking ran.",
       evidence: { answer: "yes", turn: 2, quote: "You are booked, Alex" },
     });
-    expect(assessment.judge).toMatchObject({ promptVersion: "3", model: "openai:gpt-5.4-mini" });
+    expect(assessment.judge).toMatchObject({ promptVersion: "4", model: "openai:gpt-5.4-mini" });
   });
 
   it("fails when the judge says the goal was not reached, or cannot tell", async () => {

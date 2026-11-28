@@ -70,7 +70,8 @@ describe("the judge's questions", () => {
     expect(prompt).toContain(
       "- claimed_without_tool: Is this true of the call? The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. " +
         "The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. " +
-        "Saying back what the caller said, or what it is going to do, is not such a claim. Quote the agent's claim.",
+        "Saying back what the caller said, or what it is going to do, is not such a claim, and neither is a claim that an ok tool call in that turn or an earlier one did. " +
+        "Quote the agent's claim, and give as tool the name of the tool in the list that does what the agent claimed, or none when the list holds no such tool.",
     );
     // Ending early is a rule a transcript can be held to, not a feeling that the caller was served.
     expect(prompt).toContain(
@@ -80,6 +81,9 @@ describe("the judge's questions", () => {
     );
     expect(prompt).toContain("the caller's words are no evidence of what the agent did");
     expect(prompt).toContain('"earlier_turn":<turn number where a question asks for one, else null>');
+    expect(prompt).toContain('"tool":"<tool name where a question asks for one, else empty>"');
+    // A judge that says the agent did it right has answered no.
+    expect(prompt).toContain("When your reason says the agent did it right, the answer is no.");
   });
 });
 
@@ -196,6 +200,39 @@ describe("the judge's answers", () => {
     });
     expect(byId.incoherent?.answer).toBe("unknown");
     expect(byId.claimed_without_tool).toMatchObject({ answer: "yes", turn: 2, quote: "you are booked ... goodbye" });
+  });
+
+  it("does not count a claim that a successful call of the tool the judge named backs", () => {
+    // The false alarm seen live: every task was added by an ok add_task call, and the judge's
+    // own reason said so, yet it answered yes.
+    const tasks: JudgedConversation["turns"] = [
+      turn({ turn: 0, caller: null, reply: "Hi, I'm Juno. What's on your plate?" }),
+      turn({
+        turn: 1,
+        caller: "Buy milk and call the dentist.",
+        reply: "Both are on your list now: buy milk and call the dentist.",
+        toolCalls: [ran("add_task", { title: "buy milk" }), ran("add_task", { title: "call the dentist" })],
+      }),
+      turn({ turn: 2, caller: "And send the invoice, then I'm done.", reply: "Send the invoice is on your list too, and I've emailed you the list." }),
+    ];
+    const asked = judgeQuestions(null, []);
+    const answer = (claim: Record<string, unknown>) =>
+      parseJudgeAnswers(JSON.stringify({ answers: [{ id: "claimed_without_tool", answer: "yes", reason: "The add_task tools ran successfully.", ...claim }] }), asked, tasks)!.find(
+        (entry) => entry.id === "claimed_without_tool",
+      );
+
+    expect(answer({ turn: 1, quote: "Both are on your list now", tool: "add_task" })).toMatchObject({
+      answer: "unknown",
+      reason: "the judge found this but add_task ran and succeeded in turn 1: The add_task tools ran successfully.",
+    });
+    // A call in an earlier turn backs a later claim too, and the name may come in quotes.
+    expect(answer({ turn: 2, quote: "Send the invoice is on your list too", tool: "`add_task`" })?.answer).toBe("unknown");
+    // A tool that never ran, no tool for it at all, or no tool named: the claim stands.
+    expect(answer({ turn: 2, quote: "I've emailed you the list", tool: "send_email" })).toMatchObject({ answer: "yes", turn: 2 });
+    expect(answer({ turn: 2, quote: "I've emailed you the list", tool: "none" })?.answer).toBe("yes");
+    expect(answer({ turn: 2, quote: "I've emailed you the list" })?.answer).toBe("yes");
+    // A call that was refused backs nothing.
+    expect(answersOf(JSON.stringify({ answers: [{ id: "claimed_without_tool", answer: "yes", turn: 2, quote: "You are booked", tool: "book_appointment" }] }))?.find((entry) => entry.id === "claimed_without_tool")?.answer).toBe("yes");
   });
 
   it("does not count a finding about the agent that quotes the caller", () => {

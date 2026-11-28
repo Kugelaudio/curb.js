@@ -17,6 +17,7 @@ npx curb test [filter] [options]
 | `--judge-model <id>` | The same for the judge |
 | `--report <file>` | Also writes the report as Markdown. `GITHUB_STEP_SUMMARY` gets it too |
 | `--rejudge <run>` | Checks the conversations of a [saved run](../test-runs.md) again without running the agent: `latest`, a run's id, or a file |
+| `--changed <ref>` | Runs only the scenarios a change since `<ref>` can affect ([below](#only-what-a-change-affects)). `<ref>` is a branch or commit, such as `origin/main` |
 | `--json` | Prints one JSON object |
 
 ## Since the last version
@@ -40,6 +41,40 @@ runs a side), and `no clear change` otherwise. `--json` holds it as `since`, the
 a table. Nothing is printed on the first run, outside a git repository, and on `--rejudge`.
 [`compareRuns`](../testing-api.md#compareruns) makes the same comparison of any two runs.
 
+## Only what a change affects
+
+`--changed <ref>` runs only the scenarios that the files changed since `<ref>` can affect: changed,
+added, deleted or renamed since the commit where the branch left `<ref>`, committed or not, plus new
+files git does not ignore. Each changed file decides on its own:
+
+| Changed | Runs |
+|---|---|
+| A file in a skill's folder (the deepest folder above it with a `skill.tsx`) | The scenarios in that folder, those whose saved runs opened that skill or one under it, and every scenario no saved run played |
+| The skill's `skill.tsx`, where its `meta` changed | Every scenario: `meta` is how every conversation is offered the skill |
+| `agent.tsx`, any other file under `src/` or `context/`, `package.json`, `package-lock.json` | Every scenario |
+| A scenario file | That scenario |
+| Tests, dot files, anything else outside `src/` and `context/` | Nothing |
+
+A skill's tools are offered only while it is open, so a saved run that opened a skill also covers its
+tools. Which skills a scenario opened comes from every run in `.curb/test-runs/`: the more runs there
+are, the fewer scenarios run for nothing. A filter still applies: `npx curb test orders --changed
+origin/main` runs only affected scenarios that match it. The report lists what ran and what was
+skipped, each with why; `--json` holds it as `changed`:
+
+```text
+Changed since origin/main (3f1c2ab): 2 file(s); ran 1 of 3 scenario(s).
+  ran      orders (src/agent/orders/orders.scenario.ts): it sits in src/agent/orders, which changed
+  skipped  greets (src/agent/greets.scenario.ts): its saved runs opened no skill
+  skipped  refunds (src/agent/billing/refunds.scenario.ts): its saved runs opened only billing
+```
+
+Nothing affected is a pass with no scenario run. This saves time on a pull request, but it cannot be
+airtight: a model may open a skill on one run that it never opened before. Run every scenario on
+`main` or nightly as well. In CI, `actions/checkout` needs `fetch-depth: 0` so git can find
+`<ref>`, and `.curb/test-runs/` from earlier runs (`actions/cache`) for skipping anything at all
+([In CI](../testing.md#in-ci)). [`affectedScenarios`](../testing-api.md#affectedscenarios) makes the
+same choice from any list of files.
+
 ## Exit codes
 
 | Code | When |
@@ -54,12 +89,15 @@ a table. Nothing is printed on the first run, outside a git repository, and on `
 npx curb test claims
 npx curb test --runs 5
 npx curb test --rejudge latest --judge-model openai:gpt-5.2
+npx curb test --changed origin/main
 ```
 
 ## Version history
 
 | Version | Changes |
 |---|---|
+| v1.27.0 | `--changed <ref>` runs only the scenarios a change since `<ref>` can affect |
+| v1.27.0 | The judge does not count `claimed_without_tool` when the tool it names ran and succeeded by then (judge prompt 4). The simulated caller ends the call once its goal is done, also when the agent asks whether there is anything else (caller prompt 4) |
 | v1.25.0 | `--runs` runs scripted scenarios that many times too |
 | v1.25.0 | A provider that keeps timing out ends the run within about two deadlines, and a scenario with too many errors to be assessed starts no more runs |
 | v1.25.0 | The report compares a run with the last run of another version of the agent (`since`) |

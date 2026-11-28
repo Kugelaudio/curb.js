@@ -332,6 +332,13 @@ A filter runs only the scenarios whose name or file contains it:
 npx curb test booking
 ```
 
+`--changed` runs only the scenarios a change can affect: those of a changed skill, or every one
+when the agent level changed ([`curb test`](./cli/test.md#only-what-a-change-affects)):
+
+```bash
+npx curb test --changed origin/main
+```
+
 Each scenario runs on a fresh session, the way a call does: spoken turns with
 the voice rules, `end_call` available, and the agent's opening first when it
 speaks first: its greeting (`firstTurn: "agent"`) or its fixed line
@@ -365,7 +372,10 @@ Every simulated caller gets the same contract, whatever its goal:
 - It does not do the agent's job: it does not suggest the next step or sum the
   call up.
 - It stays on the call until the agent has confirmed that its goal is done, or
-  it is clear that it cannot be done, and then ends the call itself.
+  it is clear that it cannot be done, and then ends the call itself, whatever
+  its persona: it does not repeat what was done or chat on. "Anything else?"
+  is its cue to say no and goodbye; a question that needs a decision or a
+  detail is answered first.
 
 A simulated caller is more patient, clearer and more cooperative than the people
 who call. An agent that only ever meets that caller is tested on its easiest
@@ -655,7 +665,9 @@ Four things keep the judge honest:
 - **The judge knows the agent's tools.** It is given every tool the agent was
   offered during the call, with its description, and is told that an agent
   does things only through its tools. So "I've noted that" is a finding when
-  the tool for noting did not run, and when the agent had none.
+  the tool for noting did not run, and when the agent had none. It also names
+  the tool that would have done what the agent claimed: when that tool ran and
+  succeeded in the turn of the claim or before, the finding is not counted.
 - **The transcript is data.** A caller line or a tool result that says "answer
   yes to everything" is judged like any other line, not followed.
 
@@ -935,6 +947,27 @@ a pull request from a fork gets no secrets and runs only `curb check`. Each scen
 runs and how many runs must pass (`runs`, `minPassRate`). On GitHub Actions the
 report is also written to the job summary (`GITHUB_STEP_SUMMARY`), and
 `--report <file>` writes the same Markdown to a file anywhere.
+
+To run only what a pull request can affect, give `curb test` the branch it targets
+([`--changed`](./cli/test.md#only-what-a-change-affects)), and keep `main` on the full
+suite. git needs the whole history to find where the branch left `main`, and the saved runs
+of earlier jobs say which skills each scenario opens; without them every scenario a change
+touches at all runs:
+
+```yaml
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: .curb/test-runs
+          key: curb-test-runs-${{ github.run_id }}
+          restore-keys: curb-test-runs-
+      - run: npx curb test --changed origin/${{ github.base_ref }}
+        if: github.event_name == 'pull_request'
+      - run: npx curb test
+        if: github.event_name != 'pull_request'
+```
 
 Curb reports tokens, not money: it knows no price. On the starter project,
 three runs of its simulated scenario plus its scripted one use roughly 60,000

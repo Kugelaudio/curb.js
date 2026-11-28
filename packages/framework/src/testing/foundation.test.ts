@@ -134,7 +134,7 @@ describe("converse", () => {
     expect(model.model).toBe("openai:gpt-5.4-nano");
     expect(model.usage()).toEqual({ inputTokens: 9, outputTokens: 6, cacheReadTokens: 0, cacheWriteTokens: 0 });
     expect(() => simulatedCaller({ goal: "" })).toThrow("simulatedCaller(): caller.goal must say what the caller wants");
-    expect(simulatedCaller.promptVersion).toBe("3");
+    expect(simulatedCaller.promptVersion).toBe("4");
   });
 });
 
@@ -183,7 +183,7 @@ describe("judge and ask", () => {
     ]);
     expect(requests[0]!.systemPrompt).toContain("- asked_again: Is this true of the call? The agent asked the caller for a specific piece of information");
     expect(judged.findings).toEqual([{ call: "books run 1", kind: "canned_closing", turn: 2, quote: "Is there anything else I can help you with?", reason: "A stock line." }]);
-    expect(judge.promptVersion).toBe("3");
+    expect(judge.promptVersion).toBe("4");
   });
 
   it("answers one question as a check, and a judge that cannot be asked as one not judged", async () => {

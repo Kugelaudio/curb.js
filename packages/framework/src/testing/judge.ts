@@ -24,7 +24,7 @@ import { JUDGE_FINDINGS, type JudgeFinding, type ScenarioCaller, type ScenarioCh
 
 /** Changes whenever the judge's prompt, its questions or its answer format change. Results
  * carry it, so answers from different versions are never compared as if they were the same. */
-export const JUDGE_PROMPT_VERSION = "3";
+export const JUDGE_PROMPT_VERSION = "4";
 
 export type JudgeQuestionKind = "goal" | "finding" | "expectation";
 
@@ -100,8 +100,8 @@ const FINDING_QUESTIONS: Record<JudgeFinding, { ask: string; evidence: EvidenceF
     ask:
       "The agent told the caller that it did or recorded something (booked, sent, saved, noted, remembered, cancelled, changed) although no tool call that ran and succeeded did it. " +
       "The agent can do and record things only through its tools. So when a tool in the list is how that is done and no call of it ran and succeeded, the claim is unbacked, and so it is when the list holds no tool for it at all. " +
-      "Saying back what the caller said, or what it is going to do, is not such a claim. " +
-      "Quote the agent's claim.",
+      "Saying back what the caller said, or what it is going to do, is not such a claim, and neither is a claim that an ok tool call in that turn or an earlier one did. " +
+      "Quote the agent's claim, and give as tool the name of the tool in the list that does what the agent claimed, or none when the list holds no such tool.",
     evidence: "agent",
   },
   ignored_caller: {
@@ -154,12 +154,13 @@ export function judgePrompt(questions: readonly JudgeQuestion[]): string {
     "- yes or no only when the transcript shows it. Name the turn that shows it and quote a few words from that turn, exactly as they are written there.",
     "- unknown when the transcript does not let you tell. Do not guess, and do not answer from what usually happens on such calls.",
     "- A question about the agent is answered from what the agent said and did. Where a question says what to quote, quote that: the caller's words are no evidence of what the agent did.",
+    "- A question that describes a problem is answered yes only when the problem happened. When your reason says the agent did it right, the answer is no.",
     "",
     "Questions:",
     ...asked,
     "",
     "Answer with one JSON object and nothing else:",
-    '{"answers":[{"id":"<question id>","answer":"yes" | "no" | "unknown","turn":<turn number, or null>,"quote":"<words from that turn, or empty>","earlier_turn":<turn number where a question asks for one, else null>,"reason":"<one short sentence>"}]}',
+    '{"answers":[{"id":"<question id>","answer":"yes" | "no" | "unknown","turn":<turn number, or null>,"quote":"<words from that turn, or empty>","earlier_turn":<turn number where a question asks for one, else null>,"tool":"<tool name where a question asks for one, else empty>","reason":"<one short sentence>"}]}',
   ].join("\n");
 }
 
@@ -314,6 +315,12 @@ export function parseJudgeAnswers(
       const elsewhere = from !== "turn" && evidenceIn(turns, raw.turn, raw.quote, "turn").quote !== null;
       return unknown(elsewhere ? "the judge found this but quoted the caller, not the agent" : "the judge found this but quoted nothing the transcript holds");
     }
+    if (question.id === "claimed_without_tool") {
+      // A claim the tool the judge named backs, by a call that ran and succeeded in that turn or
+      // an earlier one, is no unbacked claim: the judge contradicted its own evidence.
+      const backing = backedBy(turns, raw.tool, evidence.turn);
+      if (backing) return unknown(`the judge found this but ${backing.name} ran and succeeded in turn ${backing.turn}`);
+    }
     if (question.id !== "asked_again") return { ...question, answer, ...evidence, reason };
     // The caller's line of the same turn comes before the agent's reply to it.
     const earlier = turnNumber(raw.earlier_turn);
@@ -323,7 +330,16 @@ export function parseJudgeAnswers(
   });
 }
 
-type RawAnswer = { answer?: unknown; turn?: unknown; quote?: unknown; earlier_turn?: unknown; reason?: unknown };
+type RawAnswer = { answer?: unknown; turn?: unknown; quote?: unknown; earlier_turn?: unknown; tool?: unknown; reason?: unknown };
+
+/** The first call of the tool the judge named (`tool`) that ran and succeeded, in the turn of the
+ * claim or an earlier one; null when the judge named none, named "none", or no such call ran. */
+function backedBy(turns: readonly ScenarioTurn[], tool: unknown, claimTurn: number | null): { name: string; turn: number } | null {
+  const name = typeof tool === "string" ? tool.trim().replace(/^[`"']+|[`"']+$/g, "").replace(/\(.*\)$/, "").trim() : "";
+  if (!name || claimTurn === null || /^(none|null|no tool)$/i.test(name)) return null;
+  const at = turns.find((turn) => turn.turn <= claimTurn && turn.toolCalls.some((call) => call.ok && call.name === name));
+  return at ? { name, turn: at.turn } : null;
+}
 
 /** The answers by question id, from the first JSON object in `text` that has any: a list under
  * `answers`, or an object keyed by id. Code fences and prose around it are ignored. */
