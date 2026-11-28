@@ -99,6 +99,36 @@ describe("a skill's declared info", () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
+  it("parses the declared info once per change, so a value parsed to a new object each time renders once", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const parses = vi.fn((tags: string) => new Set(tags.split(",")));
+    const tagged = { title: "Orders", info: z.object({ "order.tags": z.string().transform(parses) }) } satisfies SkillMeta;
+    let renders = 0;
+    function Orders() {
+      renders += 1;
+      const tags = useAgentInfo(tagged)["order.tags"];
+      return <Text>{`Tags: ${tags ? [...tags].join(" and ") : "none"}.`}</Text>;
+    }
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <agent-page path="/orders" title="Orders">
+          <Orders />
+        </agent-page>
+      </Agent>,
+      { skills: [{ path: "/orders", info: tagged.info }] },
+    );
+    runtime.updateInfo({ "order.tags": "late,refund" });
+
+    runtime.loadSkill("/orders");
+    expect(text(runtime)).toContain("Tags: late and refund.");
+    const settled = renders;
+    const parsed = parses.mock.calls.length;
+    runtime.updateInfo({ "client.page": "orders" });
+    expect(renders - settled).toBeLessThanOrEqual(1);
+    expect(parses.mock.calls.length - parsed).toBeLessThanOrEqual(2);
+    expect(error).not.toHaveBeenCalled();
+  });
+
   it("checks nothing for a skill that declares no info", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const runtime = new AgentSiteRuntime(

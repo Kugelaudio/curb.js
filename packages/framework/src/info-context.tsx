@@ -61,9 +61,25 @@ export function useAgentInfo<T>(source?: ((info: AgentInfo) => T) | SkillMeta): 
   if (typeof source === "function") return useInfoSelector("useAgentInfo", source);
   if (source !== undefined) {
     const schema = source.info;
-    return useInfoSelector("useAgentInfo", (info) => (schema ? declaredInfo(schema, info) : {}));
+    return useInfoSelector("useAgentInfo", (info) => (schema ? cachedDeclaredInfo(schema, info) : NO_DECLARED_INFO));
   }
   return useInfoSelector<AgentInfo>("useAgentInfo", (info) => info);
+}
+
+const NO_DECLARED_INFO: Readonly<Record<never, never>> = Object.freeze({});
+
+/** The declared info parsed once per store snapshot and schema. The store keeps one snapshot
+ * object until a value changes, and `useSyncExternalStore` reads it again and again in between:
+ * parsing on every read would hand back a fresh `Map`, `Set` or class instance (compared by
+ * identity) each time, which React takes for a change and renders forever. */
+const declaredInfoCache = new WeakMap<AgentInfo, WeakMap<z.ZodObject, Record<string, unknown>>>();
+
+function cachedDeclaredInfo(schema: z.ZodObject, info: AgentInfo): Record<string, unknown> {
+  let bySchema = declaredInfoCache.get(info);
+  if (!bySchema) declaredInfoCache.set(info, (bySchema = new WeakMap()));
+  let parsed = bySchema.get(schema);
+  if (!parsed) bySchema.set(schema, (parsed = declaredInfo(schema, info)));
+  return parsed;
 }
 
 /** What `useAgentInfo(meta)` returns: each key `meta.info` declares, with its parsed type, and
