@@ -9,6 +9,7 @@ import {
   localReplyStore,
   projectHost,
   remoteReplyStore,
+  replyStoreStats,
   withReplyStore,
   type ReplyStore,
   saveRun,
@@ -30,6 +31,7 @@ import { runsProblem } from "./scenarios/limits.js";
 import {
   TEST_EXIT_CODES,
   formatChecks,
+  formatDry,
   formatRepeated,
   formatRunLine,
   formatSummary,
@@ -37,9 +39,12 @@ import {
   isResult,
   markdownReport,
   testOutcome,
+  type DryReport,
   type ScenarioReport,
   type TestReport,
 } from "./scenarios/report.js";
+import { conversationReplies, repliesBaseline, savedRuns, scenarioReplies } from "./scenarios/replies.js";
+import { refusedRun, withTokenLimit, type TokenLimit } from "./scenarios/token-limit.js";
 import {
   DEFAULT_CONCURRENCY,
   DEFAULT_MAX_ERROR_RATE,
@@ -97,12 +102,27 @@ A tool runs for real on every run unless the scenario fakes it (fakes).
   --report <file>        also write the report as Markdown (GITHUB_STEP_SUMMARY gets it too)
   --rejudge <run>        check the conversations of a saved run again, without running the
                          agent: "latest", a run's id, or the path of its file
+  --live                 send every request to the model: no reply store, and the real clock
+                         instead of the fixed one
+  --dry                  call no model: list which scenarios would go live, from which turn,
+                         and what changed (such as "system prompt changed"); saves nothing
+  --max-tokens <n>       start no live request once the live requests used n tokens; the runs
+                         that needed one end as errors, and the exit code is 3
   --json                 print one JSON object instead:
                          { passed, scenarios: [{ name, file, mode, passed, endedBy, durationMs,
                            turns, checks, notes, outcome, flaky, stats, checkStats, findings,
-                           variants, style, usage, runs }], outcome, exitCode, durationMs,
-                           models, callerPromptVersion, judgePromptVersion, usage, savedTo,
-                           since, changed }
+                           variants, style, usage, runs, replies }], outcome, exitCode,
+                           durationMs, models, callerPromptVersion, judgePromptVersion, usage,
+                           savedTo, since, changed, store, limit }
+                         (with --dry: { dry, scenarios: [{ name, file, live, summary, runs }],
+                           store, exitCode })
+
+A request the reply store answered before (.curb/replies/, and CURB_REPLY_STORE_URL when set)
+is answered again without a model, on a fixed clock, so an unchanged scenario costs nothing.
+Each scenario's report says "stored", or "live from turn 2 (system prompt changed)": the first
+request the store could not answer, and what about it differs from the same request of the
+newest saved run. The Tokens line splits the live tokens from those the store saved. The
+scenarios a change since the last commit can affect run first.
 
 Every run is saved to .curb/test-runs/<id>.json (the newest 20 are kept). After a run, the
 report compares it with the newest saved run of another version of the agent (another hash
@@ -111,7 +131,8 @@ scenarios: per scenario the pass rate then and now, and better, worse, "no clear
 (Fisher's exact test, p < 0.1) or "too few runs to tell".
 
 Exit code 0 when every scenario passed; 1 when a scenario failed, or no scenario was found or
-matched; 2 when none failed but too many runs of a scenario were errors.`;
+matched; 2 when none failed but too many runs of a scenario were errors; 3 when --max-tokens
+was reached.`;
 
 /** The file name ending that makes a module under src/ a scenario. */
 export const SCENARIO_SUFFIX = ".scenario.ts";
@@ -140,10 +161,16 @@ export type TestArgs = {
   rejudge?: string;
   /** The branch or commit whose changes since pick the scenarios. */
   changed?: string;
+  /** Every request to the model: no reply store, the real clock. */
+  live: boolean;
+  /** Call no model: say which scenarios would go live, and why. */
+  dry: boolean;
+  /** The live tokens after which no request starts. */
+  maxTokens?: number;
 };
 
 /** The options that take no value. */
-const FLAGS = ["--json"];
+const FLAGS = ["--json", "--live", "--dry"];
 /** The options that take one, each with what it is. */
 const VALUES: Readonly<Record<string, string>> = {
   "--runs": "<n>",
@@ -153,6 +180,7 @@ const VALUES: Readonly<Record<string, string>> = {
   "--report": "<file>",
   "--rejudge": "<run>",
   "--changed": "<ref>",
+  "--max-tokens": "<n>",
 };
 
 /** The options `curb test` takes, as public-api.txt lists them. */
@@ -206,6 +234,10 @@ export function parseTestArgs(args: readonly string[]): TestArgs {
   const runs = number("--runs", () => true, "a whole number");
   if (runs !== undefined && runsProblem(runs)) throw wrong("--runs", runsProblem(runs)!);
   if (values.has("--changed") && values.has("--rejudge")) throw wrong("--changed", "cannot be combined with --rejudge: a re-judge plays no change of the agent.");
+  const maxTokens = number("--max-tokens", (value) => Number.isInteger(value) && value >= 1, "a whole number of at least 1");
+  if (flags.has("--dry") && flags.has("--live")) throw wrong("--dry", "cannot be combined with --live: --dry asks the reply store, and --live does not.");
+  if (flags.has("--dry") && values.has("--rejudge")) throw wrong("--dry", "cannot be combined with --rejudge: a re-judge plays no conversation to answer from the store.");
+  if (flags.has("--live") && values.has("--rejudge")) throw wrong("--live", "cannot be combined with --rejudge: a re-judge always asks the judge again.");
   return {
     filter: words.join(" ").trim(),
     json: flags.has("--json"),
@@ -216,6 +248,9 @@ export function parseTestArgs(args: readonly string[]): TestArgs {
     report: values.get("--report"),
     rejudge: values.get("--rejudge"),
     changed: values.get("--changed"),
+    live: flags.has("--live"),
+    dry: flags.has("--dry"),
+    maxTokens,
   };
 }
 
@@ -332,7 +367,13 @@ type TestRunOptions = TestArgs & { concurrency: number };
 export async function testCommand(
   args: readonly string[],
   projectRoot: string,
-  options: { host?: TestHost; out?: (text: string) => void; env?: Readonly<Record<string, string | undefined>> } = {},
+  options: {
+    host?: TestHost;
+    /** The reply stores to play on instead of the project's; without them an injected `host` plays on none. */
+    stores?: readonly ReplyStore[];
+    out?: (text: string) => void;
+    env?: Readonly<Record<string, string | undefined>>;
+  } = {},
 ): Promise<number> {
   const out = options.out ?? ((text: string) => void process.stdout.write(text));
   const env = options.env ?? process.env;
@@ -350,10 +391,24 @@ export async function testCommand(
     const loaded: LoadedScenario[] = [];
     for (const file of files) loaded.push(...(await loadScenarios(projectRoot, file)));
     const host = () => options.host ?? projectHost();
-    const session = { projectRoot, run, out, loaded, started, env };
+    const session: TestSession = { projectRoot, run, out, loaded, started, env };
     // Scenarios play on the reply store: a request answered before is answered again without a
-    // model. A rejudge asks the judge again on purpose, so it goes to the model.
-    const stored = () => options.host ?? withReplyStore(projectHost(), replyStores(env));
+    // model. The token limit sits under it, so it counts only what goes to a model. --live plays
+    // on no store, and a rejudge asks the judge again on purpose, so both go to the model.
+    const stored = () => {
+      let base = host();
+      if (run.dry || run.maxTokens !== undefined) {
+        session.limit = withTokenLimit(base, run.dry ? 0 : run.maxTokens!, () =>
+          run.dry
+            ? "curb test --dry sends no request to a model, and the reply store holds no reply to this one."
+            : `curb test --max-tokens ${run.maxTokens}: the live requests used ${session.limit!.spent()} tokens, so this one was not sent.`,
+        );
+        base = session.limit.host;
+      }
+      if (run.live) return base;
+      const stores = options.stores ?? (options.host ? [] : replyStores(env));
+      return stores.length > 0 ? withReplyStore(base, [...stores]) : base;
+    };
     return run.rejudge === undefined ? await runScenarios(session, stored) : await rejudge(session, run.rejudge, host);
   } finally {
     restoreConsole();
@@ -377,6 +432,8 @@ type TestSession = {
   loaded: LoadedScenario[];
   started: number;
   env: Readonly<Record<string, string | undefined>>;
+  /** The token limit of --max-tokens or --dry, once the host has it. */
+  limit?: TokenLimit;
 };
 
 /**
@@ -472,10 +529,14 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
   }
   // --changed: only the scenarios the change can affect. One that could not be loaded is reported
   // whatever changed.
+  // The saved runs before this one writes its own: what each request is compared with, and which
+  // skills each scenario opened.
+  const runs = savedRuns(session.projectRoot);
+  const baseline = repliesBaseline(runs);
   let selected = matched;
   if (run.changed !== undefined) {
     const { base, files, before } = changedSince(session.projectRoot, run.changed);
-    const verdicts = affectedScenarios(files, matched.filter((entry) => "scenario" in entry), { root: session.projectRoot, before });
+    const verdicts = affectedScenarios(files, matched.filter((entry) => "scenario" in entry), { root: session.projectRoot, before, runs });
     const affected = new Set(verdicts.filter((verdict) => verdict.affected).map((verdict) => `${verdict.file}\n${verdict.name}`));
     selected = matched.filter((entry) => "error" in entry || affected.has(`${entry.file}\n${entry.name}`));
     const of = ({ name, file, why }: AffectedScenario) => ({ name, file, why });
@@ -486,9 +547,10 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
       ran: verdicts.filter((verdict) => verdict.affected).map(of),
       skipped: verdicts.filter((verdict) => !verdict.affected).map(of),
     };
-  }
+  } else selected = affectedFirst(session.projectRoot, matched, runs);
 
   const host = hostOf();
+  if (run.dry) return dryRun(session, host, selected, baseline);
   const before = host.throttle?.stats();
   const choice = { ...(run.callerModel === undefined ? {} : { callerModel: run.callerModel }), ...(run.judgeModel === undefined ? {} : { judgeModel: run.judgeModel }) };
   const printed = inOrder(run.json ? () => {} : out, selected.length);
@@ -548,7 +610,7 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
       const write = (text: string) => printed.write(index, text);
       if (cannotBeAssessed(conversationsOf[index]!, settings.runs, DEFAULT_MAX_ERROR_RATE)) notStarted[index]! += 1;
       else {
-        const conversation = await playRun({
+        const play = () => playRun({
           scenario: entry.scenario,
           name: entry.name,
           file: entry.file,
@@ -558,7 +620,11 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
           onCall: (call) => void (models = { ...models, agent: models.agent ?? call.model }),
           onDeclared: (declared) => void (declaredOf[index] = declared),
           ...(once ? { onTurn: (turn: ScenarioTurn) => write(formatTurn(turn)) } : {}),
+          ...(replyStoreStats(host) ? { replies: (replies, ends) => conversationReplies(replies, ends, baseline.requestsOf(entry.file, entry.name, at + 1)) } : {}),
         });
+        // A run that needed a request --max-tokens refused is an error, even where the caller caught it.
+        const limited = session.limit ? await session.limit.track(play) : { value: await play(), refused: null };
+        const conversation = refusedRun(limited.value, limited.refused);
         conversationsOf[index]!.push(conversation);
         if (!once) write(formatRunLine(scenarioRun(conversation), settings.runs));
       }
@@ -578,6 +644,8 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
           ...uncoveredVariants(declaredOf[index]!, entry.scenario, conversationsOf[index]!.map((saved) => saved.experiments)),
         ],
       });
+      const replies = scenarioReplies(conversationsOf[index]!);
+      if (replies) result.replies = replies;
       write(once ? formatChecks(result) : formatRepeated(result));
       reports[index] = result;
       done.add(index);
@@ -586,7 +654,73 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
     },
     { concurrency, host, onSlowDown: (lowered) => void (concurrency = lowered) },
   );
-  return finish(session, { fields, models, rejudgedFrom: undefined, callerPromptVersion: simulatedCaller.promptVersion, savedTo }, through(), reports, throttledBy(host, before, concurrency));
+  return finish(session, { fields, models, rejudgedFrom: undefined, callerPromptVersion: simulatedCaller.promptVersion, savedTo, store: replyStoreStats(host) }, through(), reports, throttledBy(host, before, concurrency));
+}
+
+/**
+ * The scenarios a change since the last commit can affect, first, each group in its own order:
+ * the ones most likely to have changed report soonest. Without git, or with nothing changed,
+ * the order stays.
+ */
+function affectedFirst<T extends { name: string; file: string }>(root: string, entries: readonly T[], runs: readonly TestRun[]): T[] {
+  let affected: Set<string>;
+  try {
+    const { files, before } = changedSince(root, "HEAD");
+    if (files.length === 0) return [...entries];
+    const verdicts = affectedScenarios(files, entries.filter((entry) => "scenario" in entry), { root, before, runs });
+    affected = new Set(verdicts.filter((verdict) => verdict.affected).map((verdict) => `${verdict.file}\n${verdict.name}`));
+  } catch {
+    // KEEP-JUSTIFIED: a project outside git has no change to put first; the order is the answer.
+    return [...entries];
+  }
+  const first = (entry: T) => (affected.has(`${entry.file}\n${entry.name}`) ? 0 : 1);
+  return [...entries].sort((a, b) => first(a) - first(b));
+}
+
+/**
+ * `curb test --dry`: play every run with no model to ask (the token limit is 0), so each goes as
+ * far as the reply store answers it, and list per scenario "stored" or where it would go live
+ * and why. Nothing is judged across runs and nothing is saved.
+ */
+async function dryRun(session: TestSession, host: TestHost, selected: readonly LoadedScenario[], baseline: ReturnType<typeof repliesBaseline>): Promise<number> {
+  const { run, out } = session;
+  const choice = { ...(run.callerModel === undefined ? {} : { callerModel: run.callerModel }), ...(run.judgeModel === undefined ? {} : { judgeModel: run.judgeModel }) };
+  const jobs = selected.flatMap((entry, index) => ("scenario" in entry ? Array.from({ length: scenarioSettings({ scenario: entry.scenario, name: entry.name, file: entry.file, runs: run.runs }).runs }, (_, at) => ({ index, at })) : []));
+  const conversationsOf: SavedConversation[][] = selected.map(() => []);
+  await inParallel(
+    jobs,
+    async ({ index, at }) => {
+      const entry = selected[index] as Extract<LoadedScenario, { scenario: Scenario }>;
+      const conversation = await playRun({
+        scenario: entry.scenario,
+        name: entry.name,
+        file: entry.file,
+        host,
+        ...choice,
+        run: at,
+        replies: (replies, ends) => conversationReplies(replies, ends, baseline.requestsOf(entry.file, entry.name, at + 1)),
+      });
+      conversationsOf[index]!.push(conversation);
+    },
+    { concurrency: run.concurrency, host },
+  );
+  const scenarios: DryReport["scenarios"] = selected.map((entry, index) => {
+    if ("error" in entry) return { name: entry.name, file: entry.file, error: entry.error };
+    const conversations = [...conversationsOf[index]!].sort((a, b) => a.scenario.run - b.scenario.run);
+    const replies = scenarioReplies(conversations);
+    const live = conversations.some((conversation) => conversation.replies?.from) || !replies;
+    return {
+      name: entry.name,
+      file: entry.file,
+      live,
+      summary: replies?.summary ?? "live (no reply store: --dry needs one)",
+      runs: conversations.map((conversation) => ({ run: conversation.scenario.run, from: conversation.replies?.from ?? null })),
+    };
+  });
+  const exitCode = selected.some((entry) => "error" in entry) ? TEST_EXIT_CODES.fail : TEST_EXIT_CODES.pass;
+  const report: DryReport = { dry: true, scenarios, store: replyStoreStats(host), exitCode };
+  out(run.json ? `${JSON.stringify(report)}\n` : formatDry(report));
+  return exitCode;
 }
 
 /** How the provider's rate limit slowed this command down, since `before` (the host's throttle
@@ -606,6 +740,8 @@ type Finished = {
   callerPromptVersion: string;
   /** Where the run was saved while it ran. */
   savedTo: string | null;
+  /** What the reply store answered; null without one. */
+  store?: ReturnType<typeof replyStoreStats>;
 };
 
 /** Save the finished run, print the report (and write it where it was asked for), and return
@@ -632,7 +768,10 @@ function finish(
   // Did the change help: this run against the last one of another version of the agent. A
   // re-judge played no new version.
   const since = saved && finished.rejudgedFrom === undefined ? sinceLastVersion(projectRoot, saved.path, saved.run) : undefined;
-  const outcome = testOutcome(scenarios);
+  // --max-tokens refused a request: the runs that needed it say nothing, whatever the rest did.
+  const refused = session.limit?.refused() ?? 0;
+  const limit = refused > 0 && run.maxTokens !== undefined ? { maxTokens: run.maxTokens, liveTokens: session.limit!.spent(), refused } : undefined;
+  const outcome = limit ? "limit" : testOutcome(scenarios);
   const report: TestReport = {
     passed: scenarios.every((entry) => entry.passed),
     scenarios,
@@ -648,6 +787,8 @@ function finish(
     ...(throttled ? { throttled } : {}),
     ...(since ? { since } : {}),
     ...(session.changed ? { changed: session.changed } : {}),
+    ...(finished.store ? { store: finished.store } : {}),
+    ...(limit ? { limit } : {}),
   };
   out(run.json ? `${JSON.stringify(report)}\n` : formatSummary(report));
   const markdown = run.report !== undefined || env.GITHUB_STEP_SUMMARY ? markdownReport(report) : "";

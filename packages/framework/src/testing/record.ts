@@ -8,6 +8,7 @@ import { CALLER_PROMPT_VERSION } from "./caller.js";
 import type { ScenarioEndedBy } from "./checks.js";
 import type { TestModels } from "./host.js";
 import { JUDGE_PROMPT_VERSION, type JudgeResult } from "./judge.js";
+import type { ReplyRequest } from "./reply-store.js";
 import type { JudgeFinding, ScenarioCaller, ScenarioCheck, ScenarioTurn, StyleLimits } from "./scenario.js";
 import type { RunUsage } from "./usage.js";
 
@@ -103,6 +104,20 @@ export type ConversationRecord = {
   /** False when the source does not record the agent's tool calls (a Calls export line without
    * `toolCalls`, a written transcript): a turn without one says nothing about the tools. */
   recordsToolCalls?: false;
+  /** What the reply store answered, on a conversation `curb test` played with it: how many model
+   * requests it answered and how many went live; absent without a store (`--live`). */
+  replies?: ConversationReplies;
+};
+
+/** What the reply store answered in one conversation of `curb test`. `from` names the first
+ * request that went live: its turn (null after the last one, as the judge's), who asked, and what
+ * part of it differs from the same request of the newest saved run that made it. `requests`
+ * holds each request's digests, which the next run compares with. */
+export type ConversationReplies = {
+  stored: number;
+  live: number;
+  from?: { turn: number | null; role: "agent" | "caller" | "judge"; changed: string };
+  requests?: Array<ReplyRequest & { turn: number | null }>;
 };
 
 /** What a run came to. An error is a run that says nothing about the agent: it is left out of

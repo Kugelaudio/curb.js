@@ -268,14 +268,18 @@
 ./testing CallerBehaviour
 ./testing CallerPersona
 ./testing ConversationRecord
+./testing ConversationReplies
 ./testing ExpectedCall
 ./testing FINDINGS
 ./testing Finding
 ./testing JudgeAgreement
 ./testing JudgeFinding
+./testing ReplyRequest
 ./testing ReplyStore
+./testing ReplyStoreStats
 ./testing ReportGroup
 ./testing RunComparison
+./testing RunReplies
 ./testing Scenario
 ./testing ScenarioCallOptions
 ./testing ScenarioCaller
@@ -325,8 +329,10 @@
 ./testing projectHost
 ./testing remoteReplyStore
 ./testing replayCall
+./testing replyStoreStats
 ./testing report
 ./testing runHook
+./testing runReplies
 ./testing saveRun
 ./testing scenario
 ./testing scriptedCaller
@@ -358,8 +364,11 @@ curb test
 curb test --caller-model
 curb test --changed
 curb test --concurrency
+curb test --dry
 curb test --json
 curb test --judge-model
+curb test --live
+curb test --max-tokens
 curb test --rejudge
 curb test --report
 curb test --runs

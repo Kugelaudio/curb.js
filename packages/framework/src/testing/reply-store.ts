@@ -131,8 +131,45 @@ function modelParts(llm: LlmDescriptor): Pick<ReplyKeyParts, "model" | "settings
 // ---------------------------------------------------------------------------------------------
 // Runs and calls.
 
+/** One model request of a run as the store saw it: who asked, whether the store answered it,
+ * and a short digest of each part of the request, so that two runs' requests can be compared
+ * part by part without keeping the request itself. Equal digests are equal parts. */
+export type ReplyRequest = {
+  role: "agent" | "caller" | "judge";
+  /** False when the store answered it; true when it went to the model, or would have. */
+  live: boolean;
+  parts: { model: string; settings: string; system: string; tools: string; context: string };
+  /** Each message before the current context, as `<role>:<digest>`, oldest first. */
+  messages: string[];
+};
+
+/** What the store answered in one run: how many requests it answered and how many went live,
+ * and every request in the order they were asked. */
+export type RunReplies = { stored: number; live: number; requests: ReplyRequest[] };
+
 /** One call of a test: which run it is, whether it went live, and what the store answered. */
-type CallScope = { run: number; live: boolean; stored: number; liveRequests: number };
+type CallScope = { run: number; live: boolean; stored: number; liveRequests: number; requests: ReplyRequest[] };
+
+const newScope = (run: number): CallScope => ({ run, live: false, stored: 0, liveRequests: 0, requests: [] });
+
+const digest = (value: unknown): string => createHash("sha256").update(canonicalJson(value)).digest("hex").slice(0, 12);
+
+/** The digests of a request's parts ({@link ReplyRequest}). */
+function requestDigests(role: ReplyRequest["role"], model: Pick<ReplyKeyParts, "model" | "settings">, parts: Pick<ReplyKeyParts, "system" | "messages" | "tools">): Omit<ReplyRequest, "live"> {
+  const messages = Array.isArray(parts.messages) ? (parts.messages as Array<{ role?: unknown }>) : [];
+  const history = messages.slice(0, -1);
+  return {
+    role,
+    parts: {
+      model: digest(model.model),
+      settings: digest(model.settings),
+      system: digest(parts.system),
+      tools: digest(parts.tools),
+      context: digest(messages.at(-1) ?? null),
+    },
+    messages: history.map((message) => `${typeof message.role === "string" ? message.role : "message"}:${digest(message)}`),
+  };
+}
 
 const scopes = new AsyncLocalStorage<CallScope>();
 
@@ -146,14 +183,15 @@ const scopes = new AsyncLocalStorage<CallScope>();
  */
 export function asRun<T>(run: number, play: () => Promise<T>): Promise<T> {
   if (!Number.isInteger(run) || run < 0) throw new Error(`asRun: run must be a whole number from 0, not ${run}.`);
-  return scopes.run({ run, live: false, stored: 0, liveRequests: 0 }, play);
+  return scopes.run(newScope(run), play);
 }
 
-/** How many of the current run's model requests the store answered and how many went to a
- * model; null outside {@link asRun}. */
-export function runReplies(): { stored: number; live: number } | null {
+/** What a host wrapped by {@link withReplyStore} answered in the current run so far: how many of
+ * its model requests the store answered, how many went to a model, and each request
+ * ({@link ReplyRequest}). Null outside {@link asRun}; a host without a store adds nothing to it. */
+export function runReplies(): RunReplies | null {
   const scope = scopes.getStore();
-  return scope ? { stored: scope.stored, live: scope.liveRequests } : null;
+  return scope ? { stored: scope.stored, live: scope.liveRequests, requests: scope.requests.map((request) => ({ ...request, parts: { ...request.parts }, messages: [...request.messages] })) } : null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -322,15 +360,16 @@ export function withReplyStore(host: TestHost, stores: ReplyStore | readonly Rep
     call.stored += 1;
   };
 
-  type Keyed = { key: string; model: string; call: CallScope };
+  type Keyed = { key: string; model: string; call: CallScope; request: Omit<ReplyRequest, "live"> };
 
   /** The non-streaming client of one call, keyed by `keyOf`. `usage` starts measuring a request
    * and answers what it used once it is over. */
   const client =
     (inner: AgentLlmClient, keyOf: (request: AgentRunRequest) => Keyed, usage: () => () => StoredReply["usage"]): AgentLlmClient =>
     async (request) => {
-      const { key, model, call } = keyOf(request);
+      const { key, model, call, request: seen } = keyOf(request);
       const started = await begin(key, call);
+      call.requests.push({ ...seen, live: !("found" in started) });
       if ("found" in started) {
         hit(started.found, call);
         return responseOf(started.found);
@@ -351,8 +390,9 @@ export function withReplyStore(host: TestHost, stores: ReplyStore | readonly Rep
   const streamClient =
     (inner: AgentLlmStreamStep, keyOf: (request: AgentRunRequest) => Keyed, usage: () => () => StoredReply["usage"]): AgentLlmStreamStep =>
     async function* (request) {
-      const { key, model, call } = keyOf(request);
+      const { key, model, call, request: seen } = keyOf(request);
       const started = await begin(key, call);
+      call.requests.push({ ...seen, live: !("found" in started) });
       if ("found" in started) {
         hit(started.found, call);
         return yield* replay(responseOf(started.found));
@@ -375,12 +415,13 @@ export function withReplyStore(host: TestHost, stores: ReplyStore | readonly Rep
     async createBundle(): Promise<CallBundle> {
       const bundle = await host.createBundle();
       bundle.session.useClock(() => testNow());
-      const own: CallScope = { run: 0, live: false, stored: 0, liveRequests: 0 };
+      const own = newScope(0);
       const keyOf = (request: AgentRunRequest): Keyed => {
         const call = scopes.getStore() ?? own;
         const llm = bundle.runtime.settings.current().llm;
         const model = modelParts(llm);
-        return { key: replyKey({ role: "agent", ...model, ...requestParts(request), run: call.run }), model: model.model, call };
+        const parts = requestParts(request);
+        return { key: replyKey({ role: "agent", ...model, ...parts, run: call.run }), model: model.model, call, request: requestDigests("agent", model, parts) };
       };
       // The bundle counts its own tokens: a request's are what the count grew by meanwhile.
       const measure = () => {
@@ -400,10 +441,11 @@ export function withReplyStore(host: TestHost, stores: ReplyStore | readonly Rep
         onUsage(usage);
       }, spec);
       const model = modelParts(modelFor(spec, llm));
-      const own: CallScope = { run: 0, live: false, stored: 0, liveRequests: 0 };
+      const own = newScope(0);
       const keyOf = (request: AgentRunRequest): Keyed => {
         const call = scopes.getStore() ?? own;
-        return { key: replyKey({ role, ...model, ...requestParts(request), run: call.run }), model: model.model, call };
+        const parts = requestParts(request);
+        return { key: replyKey({ role, ...model, ...parts, run: call.run }), model: model.model, call, request: requestDigests(role, model, parts) };
       };
       return client(inner, keyOf, () => {
         last = null;

@@ -185,7 +185,14 @@ describe("withReplyStore", () => {
     });
     expect(seen.agent).toHaveLength(4);
     expect(store.gets - gets).toBe(1);
-    expect(replies).toEqual({ stored: 0, live: 2 });
+    expect(replies).toMatchObject({ stored: 0, live: 2 });
+    // Each request, in order, with who asked, whether it went live, and a digest of each part.
+    expect(replies!.requests.map((request) => [request.role, request.live, request.messages.length])).toEqual([
+      ["agent", true, 1],
+      ["agent", true, 3],
+    ]);
+    expect(Object.keys(replies!.requests[0]!.parts)).toEqual(["model", "settings", "system", "tools", "context"]);
+    expect(replies!.requests[0]!.parts.system).toMatch(/^[0-9a-f]{12}$/);
   });
 
   it("keeps one sample per run: each run of a test has replies of its own", async () => {

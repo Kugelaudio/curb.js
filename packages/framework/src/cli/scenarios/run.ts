@@ -3,11 +3,14 @@ import {
   asRun,
   converse,
   inParallel,
+  runReplies,
   scriptedCaller,
   simulatedCaller,
   startCall,
   testModel,
   type Call,
+  type ConversationReplies,
+  type RunReplies,
   type Scenario,
   type ScenarioTurn,
   type TestHost,
@@ -15,6 +18,7 @@ import {
 import { aggregateScenario, scenarioRun, type ScenarioResult, type ScenarioRun } from "./aggregate.js";
 import { acrossRunsChecks, assessConversation, assessmentSettings } from "./assess.js";
 import type { ExperimentDeclaration, SavedConversation, SavedScenarioSettings } from "./types.js";
+import type { TurnEnd } from "./replies.js";
 import { runUsage } from "./usage.js";
 import type { RunUsage } from "./types.js";
 
@@ -95,6 +99,8 @@ export type ScenarioRunParams = {
  * until the agent hangs up, the caller hangs up or runs out of lines, `maxTurns` is reached, or a
  * turn reports an error; then assessed. A tool without a fake runs for real. `onCall` hears the
  * call when it starts, `onDeclared` the agent's experiments, `onTurn` each turn as it ends.
+ * `replies`, on a host with a reply store, makes the conversation's `replies` from what the store
+ * answered in the run and how many requests it had made when each turn ended.
  */
 export async function playRun(
   params: ScenarioRunParams & {
@@ -102,6 +108,7 @@ export async function playRun(
     onTurn?: (turn: ScenarioTurn) => void;
     onCall?: (call: Call) => void;
     onDeclared?: (declared: readonly ExperimentDeclaration[]) => void;
+    replies?: (replies: RunReplies, ends: readonly TurnEnd[]) => ConversationReplies;
   },
 ): Promise<SavedConversation> {
   // Every model request of the run is keyed by it: `runs: 3` keeps three samples of each.
@@ -129,9 +136,13 @@ async function playRunAs(params: Parameters<typeof playRun>[0]): Promise<SavedCo
       : scenario.caller
         ? simulatedCaller(scenario.caller, { model: callerModel })
         : scriptedCaller(scenario.turns!);
+  const ends: TurnEnd[] = [];
   const played = await converse(call, caller, {
     ...(scenario.maxTurns === undefined ? {} : { maxTurns: scenario.maxTurns }),
-    ...(params.onTurn ? { onTurn: params.onTurn } : {}),
+    onTurn: (turn) => {
+      ends.push({ turn: turn.turn, requests: runReplies()?.requests.length ?? 0 });
+      params.onTurn?.(turn);
+    },
   });
   const { format, version, source: _call, ...rest } = played;
   const record = {
@@ -143,7 +154,8 @@ async function playRunAs(params: Parameters<typeof playRun>[0]): Promise<SavedCo
   } as Omit<SavedConversation, "assessment">;
   const assessment = await assessConversation({ record, settings: assessmentSettings(scenario), judge: judgeModel });
   const usage = runUsage({ agent: played.usage?.agent ?? null, caller: callerModel.usage(), judge: judgeModel.usage() });
-  return { ...record, usage, assessment };
+  const replies = params.replies && runReplies();
+  return { ...record, usage, assessment, ...(params.replies && replies ? { replies: params.replies(replies, ends) } : {}) };
 }
 
 /**

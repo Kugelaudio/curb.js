@@ -569,10 +569,19 @@ describe("curb test options", () => {
       callerModel: "openai:gpt-5.4-mini",
       judgeModel: "gpt-5.2",
       report: "report.md",
+      live: false,
+      dry: false,
     });
-    expect(parseTestArgs(["--rejudge", "latest"])).toEqual({ filter: "", json: false, rejudge: "latest" });
-    expect(parseTestArgs(["--changed=origin/main"])).toEqual({ filter: "", json: false, changed: "origin/main" });
-    expect(TEST_OPTIONS).toEqual(["--json", "--runs", "--concurrency", "--caller-model", "--judge-model", "--report", "--rejudge", "--changed"]);
+    expect(parseTestArgs(["--rejudge", "latest"])).toEqual({ filter: "", json: false, rejudge: "latest", live: false, dry: false });
+    expect(parseTestArgs(["--changed=origin/main"])).toEqual({ filter: "", json: false, changed: "origin/main", live: false, dry: false });
+    expect(parseTestArgs(["--live", "--max-tokens", "5000"])).toEqual({ filter: "", json: false, live: true, dry: false, maxTokens: 5000 });
+    expect(parseTestArgs(["--dry"])).toEqual({ filter: "", json: false, live: false, dry: true });
+    expect(() => parseTestArgs(["--max-tokens", "0"])).toThrow("--max-tokens must be a whole number of at least 1");
+    expect(() => parseTestArgs(["--max-tokens=1.5"])).toThrow("--max-tokens must be a whole number of at least 1");
+    expect(() => parseTestArgs(["--dry", "--live"])).toThrow("--dry cannot be combined with --live");
+    expect(() => parseTestArgs(["--dry", "--rejudge", "latest"])).toThrow("--dry cannot be combined with --rejudge");
+    expect(() => parseTestArgs(["--live", "--rejudge", "latest"])).toThrow("--live cannot be combined with --rejudge");
+    expect(TEST_OPTIONS).toEqual(["--json", "--live", "--dry", "--runs", "--concurrency", "--caller-model", "--judge-model", "--report", "--rejudge", "--changed", "--max-tokens"]);
   });
 
   it("refuses a value out of range, naming what the option takes", () => {

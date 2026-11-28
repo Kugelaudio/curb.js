@@ -478,7 +478,7 @@ export const opening = scenario({ turns: ["Hello"] });
   });
 
   it("parses the filter and --json, and refuses an unknown option", () => {
-    expect(parseTestArgs(["books", "a", "--json", "call"])).toEqual({ filter: "books a call", json: true });
+    expect(parseTestArgs(["books", "a", "--json", "call"])).toEqual({ filter: "books a call", json: true, live: false, dry: false });
     expect(() => parseTestArgs(["--watch"])).toThrow("curb test: unknown option --watch.");
   });
 

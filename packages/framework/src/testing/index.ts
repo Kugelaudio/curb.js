@@ -32,7 +32,7 @@
 // Layer 1.
 export { startCall, type Call } from "./call.js";
 export { loadCalls } from "./load-calls.js";
-export { loadRun, saveRun, type ConversationRecord, type TestRun } from "./record.js";
+export { loadRun, saveRun, type ConversationRecord, type ConversationReplies, type TestRun } from "./record.js";
 export { testModel, type TestModel } from "./model.js";
 export { inParallel } from "./parallel.js";
 export { passRate, report, type ReportGroup } from "./results.js";
@@ -53,7 +53,19 @@ export { affectedScenarios, type AffectedScenario } from "./changed.js";
 
 // Layer 3.
 export { fake, scenario } from "./scenario.js";
-export { asRun, localReplyStore, remoteReplyStore, withReplyStore, type ReplyStore, type StoredReply } from "./reply-store.js";
+export {
+  asRun,
+  localReplyStore,
+  remoteReplyStore,
+  replyStoreStats,
+  runReplies,
+  withReplyStore,
+  type ReplyRequest,
+  type ReplyStore,
+  type ReplyStoreStats,
+  type RunReplies,
+  type StoredReply,
+} from "./reply-store.js";
 export { buildCallEvent, runHook } from "./hooks.js";
 export type {
   CallerBehaviour,

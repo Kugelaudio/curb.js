@@ -1,4 +1,4 @@
-import type { RunComparison, ScenarioCheck, ScenarioConfirmation, ScenarioToolCall, ScenarioTurn } from "../../testing/index.js";
+import type { ReplyStoreStats, RunComparison, ScenarioCheck, ScenarioConfirmation, ScenarioToolCall, ScenarioTurn } from "../../testing/index.js";
 import { END_CALL_TOOL_NAME, SKIP_TURN_TOOL_NAME } from "../../types.js";
 import type { FindingStats, ScenarioResult, ScenarioRun } from "./aggregate.js";
 import { ACROSS_RUNS } from "./assess.js";
@@ -25,6 +25,9 @@ export const TEST_EXIT_CODES = {
   fail: 1,
   /** None failed, but too many runs of a scenario were errors to say that it passes. */
   error: 2,
+  /** `--max-tokens` was reached: a request that needed the model was not sent, so the runs that
+   * needed it say nothing. */
+  limit: 3,
 } as const;
 
 export type TestOutcome = keyof typeof TEST_EXIT_CODES;
@@ -61,6 +64,25 @@ export type TestReport = {
     ran: Array<{ name: string; file: string; why: string }>;
     skipped: Array<{ name: string; file: string; why: string }>;
   };
+  /** What the reply store answered: requests answered from it (`hits`) and sent to a model
+   * (`misses`), the tokens those used and the tokens the answered ones had cost. Without a
+   * store (`--live`, `--rejudge`), it is left out. */
+  store?: ReplyStoreStats;
+  /** Set when `--max-tokens` refused a request: the limit, the live tokens used, and how many
+   * requests were not sent. */
+  limit?: { maxTokens: number; liveTokens: number; refused: number };
+};
+
+/** What `curb test --dry` prints with --json: per scenario whether it would go live and from
+ * where, and what the store answered meanwhile. */
+export type DryReport = {
+  dry: true;
+  scenarios: Array<
+    | { name: string; file: string; live: boolean; summary: string; runs: Array<{ run: number; from: { turn: number | null; role: string; changed: string } | null }> }
+    | { name: string; file: string; error: string }
+  >;
+  store: ReplyStoreStats | null;
+  exitCode: number;
 };
 
 export const isResult = (report: ScenarioReport): report is ScenarioResult => "runs" in report;
@@ -151,6 +173,9 @@ function verdictLine(result: ScenarioResult, counted: string): string {
   return `${VERDICT[result.outcome]} ${result.name} (${counted}, ${seconds(result.durationMs)})${why}`;
 }
 
+/** What the reply store answered for a scenario: "stored", or from which turn it went live and why. */
+const repliesLine = (result: ScenarioResult): string[] => (result.replies ? [`  replies  ${result.replies.summary}`] : []);
+
 /** The report of a scenario that ran once, after its transcript: every check (a detail's further
  * lines indented under it), the judge's findings, the notes, then the scenario's verdict. */
 export function formatChecks(result: ScenarioResult): string {
@@ -158,6 +183,7 @@ export function formatChecks(result: ScenarioResult): string {
     ...checkLines(result.checks),
     ...result.runs.flatMap(findingLines),
     ...result.notes.map((note) => `  note  ${note}`),
+    ...repliesLine(result),
     verdictLine(result, `${callerTurns(result.turns)} caller turn(s)`),
   ];
   return `${lines.join("\n")}\n`;
@@ -228,6 +254,7 @@ export function formatRepeated(result: ScenarioResult): string {
     ...result.notes.map((note) => `  note  ${note}`),
     ...notPassed.slice(0, MAX_TRANSCRIPTS).flatMap(runTranscript),
     ...(notPassed.length > MAX_TRANSCRIPTS ? [`  note  ${notPassed.length - MAX_TRANSCRIPTS} more run(s) did not pass; the saved run has every transcript`] : []),
+    ...repliesLine(result),
     verdictLine(result, `${result.flaky ? "flaky: " : ""}${stats.passed}/${stats.passed + stats.failed} run(s) passed`),
   ];
   return `${lines.join("\n")}\n`;
@@ -235,14 +262,30 @@ export function formatRepeated(result: ScenarioResult): string {
 
 const count = (value: number) => value.toLocaleString("en-US");
 
-/** The tokens of a run on one line; empty when no provider reported any. */
-export function usageLine(usage: RunUsage | null): string {
+/** The tokens of a run on one line; empty when no provider reported any. `what` follows the
+ * total: "tokens", or "live" beside what the reply store saved. */
+export function usageLine(usage: RunUsage | null, what = "tokens"): string {
   if (!usage) return "";
   const parts = (["agent", "caller", "judge"] as const).flatMap((role) => {
     const used = usage[role];
     return used ? [`${role} ${count(used.inputTokens + used.cacheReadTokens + used.cacheWriteTokens)} in / ${count(used.outputTokens)} out`] : [];
   });
-  return `${count(usage.totalTokens)} tokens (${parts.join(" · ")})`;
+  return `${count(usage.totalTokens)} ${what} (${parts.join(" · ")})`;
+}
+
+/** The Tokens line: with a reply store, the live tokens and what the store saved; else the
+ * tokens as they were. Empty when there is nothing to say. */
+export function tokensLine(report: Pick<TestReport, "usage" | "store">): string {
+  const { store } = report;
+  if (!store) return usageLine(report.usage);
+  const live = usageLine(report.usage, "live") || `${count(store.liveTokens)} live`;
+  const asked = store.hits + store.misses;
+  return `${live}, ${count(store.savedTokens)} saved by the reply store (${store.hits} of ${asked} request(s) answered from it)`;
+}
+
+/** Why the run stopped short: `--max-tokens` was reached. */
+export function limitLine(limit: NonNullable<TestReport["limit"]>): string {
+  return `Stopped at --max-tokens ${count(limit.maxTokens)}: the live requests used ${count(limit.liveTokens)} tokens, and ${limit.refused} request(s) were not sent to the model, so the runs that needed them ended as errors (exit code ${TEST_EXIT_CODES.limit}).`;
 }
 
 /** Why a run took longer than its conversations: the provider rate limited it. */
@@ -271,8 +314,9 @@ export function formatSummary(report: TestReport): string {
   if (results.some((result) => result.style.replies > 0)) {
     lines.push("Style (counted from the agent's replies):", ...results.map((result) => `  ${result.name}: ${styleLine(result.style)}`));
   }
-  const tokens = usageLine(report.usage);
+  const tokens = tokensLine(report);
   if (tokens) lines.push(`Tokens: ${tokens}`);
+  if (report.limit) lines.push(limitLine(report.limit));
   if (report.throttled) lines.push(throttledLine(report.throttled));
   if (report.savedTo) lines.push(`Saved: ${report.savedTo} (check it again without running the agent: npx curb test --rejudge latest)`);
   if (report.since) lines.push(...formatSince(report.since));
@@ -332,7 +376,7 @@ function markdownRuns(result: ScenarioResult): string[] {
 export function markdownReport(report: TestReport): string {
   const results = report.scenarios.filter(isResult);
   const lines = [
-    `## curb test: ${report.outcome === "pass" ? "passed" : report.outcome === "fail" ? "failed" : "too many errors"}`,
+    `## curb test: ${{ pass: "passed", fail: "failed", error: "too many errors", limit: "stopped at --max-tokens" }[report.outcome]}`,
     "",
     `${report.scenarios.filter((entry) => entry.passed).length} of ${report.scenarios.length} scenario(s) passed in ${seconds(report.durationMs)}.`,
     "",
@@ -387,12 +431,28 @@ export function markdownReport(report: TestReport): string {
   }
   const models = (["agent", "caller", "judge"] as const).flatMap((role) => (report.models[role] ? [`${role} ${report.models[role]}`] : []));
   const footer = [
-    ...(usageLine(report.usage) ? [usageLine(report.usage)] : []),
+    ...(tokensLine(report) ? [tokensLine(report)] : []),
     ...(models.length > 0 ? [`models: ${models.join(", ")}`] : []),
     `judge prompt ${report.judgePromptVersion}, caller prompt ${report.callerPromptVersion}`,
     ...(report.savedTo ? [`saved to \`${report.savedTo}\``] : []),
   ];
+  if (report.limit) lines.push(limitLine(report.limit), "");
   if (report.throttled) lines.push(throttledLine(report.throttled), "");
   lines.push(footer.join(" · "), "");
   return lines.join("\n");
+}
+
+/**
+ * What `curb test --dry` prints: per scenario "stored", or from which turn it would go live and
+ * why, the ones that would go live first, then a count. No model was called.
+ */
+export function formatDry(report: DryReport): string {
+  const live = report.scenarios.filter((entry) => "live" in entry && entry.live);
+  const lines = [
+    "",
+    `Dry run, no model called: ${live.length} of ${report.scenarios.length} scenario(s) would go live.`,
+    ...report.scenarios.map((entry) => `  ${entry.name} (${entry.file}): ${"error" in entry ? `not loaded: ${entry.error}` : entry.summary}`),
+  ];
+  if (report.store) lines.push(`The reply store answered ${report.store.hits} request(s), ${count(report.store.savedTokens)} tokens.`);
+  return `${lines.join("\n")}\n`;
 }
