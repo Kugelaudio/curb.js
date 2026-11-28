@@ -50,6 +50,9 @@ naming it.
 | `KUGEL_CONVERSATIONS_DB` | a local file | Where conversations are recorded. `off` turns it off ([The preview](./preview.md#recorded-conversations)) |
 | `CURB_NO_OPEN` | | `1` keeps `curb dev` from opening the browser |
 | `CURB_NPM_REGISTRY` | `https://registry.npmjs.org` | Where `curb upgrade` looks for new versions. Set it to a mirror |
+| `CURB_REPLY_STORE_DIR` | `$XDG_CACHE_HOME/curb/replies`, else `~/.cache/curb/replies` | Where `curb test` keeps the model replies it has had ([Reply store](./testing-api.md#reply-store)) |
+| `CURB_REPLY_STORE_URL`, `CURB_REPLY_STORE_TOKEN` | | A [remote reply store](./reply-store.md) `curb test` reads and writes beside the local one, and its bearer token |
+| `CURB_TEST_NOW` | `2026-06-03T15:00:00Z` | The date and time the agent sees in `curb test` when a scenario sets no `now` |
 | `MCP_SERVERS_FILE` | `mcp.servers.json` | The servers added in the preview |
 | `MCP_AUTH_DIR` | `.mcp-auth` | Where MCP sign-ins are stored |
 | `MCP_<ID>_TOKEN` | | A bearer token for the MCP server with that id |

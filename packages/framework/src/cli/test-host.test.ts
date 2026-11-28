@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ScenarioResult } from "./scenarios/run.js";
 import { createTestProject } from "./test-project.js";
@@ -56,6 +57,8 @@ async function chatEndpoint(refuse: (request: number) => number | null) {
 const HELLO = `import { scenario } from "curb/testing";
 export default scenario({ turns: ["Hi"], expect: ({ said }) => [said("hello there")] });
 `;
+/** HELLO with other words: a request of its own, which the reply store does not share with HELLO's. */
+const HELLO_AGAIN = HELLO.replace('["Hi"]', '["Hello"]');
 
 describe("curb test on the project's own host", () => {
   const projects: string[] = [];
@@ -73,7 +76,9 @@ describe("curb test on the project's own host", () => {
     const root = createTestProject(files);
     projects.push(root);
     const out: string[] = [];
-    const code = await testCommand(args, root, { out: (text) => void out.push(text), env: {} });
+    // A store of its own: every run here asks the endpoint.
+    const env = { CURB_REPLY_STORE_DIR: join(root, ".replies") };
+    const code = await testCommand(args, root, { out: (text) => void out.push(text), env });
     const everything = `${out.join("")}\n${logged.mock.calls.map((call) => call.map(String).join(" ")).join("\n")}`;
     return { code, printed: out.join(""), everything };
   }
@@ -82,7 +87,7 @@ describe("curb test on the project's own host", () => {
     // Both scenarios start at once, and the provider refuses the two requests of that burst.
     const endpoint = await chatEndpoint((request) => (request <= 2 ? 429 : null));
     try {
-      const { code, printed } = await run(["--concurrency", "2", "--json"], { "src/agent/a.scenario.ts": HELLO, "src/agent/b.scenario.ts": HELLO }, endpoint);
+      const { code, printed } = await run(["--concurrency", "2", "--json"], { "src/agent/a.scenario.ts": HELLO, "src/agent/b.scenario.ts": HELLO_AGAIN }, endpoint);
 
       expect(code).toBe(0);
       const report = JSON.parse(printed) as TestReport;

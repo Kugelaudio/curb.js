@@ -11,6 +11,7 @@ import { clientInfo, clientInfoProblem } from "../server/protocol.js";
 import { SKIP_TURN_TOOL_NAME, type ToolResult } from "../types.js";
 import { expectContext, fallbackLineIn } from "./checks.js";
 import { projectHost, takeBundle, type TestHost } from "./host.js";
+import { testNow } from "./reply-store.js";
 import type { ConversationRecord, EndState, RecordedTool } from "./record.js";
 import {
   fakedToolProblem,
@@ -100,7 +101,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   if (options.fakes !== undefined && isFakeList(options.fakes)) {
     throw new Error("startCall: a list of fake(tool, result) is not implemented yet in this version of curb; give fakes as an object of tool name to result.");
   }
-  const notYet = (["start", "spoken", "hermetic", "now"] as const).filter((option) => options[option] !== undefined);
+  const notYet = (["start", "spoken", "hermetic"] as const).filter((option) => options[option] !== undefined);
   if (notYet.length > 0) throw new Error(`startCall: ${notYet.join(", ")} is not implemented yet in this version of curb.`);
   const fakeProblems = Object.entries(options.fakes ?? {}).flatMap(([tool, fake]) => {
     const problem = fakedToolProblem(tool) ?? (typeof fake === "function" ? undefined : toolResultProblem(fake));
@@ -108,9 +109,12 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   });
   const clientProblems = Object.entries(options.client ?? {}).flatMap(([key, value]) => clientInfoProblem(key, value) ?? []);
   if (fakeProblems.length + clientProblems.length > 0) throw new Error(`startCall: ${[...fakeProblems, ...clientProblems].join(" ")}`);
+  // The date line the agent sees; without `now`, the host's clock (a reply store's is fixed).
+  const now = options.now === undefined ? null : clockAt(options.now);
 
   const host = options.host ?? projectHost();
   const bundle = await takeBundle(host);
+  if (now) bundle.session.useClock(() => now);
   const started = performance.now();
   const startedAt = new Date().toISOString();
   const { runtime, session } = bundle;
@@ -424,4 +428,13 @@ export function toolCallsOf(
         })
       : [],
   );
+}
+
+/** `startCall({ now })` as an instant, refused with the fix when it is not a date-time. */
+function clockAt(now: string): Date {
+  try {
+    return testNow(now);
+  } catch (error) {
+    throw new Error(`startCall: ${(error as Error).message}`);
+  }
 }

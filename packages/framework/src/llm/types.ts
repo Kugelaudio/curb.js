@@ -111,6 +111,9 @@ export type AgentToolCallRecord = {
 export type AgentRunResponse = {
   text: string;
   toolCalls: AgentToolCall[];
+  /** The provider stopped the reply at its output limit, so it is cut off. Set by the transport;
+   * a test's reply store never keeps such a reply. */
+  cutOff?: true;
 };
 
 /** Incremental LLM token chunk for voice streaming (TTFA). */

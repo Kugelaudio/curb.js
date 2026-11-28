@@ -302,6 +302,7 @@
 ./testing TestModel
 ./testing TestRun
 ./testing affectedScenarios
+./testing asRun
 ./testing ask
 ./testing buildCallEvent
 ./testing builtInChecks

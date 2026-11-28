@@ -1,5 +1,6 @@
 import { assignExperiments, forcedVariant } from "../../experiments.node.js";
 import {
+  asRun,
   converse,
   inParallel,
   scriptedCaller,
@@ -103,11 +104,17 @@ export async function playRun(
     onDeclared?: (declared: readonly ExperimentDeclaration[]) => void;
   },
 ): Promise<SavedConversation> {
+  // Every model request of the run is keyed by it: `runs: 3` keeps three samples of each.
+  return asRun(params.run, () => playRunAs(params));
+}
+
+async function playRunAs(params: Parameters<typeof playRun>[0]): Promise<SavedConversation> {
   const { scenario, name, file, host, run } = params;
   const call = await startCall({
     host,
     ...(scenario.fakes ? { fakes: scenario.fakes } : {}),
     ...(scenario.client ? { client: scenario.client } : {}),
+    ...(scenario.now === undefined ? {} : { now: scenario.now }),
     experiments: (declared) => {
       params.onDeclared?.(declared);
       return runVariants({ file, name }, declared, scenario, run);
