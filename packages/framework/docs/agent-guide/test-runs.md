@@ -108,6 +108,7 @@ A run's id is the time it started and four random characters, so ids sort by tim
 | `ending.providerError` | `true` when a failed request to the agent's LLM provider stopped it |
 | `endState` | The data of the agent's stores, its rendered context and its active skill when the call ended |
 | `usage` | Tokens per part, `null` where the provider reported none |
+| `replies` | What the [reply store](./testing-api.md#reply-store) answered, when the run had one: `stored` and `live` requests, `from` (the `turn`, `role` and what `changed` where the first live request came in) and `requests`, each [`ReplyRequest`](./testing-api.md#reply-store) with its `turn`. A later run compares its requests with these. Optional |
 | `recordsToolCalls` | `false` when its source holds no tool calls (a Calls export line without `toolCalls`, a transcript). Optional |
 | `assessment` | What the checks and the judge made of it when the file was written; absent on a conversation `saveRun` saved without checks: the `outcome` (`pass`, `fail` or `error`), the `error` with its `kind`, every check, and every answer of the judge with its `turn` and `quote` |
 
@@ -131,6 +132,7 @@ run.
 
 | Version | Changes |
 |---|---|
+| v1.30.0 | A conversation may hold `replies`, what the reply store answered |
 | v1.25.0 | `agentVersion` holds `sources`, a hash of the agent's sources |
 | v1.25.0 | A scenario's entry in `scenarios` holds its own `findings`, and `failOn` may name them |
 | v1.25.0 | A run records `agentVersion`; `saveRun` and `loadRun` write and read runs; a conversation record may have another `source`, an `id`, `recordsToolCalls`, a `null` `ending.by` and `startedAt` |

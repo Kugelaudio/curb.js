@@ -18,7 +18,57 @@ npx curb test [filter] [options]
 | `--report <file>` | Also writes the report as Markdown. `GITHUB_STEP_SUMMARY` gets it too |
 | `--rejudge <run>` | Checks the conversations of a [saved run](../test-runs.md) again without running the agent: `latest`, a run's id, or a file |
 | `--changed <ref>` | Runs only the scenarios a change since `<ref>` can affect ([below](#only-what-a-change-affects)). `<ref>` is a branch or commit, such as `origin/main` |
+| `--live` | Sends every request to the model: no [reply store](#the-reply-store), and the real clock instead of the fixed one. What `curb test` did before it had a store |
+| `--dry` | Calls no model: lists which scenarios would go live, from which turn, and what changed ([below](#the-reply-store)). Saves nothing |
+| `--max-tokens <n>` | Starts no live request once the live requests used `n` tokens. The runs that needed one end as errors, and the exit code is 3 |
 | `--json` | Prints one JSON object |
+
+## The reply store
+
+A request the [reply store](../testing-api.md#reply-store) answered before is answered again
+without a model, on a fixed clock, so an unchanged scenario costs nothing and a changed one pays
+only from where it changed. Each scenario's report says which:
+
+```text
+  replies  stored
+  replies  live from turn 2 (system prompt changed)
+  replies  live from turn 3 (the caller's words changed) in 2 of 5 runs
+```
+
+The turn is where the first request the store could not answer came in: `the opening` for the
+agent's first words, and after the last turn `the judge` or `the end of the call`. What changed compares that request, part by part, with the
+same request of the newest [saved run](../test-runs.md): `model`, `model settings`, `system prompt`,
+`tools`, `context`, or the first message that differs (`the caller's words`, `a tool result`, `an
+earlier reply`). A request of the simulated caller says so (`caller: the agent's words changed`).
+With no saved run to compare with it says `no earlier run to compare with`.
+
+The Tokens line splits what went to a model from what the store saved:
+
+```text
+Tokens: 1,840 live (agent 1,612 in / 96 out · judge 120 in / 12 out), 9,310 saved by the reply store (41 of 47 request(s) answered from it)
+```
+
+`--json` holds the same as `store: { hits, misses, liveTokens, savedTokens }`, each scenario's
+`replies: { stored, live, summary }`, and each saved conversation's `replies: { stored, live, from,
+requests }`. Without a store (`--live`, `--rejudge`) these are left out.
+
+`--dry` plays every run as far as the store answers it and stops at the first request it cannot,
+calling no model, so it costs nothing and says what a real run would pay for:
+
+```text
+Dry run, no model called: 1 of 2 scenario(s) would go live.
+  orders (src/agent/orders/orders.scenario.ts): live from turn 2 (context changed)
+  greets (src/agent/greets.scenario.ts): stored
+```
+
+The scenarios a change since the last commit can affect (as [`--changed`](#only-what-a-change-affects)
+decides, against `HEAD`) run first, so the ones most likely to differ report soonest; `--changed`
+itself still runs only those.
+
+`--max-tokens <n>` caps a run's live tokens: once the requests that went to a model used `n`, no
+further request starts, and each run that needed one ends as an error, so it says nothing about the
+agent. The report says where it stopped, and the exit code is 3. The store's hits cost nothing and do
+not count.
 
 ## Since the last version
 
@@ -82,6 +132,7 @@ same choice from any list of files.
 | 0 | Every scenario passed |
 | 1 | A scenario failed or could not be loaded, or no scenario was found or matched |
 | 2 | None failed, but too many runs of a scenario were errors |
+| 3 | `--max-tokens` was reached: a request that needed a model was not sent |
 
 ## Example
 
@@ -90,12 +141,16 @@ npx curb test claims
 npx curb test --runs 5
 npx curb test --rejudge latest --judge-model openai:gpt-5.2
 npx curb test --changed origin/main
+npx curb test --dry
+npx curb test --max-tokens 50000
+npx curb test --live
 ```
 
 ## Version history
 
 | Version | Changes |
 |---|---|
+| v1.30.0 | `--live`, `--dry` and `--max-tokens <n>` (exit code 3); each scenario reports `stored` or from which turn it went live and why; the Tokens line and `--json` (`store`) split live tokens from those the reply store saved; the scenarios a change can affect run first |
 | v1.27.0 | `--changed <ref>` runs only the scenarios a change since `<ref>` can affect |
 | v1.27.0 | The judge does not count `claimed_without_tool` when the tool it names ran and succeeded by then (judge prompt 4). The simulated caller ends the call once its goal is done, also when the agent asks whether there is anything else (caller prompt 4) |
 | v1.25.0 | `--runs` runs scripted scenarios that many times too |

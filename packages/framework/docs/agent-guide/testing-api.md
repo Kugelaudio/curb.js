@@ -13,7 +13,7 @@ exports `curb test` and `curb review` use, for a test of your own in any test ru
 | 1 | [`inParallel`](#inparallel) | Many at once, slowing down on a rate limit |
 | 1 | [`report`](#report), [`passRate`](#passrate) | Results for the terminal, Markdown, CI and JSON, and the exit code |
 | 1 | [`projectHost`](#projecthost) | What all of them run on |
-| 1 | [`withReplyStore`](#reply-store), [`localReplyStore`](#reply-store), [`remoteReplyStore`](#reply-store), [`asRun`](#reply-store) | Replies the model gave before, so an unchanged test calls no model |
+| 1 | [`withReplyStore`](#reply-store), [`localReplyStore`](#reply-store), [`remoteReplyStore`](#reply-store), [`asRun`](#reply-store), [`runReplies`](#reply-store), [`replyStoreStats`](#reply-store) | Replies the model gave before, so an unchanged test calls no model |
 | 2 | [`simulatedCaller`](#simulatedcaller), [`scriptedCaller`](#scriptedcaller), [`personas`](#personas) | Callers |
 | 2 | [`callerFromCall`](#callerfromcall), [`replayCall`](#replaycall) | A real call as a test |
 | 2 | [`callersFor`](#callersfor) | Callers for an agent that has had no calls yet |
@@ -629,6 +629,8 @@ withReplyStore(host: TestHost, stores: ReplyStore[]): TestHost
 localReplyStore(options?: { dir? }): ReplyStore
 remoteReplyStore(options?: { url?, token? }): ReplyStore
 asRun<T>(run: number, play: () => T): T
+runReplies(): RunReplies | null
+replyStoreStats(host: TestHost): ReplyStoreStats | null
 ```
 
 ```ts
@@ -667,6 +669,17 @@ outside the checkout; `dir` defaults to `CURB_REPLY_STORE_DIR`, else
 when not given; `curb test` adds it when `CURB_REPLY_STORE_URL` is set. A store that fails never
 fails a test: the host goes on with the other stores, else the model, and prints one note.
 
+What the store answered:
+
+- **`runReplies()`**, inside an `asRun` (or a call), is the run so far: `{ stored, live, requests }`,
+  with each request as a `ReplyRequest` in order: who asked (`role`), whether it went `live`, a
+  12-character digest of each of its `parts` (`model`, `settings`, `system`, `tools`, `context`)
+  and of each message before the context (`"user:3f1c2ab9e0d4"`). Two runs' requests compared part
+  by part say what changed; this is how `curb test` names it. Null outside a run.
+- **`replyStoreStats(host)`** is what a host made by `withReplyStore` answered so far: `{ hits,
+  misses, liveTokens, savedTokens }`, the tokens of the requests sent to a model and of the replies
+  answered from a store. Null for any other host.
+
 A `ReplyStore` is `{ get(key), put(key, reply) }` of `StoredReply` records, so a store of your own is
 two functions.
 
@@ -686,6 +699,7 @@ implements them.
 
 | Version | Changes |
 |---|---|
+| v1.30.0 | `runReplies` and `replyStoreStats` added, and a conversation record's `replies` (`ConversationReplies`) |
 | v1.30.0 | `withReplyStore`, `localReplyStore`, `remoteReplyStore` and `asRun` work, and `curb test` keeps replies in a local store; `now` on `scenario` and `startCall` sets the agent's clock |
 | v1.30.0 | Declared: `start`, `spoken`, `hermetic` and `now` on `scenario` and `startCall`, `fake`, `opened`, `notOpened`, tool values in `called`, `notCalled` and `calledInOrder`, and `withReplyStore`, `localReplyStore`, `remoteReplyStore`, `ReplyStore` and `StoredReply` |
 | v1.27.0 | `affectedScenarios` added. `judge` does not count `claimed_without_tool` when the tool it names ran and succeeded in the turn of the claim or before (`judge.promptVersion` 4). `simulatedCaller` ends the call once its goal is done, also when asked whether there is anything else (`simulatedCaller.promptVersion` 4) |

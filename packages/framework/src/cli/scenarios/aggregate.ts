@@ -1,3 +1,4 @@
+import type { ScenarioReplies } from "./replies.js";
 import { FINDINGS, passRate as rateOf, styleNumbers, type ScenarioCheck, type ScenarioTurn } from "../../testing/index.js";
 import { styleLimitLine } from "./style.js";
 import type {
@@ -113,6 +114,9 @@ export type ScenarioResult = {
   style: StyleReport;
   usage: RunUsage | null;
   runs: ScenarioRun[];
+  /** What the reply store answered for its runs, and its line: "stored", or from which turn it
+   * went live and why. Absent when it ran without a store (`--live`) and on a re-judge. */
+  replies?: ScenarioReplies;
 };
 
 /** The run of a saved conversation, as a report shows it. */
