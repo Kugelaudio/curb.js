@@ -11,6 +11,10 @@ export type HandoffLimits = { afterErrors: number | null; afterFailedAttempts: n
 /** The id `<Handoff>` marks its tools with (`ToolMark`). */
 export const HANDOFF_BLOCK = "handoff";
 
+/** The names `<Handoff>` gives its tools when its props name none. The callback tool is rendered
+ * only once a handoff did not reach anybody, so `curb check` knows it from here. */
+export const HANDOFF_TOOL_NAMES = { name: "handoff", callbackName: "request_callback" } as const;
+
 /** How `<Handoff>` marks its tools, so its part in the conversation (`session.ts`) knows them:
  * the handoff itself, with the limits it was rendered with, and the callback request it offers
  * when nobody could take the call. */

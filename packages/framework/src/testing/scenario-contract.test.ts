@@ -27,7 +27,7 @@ const findOrder = defineTool({
   name: "find_order",
   description: "Look an order up.",
   schema: z.object({ order: z.string() }),
-  onSubmit: () => ({ ok: true }),
+  onSubmit: ({ order }) => ({ ok: true, data: { id: order, paid: 49 } }),
 });
 const issueRefund = defineTool({
   name: "issue_refund",

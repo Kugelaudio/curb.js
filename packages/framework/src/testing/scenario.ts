@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { z } from "zod";
 import { declaredNameProblem } from "../goals.js";
+import { skillPathOfComponent } from "../skill-modules.js";
 import type { SkillMeta } from "../routing.js";
 import type { ConversationRecord } from "./record.js";
 import type { Caller } from "./converse.js";
@@ -379,7 +380,10 @@ const FIELDS = [
   "style",
   "expect",
   "expectRuns",
+  "start",
+  "spoken",
 ];
+const START_FIELDS = ["skills", "info"];
 const CALLER_FIELDS = ["goal", "knows", "language", "persona", "behaviours"];
 const RESULT_FIELDS = ["ok", "message", "data"];
 /** The framework's own tools: they touch nothing outside the call, and the call needs them. */
@@ -402,14 +406,51 @@ export function scenario<const Skills extends readonly ScenarioSkill[] = readonl
   return Object.freeze(Object.defineProperty({ ...definition }, SCENARIO, { value: true }));
 }
 
+/** A result a tool's `onSubmit` cannot be checked against: any failure fits every tool. */
+type FailedToolResult = { ok: false; message?: string; data?: unknown };
+
+/** What `fake(tool, …)` takes for `tool`: for a tool from `defineTool` with a `schema`, a result
+ * of the shape its `onSubmit` returns (or any failure), or a function of its validated input
+ * that returns one; for a name or any other tool, any tool result. */
+type FakeFor<Tool> = Tool extends { readonly onSubmit: (input: infer Input) => infer Returned }
+  ? Awaited<Returned> extends infer Result
+    ? Result extends ToolResult
+      ? FakeOf<Input, Result | FailedToolResult>
+      : ScenarioFake
+    : ScenarioFake
+  : ScenarioFake;
+type FakeOf<Input, Result> = Result | ((input: Input) => Result | Promise<Result>);
+
 /**
  * One fake for the list form of `fakes`: `fakes: [fake(issueRefund, { ok: true, data: { refunded: 49 } })]`.
- * `tool` is the tool's value or its name.
+ * `tool` is the tool's value or its name. Given the value of a tool with a `schema`, TypeScript
+ * checks `result` against what the tool's `onSubmit` returns, and a function's input against
+ * the schema.
  */
-export function fake(tool: string | ScenarioTool, result: ScenarioFake): ScenarioFakeEntry {
-  void tool;
-  void result;
-  throw new Error("fake() is not implemented yet in this version of curb; give fakes as an object of tool name to result.");
+export function fake<const Tool extends string | ScenarioTool>(tool: Tool, result: FakeFor<Tool>): ScenarioFakeEntry {
+  const name = toolName(tool);
+  if (typeof name !== "string" || name.trim() === "") {
+    throw new Error("fake(): the tool is a tool's name or a value with its name, such as what defineTool returns.");
+  }
+  return Object.freeze({ tool: name, result: result as ScenarioFake });
+}
+
+/**
+ * The fakes of a scenario or a call by tool name, from either form of `fakes`. Throws on a tool
+ * given two fakes in the list.
+ */
+export function fakesByName(
+  fakes: Readonly<Record<string, ScenarioFake>> | readonly ScenarioFakeEntry[],
+): Readonly<Record<string, ScenarioFake>> {
+  if (!isFakeList(fakes)) return fakes;
+  const byName: Record<string, ScenarioFake> = {};
+  for (const entry of fakes) {
+    if (Object.prototype.hasOwnProperty.call(byName, entry.tool)) {
+      throw new Error(`fakes: ${entry.tool} has two fakes; give each tool one.`);
+    }
+    byName[entry.tool] = entry.result;
+  }
+  return byName;
 }
 
 /** The name of a tool given as its name or its value. */
@@ -475,10 +516,64 @@ function scenarioProblems(definition: unknown): string[] {
   if (expect !== undefined && typeof expect !== "function") {
     problems.push('expect must be a function that returns checks, e.g. ({ called }) => [called("book_meeting")].');
   }
+  if (definition.start !== undefined) problems.push(...startProblems(definition.start));
+  if (definition.spoken !== undefined && typeof definition.spoken !== "boolean") {
+    problems.push(`spoken must be true (turns are spoken, the default) or false (typed text); got ${preview(definition.spoken)}.`);
+  }
   if (expectRuns !== undefined && typeof expectRuns !== "function") {
     problems.push('expectRuns must be a function of the runs that returns checks, e.g. (runs, { check }) => [check("books on most runs", runs.filter((run) => run.called("book").pass).length >= 2)].');
   }
   return problems;
+}
+
+/** The shape only: whether each skill is one of the agent's is checked when the call starts. */
+export function startProblems(start: unknown): string[] {
+  if (!isRecord(start)) {
+    return ['start must be an object, e.g. { skills: [Billing], info: { "order.id": "A-1042" } }.'];
+  }
+  const problems = unknownFields(start, START_FIELDS, "start");
+  const { skills, info } = start;
+  if (skills !== undefined) {
+    if (!Array.isArray(skills)) {
+      problems.push('start.skills must be a list of skill modules or route paths, e.g. [Billing] or ["/billing"].');
+    } else {
+      skills.forEach((skill, index) => {
+        const problem = skillProblem(skill);
+        if (problem) problems.push(`start.skills[${index}]: ${problem}.`);
+      });
+    }
+  }
+  if (info !== undefined && !isRecord(info)) {
+    problems.push('start.info must be an object of call info by key, e.g. { "order.id": "A-1042" }.');
+  }
+  return problems;
+}
+
+/** What is wrong with `skill` as a skill a test names; undefined when it is a route path or a
+ * skill module (whether the agent has it is checked against the agent). */
+function skillProblem(skill: unknown): string | undefined {
+  if (typeof skill === "string") {
+    return skill.startsWith("/") ? undefined : `a route path starts with "/", such as "/billing"; got ${preview(skill)}`;
+  }
+  if (isRecord(skill) && typeof skill.default === "function") return undefined;
+  return `give a skill module (import * as Billing from "./billing/skill.js") or its route path ("/billing"); got ${preview(skill)}`;
+}
+
+/**
+ * The route path of a skill a test names: a path as it is, a module by the route the agent's
+ * discovery made of it in this process. Throws when the module is no skill of a loaded agent.
+ */
+export function skillPathOf(skill: ScenarioSkill): string {
+  const problem = skillProblem(skill);
+  if (problem) throw new Error(problem);
+  if (typeof skill === "string") return skill;
+  const path = skillPathOfComponent(skill.default);
+  if (path !== undefined) return path;
+  const title = skill.meta?.title ? ` "${skill.meta.title}"` : "";
+  throw new Error(
+    `the skill module${title} is no skill of the agent: no skill.tsx under src/agent/ exports its component. ` +
+      `Import the module from the agent's own skill.tsx, or give its route path, such as "/billing".`,
+  );
 }
 
 function clientProblems(client: unknown): string[] {
@@ -501,8 +596,21 @@ function experimentsProblems(experiments: unknown): string[] {
 }
 
 function fakesProblems(fakes: unknown): string[] {
+  if (Array.isArray(fakes)) {
+    const notMade = fakes.flatMap((entry, index) =>
+      isRecord(entry) && typeof entry.tool === "string" && "result" in entry ? [] : [index + 1],
+    );
+    if (notMade.length > 0) {
+      return [`fakes: entry ${notMade.join(", ")} is not a fake; make each one with fake(tool, result).`];
+    }
+    try {
+      return fakesProblems(fakesByName(fakes as ScenarioFakeEntry[]));
+    } catch (error) {
+      return [`${(error as Error).message}`];
+    }
+  }
   if (!isRecord(fakes)) {
-    return ['fakes must be an object of tool name to the result its calls get, e.g. { create_claim: { ok: true, message: "Claim created." } }.'];
+    return ['fakes must be a list of fake(tool, result), or an object of tool name to the result its calls get, e.g. { create_claim: { ok: true, message: "Claim created." } }.'];
   }
   return Object.entries(fakes).flatMap(([tool, fake]) => {
     const problem =

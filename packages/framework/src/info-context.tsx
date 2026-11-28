@@ -1,7 +1,10 @@
 import { createContext, useContext, useRef, useSyncExternalStore } from "react";
+import type { z } from "zod";
 import { EXPERIMENT_INFO_PREFIX } from "./experiments.js";
 import type { AgentInfo } from "./info-store.js";
 import { AgentInfoStore } from "./info-store.js";
+import type { SkillMeta } from "./routing.js";
+import { declaredInfo } from "./skill-info.js";
 
 /**
  * The store travels through context with a STABLE identity (the runtime
@@ -41,9 +44,33 @@ export function useAgentInfoStore(): AgentInfoStore | null {
  */
 export function useAgentInfo(): AgentInfo;
 export function useAgentInfo<T>(selector: (info: AgentInfo) => T): T;
-export function useAgentInfo<T>(selector?: (info: AgentInfo) => T): T | AgentInfo {
-  return useInfoSelector<T | AgentInfo>("useAgentInfo", selector ?? ((info) => info));
+/**
+ * The call info a skill declares in its `meta.info`, typed by that schema:
+ *
+ * ```tsx
+ * export const meta = { title: "Billing", info: z.object({ "order.id": z.string() }) } satisfies SkillMeta;
+ * const info = useAgentInfo(meta); // { "order.id"?: string }
+ * ```
+ *
+ * Only the declared keys, each parsed by its schema. A key that is absent or does not fit reads
+ * `undefined`: when a required one is missing as the skill opens, a test run fails and a real
+ * call logs `SKILL_INFO_MISSING` and goes on.
+ */
+export function useAgentInfo<const Meta extends SkillMeta>(meta: Meta): DeclaredAgentInfo<Meta>;
+export function useAgentInfo<T>(source?: ((info: AgentInfo) => T) | SkillMeta): T | AgentInfo {
+  if (typeof source === "function") return useInfoSelector("useAgentInfo", source);
+  if (source !== undefined) {
+    const schema = source.info;
+    return useInfoSelector("useAgentInfo", (info) => (schema ? declaredInfo(schema, info) : {}));
+  }
+  return useInfoSelector<AgentInfo>("useAgentInfo", (info) => info);
 }
+
+/** What `useAgentInfo(meta)` returns: each key `meta.info` declares, with its parsed type, and
+ * nothing else. */
+type DeclaredAgentInfo<Meta extends SkillMeta> = Meta["info"] extends z.ZodObject
+  ? { readonly [Key in keyof z.output<Meta["info"]>]?: z.output<Meta["info"]>[Key] }
+  : Readonly<Record<never, never>>;
 
 /** The call's client context: its `client.<key>` info, keyed without the prefix. */
 export type ClientInfo = Readonly<Record<string, string | undefined>>;
