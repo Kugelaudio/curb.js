@@ -77,8 +77,43 @@ describe("a skill's declared info", () => {
 
     expect(missing).toHaveLength(1);
     expect(missing[0]).toMatchObject({ path: "/billing", problems: [{ key: "order.id" }] });
-    expect(missing[0].message).toMatch(/^The skill \/billing opened without the call info its meta\.info requires: "order\.id" is 1042, which does not fit: /);
+    expect(missing[0].message).toBe(
+      'The skill /billing opened without the call info its meta.info requires: "order.id" is a number, which does not fit its schema (expected string).',
+    );
     expect(text(runtime)).toContain("Order: none.");
+  });
+
+  it("never copies the value into the message, and opens with any value the info store holds", () => {
+    const missing: string[] = [];
+    const strict = {
+      title: "Billing",
+      info: z.object({
+        "order.id": z.string(),
+        "order.pin": z.string().regex(/^\d{4}$/, { message: "PIN 98765 is not four digits" }),
+        "order.total": z.number(),
+      }),
+    } satisfies SkillMeta;
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const runtime = new AgentSiteRuntime(
+      <Agent>
+        <agent-page path="/billing" title="Billing">
+          <Text>Billing.</Text>
+        </agent-page>
+      </Agent>,
+      { skills: [{ path: "/billing", info: strict.info }] },
+    );
+    runtime.onSkillInfoMissing(({ message }) => missing.push(message));
+    runtime.updateInfo({ "order.id": circular, "order.pin": "98765", "order.total": 10n });
+
+    expect(() => runtime.loadSkill("/billing")).not.toThrow();
+
+    expect(contextOf(runtime).path).toBe("/billing");
+    expect(missing).toEqual([
+      'The skill /billing opened without the call info its meta.info requires: "order.id" is an object, which does not fit its schema (expected string); ' +
+        '"order.pin" is a string, which does not fit its schema (invalid format); "order.total" is a bigint, which does not fit its schema (expected number).',
+    ]);
+    expect(missing[0]).not.toContain("98765");
   });
 
   it("goes to a test's handler instead of the log, until the handler is taken away", () => {

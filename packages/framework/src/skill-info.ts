@@ -29,8 +29,7 @@ export function skillInfoProblems(schema: z.ZodObject, info: AgentInfo): SkillIn
     const parsed = (field as z.ZodType).safeParse(value);
     if (parsed.success) return [];
     if (value === undefined) return [{ key, problem: "is missing" }];
-    const issue = parsed.error.issues[0]?.message ?? "does not fit its schema";
-    return [{ key, problem: `is ${preview(value)}, which does not fit: ${issue}` }];
+    return [{ key, problem: `is ${kindOf(value)}, which does not fit its schema (${reason(parsed.error.issues[0])})` }];
   });
 }
 
@@ -40,7 +39,20 @@ export function skillInfoMessage(path: string, problems: readonly SkillInfoProbl
   return `The skill ${path} opened without the call info its meta.info requires: ${listed}.`;
 }
 
-function preview(value: unknown): string {
-  const text = JSON.stringify(value) ?? String(value);
-  return text.length > 60 ? `${text.slice(0, 57)}...` : text;
+/** The kind of a value, never the value: a real call logs this message, and call info may hold
+ * what a caller said or a host's credentials. */
+function kindOf(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "a list";
+  const type = typeof value;
+  if (type === "object") return "an object";
+  return /^[aeiou]/.test(type) ? `an ${type}` : `a ${type}`;
+}
+
+/** Why a value failed, from the issue's code and expected type alone: an issue's message can
+ * repeat the value it rejected. */
+function reason(issue: z.core.$ZodIssue | undefined): string {
+  if (!issue) return "invalid";
+  if (issue.code === "invalid_type") return `expected ${issue.expected}`;
+  return issue.code.replace(/_/g, " ");
 }
