@@ -44,6 +44,9 @@ These stay out of git. The project's `.gitignore` already lists them.
 | `.mcp-auth/` | Tokens of MCP servers you signed in to |
 
 `mcp.servers.json` holds the MCP servers you added in the preview. It never holds tokens.
+`mcp.tools.json` holds the tools each MCP server lists, written by
+[`curb mcp snapshot`](./cli/mcp-snapshot.md) for [hermetic tests](./testing.md#hermetic-runs).
+Commit both.
 
 ## Next steps
 

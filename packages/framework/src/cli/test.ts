@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { offerSnapshotMcpTools } from "../mcp/snapshot-file.js";
 import {
   affectedScenarios,
   inParallel,
@@ -75,7 +76,11 @@ provider failed, the simulated caller got stuck or made up a fact, the judge cou
 read): it is left out of the pass rate. A rate limit of the provider is no error: the run
 waits for it, goes on more slowly, and the report says how long it waited.
 
-A tool runs for real on every run unless the scenario fakes it (fakes).
+A tool runs for real on every run unless the scenario fakes it (fakes). A fake for a tool the
+agent does not have is an error before the first turn. In a hermetic run (the scenario's
+hermetic, or --hermetic) a call of a tool without a fake ends the run as an error before the
+tool runs, and MCP tools come from mcp.tools.json (curb mcp snapshot) without contacting any
+server.
 
   <filter>               run only the scenarios whose name or file contains it (ignoring case)
   --changed <ref>        run only the scenarios a change since <ref> (a branch or commit, such
@@ -93,6 +98,8 @@ A tool runs for real on every run unless the scenario fakes it (fakes).
   --report <file>        also write the report as Markdown (GITHUB_STEP_SUMMARY gets it too)
   --rejudge <run>        check the conversations of a saved run again, without running the
                          agent: "latest", a run's id, or the path of its file
+  --hermetic             run every scenario hermetic: no tool without a fake runs, and no MCP
+                         server is contacted
   --json                 print one JSON object instead:
                          { passed, scenarios: [{ name, file, mode, passed, endedBy, durationMs,
                            turns, checks, notes, outcome, flaky, stats, checkStats, findings,
@@ -126,6 +133,8 @@ Scenarios are described in node_modules/curb/docs/agent-guide/testing.md.`;
 export type TestArgs = {
   filter: string;
   json: boolean;
+  /** Every scenario runs hermetic. */
+  hermetic: boolean;
   runs?: number;
   concurrency?: number;
   callerModel?: string;
@@ -139,7 +148,7 @@ export type TestArgs = {
 };
 
 /** The options that take no value. */
-const FLAGS = ["--json"];
+const FLAGS = ["--json", "--hermetic"];
 /** The options that take one, each with what it is. */
 const VALUES: Readonly<Record<string, string>> = {
   "--runs": "<n>",
@@ -205,6 +214,7 @@ export function parseTestArgs(args: readonly string[]): TestArgs {
   return {
     filter: words.join(" ").trim(),
     json: flags.has("--json"),
+    hermetic: flags.has("--hermetic"),
     runs,
     concurrency: concurrency(),
     callerModel: values.get("--caller-model"),
@@ -473,9 +483,18 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
     };
   }
 
+  // A run whose scenarios are all hermetic offers MCP tools from mcp.tools.json before the agent
+  // is first built, which would connect its servers otherwise. Where some are not, the servers
+  // connect, and a hermetic one among them still runs no tool without a fake.
+  const scenarios = selected.flatMap((entry) => ("scenario" in entry ? [entry.scenario] : []));
+  if (run.hermetic || (scenarios.length > 0 && scenarios.every((scenario) => scenario.hermetic))) offerSnapshotMcpTools(session.projectRoot);
   const host = hostOf();
   const before = host.throttle?.stats();
-  const choice = { ...(run.callerModel === undefined ? {} : { callerModel: run.callerModel }), ...(run.judgeModel === undefined ? {} : { judgeModel: run.judgeModel }) };
+  const choice = {
+    ...(run.callerModel === undefined ? {} : { callerModel: run.callerModel }),
+    ...(run.judgeModel === undefined ? {} : { judgeModel: run.judgeModel }),
+    ...(run.hermetic ? { hermetic: true } : {}),
+  };
   const printed = inOrder(run.json ? () => {} : out, selected.length);
   const reports: ScenarioReport[] = [];
   const settingsOf: Array<SavedScenarioSettings | undefined> = [];

@@ -7,6 +7,7 @@ import type { ToolDefinition, ToolResult } from "../types.js";
 import { isRemoteConfig, type McpAnyServerConfig, type McpAuth, type McpServerConfig } from "./config.js";
 // Type-only: the implementation stays a dynamic import (it needs node:fs).
 import type { FileOAuthProvider } from "./oauth-store.js";
+import { MCP_TOOLS_FILE, type McpToolsSnapshot } from "./snapshot.js";
 import {
   mcpToolToDefinition,
   normalizeMcpResult,
@@ -67,6 +68,28 @@ let oauthSignInUrl: string | null = null;
 
 export function setMcpOAuthSignInUrl(url: string | null): void {
   oauthSignInUrl = url;
+}
+
+/** The tools a hermetic test offers in place of every server's (`mcp.tools.json`); null while
+ * servers are connected for real. Process-wide, like the default manager. */
+let offeredSnapshot: McpToolsSnapshot | null = null;
+/** Whether a server was connected for real in this process (see {@link offerMcpToolsFrom}). */
+let connectedLive = false;
+
+/**
+ * From now on, every MCP server "connects" to its entry in `snapshot`: its tools are the ones the
+ * snapshot lists, no transport is opened and no request leaves the process. A server the snapshot
+ * lacks is an error state that names the fix. Null connects for real again. Returns false when a
+ * server was already connected for real in this process: those stay as they are.
+ */
+export function offerMcpToolsFrom(snapshot: McpToolsSnapshot | null): boolean {
+  offeredSnapshot = snapshot;
+  return !connectedLive;
+}
+
+/** The snapshot MCP tools come from in this process (see {@link offerMcpToolsFrom}); null when live. */
+export function offeredMcpSnapshot(): McpToolsSnapshot | null {
+  return offeredSnapshot;
 }
 
 async function createTransport(
@@ -354,6 +377,22 @@ export class McpManager {
   }
 
   private async connect(config: McpAnyServerConfig): Promise<void> {
+    if (offeredSnapshot) {
+      const listed = offeredSnapshot.servers[config.id];
+      this.setState(
+        config.id,
+        listed
+          ? { status: "ready", tools: listed.tools.map((tool) => ({ ...tool })) }
+          : {
+              status: "error",
+              message:
+                `[MCP_TOOLS_MISSING] MCP server "${config.id}" is not in ${MCP_TOOLS_FILE}, and a hermetic run offers MCP tools only from there, without connecting. ` +
+                `Fix: run \`npx curb mcp snapshot\` with the server reachable, and commit ${MCP_TOOLS_FILE}.`,
+            },
+      );
+      return;
+    }
+    connectedLive = true;
     this.setState(config.id, { status: "connecting" });
 
     let transport: Transport;
@@ -429,6 +468,9 @@ export class McpManager {
   ): Promise<ToolResult> {
     const client = this.clients.get(serverId);
     if (!client) {
+      if (offeredSnapshot) {
+        return { ok: false, message: `MCP server "${serverId}" is offered from ${MCP_TOOLS_FILE} in this hermetic run and was not contacted.` };
+      }
       return { ok: false, message: `MCP server "${serverId}" is not connected.` };
     }
 
