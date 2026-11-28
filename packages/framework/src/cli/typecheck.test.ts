@@ -99,3 +99,106 @@ describe("Node's types in the type check", () => {
     ]);
   });
 });
+
+describe("tools and info as values in the type check", () => {
+  // A billing skill that declares the order it needs and exports its tools as values, a scenario
+  // that uses them correctly, and three scenarios with one mistake each.
+  const scenarioFile = (body: string) =>
+    `import { fake, scenario } from "curb/testing";\nimport * as Billing from "./skill.js";\nimport { findOrder, issueRefund } from "./tools.js";\n\n${body}`;
+  const root = createTestProject({
+    "src/agent/agent.tsx": `import { Agent, Skill, Skills, SystemPrompt, defineAgent } from "curb";
+
+export function App() {
+  return (
+    <Agent>
+      <SystemPrompt>You help with bills.</SystemPrompt>
+      <Skills>
+        <Skill path="/billing" description="Use for questions about a bill.">Billing</Skill>
+      </Skills>
+    </Agent>
+  );
+}
+
+export const agent = defineAgent({ app: App });
+`,
+    "src/agent/billing/tools.ts": `import { defineTool, z } from "curb";
+
+export const findOrder = defineTool({
+  name: "find_order",
+  description: "Look an order up.",
+  schema: z.object({ order: z.string() }),
+  onSubmit: async ({ order }) => ({ ok: true, data: { id: order, paid: 49 } }),
+});
+
+export const issueRefund = defineTool({
+  name: "issue_refund",
+  description: "Refund an order.",
+  schema: z.object({ order: z.string() }),
+  onSubmit: async () => ({ ok: true, data: { refunded: 49 } }),
+});
+`,
+    "src/agent/billing/skill.tsx": `import { Instruction, Tool, useAgentInfo, z, type SkillMeta } from "curb";
+import { findOrder, issueRefund } from "./tools.js";
+
+export const meta = {
+  title: "Billing",
+  description: "Use for questions about a bill.",
+  info: z.object({ "order.id": z.string(), "order.note": z.string().optional() }),
+} satisfies SkillMeta;
+
+export default function Billing() {
+  const info = useAgentInfo(meta);
+  const order: string | undefined = info["order.id"];
+  return (
+    <>
+      <Instruction>{\`Look order \${order ?? "unknown"} up with \${findOrder.name} first.\`}</Instruction>
+      <Tool {...findOrder} />
+      <Tool {...issueRefund} />
+    </>
+  );
+}
+`,
+    "src/agent/billing/refund.scenario.ts": scenarioFile(`export default scenario({
+  start: { skills: [Billing], info: { "order.id": "A-1042" } },
+  turns: ["Please refund order A-1042."],
+  fakes: [fake(findOrder, { ok: true, data: { id: "A-1042", paid: 49 } }), fake(issueRefund, { ok: true, data: { refunded: 49 } })],
+  expect: ({ called, notCalled, calledInOrder }) => [called(issueRefund, { order: "A-1042" }), notCalled("cancel_order"), calledInOrder(findOrder, issueRefund)],
+});
+`),
+    "src/agent/billing/misspelled-tool.scenario.ts": scenarioFile(`export default scenario({
+  turns: ["Please refund order A-1042."],
+  expect: ({ called }) => [called(issueRefnd)],
+});
+`),
+    "src/agent/billing/wrong-fake.scenario.ts": scenarioFile(`export default scenario({
+  turns: ["Please refund order A-1042."],
+  fakes: [fake(findOrder, { ok: true, data: { id: "A-1042", paid: "49" } })],
+});
+`),
+    "src/agent/billing/missing-info.scenario.ts": scenarioFile(`export default scenario({
+  start: { skills: [Billing], info: { "order.note": "late" } },
+  turns: ["Please refund order A-1042."],
+});
+`),
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  it("fails on a misspelled tool, a fake of the wrong shape and a missing info key, and on nothing else", async () => {
+    const result = await typeCheckProject(root, "agent");
+
+    const found = result.diagnostics.map((diagnostic) => ({
+      at: formatAuthoringLocation(diagnostic.location),
+      code: diagnostic.code,
+      message: diagnostic.message,
+    }));
+    expect(found.map(({ at }) => at)).toEqual([
+      "src/agent/billing/missing-info.scenario.ts:6:31",
+      "src/agent/billing/misspelled-tool.scenario.ts:7:35",
+      "src/agent/billing/wrong-fake.scenario.ts:7:27",
+    ]);
+    expect(found.every(({ code }) => code === "AGENT_TYPE_ERROR")).toBe(true);
+    expect(found[0].message).toContain(`Property '"order.id"' is missing`);
+    expect(found[1].message).toContain("Cannot find name 'issueRefnd'. Did you mean 'issueRefund'?");
+    expect(found[2].message).toContain("The types of 'data.paid' are incompatible");
+  }, 120_000);
+});

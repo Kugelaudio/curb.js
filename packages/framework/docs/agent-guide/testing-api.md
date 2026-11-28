@@ -65,6 +65,8 @@ Conversation recording is off, and the framework's own log lines go to stderr.
 | `client` | Page info the call starts with |
 | `experiments` | The variant per experiment, `{ greeting: "casual" }`, or a function of the agent's experiments (`[{ name, variants: [{ name, weight }] }]`) that returns them. An experiment left out draws its variant as a call would |
 | `hermetic` | `true`: a call of a tool without a fake ends the call as an error before the tool runs (the turn reports it, `say` rejects after it), and MCP tools come from `mcp.tools.json` ([hermetic runs](./testing.md#hermetic-runs)) |
+| `start` | `{ skills, info }`: call info set and skills opened before the opening and turn 1, as in a scenario ([Starting inside a skill](./testing.md#starting-inside-a-skill)). A skill that is not one of the agent's, or more skills than the agent keeps loaded, is refused |
+| `spoken` | `false` plays every turn as typed text, without the spoken-reply rules, as a host's `user_text` does without a live call. Default: `true` |
 | `host` | What the agent runs on. Default: [`projectHost()`](#projecthost) |
 
 | `Call` | What it is |
@@ -74,7 +76,7 @@ Conversation recording is off, and the framework's own log lines go to stderr.
 | `turns` | Every turn so far |
 | `state(store)` | The data of a `createAgentStore` store now, by its key |
 | `context` | The agent's rendered context now, line by line: its knowledge, the skills it can open (`available_skill: ...`) and its tools |
-| `systemPrompt` | The system prompt the agent's model receives on the caller's next turn: the agent's `<SystemPrompt>` and the framework's spoken-reply rules |
+| `systemPrompt` | The system prompt the agent's model receives on the caller's next turn: the agent's `<SystemPrompt>` and, unless `spoken: false`, the framework's spoken-reply rules |
 | `ended` | The agent hung up, or the call was closed |
 | `experiments`, `language`, `model` | The call's variants, the agent's language, the agent's model as `provider:model` |
 | `record()` | The call as a [conversation record](./test-runs.md#a-conversation-record), `source: "call"` |
@@ -490,7 +492,7 @@ export default scenario({
 | `maxTurns` | `number` | 12 for a simulated caller | The most caller turns, at most 100 for a simulated caller |
 | `client` | object | | Page info the call starts with |
 | `experiments` | object | | The variant, by experiment name. An experiment left out is covered by repeated runs |
-| `fakes` | object | | Tools that must not run for real, each with the result its calls get, or a function of the input that returns one. A tool without a fake runs for real on every run, so fake one that sends, books or charges. A fake for a tool the agent does not have is an error before turn 1 |
+| `fakes` | list or object | | Tools that must not run for real: a list of [`fake(tool, result)`](#fake), or an object of tool name to result. A result is what its calls get, or a function of the input that returns one. A tool without a fake runs for real on every run, so fake one that sends, books or charges. A fake for a tool the agent does not have is an error before turn 1 |
 | `hermetic` | `boolean` | false | `true`: a call of a tool without a fake ends the run as an error before the tool runs, and MCP tools come from `mcp.tools.json` without contacting a server ([hermetic runs](./testing.md#hermetic-runs)). `curb test --hermetic` sets it for every scenario |
 | `runs` | `number` | 1 | How often the scenario runs, 1 to 100. `curb test --runs` overrides it. Its tools without a fake run that many times |
 | `minPassRate` | `number` | 1 | The share of completed runs that must pass, above 0 and at most 1 |
@@ -500,6 +502,33 @@ export default scenario({
 | `style` | `StyleLimits` | none | The highest value accepted per style number, such as `{ wordsP90: 40 }` |
 | `expect` | function | | Your own checks, run on the finished conversation |
 | `expectRuns` | function | | Your own checks across all runs, called once after the last |
+
+### `fake`
+
+```ts
+fake(tool: string | { name: string }, result): ScenarioFakeEntry
+```
+
+One entry of a list of `fakes`. `tool` is the tool's name or its value from
+[`defineTool`](functions/define-tool.md). Given the value of a tool with a `schema`, TypeScript
+checks `result` against what its `onSubmit` returns (any failure, `{ ok: false, ... }`, fits every
+tool), and a function's input against the schema.
+
+```ts
+import { fake, scenario } from "curb/testing";
+import { findOrder, issueRefund } from "./tools.js";
+
+export default scenario({
+  turns: ["Please refund order A-1042."],
+  fakes: [
+    fake(findOrder, { ok: true, data: { id: "A-1042", paid: 49 } }),
+    fake(issueRefund, ({ order }) => ({ ok: true, data: { order, refunded: 49 } })),
+  ],
+  expect: ({ called }) => [called(issueRefund, { order: "A-1042" })],
+});
+```
+
+A tool given two fakes in one list is an error. `startCall({ fakes })` takes the same list.
 
 ### `caller`
 
@@ -533,9 +562,9 @@ refused there.
 
 | Helper | Passes when |
 |---|---|
-| `called(tool, input?)` | The agent ran the tool without a refusal. With `input`, only a call with those values counts, at any depth |
-| `calledInOrder(...calls)` | The agent ran these tools in this order; other calls may come between. An entry is a name or `[name, input]` |
-| `notCalled(tool)` | The tool never ran. A refused or held call still passes |
+| `called(tool, input?)` | The agent ran the tool without a refusal. With `input`, only a call with those values counts, at any depth. `tool` is its name or its value from `defineTool` |
+| `calledInOrder(...calls)` | The agent ran these tools in this order; other calls may come between. An entry is a tool (name or value) or `[tool, input]` |
+| `notCalled(tool)` | The tool (name or value) never ran. A refused or held call still passes |
 | `said(text)` | A reply contains the text, ignoring case, or matches the pattern |
 | `endedCall()` | The agent ended the call itself |
 | `stateMatches(store, expected)` | The store's data at the end of the call has `expected`: an object by the fields it names, a list entry by entry and with the same length |
@@ -690,12 +719,9 @@ two functions.
 These are declared in `curb/testing` so their types can be used, and throw until a later version
 implements them.
 
-- `scenario` and `startCall` take `start: { skills, info }` (skills opened and call info set
-  before turn 1), `spoken: false` (turns as typed text), `hermetic: true` (a tool call without a
-  fake is an error) and `now` (the date and time the agent sees).
-- `fake(tool, result)` makes one entry of a list of `fakes`. `called`, `notCalled` and
-  `calledInOrder` take a tool's value as well as its name, and `expect` gets `opened(skill)` and
-  `notOpened(skill?)`.
+- `scenario` and `startCall` take `hermetic: true` (a tool call without a fake is an error) and
+  `now` (the date and time the agent sees). `start` and `spoken` work now: see
+  [Starting inside a skill](./testing.md#starting-inside-a-skill).
 
 ## Version history
 
@@ -704,6 +730,7 @@ implements them.
 | v1.30.0 | `runReplies` and `replyStoreStats` added, and a conversation record's `replies` (`ConversationReplies`) |
 | v1.30.0 | `withReplyStore`, `localReplyStore`, `remoteReplyStore` and `asRun` work, and `curb test` keeps replies in a local store; `now` on `scenario` and `startCall` sets the agent's clock |
 | v1.30.0 | `hermetic` works on `scenario` and `startCall`. A fake for a tool the agent does not have is an error before turn 1, no longer a note |
+| v1.30.0 | `fake` added; `fakes` takes a list of `fake(tool, result)`. `called`, `notCalled` and `calledInOrder` take a tool's value. A skill that opens without the info its `meta.info` requires fails the turn (`SKILL_INFO_MISSING`) |
 | v1.30.0 | Declared: `start`, `spoken`, `hermetic` and `now` on `scenario` and `startCall`, `fake`, `opened`, `notOpened`, tool values in `called`, `notCalled` and `calledInOrder`, and `withReplyStore`, `localReplyStore`, `remoteReplyStore`, `ReplyStore` and `StoredReply` |
 | v1.27.0 | `affectedScenarios` added. `judge` does not count `claimed_without_tool` when the tool it names ran and succeeded in the turn of the claim or before (`judge.promptVersion` 4). `simulatedCaller` ends the call once its goal is done, also when asked whether there is anything else (`simulatedCaller.promptVersion` 4) |
 | v1.25.0 | `loadCalls` reads a Calls export's tool result given as `{ message, data }` beside the tool call's `ok`, and a line's length from `durationSeconds` |

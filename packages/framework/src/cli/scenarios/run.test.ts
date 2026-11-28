@@ -13,6 +13,8 @@ import { addTask, calls, hangUp, says as taskSays, sendSummary, steps, tasksBund
 import type { CallBundle, TestHost } from "../../testing/host.js";
 import { RunSlots } from "../../testing/parallel.js";
 import { scenario, type ScenarioCheck, type ScenarioDefinition, type ScenarioTurn } from "../../testing/scenario.js";
+import { hermeticHost } from "../../test-fixtures/hermetic-host.js";
+import * as ClaimProcedure from "../../test-fixtures/project/src/agent/claim-procedure/skill.js";
 import type { ScenarioRun } from "./aggregate.js";
 import { plannedRuns, runScenario as runOnHost, runVariants, scenarioSessionId, scenarioVariants, type ScenarioResult } from "./run.js";
 import type { SavedConversation } from "./types.js";
@@ -891,5 +893,71 @@ describe("provider errors", () => {
       "1 of 3 run(s) not started: 2 error(s) already, more than the 34% of its runs a scenario may have, so it cannot be assessed",
     );
     vi.restoreAllMocks();
+  });
+});
+
+describe("a scenario that starts inside a skill", () => {
+  /** The fixture agent, played so that it reads the claim procedure when it is not open yet. */
+  const claimsHost = (offered: string[][]) =>
+    hermeticHost({
+      agent: (request) => {
+        offered.push(request.tools.map((tool) => tool.name));
+        const open = request.tools.some((tool) => tool.name === "complete_claim_procedure_stage");
+        return open || request.messages.at(-1)?.role === "tool"
+          ? { text: "Is everyone safe?", toolCalls: [] }
+          : { text: "", toolCalls: [{ name: "read_skill", input: { skill: "/claim-procedure" } }] };
+      },
+    });
+  const definition = {
+    turns: ["A pipe burst in my kitchen."],
+    expect: ({ called, opened, notOpened }) => [opened(ClaimProcedure), notOpened(), called("read_skill")],
+  } satisfies ScenarioDefinition;
+
+  it("runs with the skill's tools offered on turn 1 and no read_skill call", async () => {
+    const offered: string[][] = [];
+    const saved: SavedConversation[] = [];
+    await runOnHost({
+      scenario: scenario({ ...definition, start: { skills: [ClaimProcedure] }, spoken: false }),
+      name: "claim",
+      file: "src/agent/claim-procedure/claim.scenario.ts",
+      host: claimsHost(offered),
+      onRun: (_run, conversation) => void saved.push(conversation),
+    });
+
+    expect(offered[0]).toContain("complete_claim_procedure_stage");
+    const conversation = saved[0]!;
+    expect(conversation.turns[0]!.toolCalls).toEqual([]);
+    expect(conversation.skills).toEqual({ started: ["/claim-procedure"], opened: ["/claim-procedure"] });
+    expect(conversation.assessment.checks.filter((check) => !check.reportOnly).map((check) => [check.name, check.pass])).toEqual(
+      expect.arrayContaining([
+        ["opened /claim-procedure", true],
+        ["opened no skill beyond /claim-procedure", true],
+        ["called read_skill", false],
+      ]),
+    );
+  });
+
+  it("without start, behaves as before: the agent reads the skill on turn 1", async () => {
+    const offered: string[][] = [];
+    const saved: SavedConversation[] = [];
+    await runOnHost({
+      scenario: scenario(definition),
+      name: "claim",
+      file: "src/agent/claim-procedure/claim.scenario.ts",
+      host: claimsHost(offered),
+      onRun: (_run, conversation) => void saved.push(conversation),
+    });
+
+    expect(offered[0]).not.toContain("complete_claim_procedure_stage");
+    const conversation = saved[0]!;
+    expect(conversation.turns[0]!.toolCalls.map((call) => call.name)).toEqual(["read_skill"]);
+    expect(conversation.skills).toEqual({ started: [], opened: ["/claim-procedure"] });
+    expect(conversation.assessment.checks.filter((check) => !check.reportOnly).map((check) => [check.name, check.pass])).toEqual(
+      expect.arrayContaining([
+        ["opened /claim-procedure", true],
+        ["opened no skill", false],
+        ["called read_skill", true],
+      ]),
+    );
   });
 });

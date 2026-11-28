@@ -126,6 +126,8 @@ async function playRunAs(params: Parameters<typeof playRun>[0]): Promise<SavedCo
     ...(scenario.client ? { client: scenario.client } : {}),
     ...(scenario.now === undefined ? {} : { now: scenario.now }),
     ...(params.hermetic || scenario.hermetic ? { hermetic: true } : {}),
+    ...(scenario.start ? { start: scenario.start } : {}),
+    ...(scenario.spoken === undefined ? {} : { spoken: scenario.spoken }),
     experiments: (declared) => {
       params.onDeclared?.(declared);
       return runVariants({ file, name }, declared, scenario, run);

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentSession } from "../agent-session.js";
+import { AUTHORING_DIAGNOSTIC_CODES } from "../authoring.js";
 import type { AgentFirstTurn } from "../config.js";
 import { experimentInfo, type ExperimentDeclaration } from "../experiments.js";
 import { assignExperiments } from "../experiments.node.js";
@@ -17,12 +18,15 @@ import { testNow } from "./reply-store.js";
 import type { ConversationRecord, EndState, RecordedTool } from "./record.js";
 import {
   fakedToolProblem,
-  isFakeList,
+  fakesByName,
+  skillPathOf,
+  startProblems as startShapeProblems,
   toolResultProblem,
   type ScenarioCallOptions,
   type ScenarioConfirmation,
   type ScenarioFake,
   type ScenarioFakeEntry,
+  type ScenarioSkill,
   type ScenarioToolCall,
   type ScenarioTurn,
   type ScenarioTurnError,
@@ -100,17 +104,23 @@ export type StartCallOptions = ScenarioCallOptions & {
  * the page info or a variant is one the agent cannot take.
  */
 export async function startCall(options: StartCallOptions = {}): Promise<Call> {
-  if (options.fakes !== undefined && isFakeList(options.fakes)) {
-    throw new Error("startCall: a list of fake(tool, result) is not implemented yet in this version of curb; give fakes as an object of tool name to result.");
+  let fakesGiven: Readonly<Record<string, ScenarioFake>> | undefined;
+  try {
+    fakesGiven = options.fakes === undefined ? undefined : fakesByName(options.fakes);
+  } catch (error) {
+    throw new Error(`startCall: ${(error as Error).message}`);
   }
-  const notYet = (["start", "spoken"] as const).filter((option) => options[option] !== undefined);
-  if (notYet.length > 0) throw new Error(`startCall: ${notYet.join(", ")} is not implemented yet in this version of curb.`);
-  const fakeProblems = Object.entries(options.fakes ?? {}).flatMap(([tool, fake]) => {
+  const fakeProblems = Object.entries(fakesGiven ?? {}).flatMap(([tool, fake]) => {
     const problem = fakedToolProblem(tool) ?? (typeof fake === "function" ? undefined : toolResultProblem(fake));
     return problem ? [`fakes.${tool}: ${problem}.`] : [];
   });
   const clientProblems = Object.entries(options.client ?? {}).flatMap(([key, value]) => clientInfoProblem(key, value) ?? []);
-  if (fakeProblems.length + clientProblems.length > 0) throw new Error(`startCall: ${[...fakeProblems, ...clientProblems].join(" ")}`);
+  const startProblems = [
+    ...(options.start === undefined ? [] : startShapeProblems(options.start)),
+    ...(options.spoken === undefined || typeof options.spoken === "boolean" ? [] : [`spoken must be true or false; got ${JSON.stringify(options.spoken)}.`]),
+  ];
+  const problems = [...fakeProblems, ...clientProblems, ...startProblems];
+  if (problems.length > 0) throw new Error(`startCall: ${problems.join(" ")}`);
   // The date line the agent sees; without `now`, the host's clock (a reply store's is fixed).
   const now = options.now === undefined ? null : clockAt(options.now);
 
@@ -128,7 +138,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     hungUp = true;
   });
   const setupProblems = [
-    ...unknownFakeProblems(runtime, Object.keys(options.fakes ?? {})),
+    ...unknownFakeProblems(runtime, Object.keys(fakesGiven ?? {})),
     ...(options.hermetic ? missingMcpSnapshots() : []),
   ];
   if (setupProblems.length > 0) throw new Error(`startCall: ${setupProblems.join(" ")}`);
@@ -142,7 +152,12 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     return unfakedToolResult(tool);
   };
   const fakes =
-    options.fakes || options.hermetic ? installFakes(runtime, options.fakes ?? {}, options.hermetic ? stopAtUnfaked : undefined) : null;
+    fakesGiven || options.hermetic ? installFakes(runtime, fakesGiven ?? {}, options.hermetic ? stopAtUnfaked : undefined) : null;
+  // A skill that opens without the info its meta.info requires fails the test; a real call only logs it.
+  const infoErrors: ScenarioTurnError[] = [];
+  runtime.onSkillInfoMissing(({ message }) => {
+    infoErrors.push({ kind: "failed", message: `${AUTHORING_DIAGNOSTIC_CODES.skillInfoMissing}: ${message}` });
+  });
 
   // Tools come and go with the agent's state, so every render is looked at: the record holds
   // each tool the model was offered at some point, without the framework's own.
@@ -169,8 +184,20 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   });
   if (variantProblems.length > 0) throw new Error(`startCall: ${variantProblems.join(" ")}`);
   const experiments = { ...assignExperiments(declared, `call:${randomUUID()}`, options.client ?? {}), ...pins };
-  const callInfo = { ...clientInfo(options.client ?? {}), ...experimentInfo(experiments) };
+  // `start.info` is set with them, as a host's `set_info` sets it, before any skill opens.
+  const callInfo = { ...clientInfo(options.client ?? {}), ...experimentInfo(experiments), ...options.start?.info };
   if (Object.keys(callInfo).length > 0) session.updateInfo(callInfo);
+
+  // Every skill the call has open at some point: the started ones, then each the agent opens.
+  const startedSkills = openStartSkills(runtime, options.start?.skills ?? []);
+  const opened = [...startedSkills];
+  const noteSkill = () => {
+    for (const { path } of runtime.snapshot().context.loadedSkills) if (!opened.includes(path)) opened.push(path);
+  };
+  const stopNotingSkills = runtime.subscribe(noteSkill);
+  // false: typed text, as a host's `user_text` without a live call. On an agent with `s2s`
+  // every turn goes to the back office, whose turns carry no spoken rules.
+  const spoken = options.spoken !== false && !runtime.settings.s2s();
 
   const turns: ScenarioTurn[] = [];
   /** The last turn's errors, and whether the agent's LLM provider failed it, not the agent. */
@@ -178,8 +205,9 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   const take = async (play: () => Promise<PlayedTurn | null>, caller: string | null, number: number): Promise<ScenarioTurn | null> => {
     const failedBefore = bundle.providerErrors?.() ?? 0;
     turnControl = new AbortController();
-    const played = await play();
-    if (!played) return null;
+    const playedTurn = await play();
+    if (!playedTurn) return null;
+    const played = infoErrors.length > 0 ? { ...playedTurn, errors: [...playedTurn.errors, ...infoErrors.splice(0)] } : playedTurn;
     const turn = scenarioTurn(runtime, played, caller, number, fakes);
     if (unfaked?.turn === turnControl) turn.errors.push({ kind: "failed", message: unfakedToolMessage(unfaked.tool) });
     turn.endedCall = hungUp;
@@ -194,7 +222,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
           };
     return turn;
   };
-  const opening = await take(() => playOpening(session, bundle.firstTurn, turnControl.signal), null, 0);
+  const opening = await take(() => playOpening(session, bundle.firstTurn, spoken, turnControl.signal), null, 0);
   const callerTurns = () => turns.filter((turn) => turn.caller !== null).length;
   const endState = () => endStateOf(runtime);
   const model = host.models?.(runtime.settings.current().llm).agent ?? null;
@@ -207,15 +235,14 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
         const why = hungUp ? ": the agent hung up (end_call)" : unfaked ? `: ${unfakedToolMessage(unfaked.tool)}` : "";
         throw new Error(`call.say: the call has ended${why}. Start another with startCall().`);
       }
-      // On an agent with `s2s` this text goes to the back office, whose turns carry no spoken rules.
-      return (await take(() => playTurn(session, text, undefined, !runtime.settings.s2s(), turnControl.signal), text, callerTurns() + 1))!;
+      return (await take(() => playTurn(session, text, undefined, spoken, turnControl.signal), text, callerTurns() + 1))!;
     },
     state: <T,>(store: string) => expectContext(turns, endState()).state<T>(store),
     get context() {
       return endState()?.context ?? [];
     },
     get systemPrompt() {
-      return session.systemPromptFor(!runtime.settings.s2s());
+      return session.systemPromptFor(spoken);
     },
     get ended() {
       return hungUp || closed || unfaked !== null;
@@ -246,6 +273,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
           caller: null,
         },
         endState: endState(),
+        ...(opened.length > 0 ? { skills: { started: [...startedSkills], opened: [...opened] } } : {}),
         unusedFakes: fakes?.unused() ?? [],
         usage: runUsage({ agent: bundle.tokens?.() ?? null, caller: null, judge: null }),
       };
@@ -253,8 +281,46 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     close() {
       closed = true;
       stopNotingTools();
+      stopNotingSkills();
     },
   };
+}
+
+/**
+ * Open `skills` on `runtime` in order, as a host's `read_skill` opens them, before the call's
+ * first turn: the model starts inside the last one, with its tools, and no `read_skill` call is
+ * in the transcript. Returns their route paths. Throws, naming each, when one is no skill of the
+ * agent, or when more are given than the agent keeps loaded at once.
+ */
+function openStartSkills(runtime: AgentSiteRuntime, skills: readonly ScenarioSkill[]): string[] {
+  if (skills.length === 0) return [];
+  const known = runtime.skillCatalog().skills.map((skill) => skill.path);
+  const problems: string[] = [];
+  const paths = skills.flatMap((skill, index) => {
+    let path: string;
+    try {
+      path = skillPathOf(skill);
+    } catch (error) {
+      problems.push(`start.skills[${index}]: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+    if (!known.includes(path)) {
+      problems.push(`start.skills[${index}]: "${path}" is not one of the agent's skills (it has ${listed(known)}).`);
+      return [];
+    }
+    return [path];
+  });
+  if (problems.length > 0) throw new Error(`startCall: ${problems.join(" ")}`);
+  for (const path of paths) runtime.loadSkill(path);
+  const loaded = runtime.snapshot().context.loadedSkills.map((skill) => skill.path);
+  const evicted = paths.filter((path) => !loaded.includes(path));
+  if (evicted.length > 0) {
+    throw new Error(
+      `startCall: start.skills opens ${paths.length} skills, and the agent keeps ${loaded.length} loaded at once, so ${listed(evicted)} closed again. ` +
+        "Start with fewer skills, or raise defineAgent({ maxLoadedSkills }).",
+    );
+  }
+  return [...new Set(paths)];
 }
 
 const listed = (names: readonly string[]) => (names.length > 0 ? names.map((item) => `"${item}"`).join(", ") : "none");
@@ -380,12 +446,13 @@ export function installFakes(
 export async function playOpening(
   session: AgentSession,
   firstTurn: AgentFirstTurn | undefined,
+  spoken = true,
   signal?: AbortSignal,
 ): Promise<PlayedTurn | null> {
   if (firstTurn === "agent") {
     // The prompt a call opens with; loaded only here, its module brings in LiveKit's runtime.
     const { AGENT_FIRST_TURN_PROMPT } = await import("../server/voice/livekit-host/call-opening.js");
-    return playTurn(session, AGENT_FIRST_TURN_PROMPT, "synthetic", true, signal);
+    return playTurn(session, AGENT_FIRST_TURN_PROMPT, "synthetic", spoken, signal);
   }
   const before = session.messages.length;
   let line: string | null;
