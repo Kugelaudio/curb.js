@@ -7,6 +7,7 @@ import {
 } from "./agent-session.js";
 import { Agent, AgentSiteRuntime, Tool } from "./index.js";
 import { fallbackReplies } from "./llm/localized.js";
+import { ProviderError } from "./llm/resilience.js";
 import type {
   AgentChatMessage,
   AgentRunRequest,
@@ -370,6 +371,36 @@ describe("a failed turn is logged and recorded, never silent", () => {
     expect(logged).toHaveBeenCalledWith("[curb] turn failed:", expect.objectContaining({ message: RAW_ERROR }));
     expect(session.llmTrace.at(-1)?.error).toBe(RAW_ERROR);
     expect(JSON.stringify(session.messages)).not.toContain("ECONNREFUSED");
+  });
+});
+
+describe("a provider that refuses the request is not asked again by the caller", () => {
+  for (const status of [401, 402, 403]) {
+    it(`HTTP ${status}: the caller hears the refused line, the developer the provider's message`, async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const message = `HTTP ${status}: This model needs a paid plan. Top up at https://example.com/billing.`;
+      const llm: AgentLlmClient = async () => {
+        throw new ProviderError(message, status);
+      };
+      const session = new AgentSession(createInsuranceDemoRuntime(), llm);
+
+      const events = await drain(session.runTurnStream("hi"));
+
+      expect(events).toContainEqual({ type: "error", error: { kind: "failed", message } });
+      expect(events.at(-1)).toEqual({ type: "done", reply: fallbackReplies("en").refused });
+      expect(logged).toHaveBeenCalledWith("[curb] turn failed:", expect.objectContaining({ message }));
+      expect(JSON.stringify(session.messages)).not.toContain("example.com");
+    });
+  }
+
+  it("a provider error a retry could get past keeps asking the caller to say it again", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const llm: AgentLlmClient = async () => {
+      throw new ProviderError("HTTP 503: unavailable", 503);
+    };
+    const session = new AgentSession(createInsuranceDemoRuntime(), llm);
+
+    expect(await session.runTurn("hi")).toBe(TURN_FAILED_REPLY);
   });
 });
 

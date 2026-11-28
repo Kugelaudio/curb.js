@@ -84,6 +84,15 @@ decide what the caller hears:
   and ro have wording). The real cause goes to the turn's error event and the
   developer log. The transcript does not record the line, because the model
   never said it.
+- **A provider that refuses the request is not asked twice.** An LLM provider
+  that answers HTTP 401, 402 or 403 (a key, a payment or a permission it does
+  not accept) is sent the request once, not retried. The developer sees the
+  provider's own message, for example `HTTP 402: <what the provider says to
+  do>`, in the `curb dev` page, in `curb say`, in the turn's error event and in
+  the log (`[curb] turn failed: ...`). The caller hears "Sorry, I can't help
+  right now. Please try again later." in the agent's language instead of being
+  asked to repeat themselves, since saying it again cannot help. The
+  provider's message never reaches the caller's ears.
 - **A missing LLM key stops the session before it starts.** A session whose
   LLM has no key in the environment fails with an `AgentAuthoringError` naming
   the variable (for example `KUGELAUDIO_API_KEY`), instead of apologizing on

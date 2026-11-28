@@ -19,6 +19,8 @@ const LISTED_DAYS = 14;
 type Wording = {
   /** The turn failed (provider error, timeout, no reply). */
   turnFailed: string;
+  /** The provider refused the request (HTTP 401, 402, 403): saying it again cannot help. */
+  refused: string;
   /** The turn used all its LLM steps with tool calls still pending. */
   stepLimit: string;
   /** The date line, from the formatted parts. */
@@ -28,48 +30,57 @@ type Wording = {
 const WORDING: Record<AgentLanguage, Wording> = {
   en: {
     turnFailed: "Sorry, something went wrong on my side. Could you say that again?",
+    refused: "Sorry, I can't help right now. Please try again later.",
     stepLimit: "I had to pause before finishing that. If you want me to continue, just say so.",
     dateLine: (today, time, zone, days) => `Today is ${today}, ${time} (${zone}). The next days: ${days}`,
   },
   de: {
     turnFailed: "Entschuldigung, bei mir ist etwas schiefgelaufen. Können Sie das bitte noch einmal sagen?",
+    refused: "Entschuldigung, ich kann gerade nicht weiterhelfen. Bitte versuchen Sie es später noch einmal.",
     stepLimit: "Ich musste kurz unterbrechen, bevor ich fertig war. Wenn ich weitermachen soll, sagen Sie es einfach.",
     dateLine: (today, time, zone, days) => `Heute ist ${today}, ${time} Uhr (${zone}). Die nächsten Tage: ${days}`,
   },
   fr: {
     turnFailed: "Pardon, un problème est survenu de mon côté. Pouvez-vous répéter, s'il vous plaît ?",
+    refused: "Pardon, je ne peux pas vous aider pour le moment. Veuillez réessayer plus tard.",
     stepLimit: "J'ai dû faire une pause avant de terminer. Si je dois continuer, dites-le-moi simplement.",
     dateLine: (today, time, zone, days) =>
       `Nous sommes le ${today}, il est ${time} (${zone}). Les prochains jours : ${days}`,
   },
   it: {
     turnFailed: "Mi scusi, qualcosa non ha funzionato da parte mia. Può ripetere, per favore?",
+    refused: "Mi scusi, al momento non posso aiutarla. Riprovi più tardi, per favore.",
     stepLimit: "Ho dovuto fare una pausa prima di finire. Se devo continuare, me lo dica pure.",
     dateLine: (today, time, zone, days) => `Oggi è ${today}, ore ${time} (${zone}). I prossimi giorni: ${days}`,
   },
   es: {
     turnFailed: "Perdón, algo ha fallado por mi parte. ¿Podría repetirlo, por favor?",
+    refused: "Perdón, ahora mismo no puedo ayudarle. Por favor, inténtelo de nuevo más tarde.",
     stepLimit: "Tuve que hacer una pausa antes de terminar. Si quiere que continúe, solo dígamelo.",
     dateLine: (today, time, zone, days) => `Hoy es ${today}, ${time} (${zone}). Los próximos días: ${days}`,
   },
   pt: {
     turnFailed: "Desculpe, ocorreu um erro da minha parte. Pode repetir, por favor?",
+    refused: "Desculpe, não consigo ajudar neste momento. Por favor, tente novamente mais tarde.",
     stepLimit: "Precisei fazer uma pausa antes de terminar. Se quiser que eu continue, é só dizer.",
     dateLine: (today, time, zone, days) => `Hoje é ${today}, ${time} (${zone}). Os próximos dias: ${days}`,
   },
   nl: {
     turnFailed: "Sorry, er ging aan mijn kant iets mis. Kunt u dat nog eens zeggen?",
+    refused: "Sorry, ik kan u op dit moment niet helpen. Probeer het later nog eens.",
     stepLimit: "Ik moest even stoppen voordat ik klaar was. Als ik verder moet gaan, zeg het gerust.",
     dateLine: (today, time, zone, days) =>
       `Vandaag is het ${today}, ${time} uur (${zone}). De komende dagen: ${days}`,
   },
   pl: {
     turnFailed: "Przepraszam, coś poszło nie tak po mojej stronie. Czy mogę prosić o powtórzenie?",
+    refused: "Przepraszam, w tej chwili nie mogę pomóc. Proszę spróbować ponownie później.",
     stepLimit: "Muszę tu przerwać, zanim skończę. Jeśli mam kontynuować, proszę po prostu powiedzieć.",
     dateLine: (today, time, zone, days) => `Dziś jest ${today}, godz. ${time} (${zone}). Najbliższe dni: ${days}`,
   },
   ro: {
     turnFailed: "Îmi pare rău, ceva nu a funcționat din partea mea. Puteți repeta, vă rog?",
+    refused: "Îmi pare rău, momentan nu vă pot ajuta. Vă rog să încercați din nou mai târziu.",
     stepLimit: "A trebuit să fac o pauză înainte să termin. Dacă vreți să continui, spuneți-mi.",
     dateLine: (today, time, zone, days) => `Astăzi este ${today}, ora ${time} (${zone}). Următoarele zile: ${days}`,
   },
@@ -93,9 +104,9 @@ export function agentLanguage(settings: {
 }
 
 /** The fixed lines a caller hears when a turn cannot answer, in `language`. */
-export function fallbackReplies(language: AgentLanguage): { turnFailed: string; stepLimit: string } {
-  const { turnFailed, stepLimit } = WORDING[language];
-  return { turnFailed, stepLimit };
+export function fallbackReplies(language: AgentLanguage): { turnFailed: string; refused: string; stepLimit: string } {
+  const { turnFailed, refused, stepLimit } = WORDING[language];
+  return { turnFailed, refused, stepLimit };
 }
 
 /** Whether `name` is a time zone `Intl` knows (an IANA name such as "Europe/Berlin"). */
