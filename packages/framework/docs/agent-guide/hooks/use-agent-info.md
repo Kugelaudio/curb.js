@@ -37,6 +37,16 @@ export default function Billing() {
 }
 ```
 
+A test that starts inside such a skill gives its keys in `start.info`; `curb check` reports a
+required key it leaves out (`SCENARIO_INFO_MISSING`):
+
+```ts
+export default scenario({
+  start: { skills: [Billing], info: { "order.id": "A-1042" } },
+  turns: ["Why was I charged twice?"],
+});
+```
+
 ## Version history
 
 | Version | Changes |

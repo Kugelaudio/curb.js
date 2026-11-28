@@ -25,6 +25,14 @@ function Skill(props: SkillProps): ReactNode;
 </Skills>
 ```
 
+## A skill's folder
+
+`path="/billing"` links `src/agent/billing/skill.tsx`. Beside it the folder can hold the skill's
+tools (`tools.ts`, values of [`defineTool`](../functions/define-tool.md)), its markdown and its own
+test (`billing.scenario.ts`), which starts inside the skill with `start: { skills: [Billing] }`
+([Starting inside a skill](../testing.md#starting-inside-a-skill)). `curb check` fails a scenario
+that names a skill no `<Skill>` reaches (`SCENARIO_UNKNOWN_SKILL`).
+
 ## Version history
 
 | Version | Changes |

@@ -395,6 +395,45 @@ skill tests where the voice rules only add words.
 
 Without `start`, a scenario starts at the agent level as before.
 
+#### A skill test with typed tools
+
+A skill whose tools live in a `tools.ts` of its folder, as values of
+[`defineTool`](./functions/define-tool.md), gets a test that TypeScript checks
+too. The skill renders `<Tool {...listEvents} />`, and the scenario beside it
+imports the same values:
+
+```ts
+// src/agent/calendar/calendar.scenario.ts
+import { fake, scenario } from "curb/testing";
+import * as Calendar from "./skill.js";
+import { listEvents } from "./tools.js";
+
+export default scenario({
+  name: "reads the day's calendar",
+  start: { skills: [Calendar], info: { "user.name": "Sam" } },
+  spoken: false,
+  hermetic: true,
+  now: "2026-10-30T08:00:00Z",
+  turns: ["What's in my calendar today?"],
+  fakes: [
+    fake(listEvents, {
+      ok: true,
+      message: "1 event(s) on 2026-10-30.",
+      data: { day: "2026-10-30", events: [{ time: "09:30", title: "Team stand-up" }] },
+    }),
+  ],
+  expect: ({ called, said, opened }) => [called(listEvents, { day: "2026-10-30" }), said(/stand-up/i), opened(Calendar)],
+});
+```
+
+`curb check` type-checks it: a fake whose result does not have the shape
+`onSubmit` returns, and a renamed tool or skill, are errors before anything
+runs. `info` gives what
+the skill's `meta.info` requires; a key it requires and the scenario leaves out
+fails the turn (`SKILL_INFO_MISSING`). `now` fixes the day the agent sees, so
+"today" is the same day on every run. A new project's starter keeps this test
+in `src/agent/calendar/`.
+
 ### What a text test does not cover
 
 `curb test` runs the agent in text, also when it is a voice agent. It tests what
@@ -910,6 +949,27 @@ style: { wordsP90: 40, repeatedClosingShare: 0.3 },
 
 A scenario whose number is above a limit fails.
 
+### The reply store
+
+`curb test` stores every model reply it gets, by the exact request, and answers
+the same request from the store the next time: a second run with nothing changed
+calls no model. Each scenario's report says `replies  stored`, or from which
+turn it went live and what changed (`live from turn 2 (system prompt changed)`),
+and the `Tokens` line splits the live tokens from the ones the store saved:
+
+```text
+Tokens: 0 live, 45 saved by the reply store (3 of 3 request(s) answered from it)
+```
+
+The agent sees a fixed clock in a test, so its date line does not change the
+request every minute: the scenario's `now`, else `CURB_TEST_NOW`, else
+2026-06-03T15:00:00Z. `npx curb test --live` sends every request to the model on
+the real clock, `--dry` says which scenarios would go live without calling a
+model, and `--max-tokens <n>` stops before the live requests pass `n` tokens.
+The store is a folder outside the project (`~/.cache/curb/replies`): see
+[Reply store](./reply-store.md) for where it lives, keeping it in CI and sharing
+it between machines.
+
 ### Saved runs and re-judging
 
 Every `curb test` saves its conversations to `.curb/test-runs/<id>.json`
@@ -1021,7 +1081,10 @@ A scenario file that cannot be loaded is reported as
 A new project ships `.github/workflows/curb-test.yml`: it runs `curb check` and
 `curb test` on every pull request, and fails with an error that says so while the
 repository lacks the agent's LLM key as a secret (`KUGELAUDIO_API_KEY` by default);
-a pull request from a fork gets no secrets and runs only `curb check`. Each scenario says how often it
+a pull request from a fork gets no secrets and runs only `curb check`. The workflow
+restores the [reply store](./reply-store.md#in-ci) from the Actions cache before
+`curb test` and saves it after, so a rerun of a pull request whose agent did not
+change calls no model. Each scenario says how often it
 runs and how many runs must pass (`runs`, `minPassRate`). On GitHub Actions the
 report is also written to the job summary (`GITHUB_STEP_SUMMARY`), and
 `--report <file>` writes the same Markdown to a file anywhere.
@@ -1057,6 +1120,10 @@ call and the number of scenarios: read the `Tokens` line of your own run.
 - Every turn calls the agent's LLM as a real call does, on your `curb login` or
   the key in the project's `.env`; speech keys are not needed. A missing LLM key stops the run
   before the first turn and names the variable. `--runs 5` costs five times one run.
+- A request the [reply store](#the-reply-store) answered before costs nothing:
+  only the scenarios a change reaches call a model again, from the turn the
+  change shows up in. `npx curb test --dry` says which those are before you pay
+  for them, and `--max-tokens <n>` caps what one run may spend.
 - The simulated caller and the judge run on the agent's own provider, on a
   small fast model: `claude-haiku-5-5` for Anthropic, `gpt-5.4-mini` for
   OpenAI, and the agent's own model on KugelAudio and on an OpenAI-compatible

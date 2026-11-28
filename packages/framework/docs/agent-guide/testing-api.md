@@ -494,6 +494,9 @@ export default scenario({
 | `experiments` | object | | The variant, by experiment name. An experiment left out is covered by repeated runs |
 | `fakes` | list or object | | Tools that must not run for real: a list of [`fake(tool, result)`](#fake), or an object of tool name to result. A result is what its calls get, or a function of the input that returns one. A tool without a fake runs for real on every run, so fake one that sends, books or charges. A fake for a tool the agent does not have is an error before turn 1 |
 | `hermetic` | `boolean` | false | `true`: a call of a tool without a fake ends the run as an error before the tool runs, and MCP tools come from `mcp.tools.json` without contacting a server ([hermetic runs](./testing.md#hermetic-runs)). `curb test --hermetic` sets it for every scenario |
+| `start` | `{ skills?, info? }` | | Skills opened before turn 1, in order, each a `skill.tsx` module or a route path, and call info set before they open ([starting inside a skill](./testing.md#starting-inside-a-skill)) |
+| `spoken` | `boolean` | true | `false` plays the turns as typed text, without the spoken-reply rules |
+| `now` | ISO date-time string | `CURB_TEST_NOW`, else 2026-06-03T15:00:00Z | The date and time the agent sees ([a fixed clock](./what-the-model-receives.md#the-date-and-a-fixed-clock)). `curb test --live` uses the real clock unless `now` is given |
 | `runs` | `number` | 1 | How often the scenario runs, 1 to 100. `curb test --runs` overrides it. Its tools without a fake run that many times |
 | `minPassRate` | `number` | 1 | The share of completed runs that must pass, above 0 and at most 1 |
 | `expectations` | `string[]` | | Sentences about the call that a judge answers with yes, no or unknown. A no fails the run. At most 12 |
@@ -713,15 +716,6 @@ What the store answered:
 
 A `ReplyStore` is `{ get(key), put(key, reply) }` of `StoredReply` records, so a store of your own is
 two functions.
-
-## Coming next: skill tests and the reply store
-
-These are declared in `curb/testing` so their types can be used, and throw until a later version
-implements them.
-
-- `scenario` and `startCall` take `hermetic: true` (a tool call without a fake is an error) and
-  `now` (the date and time the agent sees). `start` and `spoken` work now: see
-  [Starting inside a skill](./testing.md#starting-inside-a-skill).
 
 ## Version history
 

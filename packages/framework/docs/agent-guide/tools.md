@@ -130,6 +130,46 @@ so say what to do next.
   `schema` + `onSubmit`, `onSubmit` alone, or `onCall`; you can also type an
   object by hand with the exported `ToolProps` type instead of `defineTool`.
 
+## A skill's tools in `tools.ts`
+
+A skill with tools of its own keeps them in a `tools.ts` beside its `skill.tsx`, as `defineTool`
+values. The skill renders them, its instructions name them by value, and its test imports them:
+
+```ts
+// src/agent/orders/tools.ts
+import { defineTool, z } from "curb";
+
+export const findOrder = defineTool({
+  name: "find_order",
+  description: "Look up an order by its number.",
+  schema: z.object({ order: z.string().describe("The order number, such as A-1042.") }),
+  onSubmit: async ({ order }) => ({ ok: true as const, message: `Order ${order} is delivered.`, data: { order, status: "delivered" } }),
+});
+```
+
+```tsx
+// src/agent/orders/skill.tsx
+import { findOrder } from "./tools.js";
+
+export default function Orders() {
+  return (
+    <>
+      <Instruction>{`For a question about one order, ask for its number and use ${findOrder.name}.`}</Instruction>
+      <Tool {...findOrder} />
+    </>
+  );
+}
+```
+
+```ts
+// src/agent/orders/orders.scenario.ts
+fakes: [fake(findOrder, { ok: true, message: "Order A-1042 is delivered.", data: { order: "A-1042", status: "delivered" } })],
+```
+
+A renamed tool is then a type error in all three, and a fake whose result does not have the shape
+`onSubmit` returns fails `curb check` ([`fake`](./testing-api.md#fake)). An instruction that writes a
+tool name the agent does not have is `INSTRUCTION_UNKNOWN_TOOL`.
+
 ## Calling your own API from a tool
 
 ```tsx

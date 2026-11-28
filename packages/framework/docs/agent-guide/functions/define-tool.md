@@ -32,6 +32,24 @@ export const issueRefund = defineTool({
 <Tool {...issueRefund} />
 ```
 
+A test of the skill imports the same value. The fake's result is checked against what `onSubmit`
+returns, so `curb check` refuses a fake of the wrong shape:
+
+```ts
+// src/agent/billing/billing.scenario.ts
+import { fake, scenario } from "curb/testing";
+import * as Billing from "./skill.js";
+import { issueRefund } from "./tools.js";
+
+export default scenario({
+  start: { skills: [Billing] },
+  hermetic: true,
+  turns: ["Please refund order A-1042."],
+  fakes: [fake(issueRefund, { ok: true, data: { order: "A-1042", refunded: 49 } })],
+  expect: ({ called }) => [called(issueRefund, { order: "A-1042" })],
+});
+```
+
 ## Version history
 
 | Version | Changes |

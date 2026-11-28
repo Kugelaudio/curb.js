@@ -171,6 +171,26 @@ moves onto each renewed key, and `curb check` lists the key as coming from the w
 Any other refusal is printed with its HTTP status, error code and correlation id; quote the
 correlation id when you contact support. Set `DEBUG=1` for a stack trace.
 
+## Test every pull request before it deploys
+
+Whatever deploys the agent, let a pull request reach it only after the tests passed. A new
+project ships `.github/workflows/curb-test.yml`, which runs on every pull request:
+
+1. `npx curb check`: types, the agent's render, and every scenario against the agent. This step
+   needs no key, so it runs on a pull request from a fork too.
+2. It restores the [reply store](./reply-store.md#in-ci) from the CI cache.
+3. `npx curb test`: every scenario. A scenario with `hermetic: true` runs no tool it did not fake,
+   so a test never books, sends or charges anything; `npx curb test --hermetic` makes every
+   scenario hermetic, for a job that must not reach any other system.
+4. It saves the reply store for the next run.
+
+The test step needs the agent's LLM key as a repository secret (`KUGELAUDIO_API_KEY` for the
+default model) and is skipped for a fork, which gets no secrets. Make the workflow a required check
+of your main branch, and deploy from that branch only. A pull request that changes no prompt, skill
+or tool answers every request from the store and calls no model, so the check costs nothing on a
+rerun. Another CI service runs the same two commands; keep `~/.cache/curb/replies` between its
+runs to get the same saving.
+
 ## Test a change on a test copy first
 
 Keep a second agent as a test copy. Deploy each change to it first, call it, and deploy
