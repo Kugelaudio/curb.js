@@ -628,12 +628,12 @@ a call whose `content` is `not_stored`.
 These are declared in `curb/testing` so their types can be used, and throw until a later version
 implements them.
 
-- `scenario` and `startCall` take `start: { skills, info }` (skills opened and call info set
-  before turn 1), `spoken: false` (turns as typed text), `hermetic: true` (a tool call without a
-  fake is an error) and `now` (the date and time the agent sees).
+- `scenario` and `startCall` take `hermetic: true` (a tool call without a fake is an error) and
+  `now` (the date and time the agent sees). `start` and `spoken` work now: see
+  [Starting inside a skill](./testing.md#starting-inside-a-skill).
 - `fake(tool, result)` makes one entry of a list of `fakes`. `called`, `notCalled` and
-  `calledInOrder` take a tool's value as well as its name, and `expect` gets `opened(skill)` and
-  `notOpened(skill?)`.
+  `calledInOrder` take a tool's value as well as its name. `opened(skill)` and
+  `notOpened(skill?)` work now.
 
 ### Reply store
 
