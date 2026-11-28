@@ -123,8 +123,32 @@ const OPTIONAL_TRUNK_ZERO = /^(\+\d{1,3})[ \u00a0./-]?\(0\)/;
  * dash, slash or dot between groups. Words between numbers keep them apart.
  */
 const WRITTEN_NUMBER = /\+?(?:\(\d+\)|\d)(?:[ \u00a0./-]?(?:\(\d+\)|\d))*/g;
-/** A date is not a number someone gives: the check may write tomorrow's. */
-const DATE = /^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./]\d{1,2}[./]\d{2,4})$/;
+/** A date as written: `2026-11-25` (year, month, day), `25.11.2026` (day, month, year), `11/25/26` or `25/11/26`. */
+const ISO_DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+const DOTTED_DATE = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/;
+const SLASHED_DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/;
+
+/** Whether `day` is a day of `month` in `year`; a two-digit year is read as 20xx. */
+function isCalendarDay(year: number, month: number, day: number): boolean {
+  const fullYear = year < 100 ? 2000 + year : year;
+  return month >= 1 && month <= 12 && day >= 1 && day <= new Date(Date.UTC(fullYear, month, 0)).getUTCDate();
+}
+
+/**
+ * A date is not a number someone gives: the check may write tomorrow's. Only a real calendar
+ * day counts, so an id shaped like a date (`1234-56-78`) is still checked. A slashed date is a
+ * date when either order makes one, day/month or month/day, since both are written.
+ */
+function isDate(written: string): boolean {
+  const iso = ISO_DATE.exec(written);
+  if (iso) return isCalendarDay(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  const dotted = DOTTED_DATE.exec(written);
+  if (dotted) return isCalendarDay(Number(dotted[3]), Number(dotted[2]), Number(dotted[1]));
+  const slashed = SLASHED_DATE.exec(written);
+  if (!slashed) return false;
+  const [first, second, year] = [Number(slashed[1]), Number(slashed[2]), Number(slashed[3])];
+  return isCalendarDay(year, second, first) || isCalendarDay(year, first, second);
+}
 
 /** A number's digits; whether it was written with a leading `+`; its country code, when written apart. */
 type WrittenNumber = { written: string; digits: string; international: boolean; countryCode?: string };
@@ -234,7 +258,7 @@ function writtenNumbers(text: string): (WrittenNumber & { index: number })[] {
       international: match[0].startsWith("+"),
       countryCode: COUNTRY_CODE.exec(match[0])?.[1],
     }))
-    .filter(({ written }) => !DATE.test(written));
+    .filter(({ written }) => !isDate(written));
 }
 
 /** A word that names an identifier: an order, account, customer or contract number. */

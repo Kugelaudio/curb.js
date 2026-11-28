@@ -163,6 +163,15 @@ describe("inventedNumber: a check call fills no long number the conversation nev
     expect(inventedNumber({ day: "2026-11-25", at: "2026-11-25T10:00:00Z", de: "25.11.2026" }, ["tomorrow at ten"])).toBeUndefined();
   });
 
+  it("leaves a date alone only when it is a real calendar day", () => {
+    for (const date of ["2028-02-29", "29.02.2028", "31.12.26", "25/11/2026", "11/25/2026", "1/2/26"]) {
+      expect(inventedNumber({ date }, ["tomorrow"]), date).toBeUndefined();
+    }
+    for (const id of ["1234-56-78", "2026-02-30", "2027-02-29", "32.01.2026", "25.13.2026", "13/13/2026", "00/12/2026"]) {
+      expect(inventedNumber({ id }, ["where is my order?"]), id).toBe(id);
+    }
+  });
+
   it("leaves short numbers alone and looks into nested input, numbers included", () => {
     expect(inventedNumber({ party: 4, time: "10:30", date: "2026-11-25" }, ["a table for four tomorrow"])).toBeUndefined();
     expect(inventedNumber({ order: { ids: [12345678] } }, ["where is my order?"])).toBe("12345678");
