@@ -7,6 +7,10 @@ import { bookViewing } from "./tools.js";
  * caller does not have to talk the agent into it, and `now` fixes the day the agent sees: in
  * the agent's time zone (Europe/Berlin) this is a Monday morning, so "tomorrow" is a Tuesday on
  * every run, and the reply store can answer the same requests again.
+ *
+ * book_viewing, the one tool that would reach another system, is faked. The test is not
+ * `hermetic`: the Procedure's finish_step only moves this call to its next step, and a fake of it
+ * would not, so book_viewing would never appear. A hermetic run stops at finish_step instead.
  */
 export default scenario({
   name: "the booking skill books tomorrow's slot",
