@@ -12,7 +12,7 @@ speaks it works.
 
 ```text
 GET  {base}/replies/{key}     200 gzip JSON | 404
-PUT  {base}/replies/{key}     201 | 200 (already there) | 403 (read-only) | 413 (over 1 MiB)
+PUT  {base}/replies/{key}     201 | 200 (already there) | 409 (being written) | 403 (read-only) | 413 (over 1 MiB)
 Authorization: Bearer <token>
 ```
 
@@ -40,6 +40,7 @@ changes: a second `PUT` of a key the server holds keeps the first reply.
 |---|---|
 | `201` | Stored |
 | `200` | The server already holds a reply for `key`; it kept that one |
+| `409` | Another write of the same `key` is in progress. Curb treats it like `200`: the reply will be there, and the test never fails because of it |
 | `403` | The token may read but not write |
 | `413` | The body is over 1 MiB |
 
