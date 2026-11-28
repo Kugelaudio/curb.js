@@ -44,7 +44,7 @@ import {
   type TestReport,
 } from "./scenarios/report.js";
 import { conversationReplies, repliesBaseline, savedRuns, scenarioReplies } from "./scenarios/replies.js";
-import { withTokenLimit, type TokenLimit } from "./scenarios/token-limit.js";
+import { refusedRun, withTokenLimit, type TokenLimit } from "./scenarios/token-limit.js";
 import {
   DEFAULT_CONCURRENCY,
   DEFAULT_MAX_ERROR_RATE,
@@ -610,7 +610,7 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
       const write = (text: string) => printed.write(index, text);
       if (cannotBeAssessed(conversationsOf[index]!, settings.runs, DEFAULT_MAX_ERROR_RATE)) notStarted[index]! += 1;
       else {
-        const conversation = await playRun({
+        const play = () => playRun({
           scenario: entry.scenario,
           name: entry.name,
           file: entry.file,
@@ -622,6 +622,9 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
           ...(once ? { onTurn: (turn: ScenarioTurn) => write(formatTurn(turn)) } : {}),
           ...(replyStoreStats(host) ? { replies: (replies, ends) => conversationReplies(replies, ends, baseline.requestsOf(entry.file, entry.name, at + 1)) } : {}),
         });
+        // A run that needed a request --max-tokens refused is an error, even where the caller caught it.
+        const limited = session.limit ? await session.limit.track(play) : { value: await play(), refused: null };
+        const conversation = refusedRun(limited.value, limited.refused);
         conversationsOf[index]!.push(conversation);
         if (!once) write(formatRunLine(scenarioRun(conversation), settings.runs));
       }
