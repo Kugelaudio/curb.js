@@ -353,6 +353,7 @@ describe("remoteReplyStore", () => {
   const held = new Map<string, Buffer>();
   const requests: Array<{ method: string; url: string; auth: string | undefined }> = [];
   let refusePuts = false;
+  let conflicting = false;
   let down = false;
   const body = (request: IncomingMessage) =>
     new Promise<Buffer>((resolve) => {
@@ -364,6 +365,7 @@ describe("remoteReplyStore", () => {
     held.clear();
     requests.length = 0;
     refusePuts = false;
+    conflicting = false;
     down = false;
     server = createServer(async (request, response) => {
       requests.push({ method: request.method!, url: request.url!, auth: request.headers.authorization });
@@ -375,6 +377,7 @@ describe("remoteReplyStore", () => {
       }
       const sent = await body(request);
       if (refusePuts) return void response.writeHead(403).end();
+      if (conflicting) return void response.writeHead(409).end();
       if (held.has(key)) return void response.writeHead(200).end();
       held.set(key, sent);
       response.writeHead(201).end();
@@ -405,6 +408,24 @@ describe("remoteReplyStore", () => {
     await store.put(key, reply);
     await store.put(key, reply);
     expect(requests.filter((request) => request.method === "PUT")).toHaveLength(1);
+  });
+
+  it("takes a 409 (the same key is being written) as done: no error, no retry, still writable", async () => {
+    conflicting = true;
+    const store = remoteReplyStore({ url: base });
+    await expect(store.put(key, reply)).resolves.toBeUndefined();
+    const other = "ef".padEnd(64, "2");
+    await store.put(other, { ...reply, key: other });
+    expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([`PUT /base/replies/${key}`, `PUT /base/replies/${other}`]);
+
+    const notes = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { host, seen } = countingHost({});
+    const turn = await (await startCall({ host: withReplyStore(host, [store]) })).say("Hi.");
+    expect(turn.errors).toEqual([]);
+    expect(seen.agent).toHaveLength(1);
+    await vi.waitFor(() => expect(requests.filter((request) => request.method === "PUT")).toHaveLength(3));
+    expect(notes).not.toHaveBeenCalled();
+    notes.mockRestore();
   });
 
   it("reads CURB_REPLY_STORE_URL and CURB_REPLY_STORE_TOKEN, and needs a url", async () => {

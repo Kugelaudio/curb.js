@@ -514,7 +514,9 @@ export function remoteReplyStore(options: { url?: string; token?: string } = {})
         readOnly = true;
         return;
       }
-      if (response.status === 413) return;
+      // 409: another writer is storing this key right now, and the reply it stores is the same
+      // one. 413: over the server's size limit. Neither is retried, and neither fails the test.
+      if (response.status === 409 || response.status === 413) return;
       if (!response.ok) throw new Error(`PUT ${base}/replies/… answered ${response.status}`);
     },
   };
