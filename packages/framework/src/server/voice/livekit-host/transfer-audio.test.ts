@@ -153,10 +153,11 @@ describe("transfer audio", () => {
 });
 
 describe("publishTransferTrack", () => {
-  /** A connected room whose agent publishes with `publish`, and that emits what the test says. */
+  /** A connected room with a caller in it, whose agent publishes with `publish`, and that emits what the test says. */
   function fakeRoom(publish: (track: { name: string }, options: TrackPublishOptions) => void) {
     return Object.assign(new EventEmitter(), {
       isConnected: true,
+      remoteParticipants: new Map([["caller", { identity: "caller", kind: ParticipantKind.STANDARD }]]),
       localParticipant: { publishTrack: async (track: { name: string }, options: TrackPublishOptions) => void publish(track, options) },
     }) as unknown as Room & EventEmitter;
   }
@@ -186,6 +187,25 @@ describe("publishTransferTrack", () => {
     await sink.close();
     expect(room.listenerCount(RoomEvent.ParticipantDisconnected)).toBe(0);
   });
+
+  it("does not count a line as played when the last caller left while its track was publishing", async () => {
+    const room = fakeRoom(() => {
+      room.remoteParticipants.delete("caller");
+      room.emit(RoomEvent.ParticipantDisconnected, { identity: "caller", kind: ParticipantKind.STANDARD });
+    });
+    const sink = await publishTransferTrack(room);
+    await sink.captureFrame(new AudioFrame(new Int16Array(960), 48_000, 1, 960));
+    expect(await sink.waitForPlayout()).toBe(false);
+    await sink.close();
+  });
+
+  it("stops listening when its track cannot be published", async () => {
+    const room = fakeRoom(() => {
+      throw new Error("no room");
+    });
+    await expect(publishTransferTrack(room)).rejects.toThrow("no room");
+    expect(room.listenerCount(RoomEvent.ParticipantDisconnected)).toBe(0);
+  });
 });
 
 describe("the room's track says whether it played to its end", () => {
@@ -201,7 +221,7 @@ describe("the room's track says whether it played to its end", () => {
     };
   }
 
-  const inCall = (departures = () => 0) => ({ connected: () => true, departures });
+  const inCall = (departures = () => 0, present = () => true) => ({ connected: () => true, present, departures });
 
   it("played, with the agent still in the room", async () => {
     const audio = source();
@@ -219,7 +239,7 @@ describe("the room's track says whether it played to its end", () => {
 
   it("drained after the agent left the room", async () => {
     const audio = source();
-    const playout = roomTrack(audio, { connected: () => false, departures: () => 0 }).waitForPlayout();
+    const playout = roomTrack(audio, { ...inCall(), connected: () => false }).waitForPlayout();
     audio.drain();
     await expect(playout).resolves.toBe(false);
   });
@@ -244,5 +264,14 @@ describe("the room's track says whether it played to its end", () => {
     const playout = track.waitForPlayout();
     audio.drain();
     await expect(playout).resolves.toBe(true);
+  });
+
+  it("drained in a room the last caller had left before its first frame", async () => {
+    const audio = source();
+    const track = roomTrack(audio, inCall(undefined, () => false));
+    await track.captureFrame(new AudioFrame(new Int16Array(960), 48_000, 1, 960));
+    const playout = track.waitForPlayout();
+    audio.drain();
+    await expect(playout).resolves.toBe(false);
   });
 });

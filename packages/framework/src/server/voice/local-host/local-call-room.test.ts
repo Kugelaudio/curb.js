@@ -195,13 +195,17 @@ describe("the agent's own track on a local call, played only when the page says 
     await expect(playout).resolves.toBe(false);
   });
 
-  it("a page that took over mid-line did not hear all of it, though it says it played", async () => {
+  it.each([
+    ["took over from the first", () => {}],
+    ["came after the first had closed", (first: FakePage) => first.close(1001)],
+  ])("a page that %s mid-line did not hear all of it, though it says it played", async (_case, between) => {
     captureErrors();
     const call = createLocalVoiceCall("local-replaced");
     const first = new FakePage();
     call.attach(first as unknown as WebSocket);
     const track = await call.room.publishTransferTrack();
     await track.captureFrame(outputFrame());
+    between(first);
     const second = new FakePage();
     call.attach(second as unknown as WebSocket);
     await track.captureFrame(outputFrame());

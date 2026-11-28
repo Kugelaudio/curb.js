@@ -25,7 +25,7 @@ import { logError, logInfo } from "../../log.js";
 import type { VoiceCallRoom } from "../call-room.js";
 import { isCaller, type CallParticipant } from "../livekit-host/call-opening.js";
 import type { MessagingRoom } from "../livekit-host/messages.js";
-import type { TransferAudioSink } from "../livekit-host/transfer-audio.js";
+import { callerHearing, type TransferAudioSink } from "../livekit-host/transfer-audio.js";
 import { callerSide, isTransferTarget } from "../livekit-host/transfer-handoff.js";
 import { PageAudioInput, PageAudioOutput } from "../local-host/local-call-room.js";
 import { createSynchronizer, type TranscriptSink } from "../local-host/synchronizer.js";
@@ -354,36 +354,34 @@ export async function openRelayCall(
     });
     let playsUntil = 0;
     let clears = 0;
-    /** The departures when the audio now queued began. */
-    let since: number | null = null;
+    const hearing = callerHearing({ present: () => callerSide(participants.values()).length > 0, departures: () => departures });
     return {
       captureFrame: async (frame: AudioFrame) => {
         if (frame.sampleRate !== RELAY_TRANSFER_SAMPLE_RATE || frame.channels !== 1) {
           throw new Error(`a transfer plays ${RELAY_TRANSFER_SAMPLE_RATE} Hz mono, got ${frame.sampleRate} Hz x${frame.channels}`);
         }
-        since ??= departures;
+        hearing.queued();
         sendAudio(RELAY_STREAM.transfer, new Uint8Array(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength));
         const now = Date.now();
         playsUntil = Math.max(playsUntil, now) + (frame.samplesPerChannel / frame.sampleRate) * 1000;
         const ahead = playsUntil - now - TRANSFER_LEAD_MS;
         if (ahead > 0) await new Promise((resolve) => setTimeout(resolve, ahead));
       },
-      // Played only on the relay's `transfer_played`, with no clear since and nobody of the caller's
-      // side gone since its first frame: a lost relay heard nothing.
+      // Played only on the relay's `transfer_played`, with no clear since and a caller who heard all
+      // of it (callerHearing): a lost relay heard nothing.
       waitForPlayout: () => {
         const before = clears;
-        const departed = since ?? departures;
-        since = null;
+        const heard = hearing.waiting();
         return new Promise<boolean>((resolve) => {
           if (lost !== null) return resolve(false);
           const id = nextId++;
-          pendingPlayout.set(id, (played) => resolve(played && clears === before && departures === departed));
+          pendingPlayout.set(id, (played) => resolve(played && clears === before && heard()));
           sendMessage({ type: "transfer_wait", id });
         });
       },
       clearQueue: () => {
         clears += 1;
-        since = null;
+        hearing.cleared();
         playsUntil = 0;
         sendMessage({ type: "transfer_clear" });
       },
