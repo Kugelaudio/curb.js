@@ -27,10 +27,10 @@ const LAST_HOUR = 16;
 const SERVICES = ["haircut", "coloring", "styling", "manicure"] as const;
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const hours = Array.from({ length: LAST_HOUR - FIRST_HOUR + 1 }, (_, i) => `${pad(FIRST_HOUR + i)}:00`);
+export const hours = Array.from({ length: LAST_HOUR - FIRST_HOUR + 1 }, (_, i) => `${pad(FIRST_HOUR + i)}:00`);
 
 /** The studio is closed on weekends: an ISO date (YYYY-MM-DD) is open on weekdays only. */
-const isOpenDay = (date: string) => {
+export const isOpenDay = (date: string) => {
   const day = new Date(`${date}T00:00:00Z`).getUTCDay();
   return day !== 0 && day !== 6;
 };

@@ -73,7 +73,9 @@ A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person
    `error` says nothing about the agent (the provider failed, or the simulated caller went
    wrong). After changing an `expect` or an expectation, `npx curb test --rejudge latest`
    checks the saved conversations again without running the agent. Keep one scenario per
-   flow that matters, and fake every tool that books, sends or deletes (`testing.md`).
+   flow that matters. CI runs `npx curb test --hermetic`, where a scenario that calls a tool
+   without a fake fails: give every tool a scenario may call a fake there, and check the call
+   (`called`, `notCalled`) instead of the state the real tool would have changed (`testing.md`).
    When the ready-made checks do not cover what the team needs, build on the same functions
    (`testing-foundation.md`, "Build your own tests").
 

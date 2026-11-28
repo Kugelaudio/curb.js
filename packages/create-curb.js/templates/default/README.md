@@ -53,7 +53,9 @@ with a fixed date, fakes the skill's one tool, and is `hermetic`, so a tool it d
 the run instead of running. `npx curb test` keeps every model reply in a reply store, so a second
 run with nothing changed answers from it and calls no model.
 
-`.github/workflows/curb-test.yml` runs `curb check` and `curb test` on every pull request,
+`.github/workflows/curb-test.yml` runs `curb check` and `curb test --hermetic` on every pull
+request: every scenario fakes the tools it calls and checks the calls, so no test reaches a real
+system. Give a new tool a fake in each scenario that may call it. The workflow
 keeps the reply store between runs with the Actions cache, and fails until the repository has `KUGELAUDIO_API_KEY` as a secret (Settings > Secrets and variables >
 Actions). Details: `node_modules/curb/docs/agent-guide/testing.md`.
 

@@ -58,15 +58,16 @@ jobs:
           restore-keys: curb-replies-
       # Each scenario says how often it runs and how many runs must pass (runs, minPassRate).
       # The report lands in the job summary, with each scenario's replies: stored, or live from
-      # the turn where a request changed. A scenario with `hermetic: true` runs no tool without a
-      # fake; once every scenario fakes its tools, `npx curb test --hermetic` makes that the rule.
-      - name: npx curb test
+      # the turn where a request changed. --hermetic runs no tool without a fake: a scenario that
+      # calls a tool it does not fake fails, so no test reaches a real system. Give a new tool a
+      # fake in every scenario that may call it.
+      - name: npx curb test --hermetic
         if: env.KUGELAUDIO_API_KEY != ''
-        run: npx curb test
+        run: npx curb test --hermetic
         # To take the simulated caller and the judge off the agent's provider, run them on OpenAI
         # with OPENAI_API_KEY as a repository secret: replace the run line above with these two.
         # env: { OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}" }
-        # run: npx curb test --caller-model openai:gpt-5.4-mini --judge-model openai:gpt-5.4-mini
+        # run: npx curb test --hermetic --caller-model openai:gpt-5.4-mini --judge-model openai:gpt-5.4-mini
       # A new key on every run, so each run saves the replies it added, also when a scenario
       # failed: a stored reply is kept whether or not the test passed.
       - name: Save the reply store

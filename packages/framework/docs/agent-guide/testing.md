@@ -1079,7 +1079,8 @@ A scenario file that cannot be loaded is reported as
 ### In CI
 
 A new project ships `.github/workflows/curb-test.yml`: it runs `curb check` and
-`curb test` on every pull request, and fails with an error that says so while the
+`curb test --hermetic` on every pull request, so no scenario runs a tool it did not
+fake, and fails with an error that says so while the
 repository lacks the agent's LLM key as a secret (`KUGELAUDIO_API_KEY` by default);
 a pull request from a fork gets no secrets and runs only `curb check`. The workflow
 restores the [reply store](./reply-store.md#in-ci) from the Actions cache before

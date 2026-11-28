@@ -1,4 +1,5 @@
 import { personas, scenario } from "curb/testing";
+import { supportFakes } from "./fakes.js";
 
 /**
  * A simulated caller with a goal: `curb test` plays the caller on a second model, and a judge
@@ -7,7 +8,7 @@ import { personas, scenario } from "curb/testing";
  *
  * The checks say what must be true when the call is over, not which way the agent took there:
  * Mara may look the order up first or open the ticket straight from the number the caller
- * read out. Either way one ticket for the damage exists at the end.
+ * read out. Either way the agent opens one ticket for the damage.
  */
 export default scenario({
   name: "opens a ticket for a damaged item",
@@ -22,12 +23,11 @@ export default scenario({
   // a scripted scenario needs neither: the same words run once and must pass.
   runs: 3,
   minPassRate: 0.66,
-  // Every run runs the agent's tools for real. Here find_order reads sample data and the others
-  // only change this call's own state. A tool that writes to a real system gets a fake:
-  // fakes: { open_ticket: { ok: true, message: "Ticket T-1 opened." } }
+  // A fake answers in place of each tool, so no run reaches a real order system or ticket queue.
+  fakes: supportFakes,
   // A judge answers each sentence with yes, no or unknown, and quotes the turn that shows it.
   expectations: ["The agent says a ticket is open only after its open_ticket call succeeded."],
-  // The agent's state at the end of the call: one ticket about the damage, and nothing else.
-  // (The returns policy files a damaged item under "damaged" or "return".)
-  expect: ({ stateMatches }) => [stateMatches("mara", { tickets: [{ category: /^(damaged|return)$/ }] })],
+  // One ticket about the damage. (The returns policy files a damaged item under "damaged" or
+  // "return".) A fake opens no real ticket, so the check reads the call.
+  expect: ({ called }) => [called("open_ticket", { category: /^(damaged|return)$/ })],
 });

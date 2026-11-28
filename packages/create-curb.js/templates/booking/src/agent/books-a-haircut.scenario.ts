@@ -1,4 +1,5 @@
 import { personas, scenario } from "curb/testing";
+import { bookingFakes } from "./fakes.js";
 
 /**
  * A simulated caller with a goal: `curb test` plays the caller on a second model, and a judge
@@ -6,8 +7,7 @@ import { personas, scenario } from "curb/testing";
  * more patient and clearer than the people who really call.
  *
  * The checks say what must be true when the call is over, not which way the agent took there:
- * Lena may offer slots in one question or in three. Either way one haircut for Alex is in the
- * calendar at the end.
+ * Lena may offer slots in one question or in three. Either way she books one haircut for Alex.
  */
 export default scenario({
   name: "books a haircut on a bad line",
@@ -22,11 +22,10 @@ export default scenario({
   // a scripted scenario needs neither: the same words run once and must pass.
   runs: 3,
   minPassRate: 0.66,
-  // Every run runs the agent's tools for real. Here they only change this call's own calendar.
-  // A tool that writes to a real calendar gets a fake:
-  // fakes: { book_appointment: { ok: true, message: "Booked as B-1." } }
+  // A fake answers in place of each tool, so no run reaches a real booking system.
+  fakes: bookingFakes,
   // A judge answers each sentence with yes, no or unknown, and quotes the turn that shows it.
   expectations: ["The agent says the appointment is booked only after its book_appointment call succeeded."],
-  // The agent's state at the end of the call: one haircut for Alex, and nothing else.
-  expect: ({ stateMatches }) => [stateMatches("lena", { appointments: [{ service: "haircut", name: /alex/i }] })],
+  // One haircut for Alex. A fake books nothing for real, so the check reads the call.
+  expect: ({ called }) => [called("book_appointment", { service: "haircut", name: /alex/i })],
 });

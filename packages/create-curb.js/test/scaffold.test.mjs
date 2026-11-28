@@ -332,7 +332,7 @@ test("the project has no npm config file, which hosted builds refuse", (t) => {
 // Every template shows the three kinds of test a project should keep: a simulated caller with a
 // persona and judged expectations, a scripted gate, and a check of the agent's state at the end.
 for (const name of ["default", ...Object.keys(BUSINESS_TEMPLATES)]) {
-  test(`--template ${name} ships a simulated scenario, a scripted gate and an end-state check`, (t) => {
+  test(`--template ${name} ships a simulated scenario and a scripted gate that fake their tools`, (t) => {
     const project = scaffold(t, ["--template", name]);
     const agentDir = join(project, "src/agent");
     const scenarios = readdirSync(agentDir).filter((file) => file.endsWith(".scenario.ts")).map((file) => readFileSync(join(agentDir, file), "utf8"));
@@ -345,13 +345,13 @@ for (const name of ["default", ...Object.keys(BUSINESS_TEMPLATES)]) {
       assert.match(source, /\.\.\.personas\.\w+/);
       assert.match(source, /\bexpectations: \[/);
     }
-    for (const source of scenarios) assert.match(source, /\bstate(Matches)?[(<]/);
-    // A store a scenario reads is one the agent defines.
-    const agent = readFileSync(join(agentDir, "agent.tsx"), "utf8");
-    const stores = [...agent.matchAll(/createAgentStore<[\s\S]*?>\("([a-z]+)"/g)].map((match) => match[1]);
-    const read = scenarios.flatMap((source) => [...source.matchAll(/\bstate(?:Matches)?(?:<[^>]*>)?\("([a-z]+)"/g)].map((match) => match[1]));
-    assert.ok(read.length > 0);
-    assert.deepEqual(read.filter((store) => !stores.includes(store)), []);
+    // The workflow runs curb test --hermetic, so every scenario fakes its tools and checks the
+    // calls: a fake changes no state, so a state check would read a list no tool filled.
+    for (const source of scenarios) {
+      assert.match(source, /\bfakes: /);
+      assert.match(source, /\b(called|notCalled)\(/);
+      assert.doesNotMatch(source, /\bstate(Matches)?[(<]/);
+    }
   });
 }
 
@@ -366,14 +366,14 @@ test("every project ships a workflow that runs curb check and curb test on pull 
     assert.match(workflow, /^permissions:\n {2}contents: read\n/m);
     assert.match(workflow, /KUGELAUDIO_API_KEY: \$\{\{ secrets\.KUGELAUDIO_API_KEY \}\}/);
     assert.match(workflow, /run: npx curb check\n/);
-    assert.match(workflow, /run: npx curb test\n/);
+    assert.match(workflow, /run: npx curb test --hermetic\n/);
     // A missing secret fails a pull request from the repository itself and a run started by hand;
     // a fork's pull request, which gets no secrets, runs only curb check.
     assert.match(
       workflow,
       /if: env\.KUGELAUDIO_API_KEY == '' && \(github\.event_name == 'workflow_dispatch' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\)\n {8}run: \|\n {10}echo "::error::KUGELAUDIO_API_KEY is not set[^"]*"\n {10}exit 1\n/,
     );
-    assert.match(workflow, /# run: npx curb test --caller-model openai:gpt-5\.4-mini --judge-model openai:gpt-5\.4-mini\n/);
+    assert.match(workflow, /# run: npx curb test --hermetic --caller-model openai:gpt-5\.4-mini --judge-model openai:gpt-5\.4-mini\n/);
     // Third-party actions are pinned to a commit, and no checkout leaves its token behind.
     const uses = [...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]);
     assert.ok(uses.length >= 2);

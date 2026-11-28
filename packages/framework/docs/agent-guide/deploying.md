@@ -179,9 +179,10 @@ project ships `.github/workflows/curb-test.yml`, which runs on every pull reques
 1. `npx curb check`: types, the agent's render, and every scenario against the agent. This step
    needs no key, so it runs on a pull request from a fork too.
 2. It restores the [reply store](./reply-store.md#in-ci) from the CI cache.
-3. `npx curb test`: every scenario. A scenario with `hermetic: true` runs no tool it did not fake,
-   so a test never books, sends or charges anything; `npx curb test --hermetic` makes every
-   scenario hermetic, for a job that must not reach any other system.
+3. `npx curb test --hermetic`: every scenario, and none of them runs a tool it did not fake, so a
+   test never books, sends or charges anything. A scenario that calls a tool without a fake fails
+   with `CURB_TEST_UNFAKED_TOOL`: give the tool a fake in that scenario. The starter's scenarios
+   fake every tool they call and check the calls (`called`, `notCalled`).
 4. It saves the reply store for the next run.
 
 The test step needs the agent's LLM key as a repository secret (`KUGELAUDIO_API_KEY` for the

@@ -68,7 +68,7 @@ store back. A new project's `.github/workflows/curb-test.yml` does that with the
           path: ~/.cache/curb/replies
           key: curb-replies-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: curb-replies-
-      - run: npx curb test
+      - run: npx curb test --hermetic
       - name: Save the reply store
         if: always()
         uses: actions/cache/save@v6
