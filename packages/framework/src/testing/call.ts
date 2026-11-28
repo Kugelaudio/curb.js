@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentSession } from "../agent-session.js";
+import { AUTHORING_DIAGNOSTIC_CODES } from "../authoring.js";
 import type { AgentFirstTurn } from "../config.js";
 import { experimentInfo, type ExperimentDeclaration } from "../experiments.js";
 import { assignExperiments } from "../experiments.node.js";
@@ -14,7 +15,7 @@ import { projectHost, takeBundle, type TestHost } from "./host.js";
 import type { ConversationRecord, EndState, RecordedTool } from "./record.js";
 import {
   fakedToolProblem,
-  isFakeList,
+  fakesByName,
   toolResultProblem,
   type ScenarioCallOptions,
   type ScenarioConfirmation,
@@ -97,12 +98,15 @@ export type StartCallOptions = ScenarioCallOptions & {
  * the page info or a variant is one the agent cannot take.
  */
 export async function startCall(options: StartCallOptions = {}): Promise<Call> {
-  if (options.fakes !== undefined && isFakeList(options.fakes)) {
-    throw new Error("startCall: a list of fake(tool, result) is not implemented yet in this version of curb; give fakes as an object of tool name to result.");
+  let fakesGiven: Readonly<Record<string, ScenarioFake>> | undefined;
+  try {
+    fakesGiven = options.fakes === undefined ? undefined : fakesByName(options.fakes);
+  } catch (error) {
+    throw new Error(`startCall: ${(error as Error).message}`);
   }
   const notYet = (["start", "spoken", "hermetic", "now"] as const).filter((option) => options[option] !== undefined);
   if (notYet.length > 0) throw new Error(`startCall: ${notYet.join(", ")} is not implemented yet in this version of curb.`);
-  const fakeProblems = Object.entries(options.fakes ?? {}).flatMap(([tool, fake]) => {
+  const fakeProblems = Object.entries(fakesGiven ?? {}).flatMap(([tool, fake]) => {
     const problem = fakedToolProblem(tool) ?? (typeof fake === "function" ? undefined : toolResultProblem(fake));
     return problem ? [`fakes.${tool}: ${problem}.`] : [];
   });
@@ -119,7 +123,12 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   runtime.setEndCallRequest(() => {
     hungUp = true;
   });
-  const fakes = options.fakes ? installFakes(runtime, options.fakes) : null;
+  const fakes = fakesGiven ? installFakes(runtime, fakesGiven) : null;
+  // A skill that opens without the info its meta.info requires fails the test; a real call only logs it.
+  const infoErrors: ScenarioTurnError[] = [];
+  runtime.onSkillInfoMissing(({ message }) => {
+    infoErrors.push({ kind: "failed", message: `${AUTHORING_DIAGNOSTIC_CODES.skillInfoMissing}: ${message}` });
+  });
 
   // Tools come and go with the agent's state, so every render is looked at: the record holds
   // each tool the model was offered at some point, without the framework's own.
@@ -154,8 +163,9 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   let failure: { reason: string; providerError: boolean } | null = null;
   const take = async (play: () => Promise<PlayedTurn | null>, caller: string | null, number: number): Promise<ScenarioTurn | null> => {
     const failedBefore = bundle.providerErrors?.() ?? 0;
-    const played = await play();
-    if (!played) return null;
+    const playedTurn = await play();
+    if (!playedTurn) return null;
+    const played = infoErrors.length > 0 ? { ...playedTurn, errors: [...playedTurn.errors, ...infoErrors.splice(0)] } : playedTurn;
     const turn = scenarioTurn(runtime, played, caller, number, fakes);
     turn.endedCall = hungUp;
     turns.push(turn);
