@@ -96,6 +96,11 @@ export type ConversationRecord = {
   ending: ConversationEnding;
   /** Null when the agent's state could not be read. */
   endState: EndState | null;
+  /** The skills the call had open, by route path: `started` opened before turn 1
+   * (`start.skills`), `opened` every skill open at some point, in the order they opened, the
+   * started ones first. Left out when no skill opened, and by a source that does not record it,
+   * where the checks read the `read_skill` calls and each turn's skill instead. */
+  skills?: RecordedSkills;
   /** The scenario's fakes that no call used. */
   unusedFakes: string[];
   /** Tokens the agent and the caller used; the judge's are added when it has answered. */
@@ -125,6 +130,9 @@ export type RunErrorKind =
   | "judge";
 
 export type RunError = { kind: RunErrorKind; message: string };
+
+/** The skills a call had open (`ConversationRecord.skills`). */
+export type RecordedSkills = { started: string[]; opened: string[] };
 
 /** What the checks and the judge made of a conversation. */
 export type Assessment = {

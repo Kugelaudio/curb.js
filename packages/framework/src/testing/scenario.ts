@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { z } from "zod";
 import { declaredNameProblem } from "../goals.js";
+import { skillPathOfComponent } from "../skill-modules.js";
 import type { SkillMeta } from "../routing.js";
 import type { ConversationRecord } from "./record.js";
 import type { Caller } from "./converse.js";
@@ -379,7 +380,10 @@ const FIELDS = [
   "style",
   "expect",
   "expectRuns",
+  "start",
+  "spoken",
 ];
+const START_FIELDS = ["skills", "info"];
 const CALLER_FIELDS = ["goal", "knows", "language", "persona", "behaviours"];
 const RESULT_FIELDS = ["ok", "message", "data"];
 /** The framework's own tools: they touch nothing outside the call, and the call needs them. */
@@ -475,10 +479,64 @@ function scenarioProblems(definition: unknown): string[] {
   if (expect !== undefined && typeof expect !== "function") {
     problems.push('expect must be a function that returns checks, e.g. ({ called }) => [called("book_meeting")].');
   }
+  if (definition.start !== undefined) problems.push(...startProblems(definition.start));
+  if (definition.spoken !== undefined && typeof definition.spoken !== "boolean") {
+    problems.push(`spoken must be true (turns are spoken, the default) or false (typed text); got ${preview(definition.spoken)}.`);
+  }
   if (expectRuns !== undefined && typeof expectRuns !== "function") {
     problems.push('expectRuns must be a function of the runs that returns checks, e.g. (runs, { check }) => [check("books on most runs", runs.filter((run) => run.called("book").pass).length >= 2)].');
   }
   return problems;
+}
+
+/** The shape only: whether each skill is one of the agent's is checked when the call starts. */
+export function startProblems(start: unknown): string[] {
+  if (!isRecord(start)) {
+    return ['start must be an object, e.g. { skills: [Billing], info: { "order.id": "A-1042" } }.'];
+  }
+  const problems = unknownFields(start, START_FIELDS, "start");
+  const { skills, info } = start;
+  if (skills !== undefined) {
+    if (!Array.isArray(skills)) {
+      problems.push('start.skills must be a list of skill modules or route paths, e.g. [Billing] or ["/billing"].');
+    } else {
+      skills.forEach((skill, index) => {
+        const problem = skillProblem(skill);
+        if (problem) problems.push(`start.skills[${index}]: ${problem}.`);
+      });
+    }
+  }
+  if (info !== undefined && !isRecord(info)) {
+    problems.push('start.info must be an object of call info by key, e.g. { "order.id": "A-1042" }.');
+  }
+  return problems;
+}
+
+/** What is wrong with `skill` as a skill a test names; undefined when it is a route path or a
+ * skill module (whether the agent has it is checked against the agent). */
+function skillProblem(skill: unknown): string | undefined {
+  if (typeof skill === "string") {
+    return skill.startsWith("/") ? undefined : `a route path starts with "/", such as "/billing"; got ${preview(skill)}`;
+  }
+  if (isRecord(skill) && typeof skill.default === "function") return undefined;
+  return `give a skill module (import * as Billing from "./billing/skill.js") or its route path ("/billing"); got ${preview(skill)}`;
+}
+
+/**
+ * The route path of a skill a test names: a path as it is, a module by the route the agent's
+ * discovery made of it in this process. Throws when the module is no skill of a loaded agent.
+ */
+export function skillPathOf(skill: ScenarioSkill): string {
+  const problem = skillProblem(skill);
+  if (problem) throw new Error(problem);
+  if (typeof skill === "string") return skill;
+  const path = skillPathOfComponent(skill.default);
+  if (path !== undefined) return path;
+  const title = skill.meta?.title ? ` "${skill.meta.title}"` : "";
+  throw new Error(
+    `the skill module${title} is no skill of the agent: no skill.tsx under src/agent/ exports its component. ` +
+      `Import the module from the agent's own skill.tsx, or give its route path, such as "/billing".`,
+  );
 }
 
 function clientProblems(client: unknown): string[] {
