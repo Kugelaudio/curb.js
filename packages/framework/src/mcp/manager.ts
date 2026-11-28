@@ -7,6 +7,7 @@ import type { ToolDefinition, ToolResult } from "../types.js";
 import { isRemoteConfig, type McpAnyServerConfig, type McpAuth, type McpServerConfig } from "./config.js";
 // Type-only: the implementation stays a dynamic import (it needs node:fs).
 import type { FileOAuthProvider } from "./oauth-store.js";
+import { MCP_TOOLS_FILE, type McpToolsSnapshot } from "./snapshot.js";
 import {
   mcpToolToDefinition,
   normalizeMcpResult,
@@ -151,8 +152,48 @@ export class McpManager {
   /** Host hook: persist runtime-added servers (see `servers-store.ts`). */
   onPersistUserServers: ((configs: McpServerConfig[]) => void) | null = null;
 
-  constructor(servers: McpAnyServerConfig[] = []) {
+  /** The tools every server of this manager "connects" to (see {@link withSnapshot}); null
+   * when it connects for real. */
+  private readonly snapshot: McpToolsSnapshot | null;
+
+  /** True for a manager that registers servers and never opens a transport (see {@link offline}). */
+  private readonly isOffline: boolean;
+
+  constructor(servers: McpAnyServerConfig[] = [], options: { snapshot?: McpToolsSnapshot; offline?: boolean } = {}) {
+    this.snapshot = options.snapshot ?? null;
+    this.isOffline = options.offline ?? false;
     this.configure(servers);
+  }
+
+  /**
+   * A manager of its own for a render that only reads the agent's tree (the authoring
+   * diagnostics): the servers this one has configured, and every inline `<Mcp url>` it renders,
+   * are registered and stay "disconnected". No transport is opened, no request leaves the process,
+   * and nothing it does reaches this manager.
+   */
+  offline(): McpManager {
+    return new McpManager([...this.configs.values()], { offline: true });
+  }
+
+  /**
+   * A manager of its own for one hermetic call: the servers this one has configured, each
+   * "connected" to its entry in `snapshot` at once. Its tools are the ones the snapshot lists, no
+   * transport is opened and no request leaves the process, and nothing it does reaches this
+   * manager. A server the snapshot lacks is an error state that names the fix, and so is a server
+   * an inline `<Mcp url>` adds to it later.
+   */
+  withSnapshot(snapshot: McpToolsSnapshot): McpManager {
+    const isolated = new McpManager([...this.configs.values()], { snapshot });
+    for (const config of this.configs.values()) {
+      // The snapshot branch of connect() sets the state before it returns.
+      if (config.enabled !== false) void isolated.connect(config);
+    }
+    return isolated;
+  }
+
+  /** The snapshot this manager offers tools from; null when it connects for real. */
+  offeredSnapshot(): McpToolsSnapshot | null {
+    return this.snapshot;
   }
 
   configure(servers: McpAnyServerConfig[], options: { user?: boolean } = {}) {
@@ -354,6 +395,22 @@ export class McpManager {
   }
 
   private async connect(config: McpAnyServerConfig): Promise<void> {
+    if (this.isOffline) return;
+    if (this.snapshot) {
+      const listed = this.snapshot.servers[config.id];
+      this.setState(
+        config.id,
+        listed
+          ? { status: "ready", tools: listed.tools.map((tool) => ({ ...tool })) }
+          : {
+              status: "error",
+              message:
+                `[MCP_TOOLS_MISSING] MCP server "${config.id}" is not in ${MCP_TOOLS_FILE}, and a hermetic run offers MCP tools only from there, without connecting. ` +
+                `Fix: run \`npx curb mcp snapshot\` with the server reachable, and commit ${MCP_TOOLS_FILE}.`,
+            },
+      );
+      return;
+    }
     this.setState(config.id, { status: "connecting" });
 
     let transport: Transport;
@@ -429,6 +486,9 @@ export class McpManager {
   ): Promise<ToolResult> {
     const client = this.clients.get(serverId);
     if (!client) {
+      if (this.snapshot) {
+        return { ok: false, message: `MCP server "${serverId}" is offered from ${MCP_TOOLS_FILE} in this hermetic run and was not contacted.` };
+      }
       return { ok: false, message: `MCP server "${serverId}" is not connected.` };
     }
 

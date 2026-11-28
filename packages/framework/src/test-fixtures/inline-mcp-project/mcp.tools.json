@@ -1,0 +1,26 @@
+{
+  "format": "curb.mcp-tools",
+  "version": 1,
+  "servers": {
+    "orders": {
+      "tools": [
+        {
+          "name": "find_order",
+          "description": "Find an order by its id.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The order id"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

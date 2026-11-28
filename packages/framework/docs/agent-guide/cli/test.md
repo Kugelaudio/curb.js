@@ -18,6 +18,7 @@ npx curb test [filter] [options]
 | `--report <file>` | Also writes the report as Markdown. `GITHUB_STEP_SUMMARY` gets it too |
 | `--rejudge <run>` | Checks the conversations of a [saved run](../test-runs.md) again without running the agent: `latest`, a run's id, or a file |
 | `--changed <ref>` | Runs only the scenarios a change since `<ref>` can affect ([below](#only-what-a-change-affects)). `<ref>` is a branch or commit, such as `origin/main` |
+| `--hermetic` | Runs every scenario [hermetic](../testing.md#hermetic-runs): a call of a tool without a fake ends the run as an error before the tool runs, and MCP tools come from `mcp.tools.json` without contacting a server |
 | `--json` | Prints one JSON object |
 
 ## Since the last version
@@ -96,6 +97,8 @@ npx curb test --changed origin/main
 
 | Version | Changes |
 |---|---|
+| v1.30.0 | `--hermetic`, and a scenario's `hermetic` |
+| v1.30.0 | A fake for a tool the agent does not have is an error before the first turn, no longer a note after the run |
 | v1.27.0 | `--changed <ref>` runs only the scenarios a change since `<ref>` can affect |
 | v1.27.0 | The judge does not count `claimed_without_tool` when the tool it names ran and succeeded by then (judge prompt 4). The simulated caller ends the call once its goal is done, also when the agent asks whether there is anything else (caller prompt 4) |
 | v1.25.0 | `--runs` runs scripted scenarios that many times too |

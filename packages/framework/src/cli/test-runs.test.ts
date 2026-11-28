@@ -563,6 +563,7 @@ describe("curb test options", () => {
       ]),
     ).toEqual({
       filter: "booking",
+      hermetic: false,
       json: true,
       runs: 5,
       concurrency: 8,
@@ -570,9 +571,9 @@ describe("curb test options", () => {
       judgeModel: "gpt-5.2",
       report: "report.md",
     });
-    expect(parseTestArgs(["--rejudge", "latest"])).toEqual({ filter: "", json: false, rejudge: "latest" });
-    expect(parseTestArgs(["--changed=origin/main"])).toEqual({ filter: "", json: false, changed: "origin/main" });
-    expect(TEST_OPTIONS).toEqual(["--json", "--runs", "--concurrency", "--caller-model", "--judge-model", "--report", "--rejudge", "--changed"]);
+    expect(parseTestArgs(["--rejudge", "latest"])).toEqual({ filter: "", json: false, hermetic: false, rejudge: "latest" });
+    expect(parseTestArgs(["--changed=origin/main"])).toEqual({ filter: "", json: false, hermetic: false, changed: "origin/main" });
+    expect(TEST_OPTIONS).toEqual(["--json", "--hermetic", "--runs", "--concurrency", "--caller-model", "--judge-model", "--report", "--rejudge", "--changed"]);
   });
 
   it("refuses a value out of range, naming what the option takes", () => {

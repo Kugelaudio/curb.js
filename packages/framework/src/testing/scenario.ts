@@ -371,6 +371,7 @@ const FIELDS = [
   "client",
   "experiments",
   "fakes",
+  "hermetic",
   "runs",
   "minPassRate",
   "expectations",
@@ -457,6 +458,9 @@ function scenarioProblems(definition: unknown): string[] {
     } else if (caller !== undefined && maxTurns > MAX_SIMULATED_TURNS) {
       problems.push(`maxTurns (${maxTurns}) is more than a simulated caller may take; give at most ${MAX_SIMULATED_TURNS}.`);
     }
+  }
+  if (definition.hermetic !== undefined && typeof definition.hermetic !== "boolean") {
+    problems.push(`hermetic must be true or false; got ${preview(definition.hermetic)}.`);
   }
   if (runs !== undefined) {
     const problem = runsProblem(runs);

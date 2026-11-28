@@ -214,7 +214,8 @@ function agentProviderUses(agent: DiscoveredAgent): ProviderUse[] {
   const paths = agent.routes.map((route) => route.path);
   const runtime = new AgentSiteRuntime(
     ({ path, loadedPaths }) => agentAppElement(agent.definition.app, { path, loadedPaths, routes: agent.routes }),
-    { maxLoadedSkills: Math.max(paths.length, 1) },
+    // Reading the providers renders the tree only: an inline <Mcp url> must not connect from here.
+    { maxLoadedSkills: Math.max(paths.length, 1), mcpOffline: true },
   );
   const s2s = runtime.settings.s2s();
   const used = (): ProviderUse["settings"] => {

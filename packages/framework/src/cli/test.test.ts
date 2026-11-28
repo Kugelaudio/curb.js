@@ -1,4 +1,5 @@
 import { rmSync } from "node:fs";
+import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSession, type AgentLlmClient, type AgentLlmStreamStep } from "../agent-session.js";
 import { openingLineOf, type AgentFirstTurn } from "../config.js";
@@ -6,8 +7,12 @@ import type { AgentRunRequest, AgentRunResponse, AgentToolCall } from "../llm/ty
 import { anthropic, openai, openaiCompatible } from "../providers.js";
 import { createAgentRuntime, createAgentSession } from "../server/bootstrap.js";
 import { AGENT_FIRST_TURN_PROMPT } from "../server/voice/livekit-host/call-opening.js";
+import { calls, sendSummary, says as tasksSay, steps, tasksBundle } from "../test-fixtures/tasks.js";
 import { LISA, bookingRuntime, booked, callsBook, readBackOf, says as booking, scripted, type Booking } from "../test-fixtures/booking.js";
 import { END_CALL_TOOL_NAME } from "../types.js";
+import { Agent, AgentSiteRuntime, GlobalTools, Mcp } from "../index.js";
+import { configureMcp, getMcpManager } from "../mcp/manager.js";
+import { formatMcpToolsSnapshot, mcpToolsSnapshot } from "../mcp/snapshot.js";
 import { END_CALL_VOICE_STYLE } from "../voice-style.js";
 import { isJudgeRequest, judgeAnswer } from "../test-fixtures/conversations.js";
 import type { ScenarioResult } from "./scenarios/run.js";
@@ -326,7 +331,7 @@ export default scenario({
       "src/agent/booking.scenario.ts": `import { scenario } from "curb/testing";
 export default scenario({
   turns: ["Book Tuesday 15:00 for lisa@example.com", "Ja, passt so. Wie lautet meine Buchungsnummer?", "Ja."],
-  fakes: { book_meeting: { ok: true, message: "Booked (fake)." }, send_email: { ok: true } },
+  fakes: { book_meeting: { ok: true, message: "Booked (fake)." } },
 });
 `,
     });
@@ -366,7 +371,6 @@ export default scenario({
     expect(printed).toContain(
       [
         "  pass  the conversation ends cleanly: every scripted caller line was said (3)",
-        "  note  the fake for send_email was never used: no call of send_email ran",
         "  note  this scenario has no checks of its own (expect), so only the built-in checks ran",
         "PASS booking (3 caller turn(s), ",
       ].join("\n"),
@@ -389,8 +393,87 @@ export default scenario({
     expect(result.turns[2].toolCalls).toEqual([
       { name: "book_meeting", input: LISA, ok: true, result: { ok: true, message: "Booked (fake)." }, faked: true },
     ]);
-    expect(result.notes).toHaveLength(2);
+    expect(result.notes).toHaveLength(1);
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("ends a hermetic run as an error at a tool without a fake, before the tool runs", async () => {
+    const SENDS = `import { scenario } from "curb/testing";
+export default scenario({ name: "sends the list", turns: ["Send my list to sam@example.com.", "Thanks."], HERMETIC });
+`;
+    // The task agent's send_summary sends for real; \`send\` is its onSubmit.
+    const send = vi.fn(async () => ({ ok: true, message: "Sent." }));
+    const host = (): TestHost => ({
+      async createBundle() {
+        return tasksBundle(steps([calls(sendSummary("sam@example.com")), tasksSay("Sent it."), tasksSay("Bye.")]), send);
+      },
+      simulator: () => unused,
+    });
+    const stopped = '[CURB_TEST_UNFAKED_TOOL] hermetic: the agent called "send_summary", which has no fake, so the run stopped before the tool ran.';
+
+    const hermetic = await run(["--json"], project({ "src/agent/sends.scenario.ts": SENDS.replace("HERMETIC", "hermetic: true") }), host());
+    const [report] = (JSON.parse(hermetic.printed) as { scenarios: Array<Extract<ScenarioReport, { mode: string }>> }).scenarios;
+    expect(report.passed).toBe(false);
+    expect(report.endedBy).toBe("error");
+    expect(report.outcome).toBe("fail");
+    expect(report.checks.find((check) => check.name === "no turn errors")).toMatchObject({ pass: false, detail: `turn 1: failed: ${stopped} Fix: fake it (fakes: { send_summary: { ok: true, message: "..." } }), or leave hermetic off for this run.` });
+    expect(hermetic.code).not.toBe(0);
+    expect(send).not.toHaveBeenCalled();
+
+    // --hermetic makes every scenario hermetic; without either, the tool runs for real.
+    const plain = SENDS.replace(", HERMETIC", "");
+    const flagged = await run(["--hermetic"], project({ "src/agent/sends.scenario.ts": plain }), host());
+    expect(flagged.code).not.toBe(0);
+    expect(flagged.printed).toContain(stopped);
+    expect(send).not.toHaveBeenCalled();
+
+    expect((await run([], project({ "src/agent/sends.scenario.ts": plain }), host())).printed).toContain("[tool send_summary ok]");
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("passes a hermetic scenario with an MCP tool with the network off, its tools read from mcp.tools.json", async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error("network is off");
+    });
+    vi.stubGlobal("fetch", fetch);
+    const root = project({
+      "src/agent/order.scenario.ts": `import { scenario } from "curb/testing";
+export default scenario({
+  turns: ["Where is my order A-1042?"],
+  hermetic: true,
+  fakes: { orders__find_order: { ok: true, data: { id: "A-1042", status: "shipped" } } },
+  expect: ({ called, said }) => [called("orders__find_order", { id: "A-1042" }), said("shipped")],
+});
+`,
+      "mcp.tools.json": formatMcpToolsSnapshot(
+        mcpToolsSnapshot({ orders: [{ name: "find_order", description: "Find an order by its id.", inputSchema: { type: "object", properties: { id: { type: "string" } } } }] }),
+      ),
+    });
+    // The server as the agent declares it: nothing listens there.
+    configureMcp([{ id: "orders", url: "http://127.0.0.1:9/mcp", auth: { kind: "none" } }]);
+    // The call reads mcp.tools.json from the project it runs in.
+    vi.stubEnv("AGENT_PROJECT_DIR", root);
+    const host: TestHost = {
+      async createBundle(options) {
+        const app = createElement(Agent, null, createElement(GlobalTools, null, createElement(Mcp, { id: "orders" })));
+        const runtime = new AgentSiteRuntime(app, { mcpTools: options?.mcpTools });
+        const llm = steps([calls({ name: "orders__find_order", input: { id: "A-1042" } }), tasksSay("Your order A-1042 has shipped.")]);
+        return { runtime, session: new AgentSession(runtime, llm) };
+      },
+      simulator: () => unused,
+    };
+    try {
+      const { code, printed } = await run([], root, host);
+      expect(printed).toContain("  [tool orders__find_order faked]");
+      expect(printed).toContain("PASS order");
+      expect(code).toBe(0);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(getMcpManager().resolve("orders").status).toBe("disconnected");
+    } finally {
+      configureMcp([]);
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("runs only what the filter matches, reports a broken file as failed, and exits 1 on a failure", async () => {
@@ -477,8 +560,9 @@ export const opening = scenario({ turns: ["Hello"] });
     expect(errors).toHaveBeenCalledWith(expect.stringContaining('import { scenario } from "curb/testing";'));
   });
 
-  it("parses the filter and --json, and refuses an unknown option", () => {
-    expect(parseTestArgs(["books", "a", "--json", "call"])).toEqual({ filter: "books a call", json: true });
+  it("parses the filter, --json and --hermetic, and refuses an unknown option", () => {
+    expect(parseTestArgs(["books", "a", "--json", "call"])).toEqual({ filter: "books a call", json: true, hermetic: false });
+    expect(parseTestArgs(["--hermetic"])).toMatchObject({ filter: "", hermetic: true });
     expect(() => parseTestArgs(["--watch"])).toThrow("curb test: unknown option --watch.");
   });
 

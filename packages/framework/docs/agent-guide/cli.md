@@ -9,6 +9,7 @@ Run `npx curb <command>` from the project root. `--help` prints the usage and ru
 | [`curb say`](./cli/say.md) | One caller turn, headless |
 | [`curb test`](./cli/test.md) | Runs the conversation scenarios |
 | [`curb review`](./cli/review.md) | Reads many calls and reports what goes wrong as patterns |
+| [`curb mcp snapshot`](./cli/mcp-snapshot.md) | Writes the tools of the agent's MCP servers to `mcp.tools.json`, for hermetic tests |
 | [`curb run`](./cli/run.md) | Runs a script of your own with the project loaded |
 | [`curb hook`](./cli/hook.md) | Runs an after-call hook once |
 | [`curb conversations`](./cli/conversations.md) | Prints recorded conversations |

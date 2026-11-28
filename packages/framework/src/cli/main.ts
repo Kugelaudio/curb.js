@@ -27,6 +27,9 @@ Commands:
   review     Read many calls (files, folders, or the last conversations of curb dev) and
              report what goes wrong on them as patterns, each with quotes and a scenario
              that would reproduce it (--last <n>, --judge-model <id>, --json; see curb review --help).
+  mcp snapshot
+             Connect to the agent's MCP servers and write the tools each lists to
+             mcp.tools.json, which a hermetic test offers without connecting (see curb mcp --help).
   run        Run a script of your own with the project loaded (TypeScript, JSX, .env, the login
              key), such as a test harness built on curb/testing; its exit code is the
              command's (curb run <script> [args...]; see curb run --help).
@@ -87,6 +90,7 @@ if (process.argv[2] === "help" || wantsHelp(helpArgs)) {
     run: async () => (await import("./run.js")).RUN_USAGE,
     hook: async () => (await import("./hook.js")).HOOK_USAGE,
     voices: async () => (await import("./voices.js")).VOICES_USAGE,
+    mcp: async () => (await import("./mcp.js")).MCP_USAGE,
   };
   const command = process.argv[2] ?? "";
   const usage = Object.hasOwn(usages, command) ? await usages[command]!() : USAGE;
@@ -147,6 +151,15 @@ async function review(): Promise<void> {
   const { reviewCommand } = await import("./review.js");
   const code = await reviewCommand(process.argv.slice(3), projectRoot);
   // As for say: open MCP clients and LLM sockets must not keep a finished run alive.
+  process.stdout.write("", () => process.exit(code));
+  await new Promise(() => {});
+}
+
+async function mcp(): Promise<void> {
+  const { projectRoot } = prepareProject();
+  const { mcpCommand } = await import("./mcp.js");
+  const code = await mcpCommand(process.argv.slice(3), projectRoot);
+  // The MCP clients it opened must not keep a finished snapshot alive.
   process.stdout.write("", () => process.exit(code));
   await new Promise(() => {});
 }
@@ -379,6 +392,7 @@ const commands: Record<string, () => Promise<void>> = {
   say,
   test,
   review,
+  mcp,
   run: runCommand,
   hook,
   start,

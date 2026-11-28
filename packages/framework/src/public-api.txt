@@ -343,6 +343,8 @@ curb hook
 curb info
 curb login
 curb logout
+curb mcp
+curb mcp snapshot
 curb review
 curb review --concurrency
 curb review --json
@@ -357,6 +359,7 @@ curb test
 curb test --caller-model
 curb test --changed
 curb test --concurrency
+curb test --hermetic
 curb test --json
 curb test --judge-model
 curb test --rejudge

@@ -6,10 +6,13 @@ import { assignExperiments } from "../experiments.node.js";
 import { declinedNote, unclearNote, type ConfirmationVerdict, type PendingConfirmation } from "../llm/confirmation.js";
 import type { AgentChatMessage } from "../llm/types.js";
 import { snapshotAgentStores } from "../agent-state.js";
-import type { AgentSiteRuntime, ToolFake } from "../runtime.js";
+import type { AgentSiteRuntime, ToolFake, UnfakedTool } from "../runtime.js";
 import { clientInfo, clientInfoProblem } from "../server/protocol.js";
 import { SKIP_TURN_TOOL_NAME, type ToolResult } from "../types.js";
 import { expectContext, fallbackLineIn } from "./checks.js";
+import { getMcpManager } from "../mcp/manager.js";
+import { readMcpToolsSnapshot } from "../mcp/snapshot-file.js";
+import { missingMcpSnapshots, unfakedToolMessage, unfakedToolResult, unknownFakeProblems } from "./hermetic.js";
 import { projectHost, takeBundle, type TestHost } from "./host.js";
 import type { ConversationRecord, EndState, RecordedTool } from "./record.js";
 import {
@@ -100,7 +103,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   if (options.fakes !== undefined && isFakeList(options.fakes)) {
     throw new Error("startCall: a list of fake(tool, result) is not implemented yet in this version of curb; give fakes as an object of tool name to result.");
   }
-  const notYet = (["start", "spoken", "hermetic", "now"] as const).filter((option) => options[option] !== undefined);
+  const notYet = (["start", "spoken", "now"] as const).filter((option) => options[option] !== undefined);
   if (notYet.length > 0) throw new Error(`startCall: ${notYet.join(", ")} is not implemented yet in this version of curb.`);
   const fakeProblems = Object.entries(options.fakes ?? {}).flatMap(([tool, fake]) => {
     const problem = fakedToolProblem(tool) ?? (typeof fake === "function" ? undefined : toolResultProblem(fake));
@@ -110,7 +113,18 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   if (fakeProblems.length + clientProblems.length > 0) throw new Error(`startCall: ${[...fakeProblems, ...clientProblems].join(" ")}`);
 
   const host = options.host ?? projectHost();
-  const bundle = await takeBundle(host);
+  // A hermetic call's agent offers MCP tools from mcp.tools.json on a manager of its own: building
+  // it connects no server, and nothing it does reaches the calls beside or after it.
+  const mcpTools = options.hermetic ? readMcpToolsSnapshot() : undefined;
+  const bundle = await takeBundle(host, mcpTools ? { mcpTools } : {});
+  // A host that builds its own runtime may leave mcpTools out; that is only safe while the
+  // process's manager knows no MCP server its agent could reach.
+  if (mcpTools && bundle.runtime.mcpManager().offeredSnapshot() !== mcpTools && getMcpManager().serverIds().length > 0) {
+    throw new Error(
+      "startCall: [CURB_TEST_HOST_NOT_HERMETIC] hermetic: the host built an agent that does not offer MCP tools from mcp.tools.json, so the call could reach a server. " +
+        "Fix: in the host's createBundle(options), pass options.mcpTools to the runtime (new AgentSiteRuntime(app, { mcpTools: options?.mcpTools })).",
+    );
+  }
   const started = performance.now();
   const startedAt = new Date().toISOString();
   const { runtime, session } = bundle;
@@ -119,7 +133,31 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   runtime.setEndCallRequest(() => {
     hungUp = true;
   });
-  const fakes = options.fakes ? installFakes(runtime, options.fakes) : null;
+  const setupProblems = [
+    ...unknownFakeProblems(runtime, Object.keys(options.fakes ?? {})),
+    ...(options.hermetic ? missingMcpSnapshots(runtime) : []),
+  ];
+  if (setupProblems.length > 0) throw new Error(`startCall: ${setupProblems.join(" ")}`);
+  // A hermetic call stops at the first call of a tool without a fake (the tool does not run), and
+  // when a skill it opens shows an MCP server mcp.tools.json lacks: the turn is cut off, and the
+  // call ends as an error.
+  let stopped: { message: string; turn: AbortController } | null = null;
+  let turnControl = new AbortController();
+  const stop = (message: string) => {
+    stopped ??= { message, turn: turnControl };
+    turnControl.abort();
+  };
+  const stopAtUnfaked: UnfakedTool = (tool) => {
+    stop(unfakedToolMessage(tool));
+    return unfakedToolResult(tool);
+  };
+  const stopAtMissingSnapshot = () => {
+    const [missing] = missingMcpSnapshots(runtime);
+    if (missing) stop(`hermetic: ${missing}`);
+  };
+  const stopWatchingSnapshots = options.hermetic ? runtime.subscribe(stopAtMissingSnapshot) : () => {};
+  const fakes =
+    options.fakes || options.hermetic ? installFakes(runtime, options.fakes ?? {}, options.hermetic ? stopAtUnfaked : undefined) : null;
 
   // Tools come and go with the agent's state, so every render is looked at: the record holds
   // each tool the model was offered at some point, without the framework's own.
@@ -154,9 +192,11 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   let failure: { reason: string; providerError: boolean } | null = null;
   const take = async (play: () => Promise<PlayedTurn | null>, caller: string | null, number: number): Promise<ScenarioTurn | null> => {
     const failedBefore = bundle.providerErrors?.() ?? 0;
+    turnControl = new AbortController();
     const played = await play();
     if (!played) return null;
     const turn = scenarioTurn(runtime, played, caller, number, fakes);
+    if (stopped?.turn === turnControl) turn.errors.push({ kind: "failed", message: stopped.message });
     turn.endedCall = hungUp;
     turns.push(turn);
     failure =
@@ -169,7 +209,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
           };
     return turn;
   };
-  const opening = await take(() => playOpening(session, bundle.firstTurn), null, 0);
+  const opening = await take(() => playOpening(session, bundle.firstTurn, turnControl.signal), null, 0);
   const callerTurns = () => turns.filter((turn) => turn.caller !== null).length;
   const endState = () => endStateOf(runtime);
   const model = host.models?.(runtime.settings.current().llm).agent ?? null;
@@ -178,11 +218,12 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     opening,
     turns,
     async say(text) {
-      if (hungUp || closed) {
-        throw new Error(`call.say: the call has ended${hungUp ? ": the agent hung up (end_call)" : ""}. Start another with startCall().`);
+      if (hungUp || closed || stopped) {
+        const why = hungUp ? ": the agent hung up (end_call)" : stopped ? `: ${stopped.message}` : "";
+        throw new Error(`call.say: the call has ended${why}. Start another with startCall().`);
       }
       // On an agent with `s2s` this text goes to the back office, whose turns carry no spoken rules.
-      return (await take(() => playTurn(session, text, undefined, !runtime.settings.s2s()), text, callerTurns() + 1))!;
+      return (await take(() => playTurn(session, text, undefined, !runtime.settings.s2s(), turnControl.signal), text, callerTurns() + 1))!;
     },
     state: <T,>(store: string) => expectContext(turns, endState()).state<T>(store),
     get context() {
@@ -192,12 +233,14 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
       return session.systemPromptFor(!runtime.settings.s2s());
     },
     get ended() {
-      return hungUp || closed;
+      return hungUp || closed || stopped !== null;
     },
     experiments,
     language: runtime.settings.language(),
     model,
     record() {
+      // A hermetic stop ends the call as an error even after a later turn went well.
+      if (stopped && failure === null) failure = { reason: `failed: ${stopped.message}`, providerError: false };
       const errored = failure !== null;
       return {
         format: "curb.conversation",
@@ -225,6 +268,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     close() {
       closed = true;
       stopNotingTools();
+      stopWatchingSnapshots();
     },
   };
 }
@@ -245,14 +289,21 @@ export type PlayedTurn = {
 
 /** One spoken turn on the session, as a call runs it: the caller's line, or (`synthetic`) the
  * framework's own input. */
-export async function playTurn(session: AgentSession, text: string, kind?: "synthetic", spoken = true): Promise<PlayedTurn> {
+export async function playTurn(
+  session: AgentSession,
+  text: string,
+  kind?: "synthetic",
+  spoken = true,
+  /** Aborting it cuts the turn off where it is (a hermetic call at a tool without a fake). */
+  signal?: AbortSignal,
+): Promise<PlayedTurn> {
   const before = session.messages.length;
   const stepsBefore = session.llmTrace.length;
   // The caller's line answers the action waiting for their yes, if one waits; framework input never does.
   const pending = kind ? null : session.pendingConfirmation;
   const errors: ScenarioTurnError[] = [];
   let reply = "";
-  for await (const event of session.runTurnStream(text, { spoken, ...(kind ? { kind } : {}) })) {
+  for await (const event of session.runTurnStream(text, { spoken, ...(kind ? { kind } : {}), ...(signal ? { signal } : {}) })) {
     if (event.type === "error") errors.push({ kind: event.error.kind, message: event.error.message });
     else if (event.type === "done") reply = event.reply;
   }
@@ -309,7 +360,12 @@ export type InstalledFakes = {
  * fake gives is a copy of its own, so a transcript can tell a faked call from a real one. A
  * function fake that returns no tool result fails the call, as a tool's own bug does.
  */
-export function installFakes(runtime: AgentSiteRuntime, fakes: Readonly<Record<string, ScenarioFake>>): InstalledFakes {
+export function installFakes(
+  runtime: AgentSiteRuntime,
+  fakes: Readonly<Record<string, ScenarioFake>>,
+  /** A hermetic call's answer to a tool without a fake, which then does not run. */
+  unfaked?: UnfakedTool,
+): InstalledFakes {
   const given = new WeakSet<ToolResult>();
   const used = new Set<string>();
   const fake = (tool: string, answer: ScenarioFake): ToolFake => async (input) => {
@@ -321,7 +377,10 @@ export function installFakes(runtime: AgentSiteRuntime, fakes: Readonly<Record<s
     given.add(result);
     return result;
   };
-  runtime.fakeTools(Object.fromEntries(Object.entries(fakes).map(([tool, answer]) => [tool, fake(tool, answer)])));
+  runtime.fakeTools(
+    Object.fromEntries(Object.entries(fakes).map(([tool, answer]) => [tool, fake(tool, answer)])),
+    unfaked ? { unfaked } : {},
+  );
   return {
     gave: (result) => result !== null && given.has(result),
     unused: () => Object.keys(fakes).filter((tool) => !used.has(tool)),
@@ -337,11 +396,12 @@ export function installFakes(runtime: AgentSiteRuntime, fakes: Readonly<Record<s
 export async function playOpening(
   session: AgentSession,
   firstTurn: AgentFirstTurn | undefined,
+  signal?: AbortSignal,
 ): Promise<PlayedTurn | null> {
   if (firstTurn === "agent") {
     // The prompt a call opens with; loaded only here, its module brings in LiveKit's runtime.
     const { AGENT_FIRST_TURN_PROMPT } = await import("../server/voice/livekit-host/call-opening.js");
-    return playTurn(session, AGENT_FIRST_TURN_PROMPT, "synthetic");
+    return playTurn(session, AGENT_FIRST_TURN_PROMPT, "synthetic", true, signal);
   }
   const before = session.messages.length;
   let line: string | null;

@@ -36,7 +36,7 @@ itself.
 ## `startCall`
 
 ```ts
-startCall(options?: { fakes?, client?, experiments?, host? }): Promise<Call>
+startCall(options?: { fakes?, client?, experiments?, hermetic?, host? }): Promise<Call>
 ```
 
 ```ts
@@ -60,9 +60,10 @@ Conversation recording is off, and the framework's own log lines go to stderr.
 
 | Option | What it does |
 |---|---|
-| `fakes` | Tools that must not run for real, as in a scenario |
+| `fakes` | Tools that must not run for real, as in a scenario. A fake for a tool the agent does not have rejects before turn 1 (`[CURB_TEST_UNKNOWN_FAKE]`) |
 | `client` | Page info the call starts with |
 | `experiments` | The variant per experiment, `{ greeting: "casual" }`, or a function of the agent's experiments (`[{ name, variants: [{ name, weight }] }]`) that returns them. An experiment left out draws its variant as a call would |
+| `hermetic` | `true`: a call of a tool without a fake ends the call as an error before the tool runs (the turn reports it, `say` rejects after it), and MCP tools come from `mcp.tools.json` ([hermetic runs](./testing.md#hermetic-runs)) |
 | `host` | What the agent runs on. Default: [`projectHost()`](#projecthost) |
 
 | `Call` | What it is |
@@ -183,8 +184,12 @@ projectHost(): TestHost
 
 The host every function here runs on when given none: the project's agent, built the way a call
 builds it, and its LLM provider, with one rate limit for all their requests. A hermetic test passes
-a `host` of its own: `createBundle()` builds the agent, `simulator(llm, role, onUsage, model?)`
-returns the client a `testModel` sends to, `models()` names them, and `throttle` is shared.
+a `host` of its own: `createBundle(options?)` builds the agent, `simulator(llm, role, onUsage, model?)`
+returns the client a `testModel` sends to, `models()` names them, and `throttle` is shared. For a
+`hermetic` call, `options.mcpTools` holds the tools of `mcp.tools.json`: pass it on as
+`new AgentSiteRuntime(app, { mcpTools: options?.mcpTools })`, so the agent offers them on an MCP
+connection of its own. A host that leaves it out while an MCP server is configured is refused
+(`[CURB_TEST_HOST_NOT_HERMETIC]`).
 
 ## `simulatedCaller`
 
@@ -488,7 +493,8 @@ export default scenario({
 | `maxTurns` | `number` | 12 for a simulated caller | The most caller turns, at most 100 for a simulated caller |
 | `client` | object | | Page info the call starts with |
 | `experiments` | object | | The variant, by experiment name. An experiment left out is covered by repeated runs |
-| `fakes` | object | | Tools that must not run for real, each with the result its calls get, or a function of the input that returns one. A tool without a fake runs for real on every run, so fake one that sends, books or charges |
+| `fakes` | object | | Tools that must not run for real, each with the result its calls get, or a function of the input that returns one. A tool without a fake runs for real on every run, so fake one that sends, books or charges. A fake for a tool the agent does not have is an error before turn 1 |
+| `hermetic` | `boolean` | false | `true`: a call of a tool without a fake ends the run as an error before the tool runs, and MCP tools come from `mcp.tools.json` without contacting a server ([hermetic runs](./testing.md#hermetic-runs)). `curb test --hermetic` sets it for every scenario |
 | `runs` | `number` | 1 | How often the scenario runs, 1 to 100. `curb test --runs` overrides it. Its tools without a fake run that many times |
 | `minPassRate` | `number` | 1 | The share of completed runs that must pass, above 0 and at most 1 |
 | `expectations` | `string[]` | | Sentences about the call that a judge answers with yes, no or unknown. A no fails the run. At most 12 |
@@ -627,8 +633,8 @@ These are declared in `curb/testing` so their types can be used, and throw until
 implements them.
 
 - `scenario` and `startCall` take `start: { skills, info }` (skills opened and call info set
-  before turn 1), `spoken: false` (turns as typed text), `hermetic: true` (a tool call without a
-  fake is an error) and `now` (the date and time the agent sees).
+  before turn 1), `spoken: false` (turns as typed text) and `now` (the date and time the agent
+  sees). `hermetic` works now (see above).
 - `fake(tool, result)` makes one entry of a list of `fakes`. `called`, `notCalled` and
   `calledInOrder` take a tool's value as well as its name, and `expect` gets `opened(skill)` and
   `notOpened(skill?)`.
@@ -651,6 +657,7 @@ the checkout; `remoteReplyStore({ url?, token? })` uses a server that speaks the
 
 | Version | Changes |
 |---|---|
+| v1.30.0 | `hermetic` works on `scenario` and `startCall`. A fake for a tool the agent does not have is an error before turn 1, no longer a note |
 | v1.30.0 | Declared: `start`, `spoken`, `hermetic` and `now` on `scenario` and `startCall`, `fake`, `opened`, `notOpened`, tool values in `called`, `notCalled` and `calledInOrder`, and `withReplyStore`, `localReplyStore`, `remoteReplyStore`, `ReplyStore` and `StoredReply` |
 | v1.27.0 | `affectedScenarios` added. `judge` does not count `claimed_without_tool` when the tool it names ran and succeeded in the turn of the claim or before (`judge.promptVersion` 4). `simulatedCaller` ends the call once its goal is done, also when asked whether there is anything else (`simulatedCaller.promptVersion` 4) |
 | v1.25.0 | `loadCalls` reads a Calls export's tool result given as `{ message, data }` beside the tool call's `ok`, and a line's length from `durationSeconds` |

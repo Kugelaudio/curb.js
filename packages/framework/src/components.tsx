@@ -27,7 +27,7 @@ import { titleFromSkillPath, WithOpenedSkills } from "./routing.js";
 import { validateSchemaInput, zodSchemaToFields, type ZodObjectSchema } from "./form-schema.js";
 import { validateToolInput } from "./form-validation.js";
 import { resolvePublicMarkdown } from "./public-context.js";
-import { getMcpManager, resolveMcpServer } from "./mcp/manager.js";
+import { useMcpManager } from "./mcp/context.js";
 import type { McpAuth } from "./mcp/config.js";
 import { mcpToolToDefinition } from "./mcp/to-tool-definition.js";
 import { isToolInputError, type ToolResult } from "./types.js";
@@ -372,11 +372,12 @@ export type McpProps = {
  */
 export function Mcp({ id, server, url, auth, headers, only }: McpProps) {
   const serverId = id ?? server;
+  const manager = useMcpManager();
   // Inline declaration: register + connect on first render (idempotent).
   if (serverId && url) {
-    getMcpManager().ensureServer({ id: serverId, url, auth, headers });
+    manager.ensureServer({ id: serverId, url, auth, headers });
   }
-  const serverIds = serverId ? [serverId] : getMcpManager().serverIds();
+  const serverIds = serverId ? [serverId] : manager.serverIds();
   return (
     <>
       {serverIds.map((serverId) => (
@@ -389,7 +390,8 @@ export function Mcp({ id, server, url, auth, headers, only }: McpProps) {
 }
 
 function McpServerTools({ server, only }: { server: string; only?: string[] }) {
-  const state = resolveMcpServer(server);
+  const manager = useMcpManager();
+  const state = manager.resolve(server);
   if (state.status === "error") {
     return <ErrorMessage source={`mcp:${server}`}>{state.message}</ErrorMessage>;
   }
@@ -397,7 +399,6 @@ function McpServerTools({ server, only }: { server: string; only?: string[] }) {
     return null;
   }
 
-  const manager = getMcpManager();
   const tools = only ? state.tools.filter((tool) => only.includes(tool.name)) : state.tools;
 
   return (

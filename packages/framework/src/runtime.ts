@@ -6,6 +6,9 @@ import { AgentInfoProvider } from "./info-context.js";
 import { AppMessages, AppMessagesProvider } from "./messages.js";
 import { RouterProvider, type AgentRouterApi } from "./route-context.js";
 import { AgentInfoStore } from "./info-store.js";
+import { McpManagerContext } from "./mcp/context.js";
+import { getMcpManager, type McpManager } from "./mcp/manager.js";
+import type { McpToolsSnapshot } from "./mcp/snapshot.js";
 import { createSemanticRoot, type SemanticRoot } from "./reconciler.js";
 import { SessionProvider, type CallView } from "./session-context.js";
 import { markThrown } from "./tool-run.js";
@@ -47,6 +50,10 @@ export type ToolFake = (input: Record<string, unknown>) => Promise<ToolResult>;
  * `fake` where it would run the author's `onSubmit`. */
 type FakeableSubmit = (input: Record<string, unknown>, fake: ToolFake, accepted?: () => void) => Promise<ToolResult>;
 
+/** What a hermetic test gives a call of a tool that has no fake, instead of running the tool
+ * (`fakeTools(fakes, { unfaked })`): the call's result. The tool's handler never runs. */
+export type UnfakedTool = (name: string, input: Record<string, unknown>) => ToolResult;
+
 export type SiteFactory = (state: {
   /** The active skill's path (most recently loaded); "" while no skill is loaded. */
   path: string;
@@ -65,6 +72,13 @@ export type AgentSiteRuntimeOptions = {
   /** Every skill the agent has (its routes, with each module's `meta`), so `skillCatalog`
    * also names a skill no link shows yet, e.g. one linked only after a check passed. */
   skills?: readonly SkillEntry[];
+  /** Offer MCP tools from this snapshot (`mcp.tools.json`) on a manager of the runtime's own,
+   * never connecting to a server or touching the process's manager (a hermetic test call). */
+  mcpTools?: McpToolsSnapshot;
+  /** Render against a manager of the runtime's own that opens no MCP transport: an inline
+   * `<Mcp url>` registers there and stays disconnected (a render that only reads the tree, such
+   * as the authoring diagnostics). */
+  mcpOffline?: boolean;
 };
 
 /** One skill of the agent as its route declares it. */
@@ -138,18 +152,37 @@ export class AgentSiteRuntime {
   private call: CallView | null = null;
   /** Tools a test replaced, by name (see `fakeTools`); empty outside tests. */
   private toolFakes: ReadonlyMap<string, ToolFake> = new Map();
+  /** What a call of an agent's tool without a fake gets instead of running (see `fakeTools`);
+   * null outside hermetic tests. */
+  private unfakedTool: UnfakedTool | null = null;
   /** Stable `useRouter()` value, provided around every render (see refresh). */
   private readonly routerApi: AgentRouterApi = {
     push: (path: string) => this.navigate(path),
   };
 
+  /** The MCP manager of this runtime alone (see `mcpTools`); null renders against the default one. */
+  private readonly mcp: McpManager | null;
+  /** Set when `mcp` opens no transport (`mcpOffline`); a copy keeps it. */
+  private readonly mcpOffline: boolean;
+
   constructor(site: ReactNode | SiteFactory, options: AgentSiteRuntimeOptions = {}) {
     this.root = createSemanticRoot();
+    this.mcpOffline = !options.mcpTools && (options.mcpOffline ?? false);
+    this.mcp = options.mcpTools
+      ? getMcpManager().withSnapshot(options.mcpTools)
+      : options.mcpOffline
+        ? getMcpManager().offline()
+        : null;
     this.renderSite = typeof site === "function" ? site : () => site;
     this.maxLoadedSkills = options.maxLoadedSkills ?? DEFAULT_MAX_LOADED_SKILLS;
     this.authoringDiagnostics = options.authoringDiagnostics ?? [];
     this.skills = options.skills ?? [];
     this.refresh("initial");
+  }
+
+  /** The MCP manager this runtime's `<Mcp>` components use: its own, or the process's. */
+  mcpManager(): McpManager {
+    return this.mcp ?? getMcpManager();
   }
 
   /** The active skill's path (the most recently loaded one); "" at the agent level. */
@@ -220,7 +253,9 @@ export class AgentSiteRuntime {
     this.toolCallInFlight = true;
     try {
       const fake = this.toolFakes.get(name);
-      result = await (fake ? this.callFaked(name, fake, input, accepted) : entry.handler(input, accepted));
+      // A hermetic test runs none of the agent's own tools for real; the framework's still run.
+      const stopped = !fake && this.unfakedTool && entry.definition.scope !== "runtime" ? this.unfakedTool(name, input) : null;
+      result = stopped ?? (await (fake ? this.callFaked(name, fake, input, accepted) : entry.handler(input, accepted)));
       if (result.ok) {
         this.toolSucceeded.add(name);
         this.toolErrors.delete(name);
@@ -273,9 +308,14 @@ export class AgentSiteRuntime {
    * where it would run `onSubmit`. A tool without a form (`onCall`, an MCP tool) has no input
    * check of the framework's: the fake stands in for its whole handler. Either way the call is
    * recorded, a `confirm` tool still runs only on the caller's yes, and the context refreshes.
+   *
+   * With `unfaked` (a hermetic test), a call of one of the agent's tools that has no fake runs
+   * nothing: its result is what `unfaked` returns. The framework's own tools (`read_skill`,
+   * `end_call`, ...) still run.
    */
-  fakeTools(fakes: Readonly<Record<string, ToolFake>>): void {
+  fakeTools(fakes: Readonly<Record<string, ToolFake>>, options: { unfaked?: UnfakedTool } = {}): void {
     this.toolFakes = new Map(Object.entries(fakes));
+    this.unfakedTool = options.unfaked ?? null;
   }
 
   /** A call of `name`, which a test faked with `fake` (see `fakeTools`). */
@@ -361,7 +401,15 @@ export class AgentSiteRuntime {
    * without tools: opening it reports the problem where it happens.
    */
   skillCatalog(): SkillCatalog {
-    const copy = () => new AgentSiteRuntime(this.renderSite, { maxLoadedSkills: Number.MAX_SAFE_INTEGER });
+    // A copy offers the MCP tools this runtime offers, so a hermetic call's catalog connects nothing,
+    // and an offline runtime's copy stays offline.
+    const mcpTools = this.mcp?.offeredSnapshot();
+    const copy = () =>
+      new AgentSiteRuntime(this.renderSite, {
+        maxLoadedSkills: Number.MAX_SAFE_INTEGER,
+        ...(mcpTools ? { mcpTools } : {}),
+        ...(this.mcpOffline ? { mcpOffline: true } : {}),
+      });
     const handed = (tool: ToolDefinition) => tool.scope !== "runtime";
     // Each copy is unmounted once read, so a component's effects end with it.
     const read = <T>(use: (runtime: AgentSiteRuntime) => T): T => {
@@ -581,7 +629,10 @@ export class AgentSiteRuntime {
                   settings: this.settings.current(),
                   ...(this.call === null ? {} : { call: this.call }),
                 },
-                children: this.renderSite({ path: this.path, loadedPaths: [...this.loadedPaths] }),
+                children: createElement(McpManagerContext.Provider, {
+                  value: this.mcp,
+                  children: this.renderSite({ path: this.path, loadedPaths: [...this.loadedPaths] }),
+                }),
               }),
             }),
           }),
