@@ -108,6 +108,7 @@ const ALL_PAGES = [
   { id: 'cli/deploy', file: 'cli/deploy.md', title: 'curb deploy', group: 'API Reference', parent: 'cli', description: "Upload a project and make it the agent's live production deployment on KugelAudio hosting." },
   { id: 'cli/secrets-push', file: 'cli/secrets-push.md', title: 'curb secrets push', group: 'API Reference', parent: 'cli', description: "Set every variable in .env on a hosted agent's production environment. Prints names only, never values." },
   { id: 'diagnostics', file: 'diagnostics.md', title: 'Diagnostics', group: 'API Reference', description: "The check and fix loop, and every code curb check can report." },
+  { id: 'reply-store', file: 'reply-store.md', title: 'Reply store', group: 'API Reference', description: "The protocol of a remote reply store, which shares the model replies tests have had between machines." },
   { id: 'host-protocol', file: 'host-protocol.md', title: 'Host protocol', group: 'API Reference', description: "How a host starts, follows and ends calls on a runner, with app messages and live settings." },
   { id: 'how-it-works', file: 'how-it-works.md', title: 'How Curb works', group: 'Architecture', description: "Curb is a real React renderer that targets a model's context. The renderer and the turn loop." },
   { id: 'what-the-model-receives', file: 'what-the-model-receives.md', title: 'What the model receives', group: 'Architecture', description: "The real requests of a conversation, and how state changes the tools in them." },
