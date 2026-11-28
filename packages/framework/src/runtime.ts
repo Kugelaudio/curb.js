@@ -75,6 +75,10 @@ export type AgentSiteRuntimeOptions = {
   /** Offer MCP tools from this snapshot (`mcp.tools.json`) on a manager of the runtime's own,
    * never connecting to a server or touching the process's manager (a hermetic test call). */
   mcpTools?: McpToolsSnapshot;
+  /** Render against a manager of the runtime's own that opens no MCP transport: an inline
+   * `<Mcp url>` registers there and stays disconnected (a render that only reads the tree, such
+   * as the authoring diagnostics). */
+  mcpOffline?: boolean;
 };
 
 /** One skill of the agent as its route declares it. */
@@ -158,10 +162,17 @@ export class AgentSiteRuntime {
 
   /** The MCP manager of this runtime alone (see `mcpTools`); null renders against the default one. */
   private readonly mcp: McpManager | null;
+  /** Set when `mcp` opens no transport (`mcpOffline`); a copy keeps it. */
+  private readonly mcpOffline: boolean;
 
   constructor(site: ReactNode | SiteFactory, options: AgentSiteRuntimeOptions = {}) {
     this.root = createSemanticRoot();
-    this.mcp = options.mcpTools ? getMcpManager().withSnapshot(options.mcpTools) : null;
+    this.mcpOffline = !options.mcpTools && (options.mcpOffline ?? false);
+    this.mcp = options.mcpTools
+      ? getMcpManager().withSnapshot(options.mcpTools)
+      : options.mcpOffline
+        ? getMcpManager().offline()
+        : null;
     this.renderSite = typeof site === "function" ? site : () => site;
     this.maxLoadedSkills = options.maxLoadedSkills ?? DEFAULT_MAX_LOADED_SKILLS;
     this.authoringDiagnostics = options.authoringDiagnostics ?? [];
@@ -390,9 +401,15 @@ export class AgentSiteRuntime {
    * without tools: opening it reports the problem where it happens.
    */
   skillCatalog(): SkillCatalog {
-    // A copy offers the MCP tools this runtime offers, so a hermetic call's catalog connects nothing.
+    // A copy offers the MCP tools this runtime offers, so a hermetic call's catalog connects nothing,
+    // and an offline runtime's copy stays offline.
     const mcpTools = this.mcp?.offeredSnapshot();
-    const copy = () => new AgentSiteRuntime(this.renderSite, { maxLoadedSkills: Number.MAX_SAFE_INTEGER, ...(mcpTools ? { mcpTools } : {}) });
+    const copy = () =>
+      new AgentSiteRuntime(this.renderSite, {
+        maxLoadedSkills: Number.MAX_SAFE_INTEGER,
+        ...(mcpTools ? { mcpTools } : {}),
+        ...(this.mcpOffline ? { mcpOffline: true } : {}),
+      });
     const handed = (tool: ToolDefinition) => tool.scope !== "runtime";
     // Each copy is unmounted once read, so a component's effects end with it.
     const read = <T>(use: (runtime: AgentSiteRuntime) => T): T => {

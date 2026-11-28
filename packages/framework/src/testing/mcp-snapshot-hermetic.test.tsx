@@ -1,39 +1,15 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSession } from "../agent-session.js";
 import { mcpCommand, connectWithin } from "../cli/mcp.js";
 import { Agent, AgentSiteRuntime, GlobalTools, Mcp } from "../index.js";
 import { configureMcp, getMcpManager } from "../mcp/manager.js";
 import { MCP_TOOLS_FILE, parseMcpToolsSnapshot } from "../mcp/snapshot.js";
+import { startOrdersMcpServer } from "../test-fixtures/orders-mcp-process.js";
 import { calls, says, steps } from "../test-fixtures/tasks.js";
 import { startCall, type TestHost } from "./index.js";
-
-const SERVER = fileURLToPath(new URL("../test-fixtures/mcp-orders-server.mjs", import.meta.url));
-
-/** The in-repo orders MCP server in a child process: its URL and every request it has answered. */
-async function startOrdersServer(): Promise<{ child: ChildProcess; url: string; requests: string[] }> {
-  const child = spawn(process.execPath, [SERVER], { stdio: ["ignore", "pipe", "inherit"] });
-  const requests: string[] = [];
-  const url = await new Promise<string>((resolve, reject) => {
-    let buffered = "";
-    child.once("error", reject);
-    child.once("exit", (code) => reject(new Error(`the orders MCP server exited with ${code}`)));
-    child.stdout!.setEncoding("utf8").on("data", (chunk: string) => {
-      buffered += chunk;
-      for (let end = buffered.indexOf("\n"); end >= 0; end = buffered.indexOf("\n")) {
-        const line = buffered.slice(0, end);
-        buffered = buffered.slice(end + 1);
-        if (line.startsWith("listening ")) resolve(`http://127.0.0.1:${line.slice("listening ".length)}/mcp`);
-        else if (line.startsWith("request ")) requests.push(line.slice("request ".length));
-      }
-    });
-  });
-  return { child, url, requests };
-}
 
 const cleanups: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -45,7 +21,7 @@ afterEach(async () => {
 
 describe("curb mcp snapshot, then a hermetic call", () => {
   it("snapshots a real local MCP server, then offers its tool from mcp.tools.json without connecting to it", async () => {
-    const server = await startOrdersServer();
+    const server = await startOrdersMcpServer();
     cleanups.push(() => void server.child.kill());
     const root = mkdtempSync(join(tmpdir(), "curb-mcp-roundtrip-"));
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));

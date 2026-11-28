@@ -156,9 +156,23 @@ export class McpManager {
    * when it connects for real. */
   private readonly snapshot: McpToolsSnapshot | null;
 
-  constructor(servers: McpAnyServerConfig[] = [], options: { snapshot?: McpToolsSnapshot } = {}) {
+  /** True for a manager that registers servers and never opens a transport (see {@link offline}). */
+  private readonly isOffline: boolean;
+
+  constructor(servers: McpAnyServerConfig[] = [], options: { snapshot?: McpToolsSnapshot; offline?: boolean } = {}) {
     this.snapshot = options.snapshot ?? null;
+    this.isOffline = options.offline ?? false;
     this.configure(servers);
+  }
+
+  /**
+   * A manager of its own for a render that only reads the agent's tree (the authoring
+   * diagnostics): the servers this one has configured, and every inline `<Mcp url>` it renders,
+   * are registered and stay "disconnected". No transport is opened, no request leaves the process,
+   * and nothing it does reaches this manager.
+   */
+  offline(): McpManager {
+    return new McpManager([...this.configs.values()], { offline: true });
   }
 
   /**
@@ -381,6 +395,7 @@ export class McpManager {
   }
 
   private async connect(config: McpAnyServerConfig): Promise<void> {
+    if (this.isOffline) return;
     if (this.snapshot) {
       const listed = this.snapshot.servers[config.id];
       this.setState(

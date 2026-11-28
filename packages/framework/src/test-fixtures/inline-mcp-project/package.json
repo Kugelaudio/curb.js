@@ -1,0 +1,8 @@
+{
+  "name": "curb-framework-test-inline-mcp",
+  "private": true,
+  "type": "module",
+  "curb": {
+    "requiredRuntimeSecrets": []
+  }
+}

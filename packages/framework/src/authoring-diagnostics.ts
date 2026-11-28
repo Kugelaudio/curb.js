@@ -267,7 +267,8 @@ function collectRenderedOccurrences(
     // The agent level, then every skill on top of it, all loaded at once.
     runtime = new AgentSiteRuntime(
       ({ path, loadedPaths }) => agentAppElement(agent.definition.app, { path, loadedPaths, routes: agent.routes }),
-      { maxLoadedSkills: Math.max(paths.length, 1) },
+      // Rendering only reads the tree: an inline <Mcp url> must not connect from here.
+      { maxLoadedSkills: Math.max(paths.length, 1), mcpOffline: true },
     );
     for (const path of paths) runtime.loadSkill(path);
   } catch (error) {
