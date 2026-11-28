@@ -4,6 +4,7 @@ import { Agent, AgentSiteRuntime, Skill, Skills, Text, defineTool, z, type Skill
 import { addTask, calls, says, sendSummary, steps, tasksBundle } from "../test-fixtures/tasks.js";
 import type { AgentRunResponse } from "../llm/types.js";
 import { Throttle } from "./resilience.js";
+import { fakesByName } from "./scenario.js";
 import { fake, scenario, startCall, type ScenarioFakeEntry, type TestHost } from "./index.js";
 
 /** Tools as values, the way a project's `tools.ts` exports them. */
@@ -77,6 +78,28 @@ describe("fake", () => {
     expectTypeOf(types).toBeFunction();
     expectTypeOf(fake(findOrder, { ok: false })).toEqualTypeOf<ScenarioFakeEntry>();
   });
+
+  it("takes one function for a tool whose onSubmit returns one of several shapes", () => {
+    type Refund = { ok: true; data: { refunded: number } } | { ok: true; data: { queued: string } };
+    const issueRefund = defineTool({
+      name: "issue_refund",
+      description: "Refund an order.",
+      schema: z.object({ order: z.string(), amount: z.number() }),
+      onSubmit: async ({ order, amount }): Promise<Refund> =>
+        amount > 100 ? { ok: true, data: { queued: order } } : { ok: true, data: { refunded: amount } },
+    });
+    const byAmount = fake(issueRefund, ({ order, amount }) =>
+      amount > 100 ? { ok: true, data: { queued: order } } : { ok: true, data: { refunded: amount } },
+    );
+    expect(byAmount.tool).toBe("issue_refund");
+    const types = () => {
+      fake(issueRefund, { ok: true, data: { queued: "A-1042" } });
+      fake(issueRefund, async ({ amount }) => (amount > 0 ? { ok: true, data: { refunded: amount } } : { ok: false, message: "Nothing to refund." }));
+      // @ts-expect-error neither shape has `sent`.
+      fake(issueRefund, ({ amount }) => (amount > 100 ? { ok: true, data: { sent: amount } } : { ok: true, data: { refunded: amount } }));
+    };
+    expectTypeOf(types).toBeFunction();
+  });
 });
 
 describe("fakes as a list", () => {
@@ -89,6 +112,21 @@ describe("fakes as a list", () => {
       "fakes: find_order has two fakes; give each tool one.",
     );
     expect(() => scenario({ turns: ["Hi"], fakes: [fake("find_order", { nope: 1 } as never)] })).toThrow("fakes.find_order:");
+  });
+
+  it("keeps a tool named __proto__ like any other name", () => {
+    const byName = fakesByName([fake("__proto__", { ok: true, message: "Faked." }), fake(findOrder, { ok: false })]);
+    expect(Object.entries(byName)).toEqual([
+      ["__proto__", { ok: true, message: "Faked." }],
+      ["find_order", { ok: false }],
+    ]);
+    expect(Object.getPrototypeOf(byName)).toBeNull();
+    expect(() => fakesByName([fake("__proto__", { ok: true }), fake("__proto__", { ok: false })])).toThrow(
+      "fakes: __proto__ has two fakes; give each tool one.",
+    );
+    expect(() => scenario({ turns: ["Hi"], fakes: [fake("__proto__", { ok: true }), fake("__proto__", { ok: false })] })).toThrow(
+      "fakes: __proto__ has two fakes",
+    );
   });
 
   it("replaces the tools in a call, as the object form does", async () => {

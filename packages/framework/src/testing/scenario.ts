@@ -407,10 +407,12 @@ type FailedToolResult = { ok: false; message?: string; data?: unknown };
 
 /** What `fake(tool, …)` takes for `tool`: for a tool from `defineTool` with a `schema`, a result
  * of the shape its `onSubmit` returns (or any failure), or a function of its validated input
- * that returns one; for a name or any other tool, any tool result. */
+ * that returns one; for a name or any other tool, any tool result. The result is matched as a
+ * whole (`[Result]`), so a tool returning a union of shapes gets one function that may return
+ * any of them, not one function per shape. */
 type FakeFor<Tool> = Tool extends { readonly onSubmit: (input: infer Input) => infer Returned }
   ? Awaited<Returned> extends infer Result
-    ? Result extends ToolResult
+    ? [Result] extends [ToolResult]
       ? FakeOf<Input, Result | FailedToolResult>
       : ScenarioFake
     : ScenarioFake
@@ -439,7 +441,8 @@ export function fakesByName(
   fakes: Readonly<Record<string, ScenarioFake>> | readonly ScenarioFakeEntry[],
 ): Readonly<Record<string, ScenarioFake>> {
   if (!isFakeList(fakes)) return fakes;
-  const byName: Record<string, ScenarioFake> = {};
+  // No prototype: a tool named `__proto__` is a key like any other, not the prototype setter.
+  const byName: Record<string, ScenarioFake> = Object.create(null);
   for (const entry of fakes) {
     if (Object.prototype.hasOwnProperty.call(byName, entry.tool)) {
       throw new Error(`fakes: ${entry.tool} has two fakes; give each tool one.`);
