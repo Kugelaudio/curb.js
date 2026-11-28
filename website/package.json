@@ -15,16 +15,16 @@
     "check": "astro check"
   },
   "dependencies": {
-    "@astrojs/markdown-remark": "7.3.6",
+    "@astrojs/markdown-remark": "7.3.10",
     "@fontsource-variable/geist": "5.3.0",
     "@fontsource-variable/geist-mono": "5.3.0",
-    "astro": "7.4.7"
+    "astro": "7.4.13"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.12",
     "@types/node": "26.6.6",
     "shiki": "4.6.0",
     "typescript": "6.0.3",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   }
 }
