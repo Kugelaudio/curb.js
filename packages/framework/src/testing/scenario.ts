@@ -383,6 +383,7 @@ const FIELDS = [
   "expectRuns",
   "start",
   "spoken",
+  "now",
 ];
 const START_FIELDS = ["skills", "info"];
 const CALLER_FIELDS = ["goal", "knows", "language", "persona", "behaviours"];
@@ -502,6 +503,9 @@ function scenarioProblems(definition: unknown): string[] {
   }
   if (definition.hermetic !== undefined && typeof definition.hermetic !== "boolean") {
     problems.push(`hermetic must be true or false; got ${preview(definition.hermetic)}.`);
+  }
+  if (definition.now !== undefined && (typeof definition.now !== "string" || Number.isNaN(new Date(definition.now).getTime()))) {
+    problems.push(`now must be an ISO date-time such as "2026-10-30T15:00:00Z"; got ${preview(definition.now)}.`);
   }
   if (runs !== undefined) {
     const problem = runsProblem(runs);
