@@ -15,7 +15,9 @@ import {
   homeSkillLinkTargets,
   type HomeSkillFile,
 } from "./home-skill-migration.js";
+import { diagnoseInstructionTools } from "./instruction-tool-diagnostics.js";
 import { diagnoseLiteralDates } from "./literal-date-diagnostics.js";
+import { getMcpManager } from "./mcp/manager.js";
 import { renderComponentStack } from "./reconciler.js";
 import { AgentSiteRuntime } from "./runtime.js";
 import { agentAppElement, type AgentRoute } from "./routing.js";
@@ -35,6 +37,9 @@ export type DiagnosableAgent = {
   /** The agent folder's own `skill.tsx`, left over from before the agent level: not a skill,
    * reported with what to move (`home-skill-migration.ts`). */
   homeSkill?: HomeSkillFile;
+  /** Tool names the project's source files write, for tools rendered only once something
+   * happened in the call (`curb check` reads them; see `writtenToolNames`). Never reported. */
+  writtenTools?: readonly string[];
 };
 
 type LinkOccurrence = {
@@ -126,10 +131,45 @@ export function diagnoseAgentAuthoring(agent: DiagnosableAgent): AuthoringDiagno
         })),
         firstTurn: agent.definition.firstTurn,
       }),
+      ...diagnoseInstructionTools({
+        agentId: agent.id,
+        tree,
+        agentFile: agentSourceLabel(agent.id),
+        agentText: agent.source,
+        skills: agent.routes.map((route) => ({
+          path: route.path,
+          file: routeSourceLabel(agent.id, route.moduleId),
+          text: route.source,
+          infoKeys: Object.keys(route.meta?.info?.shape ?? {}),
+        })),
+        tools: tools.map((tool) => tool.name),
+        alsoKnown: agent.writtenTools ?? [],
+        mcpServers: agentMcpServers(agent),
+      }),
     );
   }
 
   return mergeAuthoringDiagnostics(diagnostics);
+}
+
+/** What the agent offers the model, with every skill loaded: each tool's name, its source and
+ * rendered forms together, and the MCP servers it declares or renders. `rendered` is false when
+ * the agent did not render, and the tools are then only those its source names. */
+export type AgentToolInventory = { tools: string[]; mcpServers: string[]; rendered: boolean };
+
+export function agentToolInventory(agent: DiagnosableAgent): AgentToolInventory {
+  const links: LinkOccurrence[] = [];
+  const tools: ToolOccurrence[] = [];
+  const ignored: AuthoringDiagnostic[] = [];
+  collectSourceOccurrences(agent, links, tools, ignored);
+  const tree = collectRenderedOccurrences(agent, links, tools, ignored);
+  return { tools: [...new Set(tools.map((tool) => tool.name))].sort(), mcpServers: agentMcpServers(agent), rendered: tree !== null };
+}
+
+/** The MCP servers of the agent: `defineAgent({ mcpServers })`, and each `<Mcp url>` the render
+ * registered. */
+function agentMcpServers(agent: DiagnosableAgent): string[] {
+  return [...new Set([...(agent.definition.mcpServers ?? []).map((server) => server.id), ...getMcpManager().serverIds()])].sort();
 }
 
 function diagnoseRouteRegistry(agent: DiagnosableAgent, diagnostics: AuthoringDiagnostic[]): void {

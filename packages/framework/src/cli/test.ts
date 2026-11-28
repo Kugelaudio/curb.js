@@ -215,7 +215,7 @@ export function parseTestArgs(args: readonly string[]): TestArgs {
   };
 }
 
-type LoadedScenario = { name: string; file: string; scenario: Scenario } | { name: string; file: string; error: string };
+export type LoadedScenario = { name: string; file: string; scenario: Scenario } | { name: string; file: string; error: string };
 
 /** Every `*.scenario.ts` under the project's src/, as sorted paths relative to the project. */
 export function findScenarioFiles(projectRoot: string): string[] {
@@ -239,7 +239,7 @@ export function findScenarioFiles(projectRoot: string): string[] {
  * Every scenario one file exports: its default export (named after the file unless it sets
  * `name`), then each other export `scenario()` made (named after the export).
  */
-async function loadScenarios(projectRoot: string, file: string): Promise<LoadedScenario[]> {
+export async function loadScenarios(projectRoot: string, file: string): Promise<LoadedScenario[]> {
   const fileName = basename(file, SCENARIO_SUFFIX);
   let module: Record<string, unknown>;
   try {
