@@ -102,7 +102,7 @@ export async function openRelayCall(
   const lostListeners = new Set<(reason: string) => void>();
   const rpcHandlers = new Map<string, (data: RpcInvocationData) => Promise<string>>();
   const pendingText = new Map<number, { resolve: () => void; reject: (error: Error) => void }>();
-  const pendingPlayout = new Map<number, () => void>();
+  const pendingPlayout = new Map<number, (played: boolean) => void>();
   let transferOpening: { resolve: () => void; reject: (error: Error) => void } | null = null;
   let input: PageAudioInput | null = null;
   let output: PageAudioOutput | null = null;
@@ -194,7 +194,7 @@ export async function openRelayCall(
         transferOpening = null;
         return;
       case "transfer_played":
-        pendingPlayout.get(message.id)?.();
+        pendingPlayout.get(message.id)?.(true);
         pendingPlayout.delete(message.id);
         return;
       case "rpc_request":
@@ -220,7 +220,7 @@ export async function openRelayCall(
     output?.pageLeft();
     transferOpening?.reject(new Error(`the media relay is gone: ${reason}`));
     transferOpening = null;
-    for (const release of pendingPlayout.values()) release();
+    for (const release of pendingPlayout.values()) release(false);
     pendingPlayout.clear();
     for (const pending of pendingText.values()) pending.reject(new Error(`the media relay is gone: ${reason}`));
     pendingText.clear();
@@ -350,6 +350,7 @@ export async function openRelayCall(
       sendMessage({ type: "transfer_open" });
     });
     let playsUntil = 0;
+    let clears = 0;
     return {
       captureFrame: async (frame: AudioFrame) => {
         if (frame.sampleRate !== RELAY_TRANSFER_SAMPLE_RATE || frame.channels !== 1) {
@@ -361,14 +362,18 @@ export async function openRelayCall(
         const ahead = playsUntil - now - TRANSFER_LEAD_MS;
         if (ahead > 0) await new Promise((resolve) => setTimeout(resolve, ahead));
       },
-      waitForPlayout: () =>
-        new Promise<void>((resolve) => {
-          if (lost !== null) return resolve();
+      // Played only on the relay's `transfer_played`, with no clear since: a lost relay heard nothing.
+      waitForPlayout: () => {
+        const before = clears;
+        return new Promise<boolean>((resolve) => {
+          if (lost !== null) return resolve(false);
           const id = nextId++;
-          pendingPlayout.set(id, resolve);
+          pendingPlayout.set(id, (played) => resolve(played && clears === before));
           sendMessage({ type: "transfer_wait", id });
-        }),
+        });
+      },
       clearQueue: () => {
+        clears += 1;
         playsUntil = 0;
         sendMessage({ type: "transfer_clear" });
       },

@@ -95,6 +95,12 @@ export class PageAudioOutput extends voice.AudioOutput {
   private startedAt = 0;
   private waiting: ((report: PlayoutReport | null) => void) | null = null;
   private settling: Promise<void> | null = null;
+  private confirmed = false;
+
+  /** Whether the page itself said the last segment played to its end (not the clock's guess). */
+  get lastSegmentConfirmed(): boolean {
+    return this.confirmed;
+  }
 
   constructor(private readonly send: Send) {
     super(LOCAL_VOICE_OUTPUT_SAMPLE_RATE, undefined, { pause: false });
@@ -181,6 +187,7 @@ export class PageAudioOutput extends voice.AudioOutput {
       }
       this.pushedMs = 0;
       this.settling = null;
+      this.confirmed = report !== "timeout" && report !== null && report.type === "playout_done";
       this.onPlaybackFinished({ playbackPosition: playedMs / 1000, interrupted });
     })();
   }
@@ -197,7 +204,8 @@ function pageTranscriptSink(send: Send): TranscriptSink {
 }
 
 /** The agent's own track on a local call: the page's speaker, as the voice plays on it, resampled
- * to the rate the page plays. It has played once the page says so (`PageAudioOutput`). */
+ * to the rate the page plays. It has played only when the page says it played to its end: a
+ * clear, a page that left or a report that never came is not a playout. */
 function pageTrack(output: PageAudioOutput): TransferAudioSink {
   let resampler: AudioResampler | undefined;
   const push = async (frames: AudioFrame[]) => {
@@ -212,7 +220,8 @@ function pageTrack(output: PageAudioOutput): TransferAudioSink {
     waitForPlayout: async () => {
       if (resampler) await push(resampler.flush());
       output.flush();
-      await output.waitForPlayout();
+      const finished = await output.waitForPlayout();
+      return finished !== undefined && !finished.interrupted && output.lastSegmentConfirmed;
     },
     clearQueue: () => output.clearBuffer(),
     close: async () => {},

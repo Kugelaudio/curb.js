@@ -198,7 +198,7 @@ describe("useTransferCall", () => {
     const audio = createTransferAudio({
       publish: async () => ({
         captureFrame: async () => { await new Promise((resolve) => setTimeout(resolve, 0)); },
-        waitForPlayout: async () => {},
+        waitForPlayout: async () => true,
         clearQueue: () => {},
         close: async () => {},
       }),

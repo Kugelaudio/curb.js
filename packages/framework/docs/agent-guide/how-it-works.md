@@ -96,12 +96,15 @@ decide what the caller hears:
 - **A speech-to-speech model that cannot take the call says so first.** On
   `<Agent s2s>` the model is the only voice, so when it cannot start (a refused
   key or payment, an outage) or keeps dropping the call, the caller hears the
-  same "please try again later" line in a TTS voice before the call ends, on a
-  phone or LiveKit call and on the `curb dev` page alike. A TTS on the model's
-  own key (`openai.tts()` beside `openai.live()`) may be refused with it, so a
-  voice on another key goes first: the agent's TTS, then KugelAudio's voice for
-  the agent's language when `KUGELAUDIO_API_KEY` is set. The cause goes to the
-  log. When no voice can say it, the call ends as before and the log says why.
+  same "please try again later" line before the call ends, on a phone or
+  LiveKit call and on the `curb dev` page alike. A TTS on the model's own key
+  (`openai.tts()` beside `openai.live()`) may be refused with it, so a voice on
+  another key goes first: the agent's TTS, then KugelAudio's voice for the
+  agent's language when `KUGELAUDIO_API_KEY` is set. With no such key, a
+  recording of the line in the agent's language, shipped with Curb, plays
+  instead: it needs no key and calls no service. The call keeps the line in its
+  record only once the caller's side has played it to its end. The cause goes
+  to the log.
 - **A missing LLM key stops the session before it starts.** A session whose
   LLM has no key in the environment fails with an `AgentAuthoringError` naming
   the variable (for example `KUGELAUDIO_API_KEY`), instead of apologizing on

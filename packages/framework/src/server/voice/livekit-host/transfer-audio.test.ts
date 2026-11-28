@@ -6,6 +6,7 @@ import {
   createTransferAudio,
   publishTransferTrack,
   ringbackFrames,
+  roomTrack,
   type TransferAudioSink,
 } from "./transfer-audio.js";
 
@@ -39,7 +40,7 @@ function fakeSink() {
     },
     waitForPlayout: () => {
       events.push("waitForPlayout");
-      const playout = new Promise<void>((resolve) => (played = resolve));
+      const playout = new Promise<boolean>((resolve) => (played = () => resolve(true)));
       playoutAsked();
       return playout;
     },
@@ -166,5 +167,40 @@ describe("publishTransferTrack", () => {
     expect(published).toHaveLength(1);
     expect(published[0]?.name).toBe("transfer_audio");
     expect(published[0]?.options.source).toBe(TrackSource.SOURCE_MICROPHONE);
+  });
+});
+
+describe("the room's track says whether it played to its end", () => {
+  /** An `AudioSource` whose queue drains on `drain()`, and at once on a clear, as rtc-node's does. */
+  function source() {
+    let drain: () => void = () => {};
+    return {
+      drain: () => drain(),
+      captureFrame: async () => {},
+      waitForPlayout: () => new Promise<void>((resolve) => (drain = resolve)),
+      clearQueue: () => drain(),
+      close: async () => {},
+    };
+  }
+
+  it("played, with the agent still in the room", async () => {
+    const audio = source();
+    const playout = roomTrack(audio, () => true).waitForPlayout();
+    audio.drain();
+    await expect(playout).resolves.toBe(true);
+  });
+
+  it("cleared before its end", async () => {
+    const track = roomTrack(source(), () => true);
+    const playout = track.waitForPlayout();
+    track.clearQueue();
+    await expect(playout).resolves.toBe(false);
+  });
+
+  it("drained after the agent left the room", async () => {
+    const audio = source();
+    const playout = roomTrack(audio, () => false).waitForPlayout();
+    audio.drain();
+    await expect(playout).resolves.toBe(false);
   });
 });

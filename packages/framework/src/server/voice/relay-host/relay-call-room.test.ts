@@ -323,12 +323,13 @@ describe("publishTransferTrack", () => {
     await relay.until(() => relay.audio.length === 1);
     expect(relay.audio[0]?.[0]).toBe(RELAY_STREAM.transfer);
 
-    let played = false;
-    const playout = sink.waitForPlayout().then(() => (played = true));
+    let played: boolean | undefined;
+    const playout = sink.waitForPlayout().then((outcome) => (played = outcome));
     const wait = await relay.message("transfer_wait");
-    expect(played).toBe(false);
+    expect(played).toBeUndefined();
     relay.say({ type: "transfer_played", id: wait.id as number });
     await playout;
+    expect(played).toBe(true);
 
     sink.clearQueue();
     await relay.message("transfer_clear");
@@ -363,7 +364,21 @@ describe("publishTransferTrack", () => {
     const playout = sink.waitForPlayout();
     await relay.message("transfer_wait");
     relay.socket?.terminate();
-    await expect(playout).resolves.toBeUndefined();
+    // Nothing more was heard: not a playout.
+    await expect(playout).resolves.toBe(false);
+  });
+
+  it("a playout cut short by a clear is not a complete one, though the relay then says it played", async () => {
+    const pending = openSink();
+    await relay.until(() => relay.received.some((m) => m.type === "transfer_open"));
+    relay.say({ type: "transfer_ready" });
+    const sink = await pending;
+    await sink.captureFrame(frame(20));
+    const playout = sink.waitForPlayout();
+    const wait = await relay.message("transfer_wait");
+    sink.clearQueue();
+    relay.say({ type: "transfer_played", id: wait.id as number });
+    await expect(playout).resolves.toBe(false);
   });
 });
 

@@ -11,54 +11,83 @@
  *
  * The voice must not depend on what was refused. A TTS that reads the same key as the model
  * (`openai.tts()` beside `openai.live()`) may be refused for the same reason, so voices on another
- * key go first: the agent's own TTS, then KugelAudio's voice for the agent's language. Each one
- * that fails before its first audio hands over to the next.
+ * key go first: the agent's own TTS, then KugelAudio's voice for the agent's language, then the
+ * line recorded in the package (`recorded-line.ts`), which needs no key at all. Each one that
+ * fails before its first audio hands over to the next.
  */
 
 import type { tts } from "@livekit/agents";
 import type { AudioFrame } from "@livekit/rtc-node";
+import type { AgentLanguage } from "../../../llm/localized.js";
 import { kugelaudio, type S2sDescriptor, type TtsDescriptor } from "../../../providers.js";
 import { s2sKey, SPEECH_KEYS } from "../../../provider-keys.js";
 import { synthesizedFrames, type TransferAudioSink } from "../livekit-host/transfer-audio.js";
 import { buildVoiceTts } from "../providers.js";
+import { recordedFrames, recordedLine } from "./recorded-line.js";
 
 /** How long the line may take to synthesize and play, over every voice tried, before the call ends anyway. */
 export const UNAVAILABLE_LINE_MS = 10_000;
 
 type Env = Record<string, string | undefined>;
 
-/** A TTS voice the line can be said in. `open` builds its engine; `owned` engines are closed after. */
-export type FallbackVoice = { name: string; open: () => Promise<tts.TTS>; owned: boolean };
+/** The line in one voice: its audio, and what to close once it is over. */
+export type Speech = { frames: AsyncGenerator<AudioFrame>; close: () => Promise<void> };
+
+/** A voice the line can be said in. */
+export type FallbackVoice = { name: string; speak: (line: string) => Promise<Speech> };
+
+/** A TTS voice. `open` builds its engine; an `owned` one is closed after the line. */
+export function ttsVoice(name: string, open: () => Promise<tts.TTS>, owned: boolean): FallbackVoice {
+  return {
+    name,
+    speak: async (line) => {
+      const engine = await open();
+      return { frames: synthesizedFrames(engine, line), close: async () => void (owned && (await engine.close())) };
+    },
+  };
+}
+
+/** The line recorded in the package for `language`: no key, no network. Only for its own words. */
+export function recordedVoice(language: AgentLanguage): FallbackVoice {
+  return {
+    name: "the recorded line",
+    speak: async (line) => {
+      const recorded = recordedLine(language);
+      if (recorded.line !== line) throw new Error(`it says ${JSON.stringify(recorded.line)}, not this line`);
+      return { frames: recordedFrames(recorded.samples), close: async () => {} };
+    },
+  };
+}
 
 /**
  * The voices to try, in order: the agent's TTS (`given`, a host's engine for it, or one built from
- * `descriptor`), and KugelAudio's voice for `language` when the agent's is another provider's and
- * `KUGELAUDIO_API_KEY` is set. A voice whose key is the model's goes last.
+ * `descriptor`), KugelAudio's voice for `language` when the agent's is another provider's and
+ * `KUGELAUDIO_API_KEY` is set, then the recorded line. A TTS whose key is the model's comes after
+ * the recording: it is the likeliest to be refused for the same reason.
  */
 export function fallbackVoices(options: {
   s2s: S2sDescriptor;
   descriptor: TtsDescriptor;
-  language: string;
+  language: AgentLanguage;
   env: Env;
   given?: tts.TTS;
 }): FallbackVoice[] {
   const { s2s, descriptor, env, given } = options;
-  const voices: Array<FallbackVoice & { key: string | undefined }> = [
+  const voices: Array<{ voice: FallbackVoice; key: string | undefined }> = [
     {
-      name: `the agent's ${descriptor.provider} TTS`,
-      open: async () => given ?? (await buildVoiceTts({ descriptor, env })),
-      owned: !given,
+      voice: ttsVoice(`the agent's ${descriptor.provider} TTS`, async () => given ?? (await buildVoiceTts({ descriptor, env })), !given),
       key: SPEECH_KEYS[descriptor.provider]?.key.read(env),
     },
   ];
   const kugelKey = SPEECH_KEYS.kugelaudio.key.read(env);
   if (descriptor.provider !== "kugelaudio" && kugelKey) {
     const kugel = kugelaudio.tts({ language: options.language });
-    voices.push({ name: "the KugelAudio TTS", open: () => buildVoiceTts({ descriptor: kugel, env }), owned: true, key: kugelKey });
+    voices.push({ voice: ttsVoice("the KugelAudio TTS", () => buildVoiceTts({ descriptor: kugel, env }), true), key: kugelKey });
   }
   const modelKey = s2sKey(s2s).read(env);
   const shared = (voice: { key: string | undefined }) => modelKey !== undefined && voice.key === modelKey;
-  return [...voices.filter((voice) => !shared(voice)), ...voices.filter(shared)].map(({ name, open, owned }) => ({ name, open, owned }));
+  const own = (list: typeof voices) => list.map(({ voice }) => voice);
+  return [...own(voices.filter((voice) => !shared(voice))), recordedVoice(options.language), ...own(voices.filter(shared))];
 }
 
 export type UnavailableLineOptions = {
@@ -81,13 +110,13 @@ export async function sayUnavailableLine(options: UnavailableLineOptions): Promi
   let stopped = false;
   let played = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const engines: tts.TTS[] = [];
+  const spoken: Speech[] = [];
 
   /** The line in `voice`, its first frame already out: a voice that fails before it is skipped. */
   const start = async (voice: FallbackVoice) => {
-    const engine = await voice.open();
-    if (voice.owned) engines.push(engine);
-    const frames = synthesizedFrames(engine, options.line);
+    const speech = await voice.speak(options.line);
+    spoken.push(speech);
+    const { frames } = speech;
     const first = await frames.next();
     if (first.done) throw new Error("it produced no audio");
     return { first: first.value, frames };
@@ -103,8 +132,8 @@ export async function sayUnavailableLine(options: UnavailableLineOptions): Promi
       await sink.captureFrame(frame);
     }
     if (stopped) return;
-    await sink.waitForPlayout();
-    played = true;
+    played = await sink.waitForPlayout();
+    if (!played) options.log("the line to the caller did not play to its end");
   };
   const say = async (): Promise<boolean> => {
     for (const voice of options.voices) {
@@ -139,6 +168,6 @@ export async function sayUnavailableLine(options: UnavailableLineOptions): Promi
     clearTimeout(timer);
     if (!played) sink?.clearQueue();
     await sink?.close().catch(() => {});
-    await Promise.allSettled(engines.map((engine) => engine.close()));
+    await Promise.allSettled(spoken.map((speech) => speech.close()));
   }
 }

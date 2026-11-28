@@ -39,7 +39,7 @@ describe("TTS stream lifecycle", () => {
       if (method === "transfer announcement") {
         const sink = {
           captureFrame: vi.fn(async () => {}),
-          waitForPlayout: vi.fn(async () => {}),
+          waitForPlayout: vi.fn(async () => true),
           clearQueue: vi.fn(),
           close: vi.fn(async () => {}),
         };

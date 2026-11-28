@@ -1,4 +1,5 @@
 import { initializeLogger } from "@livekit/agents";
+import type { AudioFrame } from "@livekit/rtc-node";
 import { trace } from "@opentelemetry/api";
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { useState } from "react";
@@ -18,9 +19,10 @@ import type { VoiceCallRoom } from "../call-room.js";
 import { startVoiceAgent } from "../livekit-host/host.js";
 import { PageAudioInput, PageAudioOutput } from "../local-host/local-call-room.js";
 import { createSynchronizer } from "../local-host/synchronizer.js";
-import type { TransferAudioSink } from "../livekit-host/transfer-audio.js";
+import { TRANSFER_AUDIO_SAMPLE_RATE, type TransferAudioSink } from "../livekit-host/transfer-audio.js";
 import { fallbackReplies } from "../../../llm/localized.js";
 import { commentaryPieces } from "./back-office.js";
+import { RECORDED_LINE_SAMPLE_RATE, recordedLine } from "./recorded-line.js";
 
 /**
  * A call on `<Agent s2s>`, through the real voice host, LiveKit's `GPTLiveModel` and Curb's real
@@ -155,8 +157,8 @@ async function startFakeKugelTts() {
 function agentTrack({ voice = true } = {}) {
   const said: string[] = [];
   const sink = {
-    captureFrame: vi.fn(async () => {}),
-    waitForPlayout: vi.fn(async () => {}),
+    captureFrame: vi.fn(async (_frame: AudioFrame) => {}),
+    waitForPlayout: vi.fn(async () => true),
     clearQueue: vi.fn(),
     close: vi.fn(async () => {}),
   } satisfies TransferAudioSink;
@@ -628,6 +630,15 @@ describe("a call on <Agent s2s> whose model cannot take it", { timeout: 12_000 }
     expect(record.turns).toContainEqual({ speaker: "agent", text: line, final: true });
   });
 
+  it("keeps no line in the record that the caller's side did not play to its end", async () => {
+    const track = agentTrack();
+    track.sink.waitForPlayout.mockResolvedValue(false);
+    const { closed, record } = await failedStart({ agentTrack: track });
+    await until(() => closed.mock.calls.length > 0, "the call closed");
+    expect(track.said).toEqual([fallbackReplies("de").refused]);
+    expect(record.turns.filter((turn) => turn.speaker === "agent")).toEqual([]);
+  });
+
   it("tells the caller when the model keeps dropping the call", async () => {
     const track = agentTrack();
     const { closed } = await call({ drops: true, agentTrack: track });
@@ -678,12 +689,39 @@ describe("a call on <Agent s2s> whose model cannot take it", { timeout: 12_000 }
     expect(record.turns).toContainEqual({ speaker: "agent", text: line, final: true });
   });
 
-  it("without a key for any TTS, ends the call as before and keeps no line nobody heard", async () => {
+  it("a model that refuses the handshake on the only key there is: the recorded line says it, with no TTS asked", async () => {
+    const model = await startFakeLiveModel({ refuses: 403 });
+    let openaiTts = 0;
+    const openaiServer = createServer((_, res) => {
+      openaiTts += 1;
+      res.writeHead(403, { "content-type": "application/json" }).end('{"error":{"message":"forbidden"}}');
+    });
+    await new Promise<void>((resolve) => openaiServer.listen(0, "127.0.0.1", resolve));
+    vi.stubEnv("OPENAI_BASE_URL", `http://127.0.0.1:${(openaiServer.address() as { port: number }).port}/v1`);
+    open.push(
+      async () => void (await model.close()),
+      async () => {
+        vi.unstubAllEnvs();
+        await new Promise((resolve) => openaiServer.close(resolve));
+      },
+    );
     const track = agentTrack({ voice: false });
-    const { closed, record } = await failedStart({ env: { OPENAI_API_KEY: "test-key" }, agentTrack: track });
-    await until(() => closed.mock.calls.length > 0, "the call closed");
-    expect(track.published).not.toHaveBeenCalled();
-    expect(record.turns.filter((turn) => turn.speaker === "agent")).toEqual([]);
+    const { closed, record } = await callOn(
+      openai.live({ baseURL: model.baseURL, voice: "marin", language: "de" }),
+      { tts: openai.tts(), env: { OPENAI_API_KEY: "sk-only" }, agentTrack: track },
+      () => model.refused.length > 0,
+    );
+    await until(() => closed.mock.calls.length > 0, "the call closed", 10_000);
+
+    const line = fallbackReplies("de").refused;
+    expect(model.refused[0]).toBe("Bearer sk-only");
+    expect(openaiTts).toBe(0);
+    expect(track.published).toHaveBeenCalledOnce();
+    const frames = track.sink.captureFrame.mock.calls.map(([frame]) => frame);
+    const seconds = frames.reduce((total, frame) => total + frame.samplesPerChannel, 0) / TRANSFER_AUDIO_SAMPLE_RATE;
+    expect(seconds).toBeCloseTo(recordedLine("de").samples.length / RECORDED_LINE_SAMPLE_RATE, 1);
+    expect(track.sink.waitForPlayout).toHaveBeenCalledOnce();
+    expect(record.turns).toContainEqual({ speaker: "agent", text: line, final: true });
   });
 
   it("a call that ends well says nothing more", async () => {
