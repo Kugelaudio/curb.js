@@ -8,9 +8,10 @@
  * every model.
  */
 
-import { voice } from "@livekit/agents";
+import { voice, type tts } from "@livekit/agents";
 import type { S2sDescriptor } from "../../../providers.js";
 import type { AgentSiteRuntime } from "../../../runtime.js";
+import { fallbackReplies } from "../../../llm/localized.js";
 import { logError, logInfo } from "../../log.js";
 import { createCallOpening, runOpeningStep, type GreetingReply } from "../livekit-host/call-opening.js";
 import { createCallerWatchdog, EMPTY_ROOM_GRACE_MS } from "../livekit-host/caller-watchdog.js";
@@ -18,14 +19,17 @@ import { ConversationClips } from "../livekit-host/clip-store.js";
 import type { VoiceAgentStartOptions } from "../livekit-host/host.js";
 import { voiceSessionOptions } from "../livekit-host/pipeline.js";
 import { createSilenceFollowup, silenceFollowupDelayMs } from "../livekit-host/silence-followup.js";
+import { synthesizedFrames } from "../livekit-host/transfer-audio.js";
 import { callerSide } from "../livekit-host/transfer-handoff.js";
 import { createEndCallHangup } from "../end-call.js";
+import { buildVoiceTts } from "../providers.js";
 import { callTraceOf } from "../../../call-trace.js";
 import type { AgentSessionBundle } from "../../connection.js";
 import type { VoiceSessionHandle } from "../orchestration.js";
 import { createBackOffice } from "./back-office.js";
 import { createS2sCallRecord } from "./call-record.js";
 import { voiceInstructions } from "./instructions.js";
+import { sayUnavailableLine } from "./unavailable-line.js";
 import { s2sVoice, type S2sVoice } from "./voices.js";
 
 /** How long a goodbye may take to start and play before the call ends anyway. */
@@ -70,7 +74,7 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
     say: (instructions) => session.generateReply({ instructions }),
     lost: () => {
       logError("voice", `${roomName}: the model keeps dropping the call, ending it`);
-      closeFromRoom();
+      failCall();
     },
     callerAudio: (speaking) => {
       callerAudio = speaking;
@@ -124,10 +128,29 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
     silence.arm();
   });
 
+  /** The model could not take the call or keep it: the caller is told before it ends. */
+  let failed = false;
+  /** What a cascaded turn the provider refused ends on, in the agent's TTS voice (`unavailable-line.ts`). */
+  const tellCaller = async () => {
+    const settings = bundle.runtime.settings;
+    const line = fallbackReplies(settings.language()).refused;
+    const log = (message: string) => logError("voice", `${roomName}: ${message}`);
+    let engine: tts.TTS;
+    try {
+      engine = options.providers?.tts ?? (await buildVoiceTts({ descriptor: settings.current().tts, env }));
+    } catch (error) {
+      return log(`no voice to tell the caller the call cannot go on: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    record.agentSaid(line);
+    await sayUnavailableLine({ line, publish: () => room.publishTransferTrack(), synthesize: (text) => synthesizedFrames(engine, text), log });
+    if (engine !== options.providers?.tts) await engine.close().catch(() => {});
+  };
+
   let closing: Promise<void> | null = null;
   const closeNow = async () => {
     watchdog.cancel();
     silence.stop();
+    if (failed) await tellCaller();
     record.close();
     bundle.runtime.setEndCallRequest(null);
     options.client.detach();
@@ -140,6 +163,10 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
   };
   const close = () => (closing ??= closeNow());
   const closeFromRoom = () => void close();
+  const failCall = () => {
+    failed = true;
+    closeFromRoom();
+  };
   const watchdog = createCallerWatchdog({
     remoteCount: () => [...room.participants()].length,
     giveUp: closeFromRoom,
@@ -147,7 +174,8 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
     emptyRoomMs: EMPTY_ROOM_GRACE_MS,
     noCallerMs: NO_CALLER_GRACE_MS,
   });
-  session.on(voice.AgentSessionEventTypes.Close, closeFromRoom);
+  // A model that failed for good closes the session with its error.
+  session.on(voice.AgentSessionEventTypes.Close, ({ error }) => (error ? failCall() : closeFromRoom()));
 
   /** The goodbye went to the model: wait for it to start speaking and to stop. It may be speaking
    * already, and may stop between a filler and the goodbye, so a stop only counts if it lasts. */
@@ -190,7 +218,7 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
       .catch((error: unknown) => {
         logError("voice", `${roomName}: could not start the call: ${String(error)}`);
         callTraceOf(bundle.runtime.info)?.fail(error);
-        closeFromRoom();
+        failCall();
       });
   };
   const opening = createCallOpening({

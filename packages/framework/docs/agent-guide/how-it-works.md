@@ -93,6 +93,12 @@ decide what the caller hears:
   right now. Please try again later." in the agent's language instead of being
   asked to repeat themselves, since saying it again cannot help. The
   provider's message never reaches the caller's ears.
+- **A speech-to-speech model that cannot take the call says so first.** On
+  `<Agent s2s>` the model is the only voice, so when it cannot start (a refused
+  key or payment, an outage) or keeps dropping the call, the caller hears the
+  same "please try again later" line in the agent's TTS voice before the call
+  ends. The cause goes to the log. Without a key for the agent's TTS the call
+  ends as before, and the log says why no line was played.
 - **A missing LLM key stops the session before it starts.** A session whose
   LLM has no key in the environment fails with an `AgentAuthoringError` naming
   the variable (for example `KUGELAUDIO_API_KEY`), instead of apologizing on
