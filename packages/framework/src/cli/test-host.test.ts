@@ -116,6 +116,36 @@ describe("curb test on the project's own host", () => {
     }
   }, 30_000);
 
+  it("shows the agent a scenario's now, else the fixed test date, and asks nothing again on a second run", async () => {
+    const endpoint = await chatEndpoint(() => null);
+    try {
+      const files = {
+        "src/agent/a.scenario.ts": HELLO.replace('turns: ["Hi"]', 'turns: ["Hi"], now: "2026-10-30T15:00:00Z"'),
+        "src/agent/b.scenario.ts": HELLO_AGAIN,
+      };
+      vi.stubEnv("KUGELAUDIO_API_KEY", "ka_test_0123456789");
+      vi.stubEnv("KUGELAUDIO_API_BASE", endpoint.origin);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const root = createTestProject(files);
+      projects.push(root);
+      const once = () => testCommand(["--json"], root, { out: () => {}, env: { CURB_REPLY_STORE_DIR: join(root, ".replies") } });
+
+      expect(await once()).toBe(0);
+      const dates = (turn: string) =>
+        endpoint.bodies
+          .filter((body) => body.stream && JSON.stringify(body.messages).includes(`"${turn}"`))
+          .map((body) => /Today is ([^.(]+)/.exec(JSON.stringify(body.messages))?.[1]?.trim());
+      expect(new Set(dates("Hi"))).toEqual(new Set(["Friday, October 30, 2026, 15:00"]));
+      expect(new Set(dates("Hello"))).toEqual(new Set(["Wednesday, June 3, 2026, 15:00"]));
+      const asked = endpoint.bodies.length;
+
+      expect(await once()).toBe(0);
+      expect(endpoint.bodies).toHaveLength(asked);
+    } finally {
+      await endpoint.close();
+    }
+  }, 30_000);
+
   it("prints why a throttled run took longer", async () => {
     const endpoint = await chatEndpoint((request) => (request === 1 ? 503 : null));
     try {

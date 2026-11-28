@@ -379,6 +379,7 @@ const FIELDS = [
   "style",
   "expect",
   "expectRuns",
+  "now",
 ];
 const CALLER_FIELDS = ["goal", "knows", "language", "persona", "behaviours"];
 const RESULT_FIELDS = ["ok", "message", "data"];
@@ -457,6 +458,9 @@ function scenarioProblems(definition: unknown): string[] {
     } else if (caller !== undefined && maxTurns > MAX_SIMULATED_TURNS) {
       problems.push(`maxTurns (${maxTurns}) is more than a simulated caller may take; give at most ${MAX_SIMULATED_TURNS}.`);
     }
+  }
+  if (definition.now !== undefined && (typeof definition.now !== "string" || Number.isNaN(new Date(definition.now).getTime()))) {
+    problems.push(`now must be an ISO date-time such as "2026-10-30T15:00:00Z"; got ${preview(definition.now)}.`);
   }
   if (runs !== undefined) {
     const problem = runsProblem(runs);
