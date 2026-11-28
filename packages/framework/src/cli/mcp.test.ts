@@ -1,12 +1,14 @@
 import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { McpManager } from "../mcp/manager.js";
 import { parseMcpToolsSnapshot } from "../mcp/snapshot.js";
-import { mcpCommand } from "./mcp.js";
+import { connectWithin, mcpCommand } from "./mcp.js";
 
 /** An in-process MCP server of an order system: two tools. */
 function ordersServer(): McpServer {
@@ -91,5 +93,33 @@ describe("curb mcp snapshot", () => {
     await expect(mcpCommand([], projectRoot())).rejects.toThrow("curb mcp: give the command.");
     await expect(mcpCommand(["list"], projectRoot())).rejects.toThrow('curb mcp: unknown command "list".');
     await expect(mcpCommand(["snapshot", "--all"], projectRoot())).rejects.toThrow("curb mcp snapshot: unknown argument --all.");
+  });
+
+  it("stops at the deadline when a declared server stalls while the host connects it, and writes nothing", async () => {
+    const root = projectRoot();
+    // Accepts the connection and never answers: the declared server stalls the host's preload.
+    const stalled: Server = createServer(() => {});
+    await new Promise<void>((resolve) => stalled.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(stalled.address() as AddressInfo).port}/mcp`;
+    const manager = new McpManager([{ id: "billing", url, auth: { kind: "bearer", token: "test" } }]);
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((text: string) => void errors.push(text));
+    try {
+      const started = Date.now();
+      const code = await mcpCommand(["snapshot"], root, {
+        connect: () => connectWithin(() => manager.connectAll(), () => manager, 300),
+        out: () => {},
+        timeoutMs: 300,
+      });
+
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(code).toBe(1);
+      expect(errors.join("\n")).toContain('"billing" did not list its tools within 0.3 s');
+      expect(existsSync(join(root, "mcp.tools.json"))).toBe(false);
+    } finally {
+      stalled.closeAllConnections();
+      await new Promise<void>((resolve) => stalled.close(() => resolve()));
+      await manager.close();
+    }
   });
 });

@@ -5,7 +5,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { AgentSession } from "../agent-session.js";
-import { Agent, AgentSiteRuntime, GlobalTools, Mcp } from "../index.js";
+import { Agent, AgentSiteRuntime, GlobalTools, Instruction, Mcp, Skill, Skills } from "../index.js";
+import { agentAppElement, type AgentRoute } from "../routing.js";
 import { configureMcp, getMcpManager, preloadMcpTools } from "../mcp/manager.js";
 import { formatMcpToolsSnapshot, MCP_TOOLS_FILE, mcpToolsSnapshot, type McpToolsSnapshot } from "../mcp/snapshot.js";
 import { addTask, calls, sendSummary, says, steps, tasksBundle } from "../test-fixtures/tasks.js";
@@ -147,6 +148,52 @@ describe("a hermetic call with an MCP tool", () => {
     await expect(startCall({ host: mcpHost(() => []), hermetic: true })).rejects.toThrow(
       'startCall: [MCP_TOOLS_MISSING] MCP server "orders" is not in mcp.tools.json',
     );
+  });
+
+  it("stops as an error when a skill it opens shows a server mcp.tools.json lacks", async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error("network is off");
+    });
+    vi.stubGlobal("fetch", fetch);
+    project(snapshot);
+    // The billing server is declared inline, in a skill the call opens only on its first turn.
+    const Billing = () => (
+      <>
+        <Instruction>Read out the caller's invoice.</Instruction>
+        <Mcp id="billing" url="http://127.0.0.1:9/mcp" />
+      </>
+    );
+    const routes: AgentRoute[] = [{ path: "/billing", Component: Billing, meta: { title: "Billing", description: "Invoices." } }];
+    const App = () => (
+      <Agent>
+        <Skills>
+          <Skill path="/billing">Billing</Skill>
+        </Skills>
+      </Agent>
+    );
+    const host: TestHost = {
+      async createBundle(options) {
+        const runtime = new AgentSiteRuntime(({ path, loadedPaths }) => agentAppElement(App, { path, loadedPaths, routes }), {
+          mcpTools: options?.mcpTools,
+          skills: routes.map((route) => ({ path: route.path })),
+        });
+        const llm = steps([calls({ name: "read_skill", input: { skill: "/billing" } }), says("Your invoice is paid.")]);
+        return { runtime, session: new AgentSession(runtime, llm) };
+      },
+      simulator: () => async () => says(""),
+    };
+
+    const call = await startCall({ host, hermetic: true });
+    const turn = await call.say("Can I see my invoice?");
+
+    expect(turn.errors).toEqual([{ kind: "failed", message: expect.stringContaining('hermetic: [MCP_TOOLS_MISSING] MCP server "billing" is not in mcp.tools.json') }]);
+    // The turn was cut off once the skill opened: the model was not asked again.
+    expect(turn.reply).not.toContain("Your invoice is paid.");
+    expect(call.ended).toBe(true);
+    expect(call.record().ending).toMatchObject({ by: "error" });
+    expect(call.record().ending.reason).toContain("[MCP_TOOLS_MISSING]");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(getMcpManager().serverIds()).toEqual([]);
   });
 
   it("is refused when the host builds an agent that leaves mcp.tools.json out while a server is known", async () => {

@@ -138,15 +138,24 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     ...(options.hermetic ? missingMcpSnapshots(runtime) : []),
   ];
   if (setupProblems.length > 0) throw new Error(`startCall: ${setupProblems.join(" ")}`);
-  // A hermetic call stops at the first call of a tool without a fake: the tool does not run,
-  // the turn is cut off, and the call ends as an error.
-  let unfaked: { tool: string; turn: AbortController } | null = null;
+  // A hermetic call stops at the first call of a tool without a fake (the tool does not run), and
+  // when a skill it opens shows an MCP server mcp.tools.json lacks: the turn is cut off, and the
+  // call ends as an error.
+  let stopped: { message: string; turn: AbortController } | null = null;
   let turnControl = new AbortController();
-  const stopAtUnfaked: UnfakedTool = (tool) => {
-    unfaked ??= { tool, turn: turnControl };
+  const stop = (message: string) => {
+    stopped ??= { message, turn: turnControl };
     turnControl.abort();
+  };
+  const stopAtUnfaked: UnfakedTool = (tool) => {
+    stop(unfakedToolMessage(tool));
     return unfakedToolResult(tool);
   };
+  const stopAtMissingSnapshot = () => {
+    const [missing] = missingMcpSnapshots(runtime);
+    if (missing) stop(`hermetic: ${missing}`);
+  };
+  const stopWatchingSnapshots = options.hermetic ? runtime.subscribe(stopAtMissingSnapshot) : () => {};
   const fakes =
     options.fakes || options.hermetic ? installFakes(runtime, options.fakes ?? {}, options.hermetic ? stopAtUnfaked : undefined) : null;
 
@@ -187,7 +196,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     const played = await play();
     if (!played) return null;
     const turn = scenarioTurn(runtime, played, caller, number, fakes);
-    if (unfaked?.turn === turnControl) turn.errors.push({ kind: "failed", message: unfakedToolMessage(unfaked.tool) });
+    if (stopped?.turn === turnControl) turn.errors.push({ kind: "failed", message: stopped.message });
     turn.endedCall = hungUp;
     turns.push(turn);
     failure =
@@ -209,8 +218,8 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     opening,
     turns,
     async say(text) {
-      if (hungUp || closed || unfaked) {
-        const why = hungUp ? ": the agent hung up (end_call)" : unfaked ? `: ${unfakedToolMessage(unfaked.tool)}` : "";
+      if (hungUp || closed || stopped) {
+        const why = hungUp ? ": the agent hung up (end_call)" : stopped ? `: ${stopped.message}` : "";
         throw new Error(`call.say: the call has ended${why}. Start another with startCall().`);
       }
       // On an agent with `s2s` this text goes to the back office, whose turns carry no spoken rules.
@@ -224,14 +233,14 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
       return session.systemPromptFor(!runtime.settings.s2s());
     },
     get ended() {
-      return hungUp || closed || unfaked !== null;
+      return hungUp || closed || stopped !== null;
     },
     experiments,
     language: runtime.settings.language(),
     model,
     record() {
       // A hermetic stop ends the call as an error even after a later turn went well.
-      if (unfaked && failure === null) failure = { reason: `failed: ${unfakedToolMessage(unfaked.tool)}`, providerError: false };
+      if (stopped && failure === null) failure = { reason: `failed: ${stopped.message}`, providerError: false };
       const errored = failure !== null;
       return {
         format: "curb.conversation",
@@ -259,6 +268,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
     close() {
       closed = true;
       stopNotingTools();
+      stopWatchingSnapshots();
     },
   };
 }

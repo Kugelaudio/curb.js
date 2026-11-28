@@ -24,7 +24,7 @@ export const MCP_COMMANDS: readonly string[] = ["snapshot"];
 export const MCP_SNAPSHOT_TIMEOUT_MS = 30_000;
 
 /** What the servers of `manager` list now: the snapshot of the ready ones, and why each other one is not. */
-export function snapshotMcpServers(manager: McpManager): { servers: Record<string, McpToolInfo[]>; problems: string[]; skipped: string[] } {
+export function snapshotMcpServers(manager: McpManager, timeoutMs = MCP_SNAPSHOT_TIMEOUT_MS): { servers: Record<string, McpToolInfo[]>; problems: string[]; skipped: string[] } {
   const servers: Record<string, McpToolInfo[]> = {};
   const problems: string[] = [];
   const skipped: string[] = [];
@@ -38,7 +38,7 @@ export function snapshotMcpServers(manager: McpManager): { servers: Record<strin
         `MCP server "${id}" needs a sign-in. Fix: sign in to it in the preview of \`npx curb dev\`, or set ${mcpTokenEnvVar(id)} in .env, then run \`npx curb mcp snapshot\` again.`,
       );
     } else {
-      problems.push(`MCP server "${id}" did not list its tools within ${MCP_SNAPSHOT_TIMEOUT_MS / 1000} s. Fix: check that it is reachable, then run \`npx curb mcp snapshot\` again.`);
+      problems.push(`MCP server "${id}" did not list its tools within ${timeoutMs / 1000} s. Fix: check that it is reachable, then run \`npx curb mcp snapshot\` again.`);
     }
   }
   return { servers, problems, skipped };
@@ -62,16 +62,38 @@ export function mcpServersSettled(manager: McpManager, timeoutMs = MCP_SNAPSHOT_
 }
 
 /**
+ * Run `connect` and wait for the servers of `manager()` to answer, all within `timeoutMs` from
+ * the start: a server that stalls while `connect` runs (the host connecting the declared ones)
+ * is still "connecting" at the deadline, and is reported as not having answered.
+ */
+export async function connectWithin(connect: () => Promise<unknown>, manager: () => McpManager, timeoutMs = MCP_SNAPSHOT_TIMEOUT_MS): Promise<McpManager> {
+  const deadline = Date.now() + timeoutMs;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([connect(), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+  await mcpServersSettled(manager(), Math.max(0, deadline - Date.now()));
+  return manager();
+}
+
+/**
  * Connect the MCP servers of the project's agents for real: those the agents declare and those
  * added in `curb dev` (`ensureHostPrerequisites`), then every `<Mcp url>` a skill renders, by
- * rendering every skill of every agent once. Returns the manager once no server is connecting.
+ * rendering every skill of every agent once. Returns the manager once no server is connecting,
+ * or at the deadline.
  */
-async function connectProjectServers(): Promise<McpManager> {
+async function connectProjectServers(timeoutMs: number): Promise<McpManager> {
   const { createAgentRuntime, listAgentIds } = await import("../server/bootstrap.js");
-  for (const id of await listAgentIds()) (await createAgentRuntime(id)).runtime.skillCatalog();
-  const manager = getMcpManager();
-  await mcpServersSettled(manager);
-  return manager;
+  const renderEverySkill = async () => {
+    for (const id of await listAgentIds()) (await createAgentRuntime(id)).runtime.skillCatalog();
+  };
+  return connectWithin(renderEverySkill, getMcpManager, timeoutMs);
 }
 
 /**
@@ -81,7 +103,7 @@ async function connectProjectServers(): Promise<McpManager> {
 export async function mcpCommand(
   args: readonly string[],
   projectRoot: string,
-  options: { connect?: () => Promise<McpManager>; out?: (text: string) => void } = {},
+  options: { connect?: () => Promise<McpManager>; out?: (text: string) => void; timeoutMs?: number } = {},
 ): Promise<number> {
   const out = options.out ?? ((text: string) => void process.stdout.write(text));
   const [subcommand, ...rest] = args;
@@ -90,8 +112,9 @@ export async function mcpCommand(
   }
   if (rest.length > 0) throw new Error(`curb mcp snapshot: unknown argument ${rest[0]}.\n\n${MCP_USAGE}`);
 
-  const manager = await (options.connect ?? connectProjectServers)();
-  const { servers, problems, skipped } = snapshotMcpServers(manager);
+  const timeoutMs = options.timeoutMs ?? MCP_SNAPSHOT_TIMEOUT_MS;
+  const manager = await (options.connect ?? (() => connectProjectServers(timeoutMs)))();
+  const { servers, problems, skipped } = snapshotMcpServers(manager, timeoutMs);
   if (problems.length > 0) {
     console.error(`Nothing written: ${problems.length === 1 ? "an MCP server did not list its tools" : `${problems.length} MCP servers did not list their tools`}.`);
     for (const problem of problems) console.error(`  ${problem}`);

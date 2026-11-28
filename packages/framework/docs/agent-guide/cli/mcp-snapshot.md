@@ -12,7 +12,9 @@ npx curb mcp snapshot
 The servers are those the agent declares (`defineAgent({ mcpServers })`), those added in the
 preview of `curb dev` (`mcp.servers.json`), and every `<Mcp url>` a skill renders: the command
 renders every skill once to find them. It uses the credentials a call uses (`MCP_<ID>_TOKEN` in
-`.env`, or a sign-in from the preview), and waits at most 30 s for the servers to answer.
+`.env`, or a sign-in from the preview), and waits at most 30 s for the servers to answer,
+counted from the start, so a server that stalls while the agent connects it is reported rather
+than waited for.
 
 ## Output
 
