@@ -158,6 +158,7 @@ export async function createAgentRuntime(
         path: route.path,
         ...(route.meta?.title ? { title: route.meta.title } : {}),
         ...(route.meta?.description ? { description: route.meta.description } : {}),
+        ...(route.meta?.info ? { info: route.meta.info } : {}),
       })),
     },
   );

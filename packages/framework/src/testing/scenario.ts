@@ -406,14 +406,51 @@ export function scenario<const Skills extends readonly ScenarioSkill[] = readonl
   return Object.freeze(Object.defineProperty({ ...definition }, SCENARIO, { value: true }));
 }
 
+/** A result a tool's `onSubmit` cannot be checked against: any failure fits every tool. */
+type FailedToolResult = { ok: false; message?: string; data?: unknown };
+
+/** What `fake(tool, …)` takes for `tool`: for a tool from `defineTool` with a `schema`, a result
+ * of the shape its `onSubmit` returns (or any failure), or a function of its validated input
+ * that returns one; for a name or any other tool, any tool result. */
+type FakeFor<Tool> = Tool extends { readonly onSubmit: (input: infer Input) => infer Returned }
+  ? Awaited<Returned> extends infer Result
+    ? Result extends ToolResult
+      ? FakeOf<Input, Result | FailedToolResult>
+      : ScenarioFake
+    : ScenarioFake
+  : ScenarioFake;
+type FakeOf<Input, Result> = Result | ((input: Input) => Result | Promise<Result>);
+
 /**
  * One fake for the list form of `fakes`: `fakes: [fake(issueRefund, { ok: true, data: { refunded: 49 } })]`.
- * `tool` is the tool's value or its name.
+ * `tool` is the tool's value or its name. Given the value of a tool with a `schema`, TypeScript
+ * checks `result` against what the tool's `onSubmit` returns, and a function's input against
+ * the schema.
  */
-export function fake(tool: string | ScenarioTool, result: ScenarioFake): ScenarioFakeEntry {
-  void tool;
-  void result;
-  throw new Error("fake() is not implemented yet in this version of curb; give fakes as an object of tool name to result.");
+export function fake<const Tool extends string | ScenarioTool>(tool: Tool, result: FakeFor<Tool>): ScenarioFakeEntry {
+  const name = toolName(tool);
+  if (typeof name !== "string" || name.trim() === "") {
+    throw new Error("fake(): the tool is a tool's name or a value with its name, such as what defineTool returns.");
+  }
+  return Object.freeze({ tool: name, result: result as ScenarioFake });
+}
+
+/**
+ * The fakes of a scenario or a call by tool name, from either form of `fakes`. Throws on a tool
+ * given two fakes in the list.
+ */
+export function fakesByName(
+  fakes: Readonly<Record<string, ScenarioFake>> | readonly ScenarioFakeEntry[],
+): Readonly<Record<string, ScenarioFake>> {
+  if (!isFakeList(fakes)) return fakes;
+  const byName: Record<string, ScenarioFake> = {};
+  for (const entry of fakes) {
+    if (Object.prototype.hasOwnProperty.call(byName, entry.tool)) {
+      throw new Error(`fakes: ${entry.tool} has two fakes; give each tool one.`);
+    }
+    byName[entry.tool] = entry.result;
+  }
+  return byName;
 }
 
 /** The name of a tool given as its name or its value. */
@@ -559,8 +596,21 @@ function experimentsProblems(experiments: unknown): string[] {
 }
 
 function fakesProblems(fakes: unknown): string[] {
+  if (Array.isArray(fakes)) {
+    const notMade = fakes.flatMap((entry, index) =>
+      isRecord(entry) && typeof entry.tool === "string" && "result" in entry ? [] : [index + 1],
+    );
+    if (notMade.length > 0) {
+      return [`fakes: entry ${notMade.join(", ")} is not a fake; make each one with fake(tool, result).`];
+    }
+    try {
+      return fakesProblems(fakesByName(fakes as ScenarioFakeEntry[]));
+    } catch (error) {
+      return [`${(error as Error).message}`];
+    }
+  }
   if (!isRecord(fakes)) {
-    return ['fakes must be an object of tool name to the result its calls get, e.g. { create_claim: { ok: true, message: "Claim created." } }.'];
+    return ['fakes must be a list of fake(tool, result), or an object of tool name to the result its calls get, e.g. { create_claim: { ok: true, message: "Claim created." } }.'];
   }
   return Object.entries(fakes).flatMap(([tool, fake]) => {
     const problem =

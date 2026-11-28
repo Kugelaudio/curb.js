@@ -157,7 +157,14 @@ export default function PropertyDamage() {
 - Default export: the skill component. Named export `meta` (`SkillMeta`):
   `title` (skill heading; derived from the path when omitted) and
   `description` (used by links and the skills index; a `<Skill>` link's own
-  `description` prop wins over it).
+  `description` prop wins over it), and `info`, the call info the skill needs
+  as a zod object keyed by info key. Use `satisfies SkillMeta` rather than
+  `: SkillMeta` when it declares `info`, so its keys keep their types.
+- **Declared info.** `info: z.object({ "order.id": z.string() })` names the keys the skill reads;
+  [`useAgentInfo(meta)`](hooks/use-agent-info.md) returns just those, typed. When the skill opens
+  without a required key, a test run fails and a real call logs `SKILL_INFO_MISSING` and opens the
+  skill anyway, the key reading `undefined`. Keys it does not name (`client.*`, `experiment.*`) are
+  never checked.
 - **Plain JSX text is context.** `<Text>` is optional; it is required only
   for file-backed content (`<Text src="policy/coverage-basics.md" />` reads
   from the project's `context/` directory).

@@ -490,7 +490,7 @@ export default scenario({
 | `maxTurns` | `number` | 12 for a simulated caller | The most caller turns, at most 100 for a simulated caller |
 | `client` | object | | Page info the call starts with |
 | `experiments` | object | | The variant, by experiment name. An experiment left out is covered by repeated runs |
-| `fakes` | object | | Tools that must not run for real, each with the result its calls get, or a function of the input that returns one. A tool without a fake runs for real on every run, so fake one that sends, books or charges |
+| `fakes` | list or object | | Tools that must not run for real: a list of [`fake(tool, result)`](#fake), or an object of tool name to result. A result is what its calls get, or a function of the input that returns one. A tool without a fake runs for real on every run, so fake one that sends, books or charges |
 | `runs` | `number` | 1 | How often the scenario runs, 1 to 100. `curb test --runs` overrides it. Its tools without a fake run that many times |
 | `minPassRate` | `number` | 1 | The share of completed runs that must pass, above 0 and at most 1 |
 | `expectations` | `string[]` | | Sentences about the call that a judge answers with yes, no or unknown. A no fails the run. At most 12 |
@@ -499,6 +499,33 @@ export default scenario({
 | `style` | `StyleLimits` | none | The highest value accepted per style number, such as `{ wordsP90: 40 }` |
 | `expect` | function | | Your own checks, run on the finished conversation |
 | `expectRuns` | function | | Your own checks across all runs, called once after the last |
+
+### `fake`
+
+```ts
+fake(tool: string | { name: string }, result): ScenarioFakeEntry
+```
+
+One entry of a list of `fakes`. `tool` is the tool's name or its value from
+[`defineTool`](functions/define-tool.md). Given the value of a tool with a `schema`, TypeScript
+checks `result` against what its `onSubmit` returns (any failure, `{ ok: false, ... }`, fits every
+tool), and a function's input against the schema.
+
+```ts
+import { fake, scenario } from "curb/testing";
+import { findOrder, issueRefund } from "./tools.js";
+
+export default scenario({
+  turns: ["Please refund order A-1042."],
+  fakes: [
+    fake(findOrder, { ok: true, data: { id: "A-1042", paid: 49 } }),
+    fake(issueRefund, ({ order }) => ({ ok: true, data: { order, refunded: 49 } })),
+  ],
+  expect: ({ called }) => [called(issueRefund, { order: "A-1042" })],
+});
+```
+
+A tool given two fakes in one list is an error. `startCall({ fakes })` takes the same list.
 
 ### `caller`
 
@@ -532,9 +559,9 @@ refused there.
 
 | Helper | Passes when |
 |---|---|
-| `called(tool, input?)` | The agent ran the tool without a refusal. With `input`, only a call with those values counts, at any depth |
-| `calledInOrder(...calls)` | The agent ran these tools in this order; other calls may come between. An entry is a name or `[name, input]` |
-| `notCalled(tool)` | The tool never ran. A refused or held call still passes |
+| `called(tool, input?)` | The agent ran the tool without a refusal. With `input`, only a call with those values counts, at any depth. `tool` is its name or its value from `defineTool` |
+| `calledInOrder(...calls)` | The agent ran these tools in this order; other calls may come between. An entry is a tool (name or value) or `[tool, input]` |
+| `notCalled(tool)` | The tool (name or value) never ran. A refused or held call still passes |
 | `said(text)` | A reply contains the text, ignoring case, or matches the pattern |
 | `endedCall()` | The agent ended the call itself |
 | `stateMatches(store, expected)` | The store's data at the end of the call has `expected`: an object by the fields it names, a list entry by entry and with the same length |
@@ -631,9 +658,6 @@ implements them.
 - `scenario` and `startCall` take `hermetic: true` (a tool call without a fake is an error) and
   `now` (the date and time the agent sees). `start` and `spoken` work now: see
   [Starting inside a skill](./testing.md#starting-inside-a-skill).
-- `fake(tool, result)` makes one entry of a list of `fakes`. `called`, `notCalled` and
-  `calledInOrder` take a tool's value as well as its name. `opened(skill)` and
-  `notOpened(skill?)` work now.
 
 ### Reply store
 
@@ -653,6 +677,7 @@ the checkout; `remoteReplyStore({ url?, token? })` uses a server that speaks the
 
 | Version | Changes |
 |---|---|
+| v1.30.0 | `fake` added; `fakes` takes a list of `fake(tool, result)`. `called`, `notCalled` and `calledInOrder` take a tool's value. A skill that opens without the info its `meta.info` requires fails the turn (`SKILL_INFO_MISSING`) |
 | v1.30.0 | Declared: `start`, `spoken`, `hermetic` and `now` on `scenario` and `startCall`, `fake`, `opened`, `notOpened`, tool values in `called`, `notCalled` and `calledInOrder`, and `withReplyStore`, `localReplyStore`, `remoteReplyStore`, `ReplyStore` and `StoredReply` |
 | v1.27.0 | `affectedScenarios` added. `judge` does not count `claimed_without_tool` when the tool it names ran and succeeded in the turn of the claim or before (`judge.promptVersion` 4). `simulatedCaller` ends the call once its goal is done, also when asked whether there is anything else (`simulatedCaller.promptVersion` 4) |
 | v1.25.0 | `loadCalls` reads a Calls export's tool result given as `{ message, data }` beside the tool call's `ok`, and a line's length from `durationSeconds` |
