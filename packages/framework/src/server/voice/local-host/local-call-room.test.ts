@@ -222,6 +222,23 @@ describe("the agent's own track on a local call, played only when the page says 
     await expect(next).resolves.toBe(true);
   });
 
+  it("a page that came after the first closed before the line began did not hear its start, though it says it played", async () => {
+    captureErrors();
+    const call = createLocalVoiceCall("local-dropped");
+    const first = new FakePage();
+    call.attach(first as unknown as WebSocket);
+    const track = await call.room.publishTransferTrack();
+    first.close(1001);
+    await track.captureFrame(outputFrame()); // to no page
+    const second = new FakePage();
+    call.attach(second as unknown as WebSocket);
+    await track.captureFrame(outputFrame());
+    const playout = track.waitForPlayout();
+    await vi.waitFor(() => expect(second.sent.at(-1)).toEqual({ type: "audio_flush" }));
+    second.say({ type: "playout_done", playedMs: 20 });
+    await expect(playout).resolves.toBe(false);
+  });
+
   it("a page that never answered did not play it, however long ago it was sent", async () => {
     vi.useFakeTimers();
     try {

@@ -96,7 +96,8 @@ export class PageAudioOutput extends voice.AudioOutput {
   private waiting: ((report: PlayoutReport | null) => void) | null = null;
   private settling: Promise<void> | null = null;
   private confirmed = false;
-  /** The page that began this segment left or was replaced: no one page heard all of it. */
+  /** The page that began this segment left or was replaced, or part of it went to no page: no one
+   * page heard all of it. */
   private split = false;
 
   /** Whether the page itself said the last segment played to its end (not the clock's guess). */
@@ -104,7 +105,11 @@ export class PageAudioOutput extends voice.AudioOutput {
     return this.confirmed;
   }
 
-  constructor(private readonly send: Send) {
+  /** `listening`: a page is there to receive what is sent now. */
+  constructor(
+    private readonly send: Send,
+    private readonly listening: () => boolean = () => true,
+  ) {
     super(LOCAL_VOICE_OUTPUT_SAMPLE_RATE, undefined, { pause: false });
   }
 
@@ -123,6 +128,8 @@ export class PageAudioOutput extends voice.AudioOutput {
       this.onPlaybackStarted(this.startedAt);
     }
     this.pushedMs += (frame.samplesPerChannel / frame.sampleRate) * 1000;
+    // Dropped with no page to take it: no page's report can say this segment played to its end.
+    if (!this.listening()) this.split = true;
     const { data } = frame;
     this.send(Buffer.from(data.buffer, data.byteOffset, data.byteLength));
   }
@@ -255,9 +262,10 @@ export function createLocalVoiceCall(id = `local-${randomUUID().slice(0, 8)}`): 
   let synchronizer: Promise<Synchronizer> | null = null;
   let disconnected = false;
 
+  const listening = () => socket !== null && socket.readyState === socket.OPEN;
   const send: Send = (message) => {
     const target = socket;
-    if (!target || target.readyState !== target.OPEN) return; // no page: nobody to hear it
+    if (!target || !listening()) return; // no page: nobody to hear it
     if (Buffer.isBuffer(message)) target.send(message, { binary: true });
     else target.send(JSON.stringify(message));
   };
@@ -287,7 +295,7 @@ export function createLocalVoiceCall(id = `local-${randomUUID().slice(0, 8)}`): 
     startSession: async ({ session, agent }) => {
       if (disconnected) throw new Error("the local call has ended");
       input = new PageAudioInput();
-      output = new PageAudioOutput(send);
+      output = new PageAudioOutput(send, listening);
       synchronizer = createSynchronizer(output, pageTranscriptSink(send));
       const sync = await synchronizer;
       if (disconnected) throw new Error("the local call has ended");
@@ -309,7 +317,7 @@ export function createLocalVoiceCall(id = `local-${randomUUID().slice(0, 8)}`): 
     // outside the voice's speech (the line a failed speech-to-speech call ends on), to the page.
     publishTransferTrack: async () => {
       if (disconnected) throw new Error("the local call has ended");
-      output ??= new PageAudioOutput(send);
+      output ??= new PageAudioOutput(send, listening);
       return pageTrack(output);
     },
     disconnect: async () => {
