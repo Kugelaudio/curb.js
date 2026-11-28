@@ -48,8 +48,13 @@ model plays. `npx curb test --runs 3` plays each three times and reports how oft
 it passed, what a judge found and how the agent talks. Text tests do not cover audio, timing or
 interruptions: listen to a call in `npm run dev` for those.
 
-`.github/workflows/curb-test.yml` runs `curb check` and `curb test` on every pull request, and
-fails until the repository has `KUGELAUDIO_API_KEY` as a secret (Settings > Secrets and variables >
+`src/agent/calendar/calendar.scenario.ts` is a skill test: it starts inside the calendar skill
+with a fixed date, fakes the skill's one tool, and is `hermetic`, so a tool it did not fake stops
+the run instead of running. `npx curb test` keeps every model reply in a reply store, so a second
+run with nothing changed answers from it and calls no model.
+
+`.github/workflows/curb-test.yml` runs `curb check` and `curb test` on every pull request,
+keeps the reply store between runs with the Actions cache, and fails until the repository has `KUGELAUDIO_API_KEY` as a secret (Settings > Secrets and variables >
 Actions). Details: `node_modules/curb/docs/agent-guide/testing.md`.
 
 ## Deploy to KugelAudio

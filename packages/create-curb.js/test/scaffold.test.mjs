@@ -308,12 +308,15 @@ test("template prose is written as template literals, never multi-line JSX text"
 });
 
 // The framework tells the model today's date on every turn, so a date or a clock time in
-// the template would be wrong on every other day.
+// the template would be wrong on every other day. A scenario is the exception: it fixes the
+// date the agent sees with `now`, so the dates it expects are right on every day.
 test("no template hard-codes a date or clock time", () => {
   const dated =
     /\b(19|20)\d\d\b|\b\d{1,2}:\d\d\b|\b(January|February|March|April|June|July|August|September|October|November|December|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/;
   const offenders = ALL_TEMPLATES.flatMap((dir) =>
-    [...files(join(dir, "src")), ...files(join(dir, "context"))].filter((path) => dated.test(readFileSync(path, "utf8"))),
+    [...files(join(dir, "src")), ...files(join(dir, "context"))]
+      .filter((path) => !path.endsWith(".scenario.ts"))
+      .filter((path) => dated.test(readFileSync(path, "utf8"))),
   );
   assert.deepEqual(offenders.map((path) => relative(templates, path)), []);
 });
