@@ -124,8 +124,8 @@ server.
                          (with --dry: { dry, scenarios: [{ name, file, live, summary, runs }],
                            store, exitCode })
 
-A request the reply store answered before (.curb/replies/, and CURB_REPLY_STORE_URL when set)
-is answered again without a model, on a fixed clock, so an unchanged scenario costs nothing.
+A request the reply store answered before (~/.cache/curb/replies, or CURB_REPLY_STORE_DIR; and
+CURB_REPLY_STORE_URL when set) is answered again without a model, on a fixed clock, so an unchanged scenario costs nothing.
 Each scenario's report says "stored", or "live from turn 2 (system prompt changed)": the first
 request the store could not answer, and what about it differs from the same request of the
 newest saved run. The Tokens line splits the live tokens from those the store saved. The
