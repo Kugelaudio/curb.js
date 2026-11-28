@@ -47,6 +47,10 @@ export type ToolFake = (input: Record<string, unknown>) => Promise<ToolResult>;
  * `fake` where it would run the author's `onSubmit`. */
 type FakeableSubmit = (input: Record<string, unknown>, fake: ToolFake, accepted?: () => void) => Promise<ToolResult>;
 
+/** What a hermetic test gives a call of a tool that has no fake, instead of running the tool
+ * (`fakeTools(fakes, { unfaked })`): the call's result. The tool's handler never runs. */
+export type UnfakedTool = (name: string, input: Record<string, unknown>) => ToolResult;
+
 export type SiteFactory = (state: {
   /** The active skill's path (most recently loaded); "" while no skill is loaded. */
   path: string;
@@ -138,6 +142,9 @@ export class AgentSiteRuntime {
   private call: CallView | null = null;
   /** Tools a test replaced, by name (see `fakeTools`); empty outside tests. */
   private toolFakes: ReadonlyMap<string, ToolFake> = new Map();
+  /** What a call of an agent's tool without a fake gets instead of running (see `fakeTools`);
+   * null outside hermetic tests. */
+  private unfakedTool: UnfakedTool | null = null;
   /** Stable `useRouter()` value, provided around every render (see refresh). */
   private readonly routerApi: AgentRouterApi = {
     push: (path: string) => this.navigate(path),
@@ -220,7 +227,9 @@ export class AgentSiteRuntime {
     this.toolCallInFlight = true;
     try {
       const fake = this.toolFakes.get(name);
-      result = await (fake ? this.callFaked(name, fake, input, accepted) : entry.handler(input, accepted));
+      // A hermetic test runs none of the agent's own tools for real; the framework's still run.
+      const stopped = !fake && this.unfakedTool && entry.definition.scope !== "runtime" ? this.unfakedTool(name, input) : null;
+      result = stopped ?? (await (fake ? this.callFaked(name, fake, input, accepted) : entry.handler(input, accepted)));
       if (result.ok) {
         this.toolSucceeded.add(name);
         this.toolErrors.delete(name);
@@ -273,9 +282,14 @@ export class AgentSiteRuntime {
    * where it would run `onSubmit`. A tool without a form (`onCall`, an MCP tool) has no input
    * check of the framework's: the fake stands in for its whole handler. Either way the call is
    * recorded, a `confirm` tool still runs only on the caller's yes, and the context refreshes.
+   *
+   * With `unfaked` (a hermetic test), a call of one of the agent's tools that has no fake runs
+   * nothing: its result is what `unfaked` returns. The framework's own tools (`read_skill`,
+   * `end_call`, ...) still run.
    */
-  fakeTools(fakes: Readonly<Record<string, ToolFake>>): void {
+  fakeTools(fakes: Readonly<Record<string, ToolFake>>, options: { unfaked?: UnfakedTool } = {}): void {
     this.toolFakes = new Map(Object.entries(fakes));
+    this.unfakedTool = options.unfaked ?? null;
   }
 
   /** A call of `name`, which a test faked with `fake` (see `fakeTools`). */

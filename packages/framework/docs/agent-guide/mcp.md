@@ -26,6 +26,10 @@ a server for eager connection before the first render; servers added at runtime
 through the preview persist in the project's `mcp.servers.json` (tokens never
 land there).
 
+A [hermetic test](./testing.md#hermetic-runs) connects to no server: it offers the tools listed in
+`mcp.tools.json`, which [`npx curb mcp snapshot`](./cli/mcp-snapshot.md) writes. Commit the file
+and fake every MCP tool the test calls.
+
 ## Next steps
 
 - [Components](./components/mcp.md): every prop of `<Mcp>`.

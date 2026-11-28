@@ -479,13 +479,46 @@ does not change. A tool with `onCall` instead of `onSubmit`, or one from an MCP
 server, has no input check in Curb: its fake stands in for the whole call and
 gets the input as the model sent it. A fake that no call used is noted under
 the checks (`note  the fake for send_sms was never used: ...`), which fails
-nothing; it often means a misspelled tool name, or a path the conversation did
-not take.
+nothing: the conversation did not take that path. A fake for a tool the agent
+does not have, a misspelled name most often, is an error before the first turn
+(`[CURB_TEST_UNKNOWN_FAKE]`), naming the tools it has.
 
 A scenario that runs several times runs every tool it does not fake that many
 times. So a tool that writes outside the call (it sends, books or charges) gets
 a fake; a lookup, or a tool that only changes a `createAgentStore` store, can
 run for real.
+
+### Hermetic runs
+
+`hermetic: true` makes sure nothing of the scenario runs for real outside the
+call: a call of a tool without a fake ends the run as an error before the tool
+runs, and MCP tools come from `mcp.tools.json` without contacting any server.
+`npx curb test --hermetic` runs every scenario that way, as a CI job without
+network or MCP sign-ins would.
+
+```ts
+export default scenario({
+  turns: ["Where is my order A-1042?", "Please refund it."],
+  hermetic: true,
+  fakes: {
+    orders__find_order: { ok: true, data: { id: "A-1042", status: "delivered" } },
+    issue_refund: { ok: true, message: "Refund R-7 issued." },
+  },
+  expect: ({ called }) => [called("issue_refund")],
+});
+```
+
+A tool the scenario forgot to fake stops the run at its first call, with
+`[CURB_TEST_UNFAKED_TOOL] hermetic: the agent called "issue_refund", which has no fake`,
+fails `no turn errors`, and its `onSubmit` never runs. The framework's own tools
+(`read_skill`, `end_call`, `skip_turn`) need no fake.
+
+The MCP tools a hermetic run offers are those
+[`npx curb mcp snapshot`](./cli/mcp-snapshot.md) wrote to `mcp.tools.json`: run
+it once with the servers reachable and commit the file. A server that is not in
+the file is an error before the first turn (`[MCP_TOOLS_MISSING]`). When some of
+the scenarios of one `curb test` are not hermetic, the servers connect for them,
+and the hermetic ones still run no tool without a fake.
 
 ### The checks every scenario gets
 
@@ -987,7 +1020,8 @@ call and the number of scenarios: read the `Tokens` line of your own run.
   agent hangs up first.
 - A tool runs for real on every run, unless the scenario fakes it. Fake
   every tool that books, sends or deletes something (`fakes`, above), or point
-  it at test data. Scenarios run at the same time, so their real tools do too:
+  it at test data. A [hermetic](#hermetic-runs) scenario stops at a tool it
+  did not fake instead. Scenarios run at the same time, so their real tools do too:
   `--concurrency 1` runs one conversation after another.
 - A simulated caller can take another path on the next run. Scripted turns
   repeat exactly: keep a scripted scenario for every path that must never break.

@@ -356,14 +356,19 @@ describe("fakes", () => {
     );
   });
 
-  it("notes a fake no call used and a scenario without checks of its own, and passes", async () => {
-    const result = await run({ turns: ["Hi"], fakes: { cancel_meeting: { ok: true } } }, reply("Happy to help."), unused);
+  it("notes a fake no call used and a scenario without checks of its own, and passes; refuses a fake for no tool", async () => {
+    const result = await run({ turns: ["Hi"], fakes: { request_callback: { ok: true } } }, reply("Happy to help."), unused);
 
     expect(result.passed).toBe(true);
     expect(result.notes).toEqual([
-      "the fake for cancel_meeting was never used: no call of cancel_meeting ran",
+      "the fake for request_callback was never used: no call of request_callback ran",
       "this scenario has no checks of its own (expect), so only the built-in checks ran",
     ]);
+
+    // A fake for a tool the agent does not have stands in for nothing: that is an error before turn 1.
+    await expect(run({ turns: ["Hi"], fakes: { cancel_meeting: { ok: true } } }, reply("Happy to help."), unused)).rejects.toThrow(
+      '[CURB_TEST_UNKNOWN_FAKE] fakes.cancel_meeting: the agent has no tool "cancel_meeting"',
+    );
 
     const checked = await run({ turns: ["Hi"], expect: ({ said }) => [said("happy")] }, reply("Happy to help."), unused);
     expect(checked.notes).toEqual([]);

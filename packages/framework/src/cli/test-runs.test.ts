@@ -563,6 +563,7 @@ describe("curb test options", () => {
       ]),
     ).toEqual({
       filter: "booking",
+      hermetic: false,
       json: true,
       runs: 5,
       concurrency: 8,
@@ -572,16 +573,16 @@ describe("curb test options", () => {
       live: false,
       dry: false,
     });
-    expect(parseTestArgs(["--rejudge", "latest"])).toEqual({ filter: "", json: false, rejudge: "latest", live: false, dry: false });
-    expect(parseTestArgs(["--changed=origin/main"])).toEqual({ filter: "", json: false, changed: "origin/main", live: false, dry: false });
-    expect(parseTestArgs(["--live", "--max-tokens", "5000"])).toEqual({ filter: "", json: false, live: true, dry: false, maxTokens: 5000 });
-    expect(parseTestArgs(["--dry"])).toEqual({ filter: "", json: false, live: false, dry: true });
+    expect(parseTestArgs(["--rejudge", "latest"])).toEqual({ filter: "", json: false, hermetic: false, rejudge: "latest", live: false, dry: false });
+    expect(parseTestArgs(["--changed=origin/main"])).toEqual({ filter: "", json: false, hermetic: false, changed: "origin/main", live: false, dry: false });
+    expect(parseTestArgs(["--live", "--max-tokens", "5000"])).toEqual({ filter: "", json: false, hermetic: false, live: true, dry: false, maxTokens: 5000 });
+    expect(parseTestArgs(["--dry"])).toEqual({ filter: "", json: false, hermetic: false, live: false, dry: true });
     expect(() => parseTestArgs(["--max-tokens", "0"])).toThrow("--max-tokens must be a whole number of at least 1");
     expect(() => parseTestArgs(["--max-tokens=1.5"])).toThrow("--max-tokens must be a whole number of at least 1");
     expect(() => parseTestArgs(["--dry", "--live"])).toThrow("--dry cannot be combined with --live");
     expect(() => parseTestArgs(["--dry", "--rejudge", "latest"])).toThrow("--dry cannot be combined with --rejudge");
     expect(() => parseTestArgs(["--live", "--rejudge", "latest"])).toThrow("--live cannot be combined with --rejudge");
-    expect(TEST_OPTIONS).toEqual(["--json", "--live", "--dry", "--runs", "--concurrency", "--caller-model", "--judge-model", "--report", "--rejudge", "--changed", "--max-tokens"]);
+    expect(TEST_OPTIONS).toEqual(["--json", "--hermetic", "--live", "--dry", "--runs", "--concurrency", "--caller-model", "--judge-model", "--report", "--rejudge", "--changed", "--max-tokens"]);
   });
 
   it("refuses a value out of range, naming what the option takes", () => {

@@ -28,7 +28,7 @@ describe("scenario()", () => {
 
     expect(() => scenario(definition)).toThrow(
       [
-        'scenario(): Unknown field "steps" in a scenario; it takes name, caller, turns, maxTurns, client, experiments, fakes, runs, minPassRate, expectations, findings, failOn, style, expect, expectRuns.',
+        'scenario(): Unknown field "steps" in a scenario; it takes name, caller, turns, maxTurns, client, experiments, fakes, hermetic, runs, minPassRate, expectations, findings, failOn, style, expect, expectRuns.',
         "Give caller (a simulated caller) or turns (scripted caller lines), not both.",
         'Unknown field "mood" in caller; it takes goal, knows, language, persona, behaviours.',
         'caller.goal must say what the caller wants from the call, e.g. "Book a follow-up call for next week".',

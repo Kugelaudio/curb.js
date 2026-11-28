@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 import { expect, it } from "vitest";
 import { REVIEW_OPTIONS } from "./cli/review.js";
+import { MCP_COMMANDS } from "./cli/mcp.js";
 import { TEST_OPTIONS } from "./cli/test.js";
 
 /**
@@ -47,7 +48,11 @@ function upgradeFlags(): string[] {
 }
 
 function testOptions(): string[] {
-  return [...TEST_OPTIONS.map((option) => `curb test ${option}`), ...REVIEW_OPTIONS.map((option) => `curb review ${option}`)];
+  return [
+    ...TEST_OPTIONS.map((option) => `curb test ${option}`),
+    ...REVIEW_OPTIONS.map((option) => `curb review ${option}`),
+    ...MCP_COMMANDS.map((command) => `curb mcp ${command}`),
+  ];
 }
 
 it("the public API changes only on purpose", async () => {
