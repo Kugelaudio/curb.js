@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type { AgentAppProps } from "./config.js";
 import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES } from "./authoring.js";
 import { RouteProvider, RoutesMetaProvider } from "./route-context.js";
+import { rememberSkillModule } from "./skill-modules.js";
 
 /**
  * A skill module's optional `meta` export — Next.js-style static metadata:
@@ -81,13 +82,18 @@ export function createSkillRoutes(
   modules: Record<string, SkillModule>,
 ): AgentRoute[] {
   return Object.entries(modules)
-    .map(([moduleId, module]) => ({
-      path: skillPathFromModuleId(moduleId),
-      Component: module.default,
-      meta: module.meta,
-      ...(module.source === undefined ? {} : { source: module.source }),
-      ...(module.source === undefined ? {} : { moduleId }),
-    }))
+    .map(([moduleId, module]) => {
+      const path = skillPathFromModuleId(moduleId);
+      // A test may name the skill by its module (`start.skills`, `opened()`).
+      rememberSkillModule(module.default, path);
+      return {
+        path,
+        Component: module.default,
+        meta: module.meta,
+        ...(module.source === undefined ? {} : { source: module.source }),
+        ...(module.source === undefined ? {} : { moduleId }),
+      };
+    })
     .sort((left, right) => left.path.localeCompare(right.path));
 }
 

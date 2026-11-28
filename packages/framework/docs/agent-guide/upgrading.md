@@ -59,6 +59,22 @@ Run `npx curb check`. When a change affects your project, a diagnostic says what
 code and a fix ([Diagnostics](./diagnostics.md)). Then run `npx curb test`, and read the
 [release notes](https://github.com/Kugelaudio/curb.js/releases) for breaking changes.
 
+## Changes to `curb test` in v1.30
+
+Two changes can make `curb test` behave differently on a project that passed before:
+
+- **A reply store is on by default, and the clock is fixed.** `curb test` answers a request it saw
+  before from `~/.cache/curb/replies` instead of the model, so a second run with nothing changed
+  calls no model. The agent sees a fixed date and time (a scenario's `now`, else `CURB_TEST_NOW`,
+  else 2026-06-03T15:00:00Z) instead of the real clock. A scenario that relied on today's date
+  gives `now`; `npx curb test --live` runs as before, with no store and the real clock
+  ([Reply store](./reply-store.md)).
+- **A fake for a tool the agent does not have is an error.** A `fakes` entry whose name is no tool
+  of the agent, a misspelled name most often, stops the scenario before the first turn with
+  `[CURB_TEST_UNKNOWN_FAKE]`, which names the tools there are; it used to be a note. Correct the
+  name, or pass the tool's `defineTool` value to [`fake`](./testing-api.md#fake) so TypeScript
+  checks it. `curb check` reports the same scenario as `SCENARIO_UNKNOWN_TOOL`.
+
 ## Next steps
 
 - [Guides](./examples.md): what to build next.

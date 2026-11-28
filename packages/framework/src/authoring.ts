@@ -25,6 +25,12 @@ export const AUTHORING_DIAGNOSTIC_CODES = {
   conversationStoreSqlite: "AGENT_CONVERSATION_STORE_SQLITE",
   hookNotAFunction: "AGENT_HOOK_NOT_A_FUNCTION",
   hookNotDeclared: "AGENT_HOOK_NOT_DECLARED",
+  skillInfoMissing: "SKILL_INFO_MISSING",
+  scenarioUnknownSkill: "SCENARIO_UNKNOWN_SKILL",
+  scenarioUnknownTool: "SCENARIO_UNKNOWN_TOOL",
+  scenarioInfoMissing: "SCENARIO_INFO_MISSING",
+  instructionUnknownTool: "INSTRUCTION_UNKNOWN_TOOL",
+  mcpToolsStale: "MCP_TOOLS_STALE",
 } as const;
 
 export type AuthoringDiagnosticCode =

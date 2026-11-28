@@ -107,12 +107,13 @@ A run's id is the time it started and four random characters, so ids sort by tim
 | `ending.caller` | What the simulated caller said about the end: whether it was `done`, whether its goal was met, and why. `null` when it did not say |
 | `ending.providerError` | `true` when a failed request to the agent's LLM provider stopped it |
 | `endState` | The data of the agent's stores, its rendered context and its active skill when the call ended |
+| `skills` | The skills the call had open, by route path: `started`, opened by `start.skills` before turn 1, and `opened`, every skill open at some point, in order. Optional: absent when no skill opened, and a record without it is read from its `read_skill` calls and each turn's skill |
 | `usage` | Tokens per part, `null` where the provider reported none |
 | `replies` | What the [reply store](./testing-api.md#reply-store) answered, when the run had one: `stored` and `live` requests, `from` (the `turn`, `role` and what `changed` where the first live request came in) and `requests`, each [`ReplyRequest`](./testing-api.md#reply-store) with its `turn`. A later run compares its requests with these. Optional |
 | `recordsToolCalls` | `false` when its source holds no tool calls (a Calls export line without `toolCalls`, a transcript). Optional |
 | `assessment` | What the checks and the judge made of it when the file was written; absent on a conversation `saveRun` saved without checks: the `outcome` (`pass`, `fail` or `error`), the `error` with its `kind`, every check, and every answer of the judge with its `turn` and `quote` |
 
-Everything a check, the judge or a style number reads is in `turns`, `ending` and `endState`. A
+Everything a check, the judge or a style number reads is in `turns`, `ending`, `endState` and `skills`. A
 re-judge reads only those, so it gives the same result as the run did when nothing was changed, apart
 from what the judge answers differently.
 

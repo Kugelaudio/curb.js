@@ -1,5 +1,6 @@
 import { createElement, type ReactNode } from "react";
-import { mergeAuthoringDiagnostics, type AuthoringDiagnostic } from "./authoring.js";
+import type { z } from "zod";
+import { AUTHORING_DIAGNOSTIC_CODES, mergeAuthoringDiagnostics, type AuthoringDiagnostic } from "./authoring.js";
 import { AgentStateProvider } from "./agent-state.js";
 import { compileSite, flattenContext } from "./compiler.js";
 import { AgentInfoProvider } from "./info-context.js";
@@ -8,6 +9,7 @@ import { RouterProvider, type AgentRouterApi } from "./route-context.js";
 import { AgentInfoStore } from "./info-store.js";
 import { createSemanticRoot, type SemanticRoot } from "./reconciler.js";
 import { SessionProvider, type CallView } from "./session-context.js";
+import { skillInfoMessage, skillInfoProblems, type SkillInfoProblem } from "./skill-info.js";
 import { markThrown } from "./tool-run.js";
 import { adjustableFromTree, providerPropsFromTree, SessionSettings } from "./session-settings.js";
 import {
@@ -47,6 +49,10 @@ export type ToolFake = (input: Record<string, unknown>) => Promise<ToolResult>;
  * `fake` where it would run the author's `onSubmit`. */
 type FakeableSubmit = (input: Record<string, unknown>, fake: ToolFake, accepted?: () => void) => Promise<ToolResult>;
 
+/** What a hermetic test gives a call of a tool that has no fake, instead of running the tool
+ * (`fakeTools(fakes, { unfaked })`): the call's result. The tool's handler never runs. */
+export type UnfakedTool = (name: string, input: Record<string, unknown>) => ToolResult;
+
 export type SiteFactory = (state: {
   /** The active skill's path (most recently loaded); "" while no skill is loaded. */
   path: string;
@@ -67,8 +73,13 @@ export type AgentSiteRuntimeOptions = {
   skills?: readonly SkillEntry[];
 };
 
-/** One skill of the agent as its route declares it. */
-export type SkillEntry = { path: string; title?: string; description?: string };
+/** One skill of the agent as its route declares it. `info` is its `meta.info`, checked when the
+ * skill opens. */
+export type SkillEntry = { path: string; title?: string; description?: string; info?: z.ZodObject };
+
+/** A skill opened while the call's info lacked a key its `meta.info` requires, or held one that
+ * does not fit (`SKILL_INFO_MISSING`). */
+export type SkillInfoMissing = { path: string; problems: readonly SkillInfoProblem[]; message: string };
 
 /** A tool as a model is told about it before it can call it. */
 export type CatalogTool = { name: string; description: string };
@@ -83,6 +94,11 @@ export type SkillCatalog = {
 };
 
 const DEFAULT_MAX_LOADED_SKILLS = 3;
+
+/** A real call goes on without the info: the skill opens and reads the missing keys as undefined. */
+function logSkillInfoMissing({ message }: SkillInfoMissing): void {
+  console.warn(`[curb] ${AUTHORING_DIAGNOSTIC_CODES.skillInfoMissing}: ${message} The skill opened anyway; set the info before it opens (the host's set_info, or start.info in a test).`);
+}
 
 export class AgentSiteRuntime {
   private readonly root: SemanticRoot;
@@ -136,8 +152,13 @@ export class AgentSiteRuntime {
   private endCallRequest: EndCallRequest | null = null;
   /** The hosted call this runtime serves (`useSession().call`); null until one is bound. */
   private call: CallView | null = null;
+  /** Told when a skill opens without its declared info (see `onSkillInfoMissing`). */
+  private skillInfoMissing: (missing: SkillInfoMissing) => void = logSkillInfoMissing;
   /** Tools a test replaced, by name (see `fakeTools`); empty outside tests. */
   private toolFakes: ReadonlyMap<string, ToolFake> = new Map();
+  /** What a call of an agent's tool without a fake gets instead of running (see `fakeTools`);
+   * null outside hermetic tests. */
+  private unfakedTool: UnfakedTool | null = null;
   /** Stable `useRouter()` value, provided around every render (see refresh). */
   private readonly routerApi: AgentRouterApi = {
     push: (path: string) => this.navigate(path),
@@ -220,7 +241,9 @@ export class AgentSiteRuntime {
     this.toolCallInFlight = true;
     try {
       const fake = this.toolFakes.get(name);
-      result = await (fake ? this.callFaked(name, fake, input, accepted) : entry.handler(input, accepted));
+      // A hermetic test runs none of the agent's own tools for real; the framework's still run.
+      const stopped = !fake && this.unfakedTool && entry.definition.scope !== "runtime" ? this.unfakedTool(name, input) : null;
+      result = stopped ?? (await (fake ? this.callFaked(name, fake, input, accepted) : entry.handler(input, accepted)));
       if (result.ok) {
         this.toolSucceeded.add(name);
         this.toolErrors.delete(name);
@@ -273,9 +296,14 @@ export class AgentSiteRuntime {
    * where it would run `onSubmit`. A tool without a form (`onCall`, an MCP tool) has no input
    * check of the framework's: the fake stands in for its whole handler. Either way the call is
    * recorded, a `confirm` tool still runs only on the caller's yes, and the context refreshes.
+   *
+   * With `unfaked` (a hermetic test), a call of one of the agent's tools that has no fake runs
+   * nothing: its result is what `unfaked` returns. The framework's own tools (`read_skill`,
+   * `end_call`, ...) still run.
    */
-  fakeTools(fakes: Readonly<Record<string, ToolFake>>): void {
+  fakeTools(fakes: Readonly<Record<string, ToolFake>>, options: { unfaked?: UnfakedTool } = {}): void {
     this.toolFakes = new Map(Object.entries(fakes));
+    this.unfakedTool = options.unfaked ?? null;
   }
 
   /** A call of `name`, which a test faked with `fake` (see `fakeTools`). */
@@ -503,7 +531,25 @@ export class AgentSiteRuntime {
     this.refresh("update");
   }
 
+  /**
+   * What happens when a skill opens without the call info its `meta.info` requires: by default
+   * the runtime logs `SKILL_INFO_MISSING` and the skill opens all the same, as on a real call; a
+   * test passes a handler that fails its run. Null restores the default.
+   */
+  onSkillInfoMissing(handler: ((missing: SkillInfoMissing) => void) | null): void {
+    this.skillInfoMissing = handler ?? logSkillInfoMissing;
+  }
+
+  private checkSkillInfo(path: string) {
+    const schema = this.skills.find((skill) => skill.path === path)?.info;
+    if (!schema) return;
+    const problems = skillInfoProblems(schema, this.info.snapshot());
+    if (problems.length === 0) return;
+    this.skillInfoMissing({ path, problems, message: skillInfoMessage(path, problems) });
+  }
+
   private markSkillLoaded(path: string) {
+    if (!this.loadedPaths.includes(path)) this.checkSkillInfo(path);
     this.loadedPaths = this.loadedPaths.filter((loaded) => loaded !== path);
     this.loadedPaths.push(path);
     if (this.loadedPaths.length > this.maxLoadedSkills) {

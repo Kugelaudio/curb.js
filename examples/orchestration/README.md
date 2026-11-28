@@ -14,7 +14,12 @@ a booking line.
 | How many skills stay open | `defineAgent({ maxLoadedSkills })` | 1 |
 | When a turn is over | `.env`: `VOICE_ENDPOINTING_*` | `.env.example` |
 
+The booking tool is a typed value in `src/agent/booking/tools.ts`: the skill renders it, and the
+tests fake it and check it by the same value. `src/agent/booking.scenario.ts` plays the whole call
+from the greeting; `src/agent/booking/booking.scenario.ts` tests the booking skill alone, starting
+inside it (`start: { skills: [Booking] }`) on a fixed day (`now`).
+
 ```bash
-npx curb check
-npx curb test
+npx curb check     # also type-checks each fake against what the tool returns
+npx curb test      # a second run with nothing changed answers from the reply store
 ```

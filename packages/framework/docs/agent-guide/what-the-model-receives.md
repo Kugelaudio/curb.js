@@ -66,7 +66,7 @@ skip_turn, read_skill
 === messages ===
 user: A pipe burst at home
 user: <current_context>
-Today is Friday, 30 October 2026, 15:00 (UTC). The next days: …
+Today is Friday, October 30, 2026, 15:00 (UTC). The next days: …
 available_skill: Report a claim — Use when the caller wants to report damage.
 available_skill: Claim status — Use when the caller asks about an open claim.
 available_skill: Policy questions — Use for questions about cover.
@@ -113,7 +113,7 @@ user: A pipe burst at home
 assistant: call read_skill({"skill":"/report-claim"})
 tool: result read_skill: {"ok":true,"note":"Skill read: its instructions and tools are now in your current context (the last message). Skills are internal; the user never sees them.","contextChanged":["active_skill: Report a claim","instruction: Ask for the policy number.","content: No policy is verified.","content: Attempts so far: 0.","tool: verify_policy(policy*) [page]"]}
 user: <current_context skill="Report a claim">
-Today is Friday, 30 October 2026, 15:00 (UTC). The next days: …
+Today is Friday, October 30, 2026, 15:00 (UTC). The next days: …
 active_skill: Report a claim
 instruction: Ask for the policy number.
 content: No policy is verified.
@@ -182,6 +182,29 @@ tool: open_claim(what*) [page]
 
 `open_claim` does not exist until the policy is verified, so the model cannot open a claim for a
 caller it has not checked, whatever the caller says.
+
+## The date and a fixed clock
+
+Every request ends with the date line in `<current_context>`: today's date and time in the agent's
+time zone (`defineAgent({ timeZone })`, UTC by default), in the agent's language, and the next 14
+days, so "next Tuesday" needs no arithmetic. On a real call it is the real clock.
+
+In a test the clock is fixed. `curb test` shows the agent the scenario's `now`, else
+`CURB_TEST_NOW`, else 2026-06-03T15:00:00Z (a Wednesday afternoon), so the request is the same
+every minute and the [reply store](./reply-store.md) can answer it. A scenario that depends on the
+day names it:
+
+```ts
+// src/agent/calendar/calendar.scenario.ts
+export default scenario({
+  now: "2026-10-30T08:00:00Z",           // a Friday: the agent reads "Today is Friday, October 30, 2026, 08:00 (UTC)."
+  turns: ["What's in my calendar today?"],
+  expect: ({ called }) => [called(listEvents, { day: "2026-10-30" })],
+});
+```
+
+`curb test --live` shows the real clock, except to a scenario that gives `now`. `startCall({ now })`
+does the same for a call of your own ([testing API](./testing-api.md#scenario)).
 
 ## See it for your own agent
 

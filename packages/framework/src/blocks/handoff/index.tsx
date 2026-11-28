@@ -14,7 +14,7 @@ import {
   type TransferOutcome,
 } from "../transfer-call/index.js";
 import type { TransferEndedOption } from "../transfer-call/ended.js";
-import { HANDOFF_BLOCK, type HandoffToolMark } from "./trigger.js";
+import { HANDOFF_BLOCK, HANDOFF_TOOL_NAMES, type HandoffToolMark } from "./trigger.js";
 import { ToolInputError, type ToolResult } from "../../types.js";
 
 /**
@@ -105,8 +105,8 @@ export function Handoff({
   ringTimeoutSeconds,
   onEnded,
   onCallbackRequest,
-  name = "handoff",
-  callbackName = "request_callback",
+  name = HANDOFF_TOOL_NAMES.name,
+  callbackName = HANDOFF_TOOL_NAMES.callbackName,
 }: HandoffProps) {
   const transfer = useTransferCall();
   const info = useAgentInfoStore();

@@ -21,6 +21,7 @@ npx curb test [filter] [options]
 | `--live` | Sends every request to the model: no [reply store](#the-reply-store), and the real clock instead of the fixed one. What `curb test` did before it had a store |
 | `--dry` | Calls no model: lists which scenarios would go live, from which turn, and what changed ([below](#the-reply-store)). Saves nothing |
 | `--max-tokens <n>` | Starts no live request once the live requests used `n` tokens. The runs that needed one end as errors, and the exit code is 3 |
+| `--hermetic` | Runs every scenario [hermetic](../testing.md#hermetic-runs): a call of a tool without a fake ends the run as an error before the tool runs, and MCP tools come from `mcp.tools.json` without contacting a server |
 | `--json` | Prints one JSON object |
 
 ## The reply store
@@ -151,6 +152,8 @@ npx curb test --live
 | Version | Changes |
 |---|---|
 | v1.30.0 | `--live`, `--dry` and `--max-tokens <n>` (exit code 3); each scenario reports `stored` or from which turn it went live and why; the Tokens line and `--json` (`store`) split live tokens from those the reply store saved; the scenarios a change can affect run first |
+| v1.30.0 | `--hermetic`, and a scenario's `hermetic` |
+| v1.30.0 | A fake for a tool the agent does not have is an error before the first turn, no longer a note after the run |
 | v1.27.0 | `--changed <ref>` runs only the scenarios a change since `<ref>` can affect |
 | v1.27.0 | The judge does not count `claimed_without_tool` when the tool it names ran and succeeded by then (judge prompt 4). The simulated caller ends the call once its goal is done, also when the agent asks whether there is anything else (caller prompt 4) |
 | v1.25.0 | `--runs` runs scripted scenarios that many times too |

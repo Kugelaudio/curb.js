@@ -1,14 +1,98 @@
 # Reply store
 
 A reply store keeps the model replies a test has had before, looked up by the exact request. A
-test whose requests are unchanged gets its replies from the store and calls no model. The store
-functions of `curb/testing` are on the [Testing API](./testing-api.md#reply-store) page.
+test whose requests are unchanged gets its replies from the store and calls no model, so running
+`curb test` again after a change costs only the scenarios the change reaches. The store functions
+of `curb/testing` are on the [Testing API](./testing-api.md#reply-store) page.
 
-This page is for whoever runs a remote store: a server that `remoteReplyStore` reads and writes, so
-that several machines share their stored replies. Curb documents the protocol; any server that
-speaks it works.
+## What `curb test` does
+
+`curb test` keeps a store on by default. Each request of the agent, the simulated caller and the
+judge is answered from the store when it holds a reply for exactly that request, and sent to the
+model otherwise; the reply that comes back is stored for next time. Each scenario's report says
+where its replies came from:
+
+```text
+  replies  stored
+  replies  live from turn 2 (system prompt changed)
+```
+
+A request is the same when its role (agent, caller or judge), model and settings, system prompt,
+messages, tools and run number are. So a change to a skill's instructions makes the scenarios
+that open that skill live from the turn that reads it, and leaves the others stored. Once one
+request of a call is new, the rest of that call goes to the model too.
+
+Two things keep a request the same from one run to the next:
+
+- **A fixed clock.** The agent sees the scenario's `now`, else `CURB_TEST_NOW`, else
+  2026-06-03T15:00:00Z, instead of the real time ([the date and a fixed
+  clock](./what-the-model-receives.md#the-date-and-a-fixed-clock)).
+- **Replies per run.** A scenario with `runs: 5` stores five replies to its first request, one per
+  run, so a stored scenario still plays five conversations.
+
+Errors, cut-off replies and replies stopped at the output limit are never stored.
+
+| Flag | What it does |
+|---|---|
+| `--live` | No store and the real clock: every request goes to the model |
+| `--dry` | Calls no model: says which scenarios would go live, from which turn, and why |
+| `--max-tokens <n>` | Starts no live request once the live ones used `n` tokens; exit code 3 |
+
+The flags are on the [`curb test`](./cli/test.md#the-reply-store) page. `curb say`, `curb review`
+and `curb dev` use no store.
+
+## Where it lives
+
+The local store is a folder outside the project, one gzip file per reply:
+
+```text
+~/.cache/curb/replies/v1/<first two characters of the key>/<key>.json.gz
+```
+
+`CURB_REPLY_STORE_DIR` names another folder, and `$XDG_CACHE_HOME/curb/replies` is used when
+`XDG_CACHE_HOME` is set. A file never changes once written. Delete the folder to start empty; a
+damaged file counts as a miss. Nothing of it belongs in git.
+
+A stored reply holds what the model answered, and the request's key, which is a hash: the
+request itself (prompt, messages, tool results) is not kept.
+
+## In CI
+
+A CI job starts with an empty folder, so it calls the model for every request unless it brings the
+store back. A new project's `.github/workflows/curb-test.yml` does that with the Actions cache:
+
+```yaml
+      - name: Restore the reply store
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/curb/replies
+          key: curb-replies-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: curb-replies-
+      - run: npx curb test --hermetic
+      - name: Save the reply store
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/curb/replies
+          key: curb-replies-${{ github.run_id }}-${{ github.run_attempt }}
+```
+
+The restore takes the newest store any earlier run saved, and the save keeps this run's under a key
+of its own, also when a scenario failed. A second run of the same commit then reports every
+scenario `stored` and its Tokens line reads `0 live`. A scheduled or `main` job that should
+measure the real model runs `npx curb test --live`.
+
+## Sharing a store
+
+Several machines share their replies through a remote store: set `CURB_REPLY_STORE_URL` (and
+`CURB_REPLY_STORE_TOKEN`), and `curb test` asks the local store first, then the remote one, and
+copies a remote hit into the local folder. Curb ships no server; the protocol below is what one
+speaks.
 
 ## Remote store protocol
+
+This part is for whoever runs a remote store: a server that `remoteReplyStore` reads and writes.
+Any server that speaks it works.
 
 ```text
 GET  {base}/replies/{key}     200 gzip JSON | 404
@@ -72,4 +156,4 @@ counts as a failure.
 
 | Version | Changes |
 |---|---|
-| v1.30.0 | Protocol documented |
+| v1.30.0 | `curb test` keeps replies in a local store by default, on a fixed clock unless `--live`; protocol documented |

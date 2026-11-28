@@ -229,10 +229,12 @@ export type ToolFeedbackProps = {
   error?: string;
 };
 
-export type ToolPropsWithSchema<TSchema extends z.ZodObject> = ToolPropsBase &
+/** A `<Tool>` with a zod `schema`. `TResult` is what its `onSubmit` returns, so a test's
+ * `fake(tool, result)` is checked against it. */
+export type ToolPropsWithSchema<TSchema extends z.ZodObject, TResult extends ToolResult = ToolResult> = ToolPropsBase &
   ToolFeedbackProps & {
     schema: TSchema;
-    onSubmit: (input: z.infer<TSchema>) => Promise<ToolResult> | ToolResult;
+    onSubmit: (input: z.infer<TSchema>) => Promise<TResult> | TResult;
     /** Input the preview's Try form opens with, e.g. a customer your demo data knows.
      * Preview only: it never reaches the model. */
     tryWith?: Partial<z.input<TSchema>>;

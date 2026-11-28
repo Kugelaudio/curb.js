@@ -8,6 +8,11 @@ name: curb test
 # Without that secret the job fails on a pull request from this repository and on a run started
 # by hand, so a missing key never passes as green. A pull request from a fork gets no secrets, so
 # the scenarios are skipped there and only `curb check` runs.
+#
+# The reply store keeps every model reply the scenarios got, by the exact request, in
+# ~/.cache/curb/replies. The cache step brings back the store of the newest earlier run, so a
+# scenario whose requests did not change gets its replies from there and calls no model: a rerun
+# with no change makes no model call at all, and a change pays only from the turn it touched.
 
 on:
   pull_request:
@@ -42,12 +47,32 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npx curb check
-      # Each scenario says how often it runs and how many runs must pass (runs, minPassRate).
-      # The report lands in the job summary.
-      - name: npx curb test
+      # restore-keys brings back the newest store this branch or the base branch saved. A fork's
+      # run never reads or writes it.
+      - name: Restore the reply store
         if: env.KUGELAUDIO_API_KEY != ''
-        run: npx curb test
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/curb/replies
+          key: curb-replies-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: curb-replies-
+      # Each scenario says how often it runs and how many runs must pass (runs, minPassRate).
+      # The report lands in the job summary, with each scenario's replies: stored, or live from
+      # the turn where a request changed. --hermetic runs no tool without a fake: a scenario that
+      # calls a tool it does not fake fails, so no test reaches a real system. Give a new tool a
+      # fake in every scenario that may call it.
+      - name: npx curb test --hermetic
+        if: env.KUGELAUDIO_API_KEY != ''
+        run: npx curb test --hermetic
         # To take the simulated caller and the judge off the agent's provider, run them on OpenAI
         # with OPENAI_API_KEY as a repository secret: replace the run line above with these two.
         # env: { OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}" }
-        # run: npx curb test --caller-model openai:gpt-5.4-mini --judge-model openai:gpt-5.4-mini
+        # run: npx curb test --hermetic --caller-model openai:gpt-5.4-mini --judge-model openai:gpt-5.4-mini
+      # A new key on every run, so each run saves the replies it added, also when a scenario
+      # failed: a stored reply is kept whether or not the test passed.
+      - name: Save the reply store
+        if: always() && env.KUGELAUDIO_API_KEY != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/curb/replies
+          key: curb-replies-${{ github.run_id }}-${{ github.run_attempt }}

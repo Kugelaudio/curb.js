@@ -1,8 +1,8 @@
 import { AGENT_LANGUAGES, fallbackReplies } from "../llm/localized.js";
 import { ask, judgeView, type JudgeModel } from "./judge.js";
 import { normalizeLlmPunctuation } from "../llm/punctuation.js";
-import type { CallerEnding, ConversationRecord, EndState } from "./record.js";
-import { toolName, type ExpectedCall, type ScenarioCheck, type ScenarioExpectContext, type ScenarioTool, type ScenarioToolCall, type ScenarioTurn } from "./scenario.js";
+import type { CallerEnding, ConversationRecord, EndState, RecordedSkills } from "./record.js";
+import { skillPathOf, toolName, type ExpectedCall, type ScenarioSkill, type ScenarioCheck, type ScenarioExpectContext, type ScenarioTool, type ScenarioToolCall, type ScenarioTurn } from "./scenario.js";
 import { agentWords, sentenceKey, sentences } from "./style.js";
 
 /**
@@ -107,7 +107,7 @@ export function checksOf(
     throw new Error(`${helper} asks a judge model, and none was given here. Fix: checksOf(record, { model: await testModel() }); in a scenario, curb test gives it the run's judge model.`);
   };
   return {
-    ...expectContext(record.turns, record.endState),
+    ...expectContext(record.turns, record.endState, record.skills),
     transcriptText: judgeView({ turns: judged.turns, endedBy: judged.ending.by, caller: null, ...(judged.tools ? { tools: judged.tools } : {}) }).join("\n"),
     ask: async (question) => {
       if (typeof question !== "string" || !question.trim()) {
@@ -231,10 +231,12 @@ export function repeatedSentences(text: string): string[] {
 }
 
 /** The helpers an `expect` function receives. `endState` is the agent's state when the call
- * ended; null when it could not be read. */
+ * ended; null when it could not be read. `skills` are the skills the call had open, as its
+ * record holds them; without them, the skills it read (`read_skill`) and each turn's skill. */
 export function expectContext(
   turns: readonly ScenarioTurn[],
   endState: EndState | null = null,
+  skills: RecordedSkills = skillsReadIn(turns),
 ): Omit<ScenarioExpectContext, "transcriptText" | "ask" | "model"> {
   const calls = turns.flatMap((turn) => turn.toolCalls.map((call) => ({ ...call, at: label(turn) })));
   const ranCalls = (tool: string) => calls.filter((call) => call.name === tool && call.ok);
@@ -304,11 +306,22 @@ export function expectContext(
       if (ran.length === 0) return { name, pass: true };
       return { name, pass: false, detail: `${tool} ran ${ran.map((call) => `${call.at} with ${JSON.stringify(call.input)}`).join(", ")}` };
     },
-    opened: () => {
-      throw new Error("opened() is not implemented yet in this version of curb.");
+    opened: (skill) => {
+      const path = skillArgument("opened", skill);
+      const name = `opened ${path}`;
+      if (skills.opened.includes(path)) return { name, pass: true, ...(skills.started.includes(path) ? { detail: "started there" } : {}) };
+      return { name, pass: false, detail: `${path} was never opened; skills opened: ${skills.opened.join(", ") || "none"}` };
     },
-    notOpened: () => {
-      throw new Error("notOpened() is not implemented yet in this version of curb.");
+    notOpened: (skill) => {
+      if (skill === undefined) {
+        const name = skills.started.length > 0 ? `opened no skill beyond ${skills.started.join(", ")}` : "opened no skill";
+        const more = skills.opened.filter((path) => !skills.started.includes(path));
+        return more.length === 0 ? { name, pass: true } : { name, pass: false, detail: `opened ${more.join(", ")}` };
+      }
+      const path = skillArgument("notOpened", skill);
+      const name = `did not open ${path}`;
+      if (!skills.opened.includes(path)) return { name, pass: true };
+      return { name, pass: false, detail: skills.started.includes(path) ? `${path} was opened by start.skills` : `${path} was opened` };
     },
     said: (text) => {
       const name = `said ${text instanceof RegExp ? String(text) : JSON.stringify(text)}`;
@@ -328,6 +341,29 @@ export function expectContext(
     check: (name, pass, detail) => ({ name, pass, ...(detail === undefined ? {} : { detail }) }),
     note: (check) => ({ ...check, reportOnly: true }),
   };
+}
+
+/** The route path of the skill an `opened` or `notOpened` check names; throws, naming the helper. */
+function skillArgument(helper: string, skill: ScenarioSkill): string {
+  try {
+    return skillPathOf(skill);
+  } catch (error) {
+    throw new Error(`${helper}(): ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** The skills a conversation had open, read from its turns, for a record that does not hold
+ * them: each skill a `read_skill` call opened and each skill a turn ended in, in that order. */
+function skillsReadIn(turns: readonly ScenarioTurn[]): RecordedSkills {
+  const opened: string[] = [];
+  const add = (path: unknown) => {
+    if (typeof path === "string" && path !== "" && !opened.includes(path)) opened.push(path);
+  };
+  for (const turn of turns) {
+    for (const call of turn.toolCalls) if (call.name === "read_skill" && call.ok) add(call.input.skill);
+    add(turn.skillPath);
+  }
+  return { started: [], opened };
 }
 
 /** An expected call as its tool and the input it must have. */

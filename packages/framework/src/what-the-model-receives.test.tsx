@@ -122,7 +122,7 @@ function printedRequest(request: AgentRunRequest): string {
 
 /** The request as it reads apart from today's date, which changes every minute. */
 function dated(text: string): string {
-  return text.replace(/^Today is .*$/m, "Today is Friday, 30 October 2026, 15:00 (UTC). The next days: …");
+  return text.replace(/^Today is .*$/m, "Today is Friday, October 30, 2026, 15:00 (UTC). The next days: …");
 }
 
 function guideBlock(name: string): string {

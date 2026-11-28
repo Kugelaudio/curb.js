@@ -73,7 +73,9 @@ A fault in Curb itself is reported as `reporting-a-bug.md` says, with the person
    `error` says nothing about the agent (the provider failed, or the simulated caller went
    wrong). After changing an `expect` or an expectation, `npx curb test --rejudge latest`
    checks the saved conversations again without running the agent. Keep one scenario per
-   flow that matters, and fake every tool that books, sends or deletes (`testing.md`).
+   flow that matters. CI runs `npx curb test --hermetic`, where a scenario that calls a tool
+   without a fake fails: give every tool a scenario may call a fake there, and check the call
+   (`called`, `notCalled`) instead of the state the real tool would have changed (`testing.md`).
    When the ready-made checks do not cover what the team needs, build on the same functions
    (`testing-foundation.md`, "Build your own tests").
 
@@ -119,13 +121,15 @@ what really happened.
 src/agent/agent.tsx         the agent, where every conversation starts: <Agent llm stt tts>,
                             system prompt, skills index, tools every skill has, store
 src/agent/<name>/skill.tsx  one folder per skill, opened when needed; nested folders are sub-skills
-src/agent/*.scenario.ts     conversations `curb test` plays: a caller, and what must hold afterwards
+src/agent/<name>/tools.ts   a skill's tools as defineTool values, imported by the skill and its tests
+src/agent/**/*.scenario.ts  conversations `curb test` plays: a caller, and what must hold afterwards;
+                            one in a skill's folder (<name>/<name>.scenario.ts) can start inside it
 context/*.md                knowledge a skill reads with <Text src="file.md" />
 .env                        other providers' keys, an optional KUGELAUDIO_API_KEY; never commit it
 .data/conversations.jsonl   every preview conversation: tool calls, inputs, results
 .curb/test-runs/            every `curb test` run with its conversations, for --rejudge (format: test-runs.md)
-.github/workflows/          curb-test.yml runs check and test on each pull request; it needs
-                            KUGELAUDIO_API_KEY as a repository secret
+.github/workflows/          curb-test.yml runs check and test on each pull request and caches the
+                            reply store; it needs KUGELAUDIO_API_KEY as a repository secret
 ```
 
 ## Rules

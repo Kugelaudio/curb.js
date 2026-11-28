@@ -28,7 +28,7 @@ describe("scenario()", () => {
 
     expect(() => scenario(definition)).toThrow(
       [
-        'scenario(): Unknown field "steps" in a scenario; it takes name, caller, turns, maxTurns, client, experiments, fakes, runs, minPassRate, expectations, findings, failOn, style, expect, expectRuns.',
+        'scenario(): Unknown field "steps" in a scenario; it takes name, caller, turns, maxTurns, client, experiments, fakes, hermetic, runs, minPassRate, expectations, findings, failOn, style, expect, expectRuns, start, spoken, now.',
         "Give caller (a simulated caller) or turns (scripted caller lines), not both.",
         'Unknown field "mood" in caller; it takes goal, knows, language, persona, behaviours.',
         'caller.goal must say what the caller wants from the call, e.g. "Book a follow-up call for next week".',
@@ -49,6 +49,11 @@ describe("scenario()", () => {
       "maxTurns (2) is less than the 3 scripted turns; raise it or leave it out.",
     );
     expect(() => scenario(null as unknown as ScenarioDefinition)).toThrow("It takes one object");
+  });
+
+  it("takes now, the date-time the agent sees, and refuses one that is not a date-time", () => {
+    expect(scenario({ turns: ["Hi"], now: "2026-10-30T15:00:00Z" }).now).toBe("2026-10-30T15:00:00Z");
+    expect(() => scenario({ turns: ["Hi"], now: "next Friday" })).toThrow('now must be an ISO date-time such as "2026-10-30T15:00:00Z"; got "next Friday".');
   });
 
   it("takes fakes: a tool result or a function per tool, and names each wrong one", () => {
@@ -74,9 +79,11 @@ describe("scenario()", () => {
         "fakes.end_call: end_call is the framework's own tool, not one of the agent's, and cannot be faked.",
       ].join(" "),
     );
-    expect(() => scenario({ turns: ["Hi"], fakes: [] } as unknown as ScenarioDefinition)).toThrow(
-      'fakes must be an object of tool name to the result its calls get, e.g. { create_claim: { ok: true, message: "Claim created." } }.',
+    expect(() => scenario({ turns: ["Hi"], fakes: "book" } as unknown as ScenarioDefinition)).toThrow(
+      'fakes must be a list of fake(tool, result), or an object of tool name to the result its calls get, e.g. { create_claim: { ok: true, message: "Claim created." } }.',
     );
+    // An empty list of fake(tool, result) fakes nothing, as an empty object does.
+    expect(() => scenario({ turns: ["Hi"], fakes: [] })).not.toThrow();
   });
 
   it("takes the page info a call starts with, held to the limits a page's info has everywhere", () => {

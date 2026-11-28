@@ -186,6 +186,7 @@ export function App() {
         You can:
         - keep the user's task list,
         - remember what they tell you about themselves,
+        - read their calendar,
         - explain how you are built.
 
         The task list changes only through its tools: call add_task, complete_task or remove_task first, and say a task is added or done only after the tool answered.
@@ -198,6 +199,7 @@ export function App() {
       {/* Each link's routing description is the target skill's meta.description. */}
       <Skills>
         <Skill path="/about-you">About you</Skill>
+        <Skill path="/calendar">Calendar</Skill>
         <Skill path="/how-this-works">How this works</Skill>
       </Skills>
       <DayPlanner />

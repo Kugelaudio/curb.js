@@ -91,13 +91,16 @@ export type ScenarioRunParams = {
   /** `--caller-model` and `--judge-model`. */
   callerModel?: string;
   judgeModel?: string;
+  /** `--hermetic`: every run is hermetic, whatever the scenario says. */
+  hermetic?: boolean;
 };
 
 /**
  * One run of a scenario (`run` from 0): a call as a call runs, the scenario's fakes in place and
  * its page info and the run's variants on it before the agent opens, played with its caller
  * until the agent hangs up, the caller hangs up or runs out of lines, `maxTurns` is reached, or a
- * turn reports an error; then assessed. A tool without a fake runs for real. `onCall` hears the
+ * turn reports an error; then assessed. A tool without a fake runs for real, unless the run is
+ * hermetic (the scenario's `hermetic` or `--hermetic`): then calling it ends the run as an error. `onCall` hears the
  * call when it starts, `onDeclared` the agent's experiments, `onTurn` each turn as it ends.
  * `replies`, on a host with a reply store, makes the conversation's `replies` from what the store
  * answered in the run and how many requests it had made when each turn ended.
@@ -122,6 +125,9 @@ async function playRunAs(params: Parameters<typeof playRun>[0]): Promise<SavedCo
     ...(scenario.fakes ? { fakes: scenario.fakes } : {}),
     ...(scenario.client ? { client: scenario.client } : {}),
     ...(scenario.now === undefined ? {} : { now: scenario.now }),
+    ...(params.hermetic || scenario.hermetic ? { hermetic: true } : {}),
+    ...(scenario.start ? { start: scenario.start } : {}),
+    ...(scenario.spoken === undefined ? {} : { spoken: scenario.spoken }),
     experiments: (declared) => {
       params.onDeclared?.(declared);
       return runVariants({ file, name }, declared, scenario, run);

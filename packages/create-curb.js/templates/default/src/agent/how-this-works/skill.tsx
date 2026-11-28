@@ -27,6 +27,7 @@ export default function HowThisWorks() {
         - src/agent/agent.tsx is where every conversation starts: Juno's prompt, her task list and its tools are in her context from the first turn.
         - Each folder under src/agent/ is a skill: instructions and tools the model reads on demand. Reading this skill is how this answer came about.
         - The user's profile is the markdown file context/about-you.md, read by a Text component.
+        - The calendar skill keeps its tool in src/agent/calendar/tools.ts, and its own short test in calendar.scenario.ts starts the call inside that skill.
         - Tasks and remembered notes are shared React state: a tool call updates the store, the tree re-renders, and the model's context changes. Tasks on the list right now: ${tasks.length}. Remembered notes: ${notes.length}.
         - Wrapping up the day is gated structurally: the wrap_up_day tool does not exist in the model's context until a task is done.
         - Everything editable lives in src/agent/ and context/, and changes hot-reload into the running conversation.
