@@ -16,6 +16,9 @@ export type McpToolsSnapshot = {
   servers: Record<string, { tools: McpToolInfo[] }>;
 };
 
+/** A snapshot that lists no server: what a project with no `mcp.tools.json` offers. */
+export const NO_MCP_TOOLS: McpToolsSnapshot = Object.freeze({ format: "curb.mcp-tools", version: 1, servers: Object.freeze({}) });
+
 /** A snapshot of `servers`, its servers and tools sorted by name so the file diffs cleanly. */
 export function mcpToolsSnapshot(servers: Readonly<Record<string, readonly McpToolInfo[]>>): McpToolsSnapshot {
   const sorted = Object.keys(servers).sort();

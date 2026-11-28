@@ -2,7 +2,6 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { offerSnapshotMcpTools } from "../mcp/snapshot-file.js";
 import {
   affectedScenarios,
   inParallel,
@@ -483,11 +482,6 @@ async function runScenarios(session: TestSession, hostOf: () => TestHost): Promi
     };
   }
 
-  // A run whose scenarios are all hermetic offers MCP tools from mcp.tools.json before the agent
-  // is first built, which would connect its servers otherwise. Where some are not, the servers
-  // connect, and a hermetic one among them still runs no tool without a fake.
-  const scenarios = selected.flatMap((entry) => ("scenario" in entry ? [entry.scenario] : []));
-  if (run.hermetic || (scenarios.length > 0 && scenarios.every((scenario) => scenario.hermetic))) offerSnapshotMcpTools(session.projectRoot);
   const host = hostOf();
   const before = host.throttle?.stats();
   const choice = {

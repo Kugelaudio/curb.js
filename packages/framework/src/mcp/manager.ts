@@ -70,28 +70,6 @@ export function setMcpOAuthSignInUrl(url: string | null): void {
   oauthSignInUrl = url;
 }
 
-/** The tools a hermetic test offers in place of every server's (`mcp.tools.json`); null while
- * servers are connected for real. Process-wide, like the default manager. */
-let offeredSnapshot: McpToolsSnapshot | null = null;
-/** Whether a server was connected for real in this process (see {@link offerMcpToolsFrom}). */
-let connectedLive = false;
-
-/**
- * From now on, every MCP server "connects" to its entry in `snapshot`: its tools are the ones the
- * snapshot lists, no transport is opened and no request leaves the process. A server the snapshot
- * lacks is an error state that names the fix. Null connects for real again. Returns false when a
- * server was already connected for real in this process: those stay as they are.
- */
-export function offerMcpToolsFrom(snapshot: McpToolsSnapshot | null): boolean {
-  offeredSnapshot = snapshot;
-  return !connectedLive;
-}
-
-/** The snapshot MCP tools come from in this process (see {@link offerMcpToolsFrom}); null when live. */
-export function offeredMcpSnapshot(): McpToolsSnapshot | null {
-  return offeredSnapshot;
-}
-
 async function createTransport(
   config: McpAnyServerConfig,
   onAuthorizationUrl: (url: URL) => void,
@@ -174,8 +152,34 @@ export class McpManager {
   /** Host hook: persist runtime-added servers (see `servers-store.ts`). */
   onPersistUserServers: ((configs: McpServerConfig[]) => void) | null = null;
 
-  constructor(servers: McpAnyServerConfig[] = []) {
+  /** The tools every server of this manager "connects" to (see {@link withSnapshot}); null
+   * when it connects for real. */
+  private readonly snapshot: McpToolsSnapshot | null;
+
+  constructor(servers: McpAnyServerConfig[] = [], options: { snapshot?: McpToolsSnapshot } = {}) {
+    this.snapshot = options.snapshot ?? null;
     this.configure(servers);
+  }
+
+  /**
+   * A manager of its own for one hermetic call: the servers this one has configured, each
+   * "connected" to its entry in `snapshot` at once. Its tools are the ones the snapshot lists, no
+   * transport is opened and no request leaves the process, and nothing it does reaches this
+   * manager. A server the snapshot lacks is an error state that names the fix, and so is a server
+   * an inline `<Mcp url>` adds to it later.
+   */
+  withSnapshot(snapshot: McpToolsSnapshot): McpManager {
+    const isolated = new McpManager([...this.configs.values()], { snapshot });
+    for (const config of this.configs.values()) {
+      // The snapshot branch of connect() sets the state before it returns.
+      if (config.enabled !== false) void isolated.connect(config);
+    }
+    return isolated;
+  }
+
+  /** The snapshot this manager offers tools from; null when it connects for real. */
+  offeredSnapshot(): McpToolsSnapshot | null {
+    return this.snapshot;
   }
 
   configure(servers: McpAnyServerConfig[], options: { user?: boolean } = {}) {
@@ -377,8 +381,8 @@ export class McpManager {
   }
 
   private async connect(config: McpAnyServerConfig): Promise<void> {
-    if (offeredSnapshot) {
-      const listed = offeredSnapshot.servers[config.id];
+    if (this.snapshot) {
+      const listed = this.snapshot.servers[config.id];
       this.setState(
         config.id,
         listed
@@ -392,7 +396,6 @@ export class McpManager {
       );
       return;
     }
-    connectedLive = true;
     this.setState(config.id, { status: "connecting" });
 
     let transport: Transport;
@@ -468,7 +471,7 @@ export class McpManager {
   ): Promise<ToolResult> {
     const client = this.clients.get(serverId);
     if (!client) {
-      if (offeredSnapshot) {
+      if (this.snapshot) {
         return { ok: false, message: `MCP server "${serverId}" is offered from ${MCP_TOOLS_FILE} in this hermetic run and was not contacted.` };
       }
       return { ok: false, message: `MCP server "${serverId}" is not connected.` };

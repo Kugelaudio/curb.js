@@ -18,6 +18,7 @@ import { Throttle, withRetries, withStreamRetries, type RetryOptions } from "./l
 import { s2sCredentialDiagnostic } from "./s2s-diagnostics.js";
 import { detachConversationRecorder } from "./server/conversation-store.js";
 import { VOICE_STYLE } from "./voice-style.js";
+import type { McpToolsSnapshot } from "./mcp/snapshot.js";
 
 /** A fresh curb runtime/session plus the authored definition. */
 export type VoiceAgentBundle = HostedSession;
@@ -33,8 +34,12 @@ export type VoiceAgentBundle = HostedSession;
  * Rejects with an `AgentAuthoringError` naming the variable when the LLM the session starts
  * on has no key in this process: such a session could only apologise on every turn.
  */
-export async function createVoiceAgentBundle(agentId?: string, wrap?: LlmTransportWrap): Promise<VoiceAgentBundle> {
-  return readyForCall(await buildBundle(agentId, wrap));
+export async function createVoiceAgentBundle(
+  agentId?: string,
+  wrap?: LlmTransportWrap,
+  options?: { mcpTools?: McpToolsSnapshot },
+): Promise<VoiceAgentBundle> {
+  return readyForCall(await buildBundle(agentId, wrap, options));
 }
 
 /** The two LLM transports a session runs on: one whole step, and one streamed step. */
@@ -135,9 +140,9 @@ export async function createPreviewAgentBundle(
 async function buildBundle(
   agentId: string | undefined,
   wrap?: LlmTransportWrap,
-  options?: { recordConversation?: boolean },
+  options?: { recordConversation?: boolean; mcpTools?: McpToolsSnapshot },
 ): Promise<VoiceAgentBundle> {
-  const hosted = await getHostedAgent(agentId);
+  const hosted = await getHostedAgent(agentId, { connectMcp: !options?.mcpTools });
   // Bound once the session exists; no turn can run before that.
   let runtime: AgentSiteRuntime | null = null;
   const llm = () => {
@@ -155,6 +160,7 @@ async function buildBundle(
     // A spoken turn that says it is doing something a tool does gets one more step to call it.
     checkFollowThrough: true,
     recordConversation: options?.recordConversation,
+    ...(options?.mcpTools ? { mcpTools: options.mcpTools } : {}),
   });
   runtime = bundle.runtime;
   // Outside settings changes may switch the LLM; one whose key this process lacks is refused.

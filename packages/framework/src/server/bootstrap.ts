@@ -5,6 +5,7 @@ import { diagnoseAgentAuthoring } from "../authoring-diagnostics.js";
 import { formatAuthoringDiagnostic } from "../authoring.js";
 import type { McpServerConfig } from "../mcp/config.js";
 import { configureMcp, preloadMcpTools } from "../mcp/manager.js";
+import type { McpToolsSnapshot } from "../mcp/snapshot.js";
 import { loadUserMcpServers, saveUserMcpServers } from "../mcp/servers-store.js";
 import { resolveAgentDir } from "../project.node.js";
 import { bundledAgentRegistry, discoverAgentFromRegistry } from "../agent-registry.node.js";
@@ -45,6 +46,8 @@ function agentDir(): string {
  *   reconfiguration; per-connection cleanup must NOT close this manager).
  */
 let prerequisites: Promise<DiscoveredAgent[]> | null = null;
+/** The default manager's servers connected, once (see `ensureHostPrerequisites`). */
+let mcpConnected: Promise<void> | null = null;
 
 /** Merge every agent's MCP config. Same id twice is fine when the URLs agree
  * (enabled wins over disabled); conflicting URLs are a configuration error. */
@@ -73,8 +76,12 @@ function mergeMcpServers(agents: DiscoveredAgent[]): McpServerConfig[] {
 /**
  * `quiet`: discovery prints no diagnostics (`curb dev` reloading the agent, which reports a
  * reload in one line). Read by the call that discovers, the first one.
+ *
+ * `connectMcp: false` configures the MCP servers without connecting them: a hermetic test call,
+ * whose runtime offers tools from a snapshot on a manager of its own, contacts no server. Every
+ * other call connects them, once per process.
  */
-export function ensureHostPrerequisites(options: { quiet?: boolean } = {}): Promise<DiscoveredAgent[]> {
+export function ensureHostPrerequisites(options: { quiet?: boolean; connectMcp?: boolean } = {}): Promise<DiscoveredAgent[]> {
   if (!prerequisites) {
     prerequisites = (async () => {
       // Prefer the bundled registry. A hosted artifact has neither src/agent/ nor a
@@ -88,7 +95,6 @@ export function ensureHostPrerequisites(options: { quiet?: boolean } = {}): Prom
       // mcp.servers.json and come back (and reconnect) on restart.
       manager.configure(loadUserMcpServers(), { user: true });
       manager.onPersistUserServers = saveUserMcpServers;
-      await preloadMcpTools();
       const agents = discovered.map((agent) => ({
         ...agent,
         diagnostics: diagnoseAgentAuthoring({
@@ -109,12 +115,15 @@ export function ensureHostPrerequisites(options: { quiet?: boolean } = {}): Prom
       return agents;
     })();
   }
-  return prerequisites;
+  if (options.connectMcp === false) return prerequisites;
+  const discovered = prerequisites;
+  mcpConnected ??= discovered.then(() => preloadMcpTools());
+  return mcpConnected.then(() => discovered);
 }
 
 /** Resolve one agent by id — or the default (AGENT_DEFAULT env, else first). */
-export async function getHostedAgent(agentId?: string): Promise<DiscoveredAgent> {
-  const agents = await ensureHostPrerequisites();
+export async function getHostedAgent(agentId?: string, options: { connectMcp?: boolean } = {}): Promise<DiscoveredAgent> {
+  const agents = await ensureHostPrerequisites(options);
   const id = agentId ?? resolveDefaultAgentId(agents);
   const found = agents.find((agent) => agent.id === id);
   if (!found) {
@@ -142,18 +151,20 @@ export async function listAgentIds(): Promise<string[]> {
  * starts at the agent level, with no skill loaded, on every route. */
 export async function createAgentRuntime(
   agentId?: string,
-  overrides?: { maxLoadedSkills?: number },
+  overrides?: { maxLoadedSkills?: number; mcpTools?: McpToolsSnapshot },
 ): Promise<{
   runtime: AgentSiteRuntime;
   agentId: string;
   definition: DiscoveredAgent["definition"];
 }> {
-  const { id, definition, routes, diagnostics } = await getHostedAgent(agentId);
+  const mcpTools = overrides?.mcpTools;
+  const { id, definition, routes, diagnostics } = await getHostedAgent(agentId, { connectMcp: !mcpTools });
   const runtime = new AgentSiteRuntime(
     ({ path, loadedPaths }) => agentAppElement(definition.app, { path, loadedPaths, routes }),
     {
       maxLoadedSkills: overrides?.maxLoadedSkills ?? definition.maxLoadedSkills,
       authoringDiagnostics: diagnostics,
+      ...(mcpTools ? { mcpTools } : {}),
       skills: routes.map((route) => ({
         path: route.path,
         ...(route.meta?.title ? { title: route.meta.title } : {}),
@@ -168,9 +179,9 @@ export async function createAgentSession(
   llm: AgentLlmClient,
   streamLlm?: AgentLlmStreamStep,
   agentId?: string,
-  options?: { spokenStyleSuffix?: string; llmTimeoutMs?: number; checkFollowThrough?: boolean; recordConversation?: boolean },
+  options?: { spokenStyleSuffix?: string; llmTimeoutMs?: number; checkFollowThrough?: boolean; recordConversation?: boolean; mcpTools?: McpToolsSnapshot },
 ): Promise<HostedSession> {
-  const { runtime, agentId: id, definition } = await createAgentRuntime(agentId);
+  const { runtime, agentId: id, definition } = await createAgentRuntime(agentId, options?.mcpTools ? { mcpTools: options.mcpTools } : undefined);
   const session = new AgentSession(runtime, llm, {
     maxSteps: definition.maxSteps,
     maxTranscriptMessages: definition.maxTranscriptMessages,

@@ -516,9 +516,10 @@ fails `no turn errors`, and its `onSubmit` never runs. The framework's own tools
 The MCP tools a hermetic run offers are those
 [`npx curb mcp snapshot`](./cli/mcp-snapshot.md) wrote to `mcp.tools.json`: run
 it once with the servers reachable and commit the file. A server that is not in
-the file is an error before the first turn (`[MCP_TOOLS_MISSING]`). When some of
-the scenarios of one `curb test` are not hermetic, the servers connect for them,
-and the hermetic ones still run no tool without a fake.
+the file is an error before the first turn (`[MCP_TOOLS_MISSING]`). Each hermetic
+call offers those tools on an MCP connection of its own, so the calls beside and
+after it are not affected: when some of the scenarios of one `curb test` are not
+hermetic, the servers connect for those, and only for those.
 
 ### The checks every scenario gets
 

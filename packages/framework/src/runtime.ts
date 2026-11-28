@@ -6,6 +6,9 @@ import { AgentInfoProvider } from "./info-context.js";
 import { AppMessages, AppMessagesProvider } from "./messages.js";
 import { RouterProvider, type AgentRouterApi } from "./route-context.js";
 import { AgentInfoStore } from "./info-store.js";
+import { McpManagerContext } from "./mcp/context.js";
+import { getMcpManager, type McpManager } from "./mcp/manager.js";
+import type { McpToolsSnapshot } from "./mcp/snapshot.js";
 import { createSemanticRoot, type SemanticRoot } from "./reconciler.js";
 import { SessionProvider, type CallView } from "./session-context.js";
 import { markThrown } from "./tool-run.js";
@@ -69,6 +72,9 @@ export type AgentSiteRuntimeOptions = {
   /** Every skill the agent has (its routes, with each module's `meta`), so `skillCatalog`
    * also names a skill no link shows yet, e.g. one linked only after a check passed. */
   skills?: readonly SkillEntry[];
+  /** Offer MCP tools from this snapshot (`mcp.tools.json`) on a manager of the runtime's own,
+   * never connecting to a server or touching the process's manager (a hermetic test call). */
+  mcpTools?: McpToolsSnapshot;
 };
 
 /** One skill of the agent as its route declares it. */
@@ -150,13 +156,22 @@ export class AgentSiteRuntime {
     push: (path: string) => this.navigate(path),
   };
 
+  /** The MCP manager of this runtime alone (see `mcpTools`); null renders against the default one. */
+  private readonly mcp: McpManager | null;
+
   constructor(site: ReactNode | SiteFactory, options: AgentSiteRuntimeOptions = {}) {
     this.root = createSemanticRoot();
+    this.mcp = options.mcpTools ? getMcpManager().withSnapshot(options.mcpTools) : null;
     this.renderSite = typeof site === "function" ? site : () => site;
     this.maxLoadedSkills = options.maxLoadedSkills ?? DEFAULT_MAX_LOADED_SKILLS;
     this.authoringDiagnostics = options.authoringDiagnostics ?? [];
     this.skills = options.skills ?? [];
     this.refresh("initial");
+  }
+
+  /** The MCP manager this runtime's `<Mcp>` components use: its own, or the process's. */
+  mcpManager(): McpManager {
+    return this.mcp ?? getMcpManager();
   }
 
   /** The active skill's path (the most recently loaded one); "" at the agent level. */
@@ -375,7 +390,9 @@ export class AgentSiteRuntime {
    * without tools: opening it reports the problem where it happens.
    */
   skillCatalog(): SkillCatalog {
-    const copy = () => new AgentSiteRuntime(this.renderSite, { maxLoadedSkills: Number.MAX_SAFE_INTEGER });
+    // A copy offers the MCP tools this runtime offers, so a hermetic call's catalog connects nothing.
+    const mcpTools = this.mcp?.offeredSnapshot();
+    const copy = () => new AgentSiteRuntime(this.renderSite, { maxLoadedSkills: Number.MAX_SAFE_INTEGER, ...(mcpTools ? { mcpTools } : {}) });
     const handed = (tool: ToolDefinition) => tool.scope !== "runtime";
     // Each copy is unmounted once read, so a component's effects end with it.
     const read = <T>(use: (runtime: AgentSiteRuntime) => T): T => {
@@ -595,7 +612,10 @@ export class AgentSiteRuntime {
                   settings: this.settings.current(),
                   ...(this.call === null ? {} : { call: this.call }),
                 },
-                children: this.renderSite({ path: this.path, loadedPaths: [...this.loadedPaths] }),
+                children: createElement(McpManagerContext.Provider, {
+                  value: this.mcp,
+                  children: this.renderSite({ path: this.path, loadedPaths: [...this.loadedPaths] }),
+                }),
               }),
             }),
           }),

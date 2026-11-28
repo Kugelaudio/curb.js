@@ -184,8 +184,12 @@ projectHost(): TestHost
 
 The host every function here runs on when given none: the project's agent, built the way a call
 builds it, and its LLM provider, with one rate limit for all their requests. A hermetic test passes
-a `host` of its own: `createBundle()` builds the agent, `simulator(llm, role, onUsage, model?)`
-returns the client a `testModel` sends to, `models()` names them, and `throttle` is shared.
+a `host` of its own: `createBundle(options?)` builds the agent, `simulator(llm, role, onUsage, model?)`
+returns the client a `testModel` sends to, `models()` names them, and `throttle` is shared. For a
+`hermetic` call, `options.mcpTools` holds the tools of `mcp.tools.json`: pass it on as
+`new AgentSiteRuntime(app, { mcpTools: options?.mcpTools })`, so the agent offers them on an MCP
+connection of its own. A host that leaves it out while an MCP server is configured is refused
+(`[CURB_TEST_HOST_NOT_HERMETIC]`).
 
 ## `simulatedCaller`
 

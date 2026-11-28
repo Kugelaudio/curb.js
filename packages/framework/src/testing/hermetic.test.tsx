@@ -1,8 +1,13 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { AgentSession } from "../agent-session.js";
 import { Agent, AgentSiteRuntime, GlobalTools, Mcp } from "../index.js";
-import { configureMcp, offerMcpToolsFrom, preloadMcpTools } from "../mcp/manager.js";
-import { mcpToolsSnapshot } from "../mcp/snapshot.js";
+import { configureMcp, getMcpManager, preloadMcpTools } from "../mcp/manager.js";
+import { formatMcpToolsSnapshot, MCP_TOOLS_FILE, mcpToolsSnapshot, type McpToolsSnapshot } from "../mcp/snapshot.js";
 import { addTask, calls, sendSummary, says, steps, tasksBundle } from "../test-fixtures/tasks.js";
 import { converse, scriptedCaller, startCall, type TestHost } from "./index.js";
 import type { AgentRunResponse } from "../llm/types.js";
@@ -19,10 +24,20 @@ function tasksHost(script: () => AgentRunResponse[]) {
   return { host, send };
 }
 
+const roots: string[] = [];
+/** A project of its own for the call, with `snapshot` as its mcp.tools.json (none when left out). */
+function project(snapshot?: McpToolsSnapshot): void {
+  const root = mkdtempSync(join(tmpdir(), "curb-hermetic-"));
+  roots.push(root);
+  if (snapshot) writeFileSync(join(root, MCP_TOOLS_FILE), formatMcpToolsSnapshot(snapshot));
+  vi.stubEnv("AGENT_PROJECT_DIR", root);
+}
+
 afterEach(() => {
-  offerMcpToolsFrom(null);
   configureMcp([]);
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 describe("fakes for tools the agent does not have", () => {
@@ -84,14 +99,17 @@ describe("a hermetic call with an MCP tool", () => {
       },
     ],
   });
-  const mcpHost = (script: () => AgentRunResponse[]): TestHost => ({
-    async createBundle() {
+  /** A host whose agent shows the tools of the "orders" server, and of `inline` when given. */
+  const mcpHost = (script: () => AgentRunResponse[], inline?: { id: string; url: string }): TestHost => ({
+    async createBundle(options) {
       const runtime = new AgentSiteRuntime(
         <Agent>
           <GlobalTools>
             <Mcp id="orders" />
+            {inline ? <Mcp id={inline.id} url={inline.url} /> : null}
           </GlobalTools>
         </Agent>,
+        { mcpTools: options?.mcpTools },
       );
       return { runtime, session: new AgentSession(runtime, steps(script())) };
     },
@@ -104,9 +122,8 @@ describe("a hermetic call with an MCP tool", () => {
       throw new Error("network is off");
     });
     vi.stubGlobal("fetch", fetch);
-    offerMcpToolsFrom(snapshot);
+    project(snapshot);
     configureMcp([{ id: "orders", url: "http://127.0.0.1:9/mcp", auth: { kind: "none" } }]);
-    await preloadMcpTools();
 
     const call = await startCall({
       host: mcpHost(() => [calls({ name: "orders__find_order", input: { id: "A-1042" } }), says("Order A-1042 is paid.")]),
@@ -120,14 +137,117 @@ describe("a hermetic call with an MCP tool", () => {
     expect(turn.reply).toBe("Order A-1042 is paid.");
     expect(call.record().tools?.map((tool) => tool.name)).toContain("orders__find_order");
     expect(fetch).not.toHaveBeenCalled();
+    // The process's own manager was never asked to connect.
+    expect(getMcpManager().resolve("orders").status).toBe("disconnected");
   });
 
   it("is refused before turn 1 when the server is not in mcp.tools.json", async () => {
-    offerMcpToolsFrom(mcpToolsSnapshot({}));
+    project(mcpToolsSnapshot({}));
     configureMcp([{ id: "orders", url: "http://127.0.0.1:9/mcp", auth: { kind: "none" } }]);
-    await preloadMcpTools();
     await expect(startCall({ host: mcpHost(() => []), hermetic: true })).rejects.toThrow(
       'startCall: [MCP_TOOLS_MISSING] MCP server "orders" is not in mcp.tools.json',
     );
+  });
+
+  it("is refused when the host builds an agent that leaves mcp.tools.json out while a server is known", async () => {
+    project(snapshot);
+    configureMcp([{ id: "orders", url: "http://127.0.0.1:9/mcp", auth: { kind: "none" } }]);
+    const host: TestHost = {
+      async createBundle() {
+        const runtime = new AgentSiteRuntime(<Agent />);
+        return { runtime, session: new AgentSession(runtime, steps([])) };
+      },
+      simulator: () => async () => says(""),
+    };
+    await expect(startCall({ host, hermetic: true })).rejects.toThrow("startCall: [CURB_TEST_HOST_NOT_HERMETIC]");
+  });
+});
+
+describe("a hermetic call beside live ones", () => {
+  /** The live "orders" server, in process: it lists list_refunds, which the snapshot does not. */
+  function ordersServer(): McpServer {
+    const server = new McpServer({ name: "orders", version: "0.0.0" });
+    server.registerTool("list_refunds", { description: "List the open refunds.", inputSchema: { since: z.string().optional() } }, async () => ({
+      content: [{ type: "text", text: "No open refunds." }],
+    }));
+    return server;
+  }
+  const snapshot = mcpToolsSnapshot({
+    orders: [{ name: "find_order", description: "Find an order by its id.", inputSchema: { type: "object", properties: { id: { type: "string" } } } }],
+  });
+  const host = (script: () => AgentRunResponse[], inline?: string): TestHost => ({
+    async createBundle(options) {
+      const runtime = new AgentSiteRuntime(
+        <Agent>
+          <GlobalTools>
+            <Mcp id="orders" />
+            {inline ? <Mcp id="billing" url={inline} /> : null}
+          </GlobalTools>
+        </Agent>,
+        { mcpTools: options?.mcpTools },
+      );
+      return { runtime, session: new AgentSession(runtime, steps(script())) };
+    },
+    simulator: () => async () => says(""),
+  });
+  const mcpToolsOf = (call: Awaited<ReturnType<typeof startCall>>) => (call.record().tools ?? []).map((tool) => tool.name).filter((name) => name.includes("__"));
+  const live = async () => {
+    configureMcp([{ id: "orders", createServer: ordersServer }]);
+    await preloadMcpTools();
+  };
+  const refunds = () => [calls({ name: "orders__list_refunds", input: {} }), says("You have no open refunds.")];
+
+  it("leaves a live call after it on the live server's tools, which run", async () => {
+    project(snapshot);
+    await live();
+    const hermetic = await startCall({ host: host(() => []), hermetic: true });
+    expect(mcpToolsOf(hermetic)).toEqual(["orders__find_order"]);
+
+    const after = await startCall({ host: host(refunds) });
+    expect(mcpToolsOf(after)).toEqual(["orders__list_refunds"]);
+    const turn = await after.say("Any refunds?");
+    expect(turn.errors).toEqual([]);
+    expect(turn.toolCalls).toMatchObject([{ name: "orders__list_refunds", ok: true }]);
+  });
+
+  it("offers only the snapshot's tools after a live call connected the server", async () => {
+    project(snapshot);
+    await live();
+    const before = await startCall({ host: host(refunds) });
+    expect((await before.say("Any refunds?")).toolCalls).toMatchObject([{ name: "orders__list_refunds", ok: true }]);
+
+    const hermetic = await startCall({ host: host(() => []), hermetic: true });
+    expect(mcpToolsOf(hermetic)).toEqual(["orders__find_order"]);
+    expect(getMcpManager().resolve("orders")).toMatchObject({ status: "ready", tools: [{ name: "list_refunds" }] });
+  });
+
+  it("keeps calls that run at the same time apart", async () => {
+    project(snapshot);
+    await live();
+    const [hermetic, other] = await Promise.all([
+      startCall({ host: host(() => [calls({ name: "orders__list_refunds", input: {} }), says("Done.")]), hermetic: true }),
+      startCall({ host: host(refunds) }),
+    ]);
+    const [stopped, ran] = await Promise.all([hermetic.say("Any refunds?"), other.say("Any refunds?")]);
+
+    expect(mcpToolsOf(hermetic)).toEqual(["orders__find_order"]);
+    expect(mcpToolsOf(other)).toEqual(["orders__list_refunds"]);
+    // The hermetic agent does not have the live tool, so its call fails there; the live one runs.
+    expect(stopped.toolCalls).toMatchObject([{ name: "orders__list_refunds", ok: false }]);
+    expect(ran.toolCalls).toMatchObject([{ name: "orders__list_refunds", ok: true }]);
+  });
+
+  it("does not register an inline server it renders first with the process's manager", async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error("network is off");
+    });
+    vi.stubGlobal("fetch", fetch);
+    project(snapshot);
+    await live();
+    await expect(startCall({ host: host(() => [], "http://127.0.0.1:9/mcp"), hermetic: true })).rejects.toThrow(
+      '[MCP_TOOLS_MISSING] MCP server "billing" is not in mcp.tools.json',
+    );
+    expect(getMcpManager().serverIds()).toEqual(["orders"]);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

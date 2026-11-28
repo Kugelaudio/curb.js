@@ -10,7 +10,8 @@ import type { AgentSiteRuntime, ToolFake, UnfakedTool } from "../runtime.js";
 import { clientInfo, clientInfoProblem } from "../server/protocol.js";
 import { SKIP_TURN_TOOL_NAME, type ToolResult } from "../types.js";
 import { expectContext, fallbackLineIn } from "./checks.js";
-import { offerSnapshotMcpTools } from "../mcp/snapshot-file.js";
+import { getMcpManager } from "../mcp/manager.js";
+import { readMcpToolsSnapshot } from "../mcp/snapshot-file.js";
 import { missingMcpSnapshots, unfakedToolMessage, unfakedToolResult, unknownFakeProblems } from "./hermetic.js";
 import { projectHost, takeBundle, type TestHost } from "./host.js";
 import type { ConversationRecord, EndState, RecordedTool } from "./record.js";
@@ -112,9 +113,18 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   if (fakeProblems.length + clientProblems.length > 0) throw new Error(`startCall: ${[...fakeProblems, ...clientProblems].join(" ")}`);
 
   const host = options.host ?? projectHost();
-  // Before the agent is built: building it connects its MCP servers.
-  if (options.hermetic) offerSnapshotMcpTools();
-  const bundle = await takeBundle(host);
+  // A hermetic call's agent offers MCP tools from mcp.tools.json on a manager of its own: building
+  // it connects no server, and nothing it does reaches the calls beside or after it.
+  const mcpTools = options.hermetic ? readMcpToolsSnapshot() : undefined;
+  const bundle = await takeBundle(host, mcpTools ? { mcpTools } : {});
+  // A host that builds its own runtime may leave mcpTools out; that is only safe while the
+  // process's manager knows no MCP server its agent could reach.
+  if (mcpTools && bundle.runtime.mcpManager().offeredSnapshot() !== mcpTools && getMcpManager().serverIds().length > 0) {
+    throw new Error(
+      "startCall: [CURB_TEST_HOST_NOT_HERMETIC] hermetic: the host built an agent that does not offer MCP tools from mcp.tools.json, so the call could reach a server. " +
+        "Fix: in the host's createBundle(options), pass options.mcpTools to the runtime (new AgentSiteRuntime(app, { mcpTools: options?.mcpTools })).",
+    );
+  }
   const started = performance.now();
   const startedAt = new Date().toISOString();
   const { runtime, session } = bundle;
@@ -125,7 +135,7 @@ export async function startCall(options: StartCallOptions = {}): Promise<Call> {
   });
   const setupProblems = [
     ...unknownFakeProblems(runtime, Object.keys(options.fakes ?? {})),
-    ...(options.hermetic ? missingMcpSnapshots() : []),
+    ...(options.hermetic ? missingMcpSnapshots(runtime) : []),
   ];
   if (setupProblems.length > 0) throw new Error(`startCall: ${setupProblems.join(" ")}`);
   // A hermetic call stops at the first call of a tool without a fake: the tool does not run,

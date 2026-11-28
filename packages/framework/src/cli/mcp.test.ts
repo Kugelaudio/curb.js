@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { McpManager, offerMcpToolsFrom } from "../mcp/manager.js";
+import { McpManager } from "../mcp/manager.js";
 import { parseMcpToolsSnapshot } from "../mcp/snapshot.js";
 import { mcpCommand } from "./mcp.js";
 
@@ -29,7 +29,6 @@ function projectRoot(): string {
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-  offerMcpToolsFrom(null);
   vi.restoreAllMocks();
 });
 

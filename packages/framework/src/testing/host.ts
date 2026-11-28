@@ -3,6 +3,7 @@ import type { AgentFirstTurn } from "../config.js";
 import { experimentDeclarations, type ExperimentDeclaration } from "../experiments.js";
 import type { AgentModelUsage } from "../llm/ai-sdk.js";
 import { anthropic, kugelaudio, openai, type KugelaudioLlmModel, type LlmDescriptor } from "../providers.js";
+import { NO_MCP_TOOLS, type McpToolsSnapshot } from "../mcp/snapshot.js";
 import type { AgentSiteRuntime } from "../runtime.js";
 import { ANSWER_TIMEOUT_MS } from "./caller.js";
 import { Throttle, withRetries, withStreamRetries } from "./resilience.js";
@@ -42,8 +43,10 @@ export type CallBundle = {
 };
 
 export type TestHost = {
-  /** A fresh agent, built the way a call builds it. */
-  createBundle(): Promise<CallBundle>;
+  /** A fresh agent, built the way a call builds it. With `mcpTools` (a hermetic call) its runtime
+   * offers MCP tools from that snapshot on a manager of its own (`AgentSiteRuntime`'s `mcpTools`),
+   * and building it connects no MCP server. */
+  createBundle(options?: { mcpTools?: McpToolsSnapshot }): Promise<CallBundle>;
   /** The client of a model to think with, for an agent whose LLM is `llm`: the one `model`
    * names (`<provider>:<id>`, or a model of the agent's provider), else a small model of the
    * agent's provider. `onUsage` hears the tokens of each of its requests. */
@@ -155,7 +158,8 @@ function createProjectHost(): TestHost {
       const restoreConsole = dropDiagnosticLogs();
       let diagnostics: Awaited<ReturnType<typeof getHostedAgent>>["diagnostics"];
       try {
-        ({ diagnostics } = await getHostedAgent());
+        // Connecting the MCP servers is up to the agent each call builds: a hermetic one does not.
+        ({ diagnostics } = await getHostedAgent(undefined, { connectMcp: false }));
       } finally {
         restoreConsole();
       }
@@ -184,7 +188,7 @@ function createProjectHost(): TestHost {
     return model;
   };
   return {
-    async createBundle() {
+    async createBundle(options = {}) {
       const { createVoiceAgentBundle, agentTimeoutMs } = await load();
       const tokens = new TokenCounter();
       let failed = 0;
@@ -194,7 +198,7 @@ function createProjectHost(): TestHost {
         // Each request has the session's deadline, its retries included; the session itself
         // waits as long as a rate limit takes, which the retries bound.
         return { llm: withRetries(llm, retry), streamLlm: withStreamRetries(streamLlm, retry), llmTimeoutMs: SESSION_PATIENCE_MS };
-      });
+      }, options);
       return {
         runtime,
         session,
@@ -225,7 +229,8 @@ function createProjectHost(): TestHost {
 }
 
 /** What this process knows of a host: its agent's LLM, and an agent built to learn it that the
- * next call takes, so learning it costs no extra agent. */
+ * next call takes, so learning it costs no extra agent. That agent offers no MCP tools and
+ * connected no server, so only a call that wants the same takes it. */
 type HostState = { llm?: LlmDescriptor; spare?: CallBundle | null };
 const states = new WeakMap<TestHost, HostState>();
 const stateOf = (host: TestHost): HostState => {
@@ -234,22 +239,31 @@ const stateOf = (host: TestHost): HostState => {
   return state;
 };
 
-/** A fresh agent of `host` for a call: the one {@link agentLlmOf} built, else a new one. */
-export async function takeBundle(host: TestHost): Promise<CallBundle> {
+/** The snapshot a bundle's runtime offers MCP tools from; null when it uses the process's
+ * manager (also a host's own runtime that does not say). */
+const mcpToolsOf = (bundle: CallBundle): McpToolsSnapshot | null => bundle.runtime.mcpManager?.().offeredSnapshot() ?? null;
+
+/**
+ * A fresh agent of `host` for a call: the one {@link agentLlmOf} built when it offers the same
+ * MCP tools, else a new one. With `mcpTools`, its runtime offers MCP tools from that snapshot
+ * alone (see `TestHost.createBundle`).
+ */
+export async function takeBundle(host: TestHost, options: { mcpTools?: McpToolsSnapshot } = {}): Promise<CallBundle> {
   const state = stateOf(host);
-  const spare = state.spare;
-  state.spare = null;
-  const bundle = spare ?? (await host.createBundle());
+  const spare = state.spare && mcpToolsOf(state.spare) === (options.mcpTools ?? null) ? state.spare : null;
+  if (spare) state.spare = null;
+  const bundle = spare ?? (await host.createBundle(options.mcpTools ? { mcpTools: options.mcpTools } : undefined));
   state.llm ??= bundle.runtime.settings.current().llm;
   return bundle;
 }
 
 /** The LLM of the host's agent, which a model to think with runs beside. Learned from the first
- * agent the host builds; when no call has built one yet, one is built and kept for the next call. */
+ * agent the host builds; when no call has built one yet, one is built and kept for the next call.
+ * That one offers no MCP tools, so learning the LLM connects no MCP server. */
 export async function agentLlmOf(host: TestHost): Promise<LlmDescriptor> {
   const state = stateOf(host);
   if (!state.llm) {
-    const bundle = await host.createBundle();
+    const bundle = await host.createBundle({ mcpTools: NO_MCP_TOOLS });
     state.llm ??= bundle.runtime.settings.current().llm;
     state.spare ??= bundle;
   }

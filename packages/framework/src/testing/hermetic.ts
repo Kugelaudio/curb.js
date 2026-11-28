@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { getMcpManager } from "../mcp/manager.js";
 import { resolveProjectRoot } from "../project.node.js";
 import type { AgentSiteRuntime } from "../runtime.js";
 import type { ToolResult } from "../types.js";
@@ -23,7 +22,7 @@ export function unknownFakeProblems(runtime: AgentSiteRuntime, names: readonly s
   const catalog = runtime.skillCatalog();
   for (const tool of catalog.tools) known.add(tool.name);
   for (const skill of catalog.skills) for (const tool of skill.tools) known.add(tool.name);
-  const missing = names.filter((name) => !known.has(name) && !ofUnreadyMcpServer(name));
+  const missing = names.filter((name) => !known.has(name) && !ofUnreadyMcpServer(runtime, name));
   if (missing.length === 0) return [];
   const named = namedInAgentCode(projectRoot, missing);
   const has = [...known].filter((name) => !FRAMEWORK_TOOL_NAMES.has(name)).sort();
@@ -39,8 +38,8 @@ export function unknownFakeProblems(runtime: AgentSiteRuntime, names: readonly s
 const FRAMEWORK_TOOL_NAMES = new Set(["read_skill", "skip_turn", "end_call"]);
 
 /** Whether `name` is a tool of an MCP server (`<server>__<tool>`) whose tools are not known now. */
-function ofUnreadyMcpServer(name: string): boolean {
-  const manager = getMcpManager();
+function ofUnreadyMcpServer(runtime: AgentSiteRuntime, name: string): boolean {
+  const manager = runtime.mcpManager();
   return manager.serverIds().some((id) => name.startsWith(`${id}__`) && manager.resolve(id).status !== "ready");
 }
 
@@ -67,9 +66,10 @@ function namedInAgentCode(projectRoot: string, names: readonly string[]): Set<st
   return found;
 }
 
-/** The MCP servers whose tools a hermetic call cannot offer: each as the problem its state names. */
-export function missingMcpSnapshots(): string[] {
-  const manager = getMcpManager();
+/** The MCP servers whose tools the hermetic call on `runtime` cannot offer: each as the problem
+ * its state names. */
+export function missingMcpSnapshots(runtime: AgentSiteRuntime): string[] {
+  const manager = runtime.mcpManager();
   return manager.serverIds().flatMap((id) => {
     const state = manager.resolve(id);
     return state.status === "error" && state.message.startsWith("[MCP_TOOLS_MISSING]") ? [state.message] : [];

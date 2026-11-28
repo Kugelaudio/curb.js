@@ -11,7 +11,7 @@ import { calls, sendSummary, says as tasksSay, steps, tasksBundle } from "../tes
 import { LISA, bookingRuntime, booked, callsBook, readBackOf, says as booking, scripted, type Booking } from "../test-fixtures/booking.js";
 import { END_CALL_TOOL_NAME } from "../types.js";
 import { Agent, AgentSiteRuntime, GlobalTools, Mcp } from "../index.js";
-import { configureMcp, offerMcpToolsFrom, preloadMcpTools } from "../mcp/manager.js";
+import { configureMcp, getMcpManager } from "../mcp/manager.js";
 import { formatMcpToolsSnapshot, mcpToolsSnapshot } from "../mcp/snapshot.js";
 import { END_CALL_VOICE_STYLE } from "../voice-style.js";
 import { isJudgeRequest, judgeAnswer } from "../test-fixtures/conversations.js";
@@ -99,8 +99,6 @@ describe("curb test", () => {
   afterEach(() => {
     for (const root of projects.splice(0)) rmSync(root, { recursive: true, force: true });
     vi.restoreAllMocks();
-    // A hermetic run offers MCP tools from its project's file for the rest of the process.
-    offerMcpToolsFrom(null);
   });
 
   async function run(args: string[], root: string, host: TestHost) {
@@ -451,12 +449,14 @@ export default scenario({
         mcpToolsSnapshot({ orders: [{ name: "find_order", description: "Find an order by its id.", inputSchema: { type: "object", properties: { id: { type: "string" } } } }] }),
       ),
     });
+    // The server as the agent declares it: nothing listens there.
+    configureMcp([{ id: "orders", url: "http://127.0.0.1:9/mcp", auth: { kind: "none" } }]);
+    // The call reads mcp.tools.json from the project it runs in.
+    vi.stubEnv("AGENT_PROJECT_DIR", root);
     const host: TestHost = {
-      async createBundle() {
-        // The server as the agent declares it: nothing listens there.
-        configureMcp([{ id: "orders", url: "http://127.0.0.1:9/mcp", auth: { kind: "none" } }]);
-        await preloadMcpTools();
-        const runtime = new AgentSiteRuntime(createElement(Agent, null, createElement(GlobalTools, null, createElement(Mcp, { id: "orders" }))));
+      async createBundle(options) {
+        const app = createElement(Agent, null, createElement(GlobalTools, null, createElement(Mcp, { id: "orders" })));
+        const runtime = new AgentSiteRuntime(app, { mcpTools: options?.mcpTools });
         const llm = steps([calls({ name: "orders__find_order", input: { id: "A-1042" } }), tasksSay("Your order A-1042 has shipped.")]);
         return { runtime, session: new AgentSession(runtime, llm) };
       },
@@ -468,10 +468,11 @@ export default scenario({
       expect(printed).toContain("PASS order");
       expect(code).toBe(0);
       expect(fetch).not.toHaveBeenCalled();
+      expect(getMcpManager().resolve("orders").status).toBe("disconnected");
     } finally {
-      offerMcpToolsFrom(null);
       configureMcp([]);
       vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
     }
   });
 
