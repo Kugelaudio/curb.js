@@ -1,9 +1,11 @@
 import { AudioFrame, TrackSource, type Room, type TrackPublishOptions } from "@livekit/rtc-node";
 import { describe, expect, it } from "vitest";
 import {
+  HOLD_FREQUENCIES_HZ,
   RINGBACK_FREQUENCY_HZ,
   TRANSFER_AUDIO_SAMPLE_RATE,
   createTransferAudio,
+  holdFrames,
   publishTransferTrack,
   ringbackFrames,
   roomTrack,
@@ -22,7 +24,7 @@ function take<T>(frames: Iterable<T>, count: number): T[] {
 }
 
 const samplesOf = (frames: AudioFrame[]) => frames.flatMap((frame) => [...frame.data]);
-const peak = (samples: number[]) => Math.max(...samples.map(Math.abs));
+const peak = (samples: number[]) => samples.reduce((max, sample) => Math.max(max, Math.abs(sample)), 0);
 
 /** A sink that records what reached it; its playout resolves when the test says so. */
 function fakeSink() {
@@ -91,7 +93,37 @@ describe("ringbackFrames", () => {
   });
 });
 
+describe("holdFrames", () => {
+  it("plays two soft falling notes every 4 s, unlike a ringback", () => {
+    const cycle = take(holdFrames(), 2 * 200); // two cycles of 4 s in 20 ms frames
+    const first = samplesOf(cycle.slice(0, 200));
+    expect(peak(first) / 32767).toBeGreaterThan(0.04);
+    expect(peak(first) / 32767).toBeLessThanOrEqual(0.05);
+    const crossingsIn = (samples: number[]) => {
+      let crossings = 0;
+      for (let i = 1; i < samples.length; i += 1) if ((samples[i - 1]! < 0) !== (samples[i]! < 0)) crossings += 1;
+      return crossings;
+    };
+    // 240 ms per note: the first falls on frames 0-11, the second starts after a 60 ms gap.
+    const high = samplesOf(cycle.slice(0, 12));
+    const low = samplesOf(cycle.slice(15, 27));
+    expect(Math.abs(crossingsIn(high) / 2 / 0.24 - HOLD_FREQUENCIES_HZ[0])).toBeLessThanOrEqual(5);
+    expect(Math.abs(crossingsIn(low) / 2 / 0.24 - HOLD_FREQUENCIES_HZ[1])).toBeLessThanOrEqual(5);
+    expect(samplesOf(cycle.slice(30, 200)).every((sample) => sample === 0)).toBe(true);
+    expect(peak(samplesOf(cycle.slice(200, 212)))).toBeGreaterThan(0);
+  });
+});
+
 describe("transfer audio", () => {
+  it("holds until stopped", async () => {
+    const { audio, captured, events } = setup();
+    const stop = audio.hold();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(peak(samplesOf(captured))).toBeGreaterThan(0);
+    stop();
+    expect(events).toContain("clearQueue");
+  });
+
   it("says the announcement and resolves only once it has played", async () => {
     const { audio, captured, events, waitingForPlayout, play, published } = setup();
     let done = false;

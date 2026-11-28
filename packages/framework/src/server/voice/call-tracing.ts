@@ -1,7 +1,7 @@
 import type { Attributes } from "@opentelemetry/api";
 
 import { startCallTrace } from "../../call-spans.js";
-import { attachCallTrace, type CallTrace } from "../../call-trace.js";
+import { attachCallTrace, type CallTrace, type ConsultTraceEvent } from "../../call-trace.js";
 import type { AgentSessionBundle } from "../connection.js";
 import type { VoiceSessionHandle, VoiceSessionStartOptions } from "./orchestration.js";
 
@@ -22,8 +22,19 @@ export async function traceCall<Options extends Pick<VoiceSessionStartOptions, "
       // What a transfer came to is in the call's record too, with how long the caller waited
       // for it and the number it went to, so whoever reads the record can tell destinations
       // apart. That number is the author's own; it stays off the spans.
-      transfer: (outcome, durationMs, to) =>
-        options.reporter?.event("transfer", { outcome, ...(to ? { to } : {}) }, durationMs),
+      transfer: (outcome, durationMs, to, how) =>
+        options.reporter?.event(
+          "transfer",
+          { outcome, ...(to ? { to } : {}), ...(how?.warm ? { warm: true } : {}) },
+          durationMs,
+        ),
+      // A warm transfer's consultation, step by step, beside the caller's own turns: both legs
+      // of the call in one record. What the person at the number said is a consult turn, never
+      // a caller turn.
+      consult: (event) => {
+        const { kind, durationMs, ...payload } = event as ConsultTraceEvent & { durationMs?: number };
+        options.reporter?.event(`transfer_consult_${kind}`, payload, durationMs);
+      },
       // The person taking over reads why the call came to them and what was already collected.
       handoff: (record) => options.reporter?.event("handoff", record),
       callbackRequest: (record) => options.reporter?.event("callback_request", record),

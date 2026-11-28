@@ -258,6 +258,26 @@ export class AgentSession {
     return this.llmLog.records;
   }
 
+  /**
+   * One request to this session's model outside the conversation, such as a warm transfer's
+   * reading of a reply at the transfer number: recorded in {@link llmTrace} like every step and
+   * held to the same timeout. Rejects when `signal` aborts, the model fails or the time runs out.
+   */
+  async ask(request: AgentRunRequest, signal?: AbortSignal): Promise<AgentRunResponse> {
+    const call = this.llmLog.sent(request);
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(new LlmTimeoutError(this.llmTimeoutMs)), this.llmTimeoutMs);
+    const aborted = signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal;
+    try {
+      return await untilAborted(this.llm({ ...request, signal: aborted }), aborted);
+    } catch (error) {
+      this.llmLog.failed(call, describeError(error));
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** The action waiting for the caller's yes (`<Tool confirm>`), or null. Treat as read-only. */
   get pendingConfirmation(): PendingConfirmation | null {
     return this.pending;

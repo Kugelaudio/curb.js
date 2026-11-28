@@ -14,7 +14,7 @@ inside it is a span under it:
 | `invoke_agent <agent>` | The call, from before the session starts until it has closed | `gen_ai.operation.name` (`invoke_agent`), `curb.call.channel` (`phone` or `web`, set once the caller has joined), `curb.call.direction` when the host names it |
 | `curb.skill <path>` | A stay in a skill, from entering it to the next skill, the agent level, or the end of the call | `curb.skill.path`, `curb.skill.title` |
 | `curb.procedure <title>` | A `<Procedure>`, from entering the context until its last step is completed, it leaves the context, or the call ends | `curb.procedure.title`, `curb.procedure.steps`, `curb.procedure.step` (the step it is on), `curb.procedure.completed` |
-| `curb.transfer` | A transfer, from the request until nobody answered, or until an answered one is over | `curb.transfer.outcome` (`answered`, `no_answer`, `busy`, `failed`, `refused`), `curb.transfer.ended` for an answered one (`resumed`, `ended_call`, `call_ended`), `error.type` (`transfer_failed`) when the dial failed |
+| `curb.transfer` | A transfer, from the request until nobody answered, or until an answered one is over | `curb.transfer.outcome` (`answered`, `declined`, `no_answer`, `busy`, `failed`, `refused`), `curb.transfer.warm` (`true`) for a warm transfer, `curb.transfer.ended` for an answered one (`resumed`, `ended_call`, `call_ended`), `error.type` (`transfer_failed`) when the dial failed |
 | `execute_tool <name>` | A tool run, from the handler's start to its result | `gen_ai.operation.name` (`execute_tool`), `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.type`, `curb.skill.path` when a skill owns the tool, `curb.tool.ok` |
 
 Every span also carries `gen_ai.agent.name` (the agent's id) and, once the conversation is
@@ -26,7 +26,10 @@ does for each job: there the call's span is a child of that span.
 
 Moments are events on the span they happen in: `step_completed` on a procedure (with
 `curb.procedure.step` and `curb.procedure.step_title`), `handed_off` on a transfer when its
-target is on the line, and on the call's span `handoff` (with `curb.handoff.reason` and
+target is on the line, the steps of a [warm transfer](./human-handoff.md#warm-transfer)'s consultation on
+its transfer (`consult_started`, `consult_answered`, `consult_decision` with `curb.transfer.decision`
+and `curb.transfer.attempt`, and `consult_ended` with `curb.transfer.decision` and
+`curb.transfer.reason`, never what either side said), and on the call's span `handoff` (with `curb.handoff.reason` and
 `curb.handoff.outcome`) and `callback_request` (with `curb.handoff.reason`) from
 [`<Handoff>`](./human-handoff.md), never its summary or the caller's details. A tool run that changes the active skill also says so on its own span,
 as `curb.skill.entered` or `curb.skill.exited`.

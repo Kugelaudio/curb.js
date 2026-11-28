@@ -100,10 +100,12 @@ export function startCallTrace(
       endProcedure(change.title, change.action === "completed");
     },
 
-    transfer: (to) => {
+    transfer: (to, options = {}) => {
       if (ended) return { outcome: () => {} };
       const askedAt = Date.now();
-      const observed = (outcome: string) => observer.transfer?.(outcome, Date.now() - askedAt, to);
+      const warm = options.warm === true;
+      const observed = (outcome: string) =>
+        observer.transfer?.(outcome, Date.now() - askedAt, to, warm ? { warm: true } : undefined);
       if (transfer) {
         // A request while a transfer is under way is refused by its host: an event on that one.
         const open = transfer;
@@ -114,7 +116,7 @@ export function startCallTrace(
           },
         };
       }
-      const span = start("curb.transfer", {});
+      const span = start("curb.transfer", warm ? { "curb.transfer.warm": true } : {});
       transfer = span;
       return {
         outcome: (outcome) => {
@@ -132,6 +134,22 @@ export function startCallTrace(
           }
         },
       };
+    },
+    consult: (event) => {
+      if (ended) return;
+      observer.consult?.(event);
+      // The steps of the consultation, never what was said: it can name the caller.
+      if (event.kind === "turn") return;
+      const attributes: Attributes = {};
+      if (event.kind === "decision") {
+        attributes["curb.transfer.decision"] = event.decision;
+        attributes["curb.transfer.attempt"] = event.attempt;
+      }
+      if (event.kind === "ended") {
+        attributes["curb.transfer.decision"] = event.decision;
+        attributes["curb.transfer.reason"] = event.reason;
+      }
+      (transfer ?? root).addEvent(`consult_${event.kind}`, attributes);
     },
     transferHandedOff: () => {
       // The target can be on the line before the dial's own result arrives.
