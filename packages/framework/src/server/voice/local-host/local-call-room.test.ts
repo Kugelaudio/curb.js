@@ -195,6 +195,29 @@ describe("the agent's own track on a local call, played only when the page says 
     await expect(playout).resolves.toBe(false);
   });
 
+  it("a page that took over mid-line did not hear all of it, though it says it played", async () => {
+    captureErrors();
+    const call = createLocalVoiceCall("local-replaced");
+    const first = new FakePage();
+    call.attach(first as unknown as WebSocket);
+    const track = await call.room.publishTransferTrack();
+    await track.captureFrame(outputFrame());
+    const second = new FakePage();
+    call.attach(second as unknown as WebSocket);
+    await track.captureFrame(outputFrame());
+    const playout = track.waitForPlayout();
+    await vi.waitFor(() => expect(second.sent.at(-1)).toEqual({ type: "audio_flush" }));
+    second.say({ type: "playout_done", playedMs: 40 });
+    await expect(playout).resolves.toBe(false);
+
+    // The next line went to the new page alone: its word counts again.
+    await track.captureFrame(outputFrame());
+    const next = track.waitForPlayout();
+    await vi.waitFor(() => expect(second.sent.filter((m) => !Buffer.isBuffer(m) && m.type === "audio_flush")).toHaveLength(2));
+    second.say({ type: "playout_done", playedMs: 20 });
+    await expect(next).resolves.toBe(true);
+  });
+
   it("a page that never answered did not play it, however long ago it was sent", async () => {
     vi.useFakeTimers();
     try {

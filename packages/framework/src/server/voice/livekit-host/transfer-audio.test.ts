@@ -1,4 +1,6 @@
-import { AudioFrame, TrackSource, type Room, type TrackPublishOptions } from "@livekit/rtc-node";
+import { EventEmitter } from "node:events";
+import { AudioFrame, ParticipantKind, RoomEvent, TrackSource, type Room, type TrackPublishOptions } from "@livekit/rtc-node";
+import { TRANSFER_TARGET_IDENTITY_PREFIX } from "./transfer-handoff.js";
 import { describe, expect, it } from "vitest";
 import {
   RINGBACK_FREQUENCY_HZ,
@@ -151,22 +153,38 @@ describe("transfer audio", () => {
 });
 
 describe("publishTransferTrack", () => {
+  /** A connected room whose agent publishes with `publish`, and that emits what the test says. */
+  function fakeRoom(publish: (track: { name: string }, options: TrackPublishOptions) => void) {
+    return Object.assign(new EventEmitter(), {
+      isConnected: true,
+      localParticipant: { publishTrack: async (track: { name: string }, options: TrackPublishOptions) => void publish(track, options) },
+    }) as unknown as Room & EventEmitter;
+  }
+
   it("publishes as a microphone, so a participant recording of the agent includes it", async () => {
     // LiveKit's participant egress records a participant's camera and microphone tracks only;
     // a track published without a source arrives as SOURCE_UNKNOWN and is left out of it.
     const published: { name: string; options: TrackPublishOptions }[] = [];
-    const room = {
-      localParticipant: {
-        publishTrack: async (track: { name: string }, options: TrackPublishOptions) => {
-          published.push({ name: track.name, options });
-        },
-      },
-    } as unknown as Room;
+    const room = fakeRoom((track, options) => published.push({ name: track.name, options }));
     const sink = await publishTransferTrack(room);
     await sink.close();
     expect(published).toHaveLength(1);
     expect(published[0]?.name).toBe("transfer_audio");
     expect(published[0]?.options.source).toBe(TrackSource.SOURCE_MICROPHONE);
+  });
+
+  it("does not count a line the caller hung up on as played, and stops listening once closed", async () => {
+    const room = fakeRoom(() => {});
+    const sink = await publishTransferTrack(room);
+    await sink.captureFrame(new AudioFrame(new Int16Array(960), 48_000, 1, 960));
+    // A transfer target leaving is not the caller leaving.
+    room.emit(RoomEvent.ParticipantDisconnected, { identity: `${TRANSFER_TARGET_IDENTITY_PREFIX}1`, kind: ParticipantKind.SIP });
+    expect(await sink.waitForPlayout()).toBe(true);
+    await sink.captureFrame(new AudioFrame(new Int16Array(960), 48_000, 1, 960));
+    room.emit(RoomEvent.ParticipantDisconnected, { identity: "caller", kind: ParticipantKind.STANDARD });
+    expect(await sink.waitForPlayout()).toBe(false);
+    await sink.close();
+    expect(room.listenerCount(RoomEvent.ParticipantDisconnected)).toBe(0);
   });
 });
 
@@ -183,15 +201,17 @@ describe("the room's track says whether it played to its end", () => {
     };
   }
 
+  const inCall = (departures = () => 0) => ({ connected: () => true, departures });
+
   it("played, with the agent still in the room", async () => {
     const audio = source();
-    const playout = roomTrack(audio, () => true).waitForPlayout();
+    const playout = roomTrack(audio, inCall()).waitForPlayout();
     audio.drain();
     await expect(playout).resolves.toBe(true);
   });
 
   it("cleared before its end", async () => {
-    const track = roomTrack(source(), () => true);
+    const track = roomTrack(source(), inCall());
     const playout = track.waitForPlayout();
     track.clearQueue();
     await expect(playout).resolves.toBe(false);
@@ -199,8 +219,30 @@ describe("the room's track says whether it played to its end", () => {
 
   it("drained after the agent left the room", async () => {
     const audio = source();
-    const playout = roomTrack(audio, () => false).waitForPlayout();
+    const playout = roomTrack(audio, { connected: () => false, departures: () => 0 }).waitForPlayout();
     audio.drain();
     await expect(playout).resolves.toBe(false);
+  });
+
+  it("drained after the caller hung up during it", async () => {
+    const audio = source();
+    let departures = 0;
+    const track = roomTrack(audio, inCall(() => departures));
+    await track.captureFrame(new AudioFrame(new Int16Array(960), 48_000, 1, 960));
+    departures += 1;
+    const playout = track.waitForPlayout();
+    audio.drain();
+    await expect(playout).resolves.toBe(false);
+  });
+
+  it("played to a caller who stayed, though another left before it began", async () => {
+    const audio = source();
+    let departures = 1;
+    const track = roomTrack(audio, inCall(() => departures));
+    departures += 1;
+    await track.captureFrame(new AudioFrame(new Int16Array(960), 48_000, 1, 960));
+    const playout = track.waitForPlayout();
+    audio.drain();
+    await expect(playout).resolves.toBe(true);
   });
 });

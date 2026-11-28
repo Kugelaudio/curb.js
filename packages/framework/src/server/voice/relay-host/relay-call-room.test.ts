@@ -380,6 +380,32 @@ describe("publishTransferTrack", () => {
     relay.say({ type: "transfer_played", id: wait.id as number });
     await expect(playout).resolves.toBe(false);
   });
+
+  /** A sink with `who` in the call, one frame of it already playing, and `who` then gone. */
+  async function playingWhileLeaving(who: { identity: string; kind: ParticipantKind }) {
+    const opened = await open();
+    relay.say({ type: "participant_connected", participant: who });
+    await vi.waitFor(() => expect([...opened.room.participants()]).toHaveLength(1));
+    const pending = opened.room.publishTransferTrack();
+    await relay.message("transfer_open");
+    relay.say({ type: "transfer_ready" });
+    const sink = await pending;
+    await sink.captureFrame(frame(20));
+    relay.say({ type: "participant_disconnected", identity: who.identity });
+    await vi.waitFor(() => expect([...opened.room.participants()]).toEqual([]));
+    const playout = sink.waitForPlayout();
+    const wait = await relay.message("transfer_wait");
+    relay.say({ type: "transfer_played", id: wait.id as number });
+    return playout;
+  }
+
+  it("a caller who hung up mid-line did not hear it, though the relay then says it played", async () => {
+    await expect(playingWhileLeaving(CALLER)).resolves.toBe(false);
+  });
+
+  it("a transfer target leaving mid-line leaves the caller's playout complete", async () => {
+    await expect(playingWhileLeaving({ identity: `${TRANSFER_TARGET_IDENTITY_PREFIX}1`, kind: ParticipantKind.SIP })).resolves.toBe(true);
+  });
 });
 
 describe("messaging", () => {

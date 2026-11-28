@@ -96,6 +96,8 @@ export class PageAudioOutput extends voice.AudioOutput {
   private waiting: ((report: PlayoutReport | null) => void) | null = null;
   private settling: Promise<void> | null = null;
   private confirmed = false;
+  /** Another page took over the call while this segment was open: no one page heard all of it. */
+  private split = false;
 
   /** Whether the page itself said the last segment played to its end (not the clock's guess). */
   get lastSegmentConfirmed(): boolean {
@@ -151,6 +153,13 @@ export class PageAudioOutput extends voice.AudioOutput {
     waiting(message);
   }
 
+  /** Another page took the call. A segment already begun went partly to the old page, so the new
+   * one's report cannot say it played to its end; one the old page was asked about is unanswered. */
+  pageReplaced(): void {
+    if (this.pushedMs > 0) this.split = true;
+    this.pageLeft();
+  }
+
   /** The page is gone: whatever is playing stopped where the clock says it was. */
   pageLeft(): void {
     const waiting = this.waiting;
@@ -187,7 +196,8 @@ export class PageAudioOutput extends voice.AudioOutput {
       }
       this.pushedMs = 0;
       this.settling = null;
-      this.confirmed = report !== "timeout" && report !== null && report.type === "playout_done";
+      this.confirmed = !this.split && report !== "timeout" && report !== null && report.type === "playout_done";
+      this.split = false;
       this.onPlaybackFinished({ playbackPosition: playedMs / 1000, interrupted });
     })();
   }
@@ -338,6 +348,7 @@ export function createLocalVoiceCall(id = `local-${randomUUID().slice(0, 8)}`): 
       if (previous) {
         previous.off("message", onMessage);
         previous.close(4409, "another page took this call");
+        output?.pageReplaced();
       }
       next.on("message", onMessage);
       next.on("close", () => {
