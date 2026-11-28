@@ -43,6 +43,7 @@ import {
 import { toolMessage } from "./llm/tool-messages.js";
 import { capTranscript, contextEvent, interruptedReply, withAudio, withToolCallRecord } from "./llm/transcript.js";
 import { closeAbandonedStream, llmTimeoutFromEnv, LlmTimeoutError, untilAborted } from "./llm/deadline.js";
+import { isProviderRefusal } from "./llm/resilience.js";
 import { LlmTrace } from "./llm/trace.js";
 import { TurnQueue } from "./llm/turn-queue.js";
 import { TurnSpeech } from "./llm/turn-speech.js";
@@ -825,8 +826,15 @@ export class AgentSession {
     // The caller hears a fixed line in the agent's language, right after whatever
     // the turn already said. The transcript does not record it: the model never
     // said it, and the next request must not show it as the model's words.
+    // A provider that refused the request (no key, no payment, no permission) refuses the next
+    // one too, so the caller is not asked to say it again.
     const fallback = fallbackReplies(this.language());
-    const line = unanswered.kind === "step_limit" ? fallback.stepLimit : fallback.turnFailed;
+    const line =
+      unanswered.kind === "step_limit"
+        ? fallback.stepLimit
+        : failure && isProviderRefusal(failure.error)
+          ? fallback.refused
+          : fallback.turnFailed;
     const delta = speech.line(line);
     this.endedOnFallbackLine = true;
     if (streaming && delta) yield { type: "delta", delta, text: line };

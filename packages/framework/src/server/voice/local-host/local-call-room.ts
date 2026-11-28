@@ -15,7 +15,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { ReadableStream, type ReadableStreamDefaultController } from "node:stream/web";
 import { voice } from "@livekit/agents";
-import { AudioFrame } from "@livekit/rtc-node";
+import { AudioFrame, AudioResampler } from "@livekit/rtc-node";
 import type { RawData, WebSocket, WebSocketServer } from "ws";
 import {
   LOCAL_VOICE_INPUT_SAMPLE_RATE,
@@ -28,6 +28,7 @@ import { logError, logInfo } from "../../log.js";
 import { parseUrlOrNull } from "../../request-url.js";
 import type { VoiceCallRoom } from "../call-room.js";
 import type { CallParticipant } from "../livekit-host/call-opening.js";
+import type { TransferAudioSink } from "../livekit-host/transfer-audio.js";
 import { createSynchronizer, type Synchronizer, type TranscriptSink } from "./synchronizer.js";
 
 /** The page's participant: one browser tab, never a phone line or a transfer target. */
@@ -94,6 +95,12 @@ export class PageAudioOutput extends voice.AudioOutput {
   private startedAt = 0;
   private waiting: ((report: PlayoutReport | null) => void) | null = null;
   private settling: Promise<void> | null = null;
+  private confirmed = false;
+
+  /** Whether the page itself said the last segment played to its end (not the clock's guess). */
+  get lastSegmentConfirmed(): boolean {
+    return this.confirmed;
+  }
 
   constructor(private readonly send: Send) {
     super(LOCAL_VOICE_OUTPUT_SAMPLE_RATE, undefined, { pause: false });
@@ -180,6 +187,7 @@ export class PageAudioOutput extends voice.AudioOutput {
       }
       this.pushedMs = 0;
       this.settling = null;
+      this.confirmed = report !== "timeout" && report !== null && report.type === "playout_done";
       this.onPlaybackFinished({ playbackPosition: playedMs / 1000, interrupted });
     })();
   }
@@ -192,6 +200,31 @@ function pageTranscriptSink(send: Send): TranscriptSink {
     flush: () => send({ type: "agent_text_end" }),
     onAttached: () => undefined,
     onDetached: () => undefined,
+  };
+}
+
+/** The agent's own track on a local call: the page's speaker, as the voice plays on it, resampled
+ * to the rate the page plays. It has played only when the page says it played to its end: a
+ * clear, a page that left or a report that never came is not a playout. */
+function pageTrack(output: PageAudioOutput): TransferAudioSink {
+  let resampler: AudioResampler | undefined;
+  const push = async (frames: AudioFrame[]) => {
+    for (const frame of frames) await output.captureFrame(frame);
+  };
+  return {
+    captureFrame: async (frame) => {
+      if (frame.sampleRate === LOCAL_VOICE_OUTPUT_SAMPLE_RATE && frame.channels === 1) return output.captureFrame(frame);
+      resampler ??= new AudioResampler(frame.sampleRate, LOCAL_VOICE_OUTPUT_SAMPLE_RATE, 1);
+      await push(resampler.push(frame));
+    },
+    waitForPlayout: async () => {
+      if (resampler) await push(resampler.flush());
+      output.flush();
+      const finished = await output.waitForPlayout();
+      return finished !== undefined && !finished.interrupted && output.lastSegmentConfirmed;
+    },
+    clearQueue: () => output.clearBuffer(),
+    close: async () => {},
   };
 }
 
@@ -266,8 +299,13 @@ export function createLocalVoiceCall(id = `local-${randomUUID().slice(0, 8)}`): 
       });
       await session.start({ agent });
     },
-    publishTransferTrack: () =>
-      Promise.reject(new Error("a local call has no phone line, so there is no transfer track to publish")),
+    // A local call has no phone line to transfer: the agent's own track carries only what it says
+    // outside the voice's speech (the line a failed speech-to-speech call ends on), to the page.
+    publishTransferTrack: async () => {
+      if (disconnected) throw new Error("the local call has ended");
+      output ??= new PageAudioOutput(send);
+      return pageTrack(output);
+    },
     disconnect: async () => {
       if (disconnected) return;
       disconnected = true;

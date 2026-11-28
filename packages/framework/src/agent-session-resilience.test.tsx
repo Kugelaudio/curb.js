@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AgentSession,
@@ -7,6 +9,9 @@ import {
 } from "./agent-session.js";
 import { Agent, AgentSiteRuntime, Tool } from "./index.js";
 import { fallbackReplies } from "./llm/localized.js";
+import { runAiSdkAgent, streamAiSdkAgent } from "./llm/ai-sdk.js";
+import { kugelaudio } from "./providers.js";
+import { ProviderError } from "./llm/resilience.js";
 import type {
   AgentChatMessage,
   AgentRunRequest,
@@ -15,6 +20,7 @@ import type {
   AgentTurnStreamEvent,
 } from "./llm/types.js";
 import { createInsuranceDemoRuntime } from "./test-fixtures/insurance-runtime.js";
+import { liveTransportWrap } from "./voice-host.js";
 
 const RAW_ERROR = "ECONNREFUSED 10.0.0.7:5432 (pg pool exhausted)";
 const TURN_FAILED_REPLY = fallbackReplies("en").turnFailed;
@@ -370,6 +376,76 @@ describe("a failed turn is logged and recorded, never silent", () => {
     expect(logged).toHaveBeenCalledWith("[curb] turn failed:", expect.objectContaining({ message: RAW_ERROR }));
     expect(session.llmTrace.at(-1)?.error).toBe(RAW_ERROR);
     expect(JSON.stringify(session.messages)).not.toContain("ECONNREFUSED");
+  });
+});
+
+describe("a provider that refuses the request is not asked again by the caller", () => {
+  for (const status of [401, 402, 403]) {
+    it(`HTTP ${status}: the caller hears the refused line, the developer the provider's message`, async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const message = `HTTP ${status}: This model needs a paid plan. Top up at https://example.com/billing.`;
+      const llm: AgentLlmClient = async () => {
+        throw new ProviderError(message, status);
+      };
+      const session = new AgentSession(createInsuranceDemoRuntime(), llm);
+
+      const events = await drain(session.runTurnStream("hi"));
+
+      expect(events).toContainEqual({ type: "error", error: { kind: "failed", message } });
+      expect(events.at(-1)).toEqual({ type: "done", reply: fallbackReplies("en").refused });
+      expect(logged).toHaveBeenCalledWith("[curb] turn failed:", expect.objectContaining({ message }));
+      expect(JSON.stringify(session.messages)).not.toContain("example.com");
+    });
+  }
+
+  for (const status of [402, 403]) {
+    it(`HTTP ${status} on a streamed turn of a live call: one request, the server's message, the refused line spoken`, async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const message = "This model needs wallet credit. Top up at https://example.com/billing.";
+      let requests = 0;
+      const server = createServer((req, res) => {
+        requests += 1;
+        req.resume();
+        req.on("end", () => {
+          res.writeHead(status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { message, type: "invalid_request_error", code: status } }));
+        });
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      vi.stubEnv("KUGELAUDIO_API_BASE", `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+      vi.stubEnv("KUGELAUDIO_API_KEY", "test-kugel-key");
+      try {
+        // The transports a live call runs on, retries included, against the real wire.
+        const llm = kugelaudio.llm();
+        const { streamLlm, llm: generate } = liveTransportWrap({ sleep: async () => {} })((transport) => ({
+          llm: (request) => runAiSdkAgent(request, { llm, maxRetries: transport?.maxRetries }),
+          streamLlm: (request) => streamAiSdkAgent(request, { llm, maxRetries: transport?.maxRetries }),
+        }));
+        const session = new AgentSession(createInsuranceDemoRuntime(), generate, { streamLlm });
+
+        const events = await drain(session.runTurnStream("hi"));
+
+        const refused = fallbackReplies("en").refused;
+        expect(requests).toBe(1);
+        expect(events).toContainEqual({ type: "error", error: { kind: "failed", message: `HTTP ${status}: ${message}` } });
+        expect(events.filter((event) => event.type === "delta")).toEqual([{ type: "delta", delta: refused, text: refused }]);
+        expect(events.at(-1)).toEqual({ type: "done", reply: refused });
+        expect(logged).toHaveBeenCalledWith("[curb] turn failed:", expect.objectContaining({ message: `HTTP ${status}: ${message}` }));
+      } finally {
+        vi.unstubAllEnvs();
+        await new Promise((resolve) => server.close(resolve));
+      }
+    });
+  }
+
+  it("a provider error a retry could get past keeps asking the caller to say it again", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const llm: AgentLlmClient = async () => {
+      throw new ProviderError("HTTP 503: unavailable", 503);
+    };
+    const session = new AgentSession(createInsuranceDemoRuntime(), llm);
+
+    expect(await session.runTurn("hi")).toBe(TURN_FAILED_REPLY);
   });
 });
 

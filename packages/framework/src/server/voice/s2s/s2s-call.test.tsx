@@ -1,13 +1,16 @@
 import { initializeLogger } from "@livekit/agents";
+import type { AudioFrame } from "@livekit/rtc-node";
 import { trace } from "@opentelemetry/api";
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import { WebSocketServer } from "ws";
 import { z } from "zod";
 import { AgentSession } from "../../../agent-session.js";
 import { Agent, Instruction, Skill, Skills, SystemPrompt, Tool } from "../../../components.js";
 import type { CallReporter } from "../../../hosted/call-reporter.js";
-import { openai, type S2sDescriptor } from "../../../providers.js";
+import { openai, type S2sDescriptor, type TtsDescriptor } from "../../../providers.js";
 import { agentAppElement, type AgentRoute } from "../../../routing.js";
 import { AgentSiteRuntime } from "../../../runtime.js";
 import { startFakeLiveModel } from "../../../test-fixtures/fake-live-model.js";
@@ -16,7 +19,10 @@ import type { VoiceCallRoom } from "../call-room.js";
 import { startVoiceAgent } from "../livekit-host/host.js";
 import { PageAudioInput, PageAudioOutput } from "../local-host/local-call-room.js";
 import { createSynchronizer } from "../local-host/synchronizer.js";
+import { TRANSFER_AUDIO_SAMPLE_RATE, type TransferAudioSink } from "../livekit-host/transfer-audio.js";
+import { fallbackReplies } from "../../../llm/localized.js";
 import { commentaryPieces } from "./back-office.js";
+import { RECORDED_LINE_SAMPLE_RATE, recordedLine } from "./recorded-line.js";
 
 /**
  * A call on `<Agent s2s>`, through the real voice host, LiveKit's `GPTLiveModel` and Curb's real
@@ -87,9 +93,9 @@ const PROCEDURE = "First ask for the policy number, then verify it, then offer a
 const routes: AgentRoute[] = [
   { path: "/report-claim", Component: ReportClaim, meta: { title: "Report a claim", description: "Reporting damage." } },
 ];
-function App({ s2s }: { s2s: S2sDescriptor }) {
+function App({ s2s, tts }: { s2s: S2sDescriptor; tts?: TtsDescriptor }) {
   return (
-    <Agent s2s={s2s}>
+    <Agent s2s={s2s} {...(tts ? { tts } : {})}>
       <SystemPrompt>You answer the phone at an insurer.</SystemPrompt>
       <Instruction>{PROCEDURE}</Instruction>
       <Skills>
@@ -113,7 +119,58 @@ async function until(check: () => boolean, what: string, ms = 5000) {
 }
 
 type Step = { text?: string; calls?: Array<{ name: string; input?: Record<string, unknown> }> };
-type CallOptions = { env?: Record<string, string>; firstLine?: string; steps?: Step[]; firstTurn?: "agent"; quietMs?: number; startFails?: boolean };
+type CallOptions = {
+  env?: Record<string, string>;
+  firstLine?: string;
+  steps?: Step[];
+  firstTurn?: "agent";
+  quietMs?: number;
+  startFails?: boolean;
+  /** The agent's own track and TTS voice, for the line a failed call ends on. */
+  agentTrack?: ReturnType<typeof agentTrack>;
+  /** The agent's TTS, `<Agent tts>`. */
+  tts?: TtsDescriptor;
+};
+
+/** A KugelAudio TTS socket (`/ws/tts/multi`): each line it is given comes back as 100 ms of audio. */
+async function startFakeKugelTts() {
+  const texts: string[] = [];
+  const keys: Array<string | null> = [];
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  server.on("connection", (socket, request) => {
+    keys.push(new URL(request.url ?? "/", "http://fake").searchParams.get("api_key"));
+    socket.on("message", (data) => {
+      const frame = JSON.parse(String(data)) as { context_id?: string; text?: string; close_context?: boolean; immediate?: boolean };
+      if (frame.text) texts.push(frame.text);
+      if (!frame.close_context || frame.immediate) return;
+      socket.send(JSON.stringify({ context_id: frame.context_id, audio: Buffer.alloc(4800).toString("base64") }));
+      socket.send(JSON.stringify({ context_id: frame.context_id, context_closed: true }));
+    });
+  });
+  const { port } = server.address() as { port: number };
+  return { origin: `http://127.0.0.1:${port}`, said: () => texts.join("").trim(), keys, close: () => new Promise((resolve) => server.close(resolve)) };
+}
+
+/** The agent's own audio track and a TTS voice that says each line as one 48 kHz frame
+ * (`voice: false`: the agent's TTS is built from its settings, as a host without one builds it). */
+function agentTrack({ voice = true } = {}) {
+  const said: string[] = [];
+  const sink = {
+    captureFrame: vi.fn(async (_frame: AudioFrame) => {}),
+    waitForPlayout: vi.fn(async () => true),
+    clearQueue: vi.fn(),
+    close: vi.fn(async () => {}),
+  } satisfies TransferAudioSink;
+  const tts = {
+    synthesize: (text: string) => {
+      said.push(text);
+      return Object.assign((async function* () { yield { frame: { sampleRate: 48_000 } }; })(), { error: null, close: () => {} });
+    },
+    close: async () => {},
+  };
+  return { said, sink, tts: voice ? tts : null, published: vi.fn(async () => sink) };
+}
 
 async function call(options: CallOptions & { greeting?: string; drops?: boolean; language?: string } = {}) {
   const model = await startFakeLiveModel({ greeting: options.greeting, drops: options.drops });
@@ -140,7 +197,7 @@ function fakeRecord() {
 const SPEECH = Buffer.from(new Int16Array(1600).fill(4000).buffer);
 
 async function callOn(s2s: S2sDescriptor, options: CallOptions, started: () => boolean) {
-  const Site = () => <App s2s={s2s} />;
+  const Site = () => <App s2s={s2s} tts={options.tts} />;
   const runtime = new AgentSiteRuntime(({ path, loadedPaths }) => agentAppElement(Site, { path, loadedPaths, routes }), {
     maxLoadedSkills: 2,
   });
@@ -176,7 +233,7 @@ async function callOn(s2s: S2sDescriptor, options: CallOptions, started: () => b
       live.output.transcription = sync.textOutput;
       await live.start({ agent });
     },
-    publishTransferTrack: () => Promise.reject(new Error("no phone line")),
+    publishTransferTrack: options.agentTrack?.published ?? (() => Promise.reject(new Error("no phone line"))),
     disconnect: async () => {},
   };
   const closed = vi.fn();
@@ -198,6 +255,7 @@ async function callOn(s2s: S2sDescriptor, options: CallOptions, started: () => b
         }),
     },
     ...(options.firstTurn ? { firstTurn: options.firstTurn } : {}),
+    ...(options.agentTrack?.tts ? { providers: { tts: options.agentTrack.tts } as never } : {}),
   });
   await until(started, "the session started");
   // A live microphone: LiveKit ends a caller's line after 800 ms of it with no new words.
@@ -547,6 +605,132 @@ describe("a call on <Agent s2s> whose session cannot start", { timeout: 12_000 }
     } finally {
       trace.disable();
     }
+  });
+});
+
+describe("a call on <Agent s2s> whose model cannot take it", { timeout: 12_000 }, () => {
+  async function failedStart(options: Partial<CallOptions> = {}) {
+    const model = await startFakeLiveModel({});
+    open.push(async () => void (await model.close()));
+    const s2s = openai.live({ baseURL: model.baseURL, voice: "marin", language: "de" });
+    return callOn(s2s, { startFails: true, ...options }, () => true);
+  }
+
+  it("tells the caller in the agent's language, in its own voice, before it hangs up", async () => {
+    const track = agentTrack();
+    const { closed, record } = await failedStart({ agentTrack: track });
+    await until(() => closed.mock.calls.length > 0, "the call closed");
+
+    const line = fallbackReplies("de").refused;
+    expect(track.said).toEqual([line]);
+    expect(track.published).toHaveBeenCalledOnce();
+    expect(track.sink.captureFrame).toHaveBeenCalledOnce();
+    expect(track.sink.waitForPlayout).toHaveBeenCalledOnce();
+    expect(track.sink.close).toHaveBeenCalledOnce();
+    expect(record.turns).toContainEqual({ speaker: "agent", text: line, final: true });
+  });
+
+  it("keeps no line in the record that the caller's side did not play to its end", async () => {
+    const track = agentTrack();
+    track.sink.waitForPlayout.mockResolvedValue(false);
+    const { closed, record } = await failedStart({ agentTrack: track });
+    await until(() => closed.mock.calls.length > 0, "the call closed");
+    expect(track.said).toEqual([fallbackReplies("de").refused]);
+    expect(record.turns.filter((turn) => turn.speaker === "agent")).toEqual([]);
+  });
+
+  it("tells the caller when the model keeps dropping the call", async () => {
+    const track = agentTrack();
+    const { closed } = await call({ drops: true, agentTrack: track });
+    await until(() => closed.mock.calls.length === 1, "the call ended");
+    expect(track.said).toEqual([fallbackReplies("en").refused]);
+  });
+
+  it("a model that refuses the handshake on a key the agent's TTS shares: KugelAudio's voice says it", async () => {
+    const model = await startFakeLiveModel({ refuses: 401 });
+    const kugel = await startFakeKugelTts();
+    // OpenAI's TTS, refusing the shared key as the model did: it must not be the voice asked first.
+    let openaiTts = 0;
+    const openaiServer = createServer((_, res) => {
+      openaiTts += 1;
+      res.writeHead(401, { "content-type": "application/json" }).end('{"error":{"message":"Incorrect API key provided"}}');
+    });
+    await new Promise<void>((resolve) => openaiServer.listen(0, "127.0.0.1", resolve));
+    vi.stubEnv("OPENAI_BASE_URL", `http://127.0.0.1:${(openaiServer.address() as { port: number }).port}/v1`);
+    open.push(
+      async () => void (await model.close()),
+      async () => void (await kugel.close()),
+      async () => {
+        vi.unstubAllEnvs();
+        await new Promise((resolve) => openaiServer.close(resolve));
+      },
+    );
+    const track = agentTrack({ voice: false });
+    const { closed, record } = await callOn(
+      openai.live({ baseURL: model.baseURL, voice: "marin", language: "de" }),
+      {
+        // openai.tts() reads the very key the model refused.
+        tts: openai.tts(),
+        env: { OPENAI_API_KEY: "sk-shared", KUGELAUDIO_API_KEY: "kugel-key", KUGELAUDIO_API_BASE: kugel.origin },
+        agentTrack: track,
+      },
+      () => model.refused.length > 0,
+    );
+    await until(() => closed.mock.calls.length > 0, "the call closed", 10_000);
+
+    const line = fallbackReplies("de").refused;
+    expect(model.refused[0]).toBe("Bearer sk-shared");
+    expect(kugel.said()).toBe(line);
+    expect(kugel.keys).toEqual(["kugel-key"]);
+    expect(openaiTts).toBe(0);
+    expect(track.published).toHaveBeenCalledOnce();
+    expect(track.sink.captureFrame).toHaveBeenCalled();
+    expect(track.sink.waitForPlayout).toHaveBeenCalledOnce();
+    expect(record.turns).toContainEqual({ speaker: "agent", text: line, final: true });
+  });
+
+  it("a model that refuses the handshake on the only key there is: the recorded line says it, with no TTS asked", async () => {
+    const model = await startFakeLiveModel({ refuses: 403 });
+    let openaiTts = 0;
+    const openaiServer = createServer((_, res) => {
+      openaiTts += 1;
+      res.writeHead(403, { "content-type": "application/json" }).end('{"error":{"message":"forbidden"}}');
+    });
+    await new Promise<void>((resolve) => openaiServer.listen(0, "127.0.0.1", resolve));
+    vi.stubEnv("OPENAI_BASE_URL", `http://127.0.0.1:${(openaiServer.address() as { port: number }).port}/v1`);
+    open.push(
+      async () => void (await model.close()),
+      async () => {
+        vi.unstubAllEnvs();
+        await new Promise((resolve) => openaiServer.close(resolve));
+      },
+    );
+    const track = agentTrack({ voice: false });
+    const { closed, record } = await callOn(
+      openai.live({ baseURL: model.baseURL, voice: "marin", language: "de" }),
+      { tts: openai.tts(), env: { OPENAI_API_KEY: "sk-only" }, agentTrack: track },
+      () => model.refused.length > 0,
+    );
+    await until(() => closed.mock.calls.length > 0, "the call closed", 10_000);
+
+    const line = fallbackReplies("de").refused;
+    expect(model.refused[0]).toBe("Bearer sk-only");
+    expect(openaiTts).toBe(0);
+    expect(track.published).toHaveBeenCalledOnce();
+    const frames = track.sink.captureFrame.mock.calls.map(([frame]) => frame);
+    const seconds = frames.reduce((total, frame) => total + frame.samplesPerChannel, 0) / TRANSFER_AUDIO_SAMPLE_RATE;
+    expect(seconds).toBeCloseTo(recordedLine("de").samples.length / RECORDED_LINE_SAMPLE_RATE, 1);
+    expect(track.sink.waitForPlayout).toHaveBeenCalledOnce();
+    expect(record.turns).toContainEqual({ speaker: "agent", text: line, final: true });
+  });
+
+  it("a call that ends well says nothing more", async () => {
+    const track = agentTrack();
+    const { handle, closed } = await call({ agentTrack: track });
+    await handle.close();
+    expect(closed).toHaveBeenCalledOnce();
+    expect(track.published).not.toHaveBeenCalled();
+    expect(track.said).toEqual([]);
   });
 });
 

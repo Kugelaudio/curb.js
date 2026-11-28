@@ -17,17 +17,17 @@ describe("agentLanguage", () => {
 });
 
 describe("fallbackReplies", () => {
-  it("has both lines in every supported language, each its own", () => {
+  it("has every line in every supported language, each its own", () => {
     const seen = new Set<string>();
     for (const language of AGENT_LANGUAGES) {
-      const { turnFailed, stepLimit } = fallbackReplies(language);
-      for (const line of [turnFailed, stepLimit]) {
+      const { turnFailed, refused, stepLimit } = fallbackReplies(language);
+      for (const line of [turnFailed, refused, stepLimit]) {
         expect(line.trim()).toBe(line);
         expect(line).not.toMatch(/[—!]/);
         seen.add(line);
       }
     }
-    expect(seen.size).toBe(AGENT_LANGUAGES.length * 2);
+    expect(seen.size).toBe(AGENT_LANGUAGES.length * 3);
   });
 });
 

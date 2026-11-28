@@ -134,8 +134,29 @@ describe("createLocalVoiceCall", () => {
     expect(left).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses a phone line's transfer track, which a local call cannot have", async () => {
-    await expect(createLocalVoiceCall().room.publishTransferTrack()).rejects.toThrow("no phone line");
+  it("plays the agent's own track on the page, at the page's rate, until the page says it played", async () => {
+    captureErrors();
+    const call = createLocalVoiceCall("local-track");
+    const page = new FakePage();
+    call.attach(page as unknown as WebSocket);
+    const track = await call.room.publishTransferTrack();
+
+    // 100 ms of the line at the 48 kHz a TTS voice is resampled to for the track.
+    for (let i = 0; i < 5; i += 1) await track.captureFrame(new AudioFrame(new Int16Array(960).fill(1000), 48_000, 1, 960));
+    let played: boolean | undefined;
+    const playout = track.waitForPlayout().then((outcome) => (played = outcome));
+    await vi.waitFor(() => expect(page.sent.at(-1)).toEqual({ type: "audio_flush" }));
+    const pcm = page.sent.filter((message): message is Buffer => Buffer.isBuffer(message));
+    const samples = pcm.reduce((total, chunk) => total + chunk.byteLength / 2, 0);
+    expect(samples).toBeGreaterThan(LOCAL_VOICE_OUTPUT_SAMPLE_RATE * 0.09);
+    expect(samples).toBeLessThanOrEqual(LOCAL_VOICE_OUTPUT_SAMPLE_RATE * 0.1);
+    expect(played).toBeUndefined();
+
+    page.say({ type: "playout_done", playedMs: 100 });
+    await playout;
+    expect(played).toBe(true);
+    await call.room.disconnect();
+    await expect(call.room.publishTransferTrack()).rejects.toThrow("has ended");
   });
 
   it("logs a malformed frame from the page instead of ending the call", () => {
@@ -146,6 +167,43 @@ describe("createLocalVoiceCall", () => {
     page.say({ type: "nonsense" });
     expect(errors).toHaveBeenCalledWith(expect.stringContaining("Unknown local voice message"));
     expect(page.closedWith).toBeNull();
+  });
+});
+
+describe("the agent's own track on a local call, played only when the page says so", () => {
+  async function playing() {
+    captureErrors();
+    const call = createLocalVoiceCall("local-cut");
+    const page = new FakePage();
+    call.attach(page as unknown as WebSocket);
+    const track = await call.room.publishTransferTrack();
+    await track.captureFrame(outputFrame());
+    const playout = track.waitForPlayout();
+    await vi.waitFor(() => expect(page.sent.at(-1)).toEqual({ type: "audio_flush" }));
+    return { page, track, playout };
+  }
+
+  it("a page that cleared it did not play it", async () => {
+    const { page, playout } = await playing();
+    page.say({ type: "playout_cleared", playedMs: 5 });
+    await expect(playout).resolves.toBe(false);
+  });
+
+  it("a page that left did not play it", async () => {
+    const { page, playout } = await playing();
+    page.close(1001);
+    await expect(playout).resolves.toBe(false);
+  });
+
+  it("a page that never answered did not play it, however long ago it was sent", async () => {
+    vi.useFakeTimers();
+    try {
+      const { playout } = await playing();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(playout).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

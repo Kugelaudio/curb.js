@@ -67,8 +67,9 @@ export function* ringbackFrames(): Generator<AudioFrame> {
 export type TransferAudioSink = {
   /** Queue one frame; resolves once the queue has room for the next. */
   captureFrame(frame: AudioFrame): Promise<void>;
-  /** Resolves once everything queued has played. */
-  waitForPlayout(): Promise<void>;
+  /** Resolves once everything queued has played or stopped: true only when it all played to its
+   * end, false when it was cleared or the call went away first. */
+  waitForPlayout(): Promise<boolean>;
   /** Drop what is queued, at once. */
   clearQueue(): void;
   close(): Promise<void>;
@@ -188,7 +189,26 @@ export async function publishTransferTrack(room: Room): Promise<TransferAudioSin
     }
     throw error;
   }
-  return source;
+  return roomTrack(source, () => room.isConnected);
+}
+
+/** `source` as the room's track: its playout counts as complete only with no clear since the wait
+ * began and the agent still in the room (a cleared `AudioSource` releases its waiter at once). */
+export function roomTrack(source: Pick<AudioSource, "captureFrame" | "waitForPlayout" | "clearQueue" | "close">, connected: () => boolean): TransferAudioSink {
+  let clears = 0;
+  return {
+    captureFrame: (frame) => source.captureFrame(frame),
+    waitForPlayout: async () => {
+      const before = clears;
+      await source.waitForPlayout();
+      return clears === before && connected();
+    },
+    clearQueue: () => {
+      clears += 1;
+      source.clearQueue();
+    },
+    close: () => source.close(),
+  };
 }
 
 /** `text` spoken by `engine`, resampled to {@link TRANSFER_AUDIO_SAMPLE_RATE}. */

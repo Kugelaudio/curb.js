@@ -4,7 +4,7 @@ import { WebSocketServer, type WebSocket } from "ws";
  * A scripted server on the OpenAI Live client-delegation protocol: no model, no key. The model owns the call, so a test plays it: `callerSays` is what it heard (and
  * whether it delegated), `say` what it speaks. It says every commentary, as a report.
  */
-export async function startFakeLiveModel(options: { greeting?: string; drops?: boolean } = {}) {
+export async function startFakeLiveModel(options: { greeting?: string; drops?: boolean; refuses?: number } = {}) {
   const received: Array<Record<string, any>> = [];
   const authorization: Array<string | undefined> = [];
   let socket: WebSocket | null = null;
@@ -43,7 +43,20 @@ export async function startFakeLiveModel(options: { greeting?: string; drops?: b
     }
   };
 
-  const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+  /** Connections the model refused at the handshake (`refuses`: the HTTP status it answers with). */
+  const refused: Array<string | undefined> = [];
+  const server = new WebSocketServer({
+    port: 0,
+    host: "127.0.0.1",
+    ...(options.refuses
+      ? {
+          verifyClient: (info: { req: { headers: Record<string, string | string[] | undefined> } }, done: (ok: boolean, code?: number) => void) => {
+            refused.push(info.req.headers.authorization as string | undefined);
+            done(false, options.refuses);
+          },
+        }
+      : {}),
+  });
   server.on("connection", (client, request) => {
     socket = client;
     authorization.push(request.headers.authorization);
@@ -77,6 +90,7 @@ export async function startFakeLiveModel(options: { greeting?: string; drops?: b
     baseURL: `http://127.0.0.1:${port}/v1`,
     received,
     authorization,
+    refused,
     appendedBytes: () => appendedBytes,
     say,
     /** The caller's words reached the model; `delegate` hands the turn to the client. */

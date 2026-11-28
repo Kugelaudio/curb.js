@@ -84,6 +84,27 @@ decide what the caller hears:
   and ro have wording). The real cause goes to the turn's error event and the
   developer log. The transcript does not record the line, because the model
   never said it.
+- **A provider that refuses the request is not asked twice.** An LLM provider
+  that answers HTTP 401, 402 or 403 (a key, a payment or a permission it does
+  not accept) is sent the request once, not retried. The developer sees the
+  provider's own message, for example `HTTP 402: <what the provider says to
+  do>`, in the `curb dev` page, in `curb say`, in the turn's error event and in
+  the log (`[curb] turn failed: ...`). The caller hears "Sorry, I can't help
+  right now. Please try again later." in the agent's language instead of being
+  asked to repeat themselves, since saying it again cannot help. The
+  provider's message never reaches the caller's ears.
+- **A speech-to-speech model that cannot take the call says so first.** On
+  `<Agent s2s>` the model is the only voice, so when it cannot start (a refused
+  key or payment, an outage) or keeps dropping the call, the caller hears the
+  same "please try again later" line before the call ends, on a phone or
+  LiveKit call and on the `curb dev` page alike. A TTS on the model's own key
+  (`openai.tts()` beside `openai.live()`) may be refused with it, so a voice on
+  another key goes first: the agent's TTS, then KugelAudio's voice for the
+  agent's language when `KUGELAUDIO_API_KEY` is set. With no such key, a
+  recording of the line in the agent's language, shipped with Curb, plays
+  instead: it needs no key and calls no service. The call keeps the line in its
+  record only once the caller's side has played it to its end. The cause goes
+  to the log.
 - **A missing LLM key stops the session before it starts.** A session whose
   LLM has no key in the environment fails with an `AgentAuthoringError` naming
   the variable (for example `KUGELAUDIO_API_KEY`), instead of apologizing on

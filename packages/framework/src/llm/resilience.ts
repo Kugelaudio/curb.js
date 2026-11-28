@@ -28,10 +28,19 @@ import type { AgentRunRequest, AgentRunResponse, AgentStreamPart } from "./types
 /** A provider request that failed for good: after the retries, or with an error no retry helps.
  * It carries no cause on purpose: the original holds the request and the response body. */
 export class ProviderError extends Error {
-  constructor(message: string) {
+  /** The provider's HTTP status, when it answered with one. */
+  readonly status: number | null;
+  constructor(message: string, status: number | null = null) {
     super(message);
     this.name = "ProviderError";
+    this.status = status;
   }
+}
+
+/** Whether the provider refused the request itself (HTTP 401, 402, 403): a key, payment or
+ * permission it lacks, which no retry and no rephrasing gets past. */
+export function isProviderRefusal(error: unknown): boolean {
+  return error instanceof ProviderError && (error.status === 401 || error.status === 402 || error.status === 403);
 }
 
 export type RetryOptions = {
@@ -261,7 +270,7 @@ function retryPlan(options: RetryOptions) {
   const givenUp = (error: unknown, signal: AbortSignal | undefined, note = ""): unknown => {
     if (signal?.aborted) return error;
     options.onGiveUp?.();
-    return new ProviderError(`${describeProviderError(error)}${note}`);
+    return new ProviderError(`${describeProviderError(error)}${note}`, providerFacts(error).status);
   };
 
   return {

@@ -153,6 +153,24 @@ describe("other errors", () => {
     expect(time.pauses).toEqual([]);
   });
 
+  it("that refuse payment or permission are sent once and keep the provider's status and words", async () => {
+    for (const [status, words] of [
+      [402, "Insufficient credits: top up at https://example.com/billing to use this model."],
+      [403, "This model is not enabled for this account."],
+    ] as const) {
+      const time = clock();
+      const client = failing([apiError(status, words)]);
+
+      const failure = await withRetries(client, time)(request).catch((error: unknown) => error);
+
+      expect(client).toHaveBeenCalledOnce();
+      expect(time.pauses).toEqual([]);
+      expect(failure).toBeInstanceOf(ProviderError);
+      expect((failure as ProviderError).status).toBe(status);
+      expect((failure as Error).message).toBe(`HTTP ${status}: ${words}`);
+    }
+  });
+
   it("leave a cancelled request alone: the abort is passed on, uncounted", async () => {
     const controller = new AbortController();
     const onGiveUp = vi.fn();
