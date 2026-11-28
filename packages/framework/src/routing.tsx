@@ -1,4 +1,5 @@
 import { createContext, useContext, type ComponentType, type ReactElement, type ReactNode } from "react";
+import type { z } from "zod";
 import type { AgentAppProps } from "./config.js";
 import { AgentAuthoringError, AUTHORING_DIAGNOSTIC_CODES } from "./authoring.js";
 import { RouteProvider, RoutesMetaProvider } from "./route-context.js";
@@ -20,6 +21,10 @@ export type SkillMeta = {
    * ("lock", "shield-check"). Presentation only: never seen by the model.
    * Without it the preview keeps deriving an icon from the skill's state. */
   icon?: string;
+  /** The call info this skill needs, as a zod object keyed by info key:
+   * `z.object({ "order.id": z.string() })`. Only the keys it names are checked; the call's other
+   * info (`client.*`, `experiment.*`) is never rejected. */
+  info?: z.ZodObject;
 };
 
 export type AgentRoute = {

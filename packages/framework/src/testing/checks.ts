@@ -2,7 +2,7 @@ import { AGENT_LANGUAGES, fallbackReplies } from "../llm/localized.js";
 import { ask, judgeView, type JudgeModel } from "./judge.js";
 import { normalizeLlmPunctuation } from "../llm/punctuation.js";
 import type { CallerEnding, ConversationRecord, EndState } from "./record.js";
-import type { ExpectedCall, ScenarioCheck, ScenarioExpectContext, ScenarioToolCall, ScenarioTurn } from "./scenario.js";
+import { toolName, type ExpectedCall, type ScenarioCheck, type ScenarioExpectContext, type ScenarioTool, type ScenarioToolCall, type ScenarioTurn } from "./scenario.js";
 import { agentWords, sentenceKey, sentences } from "./style.js";
 
 /**
@@ -280,7 +280,8 @@ export function expectContext(
       }
       return { name, pass: true, detail: found.join(", ") };
     },
-    called: (tool, input) => {
+    called: (tool$, input) => {
+      const tool = toolName(tool$);
       const name = input ? `called ${tool} with ${expectedValue(input)}` : `called ${tool}`;
       const ran = ranCalls(tool);
       const match = ran.find((call) => !input || matches(call.input, input));
@@ -296,11 +297,18 @@ export function expectContext(
       const others = [...new Set(calls.filter((call) => call.ok).map((call) => call.name))];
       return { name, pass: false, detail: `${tool} was never called; tools that ran: ${others.join(", ") || "none"}` };
     },
-    notCalled: (tool) => {
+    notCalled: (tool$) => {
+      const tool = toolName(tool$);
       const name = `did not call ${tool}`;
       const ran = ranCalls(tool);
       if (ran.length === 0) return { name, pass: true };
       return { name, pass: false, detail: `${tool} ran ${ran.map((call) => `${call.at} with ${JSON.stringify(call.input)}`).join(", ")}` };
+    },
+    opened: () => {
+      throw new Error("opened() is not implemented yet in this version of curb.");
+    },
+    notOpened: () => {
+      throw new Error("notOpened() is not implemented yet in this version of curb.");
     },
     said: (text) => {
       const name = `said ${text instanceof RegExp ? String(text) : JSON.stringify(text)}`;
@@ -324,7 +332,9 @@ export function expectContext(
 
 /** An expected call as its tool and the input it must have. */
 function expectedCall(call: ExpectedCall): { tool: string; input?: Record<string, unknown> } {
-  return typeof call === "string" ? { tool: call } : { tool: call[0], input: call[1] };
+  if (typeof call === "string" || !Array.isArray(call)) return { tool: toolName(call as string | ScenarioTool) };
+  const [tool, input] = call as readonly [string | ScenarioTool, Record<string, unknown>];
+  return { tool: toolName(tool), input };
 }
 
 /** Whether `actual` has what `expected` asks for (see {@link firstDifference}). */

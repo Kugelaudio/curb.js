@@ -1,4 +1,7 @@
+import type { ComponentType } from "react";
+import type { z } from "zod";
 import { declaredNameProblem } from "../goals.js";
+import type { SkillMeta } from "../routing.js";
 import type { ConversationRecord } from "./record.js";
 import type { Caller } from "./converse.js";
 import type { ConfirmationVerdict } from "../llm/confirmation.js";
@@ -90,6 +93,68 @@ export type ScenarioFake =
   | ToolResult
   | ((input: Record<string, unknown>) => ToolResult | Promise<ToolResult>);
 
+/** A tool as a value: anything with a `name`, such as what `defineTool` returns. Wherever a
+ * scenario names a tool (`fake`, `called`, `notCalled`, `calledInOrder`), it takes this or the
+ * tool's name. */
+export type ScenarioTool = { readonly name: string };
+
+/** One fake as `fake(tool, result)` makes it, for the list form of `fakes`. */
+export type ScenarioFakeEntry = { readonly tool: string; readonly result: ScenarioFake };
+
+/** A skill a scenario names: its module (`import * as Refund from "./refund/skill.js"`) or its
+ * route path (`"/billing/refund"`). */
+export type ScenarioSkill = string | { readonly default: ComponentType<any>; readonly meta?: SkillMeta };
+
+/** The info one skill declares it needs (`meta.info`), as the object a test gives for it. */
+type DeclaredInfo<Skill> = Skill extends { readonly meta?: infer Meta }
+  ? NonNullable<Meta> extends { readonly info?: infer Info }
+    ? NonNullable<Info> extends z.ZodObject
+      ? z.input<NonNullable<Info>>
+      : unknown
+    : unknown
+  : unknown;
+
+/** The info every skill of `Skills` declares, together. */
+type DeclaredInfoOf<Skills extends readonly unknown[]> = Skills extends readonly [infer First, ...infer Rest]
+  ? DeclaredInfo<First> & DeclaredInfoOf<Rest>
+  : unknown;
+
+/** The call info `start.info` takes for `Skills`: every key a skill declares as required, with
+ * its type, and any other key. */
+export type ScenarioStartInfo<Skills extends readonly ScenarioSkill[] = readonly ScenarioSkill[]> =
+  DeclaredInfoOf<Skills> & Readonly<Record<string, unknown>>;
+
+/** Where a call starts: the info it has, then the skills open, before the caller's first line.
+ * The same steps as a host's `set_info`, then `read_skill`. */
+export type ScenarioStart<Skills extends readonly ScenarioSkill[] = readonly ScenarioSkill[]> = {
+  /** The skills opened before turn 1, in this order. A value that is not one of the agent's
+   * skills is an error before turn 1. */
+  skills?: Skills;
+} & ({} extends DeclaredInfoOf<Skills>
+  ? {
+      /** The call info set before the skills open, as a host's `set_info` sets it. */
+      info?: ScenarioStartInfo<Skills>;
+    }
+  : {
+      /** The call info set before the skills open, as a host's `set_info` sets it. A started
+       * skill's `meta.info` names the keys it must have. */
+      info: ScenarioStartInfo<Skills>;
+    });
+
+/** How a call is played, the same for a scenario and `startCall`. */
+export type ScenarioCallOptions<Skills extends readonly ScenarioSkill[] = readonly ScenarioSkill[]> = {
+  /** Info set and skills opened before turn 1. Default: the call starts at the agent level. */
+  start?: ScenarioStart<Skills>;
+  /** false sends every turn as typed text, without the spoken-reply rules. Default: true. */
+  spoken?: boolean;
+  /** true makes a tool call that has no fake stop the run as an error, before the tool runs, and
+   * offers MCP tools from `mcp.tools.json` without contacting their servers. Default: false. */
+  hermetic?: boolean;
+  /** The date and time in the agent's context, as an ISO date-time: "2026-10-30T15:00:00Z".
+   * Default: a fixed instant while replies are stored, the real clock with `--live`. */
+  now?: string;
+};
+
 /** One tool call the agent made. `ok` is false when the call did not run: it was refused, or
  * held for the caller's yes. */
 export type ScenarioToolCall = {
@@ -163,9 +228,12 @@ export type ScenarioEvidence = {
  * check is shown and counted and fails nothing. */
 export type ScenarioCheck = { name: string; pass: boolean; detail?: string; evidence?: ScenarioEvidence; notJudged?: true; reportOnly?: true };
 
-/** A tool call an `expect` helper looks for: the tool's name, or the name with the input the call
- * must have. */
-export type ExpectedCall = string | readonly [tool: string, input: Record<string, unknown>];
+/** A tool call an `expect` helper looks for: the tool (its name or its value), or the tool with
+ * the input the call must have. */
+export type ExpectedCall =
+  | string
+  | ScenarioTool
+  | readonly [tool: string | ScenarioTool, input: Record<string, unknown>];
 
 /** What an `expect` function receives: the conversation, and helpers that make checks of it. */
 export type ScenarioExpectContext = {
@@ -175,7 +243,7 @@ export type ScenarioExpectContext = {
    * whose input has those values counts, at any depth: strings compared ignoring case and outer
    * spaces, a RegExp tested against the field's text, an object by the fields it names, a list
    * entry by entry. */
-  called: (tool: string, input?: Record<string, unknown>) => ScenarioCheck;
+  called: (tool: string | ScenarioTool, input?: Record<string, unknown>) => ScenarioCheck;
   /** Passes when the agent ran these tools without a refusal in this order; other calls may come
    * between them. An entry is a tool's name, or `[name, input]` matched as `called` matches. */
   calledInOrder: (...calls: readonly ExpectedCall[]) => ScenarioCheck;
@@ -189,7 +257,13 @@ export type ScenarioExpectContext = {
   /** The agent's rendered context when the call ended, line by line. */
   context: readonly string[];
   /** Passes when the agent never called `tool`, not even in a call that was refused. */
-  notCalled: (tool: string) => ScenarioCheck;
+  notCalled: (tool: string | ScenarioTool) => ScenarioCheck;
+  /** Passes when the agent had `skill` open at some point in the call, by `start.skills` or by
+   * reading it. */
+  opened: (skill: ScenarioSkill) => ScenarioCheck;
+  /** Passes when the agent never opened `skill`; without one, when it opened no skill beyond those
+   * of `start.skills`. */
+  notOpened: (skill?: ScenarioSkill) => ScenarioCheck;
   /** Passes when an agent reply contains `text` (ignoring case) or matches the pattern. */
   said: (text: string | RegExp) => ScenarioCheck;
   /** Passes when the agent ended the call itself (end_call). */
@@ -220,7 +294,7 @@ export type ScenarioRunResult = ScenarioExpectContext & {
   record: ConversationRecord;
 };
 
-export type ScenarioDefinition = {
+export type ScenarioDefinition<Skills extends readonly ScenarioSkill[] = readonly ScenarioSkill[]> = ScenarioCallOptions<Skills> & {
   /** Shown in the report and matched by `curb test <filter>`. Default: the file name. */
   name?: string;
   /** A simulated caller, or a caller of your own: a function from the turns so far to the next
@@ -242,8 +316,9 @@ export type ScenarioDefinition = {
    * `{ create_claim: { ok: true, message: "Claim created." } }`, or a function of the input
    * `onSubmit` would get that returns one. Only `onSubmit` is replaced: the tool checks the input
    * as on a real call (its schema's rules and transforms included), its success or error line
-   * follows the result, and a `confirm` tool still waits for the caller's yes. */
-  fakes?: Readonly<Record<string, ScenarioFake>>;
+   * follows the result, and a `confirm` tool still waits for the caller's yes. Or a list of
+   * `fake(tool, result)`. */
+  fakes?: Readonly<Record<string, ScenarioFake>> | readonly ScenarioFakeEntry[];
   /** How often the scenario runs. Default: 1; `curb test --runs` overrides it. Each run is a
    * conversation of its own. */
   runs?: number;
@@ -319,10 +394,34 @@ const SCENARIO = Symbol.for("curb.scenario");
  * for each further one, in a `*.scenario.ts` file under `src/`.
  * Throws when the definition cannot run, naming every field that is wrong and how to fix it.
  */
-export function scenario(definition: ScenarioDefinition): Scenario {
+export function scenario<const Skills extends readonly ScenarioSkill[] = readonly ScenarioSkill[]>(
+  definition: ScenarioDefinition<Skills>,
+): Scenario {
   const problems = scenarioProblems(definition);
   if (problems.length > 0) throw new Error(`scenario(): ${problems.join(" ")}`);
   return Object.freeze(Object.defineProperty({ ...definition }, SCENARIO, { value: true }));
+}
+
+/**
+ * One fake for the list form of `fakes`: `fakes: [fake(issueRefund, { ok: true, data: { refunded: 49 } })]`.
+ * `tool` is the tool's value or its name.
+ */
+export function fake(tool: string | ScenarioTool, result: ScenarioFake): ScenarioFakeEntry {
+  void tool;
+  void result;
+  throw new Error("fake() is not implemented yet in this version of curb; give fakes as an object of tool name to result.");
+}
+
+/** The name of a tool given as its name or its value. */
+export function toolName(tool: string | ScenarioTool): string {
+  return typeof tool === "string" ? tool : tool.name;
+}
+
+/** Whether `fakes` is the list form, of `fake(tool, result)`. */
+export function isFakeList(
+  fakes: Readonly<Record<string, ScenarioFake>> | readonly ScenarioFakeEntry[],
+): fakes is readonly ScenarioFakeEntry[] {
+  return Array.isArray(fakes);
 }
 
 /** Whether `value` is what {@link scenario} returned. */

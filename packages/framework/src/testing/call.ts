@@ -14,9 +14,12 @@ import { projectHost, takeBundle, type TestHost } from "./host.js";
 import type { ConversationRecord, EndState, RecordedTool } from "./record.js";
 import {
   fakedToolProblem,
+  isFakeList,
   toolResultProblem,
+  type ScenarioCallOptions,
   type ScenarioConfirmation,
   type ScenarioFake,
+  type ScenarioFakeEntry,
   type ScenarioToolCall,
   type ScenarioTurn,
   type ScenarioTurnError,
@@ -74,11 +77,11 @@ export type CallExperiments =
   | Readonly<Record<string, string>>
   | ((declared: readonly ExperimentDeclaration[]) => Readonly<Record<string, string>>);
 
-export type StartCallOptions = {
+export type StartCallOptions = ScenarioCallOptions & {
   /** Tools that must not run for real, by name, each with the result its calls get, or a
    * function of the validated input that returns one. Only `onSubmit` is replaced: the input is
    * checked as on a real call, and a `confirm` tool still waits for the caller's yes. */
-  fakes?: Readonly<Record<string, ScenarioFake>>;
+  fakes?: Readonly<Record<string, ScenarioFake>> | readonly ScenarioFakeEntry[];
   /** Page info the call starts with, as the page an agent is embedded in sends it. */
   client?: Readonly<Record<string, string>>;
   /** The variant the call gets in the agent's experiments. */
@@ -94,6 +97,11 @@ export type StartCallOptions = {
  * the page info or a variant is one the agent cannot take.
  */
 export async function startCall(options: StartCallOptions = {}): Promise<Call> {
+  if (options.fakes !== undefined && isFakeList(options.fakes)) {
+    throw new Error("startCall: a list of fake(tool, result) is not implemented yet in this version of curb; give fakes as an object of tool name to result.");
+  }
+  const notYet = (["start", "spoken", "hermetic", "now"] as const).filter((option) => options[option] !== undefined);
+  if (notYet.length > 0) throw new Error(`startCall: ${notYet.join(", ")} is not implemented yet in this version of curb.`);
   const fakeProblems = Object.entries(options.fakes ?? {}).flatMap(([tool, fake]) => {
     const problem = fakedToolProblem(tool) ?? (typeof fake === "function" ? undefined : toolResultProblem(fake));
     return problem ? [`fakes.${tool}: ${problem}.`] : [];

@@ -52,7 +52,8 @@ export { judgeAgreement, type JudgeAgreement } from "./agreement.js";
 export { affectedScenarios, type AffectedScenario } from "./changed.js";
 
 // Layer 3.
-export { scenario } from "./scenario.js";
+export { fake, scenario } from "./scenario.js";
+export { localReplyStore, remoteReplyStore, withReplyStore, type ReplyStore, type StoredReply } from "./reply-store.js";
 export { buildCallEvent, runHook } from "./hooks.js";
 export type {
   CallerBehaviour,
@@ -63,11 +64,17 @@ export type {
   ScenarioCaller,
   ScenarioCheck,
   ScenarioConfirmation,
+  ScenarioCallOptions,
   ScenarioDefinition,
   ScenarioEvidence,
   ScenarioExpectContext,
   ScenarioFake,
+  ScenarioFakeEntry,
   ScenarioRunResult,
+  ScenarioSkill,
+  ScenarioStart,
+  ScenarioStartInfo,
+  ScenarioTool,
   ScenarioToolCall,
   ScenarioTurn,
   ScenarioTurnError,
