@@ -261,6 +261,7 @@ export async function runAiSdkAgent(
     return {
       text: normalizeLlmPunctuation(result.text),
       toolCalls: mapToolCalls(result.toolCalls),
+      ...(result.finishReason === "length" ? { cutOff: true as const } : {}),
     };
   });
   for (;;) {
@@ -299,6 +300,7 @@ export async function* readAgentStream(
   onUsage?: (usage: AgentModelUsage) => void,
 ): AsyncGenerator<AgentStreamPart, AgentRunResponse> {
   let raw = "";
+  let cutOff = false;
   const toolCalls: SdkToolCall[] = [];
   for await (const part of parts) {
     switch (part.type) {
@@ -316,6 +318,7 @@ export async function* readAgentStream(
         toolCalls.push(part);
         break;
       case "finish":
+        cutOff = part.finishReason === "length";
         onUsage?.(modelUsage(part.totalUsage));
         break;
       case "error":
@@ -327,6 +330,7 @@ export async function* readAgentStream(
   return {
     text: normalizeLlmPunctuation(raw.trim()),
     toolCalls: mapToolCalls(toolCalls),
+    ...(cutOff ? { cutOff: true as const } : {}),
   };
 }
 

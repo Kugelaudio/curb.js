@@ -171,8 +171,10 @@ type ExecutedCall = { toolCall: AgentToolCallRecord; ok: boolean; result: ToolRe
  */
 export class AgentSession {
   private readonly runtime: AgentSiteRuntime;
-  private readonly llm: AgentLlmClient;
-  private readonly streamLlm?: AgentLlmStreamStep;
+  private llm: AgentLlmClient;
+  private streamLlm?: AgentLlmStreamStep;
+  /** The instant the date line of each request carries ({@link useClock}). */
+  private now: () => Date = () => new Date();
   private readonly maxSteps: number;
   private readonly maxTranscriptMessages: number;
   private readonly spokenStyleSuffix: string | undefined;
@@ -898,6 +900,25 @@ export class AgentSession {
     return this.runtime.settings.language();
   }
 
+  /**
+   * The instant the date line of every later request carries, in place of the real clock. A test
+   * pins it, so a request does not differ from the same one a minute later (`curb/testing`'s
+   * reply store).
+   */
+  useClock(now: () => Date): void {
+    this.now = now;
+  }
+
+  /**
+   * Wraps the session's LLM transports: every later request goes through what `wrap` returns
+   * for them. A test host puts its reply store here; a session without a streaming transport
+   * keeps none.
+   */
+  wrapLlm(wrap: { llm: (llm: AgentLlmClient) => AgentLlmClient; streamLlm: (streamLlm: AgentLlmStreamStep) => AgentLlmStreamStep }): void {
+    this.llm = wrap.llm(this.llm);
+    if (this.streamLlm) this.streamLlm = wrap.streamLlm(this.streamLlm);
+  }
+
   /** The system prompt the model receives on the next turn as things stand: the agent's
    * `<SystemPrompt>`, and on a spoken turn the spoken-reply rules after it. */
   systemPromptFor(spoken: boolean): string {
@@ -932,7 +953,7 @@ export class AgentSession {
       // prompt, so the prompt's prefix does not change every minute. An action waiting for
       // the caller's yes follows, so the model never forgets it.
       stateSnapshot: [
-        dateLine(new Date(), this.timeZone, this.language()),
+        dateLine(this.now(), this.timeZone, this.language()),
         ...(this.pending ? [pendingLine(this.pending)] : []),
         ...snapshot.stateSnapshot,
       ],

@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -33,6 +34,8 @@ export default defineConfig({
     exclude: ["dist/**", "node_modules/**"],
     env: {
       AGENT_PROJECT_DIR: fixtureProject,
+      // `curb test` keeps model replies; a test never reads or writes the person's own store.
+      CURB_REPLY_STORE_DIR: join(tmpdir(), `curb-test-replies-${process.pid}`),
     },
     projects: [
       ...Object.entries(areas).map(([name, include]) => ({ extends: true, test: { name, include } })),

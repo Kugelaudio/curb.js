@@ -6,7 +6,11 @@ import {
   affectedScenarios,
   inParallel,
   loadRun,
+  localReplyStore,
   projectHost,
+  remoteReplyStore,
+  withReplyStore,
+  type ReplyStore,
   saveRun,
   scenario as accepted,
   simulatedCaller,
@@ -347,10 +351,21 @@ export async function testCommand(
     for (const file of files) loaded.push(...(await loadScenarios(projectRoot, file)));
     const host = () => options.host ?? projectHost();
     const session = { projectRoot, run, out, loaded, started, env };
-    return run.rejudge === undefined ? await runScenarios(session, host) : await rejudge(session, run.rejudge, host);
+    // Scenarios play on the reply store: a request answered before is answered again without a
+    // model. A rejudge asks the judge again on purpose, so it goes to the model.
+    const stored = () => options.host ?? withReplyStore(projectHost(), replyStores(env));
+    return run.rejudge === undefined ? await runScenarios(session, stored) : await rejudge(session, run.rejudge, host);
   } finally {
     restoreConsole();
   }
+}
+
+/** The stores `curb test` keeps replies in: the local one, then the remote one
+ * `CURB_REPLY_STORE_URL` names. */
+function replyStores(env: Readonly<Record<string, string | undefined>>): ReplyStore[] {
+  const url = env.CURB_REPLY_STORE_URL;
+  const token = env.CURB_REPLY_STORE_TOKEN;
+  return [localReplyStore(env.CURB_REPLY_STORE_DIR ? { dir: env.CURB_REPLY_STORE_DIR } : {}), ...(url ? [remoteReplyStore({ url, ...(token ? { token } : {}) })] : [])];
 }
 
 type TestSession = {

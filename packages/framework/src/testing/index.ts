@@ -53,7 +53,7 @@ export { affectedScenarios, type AffectedScenario } from "./changed.js";
 
 // Layer 3.
 export { fake, scenario } from "./scenario.js";
-export { localReplyStore, remoteReplyStore, withReplyStore, type ReplyStore, type StoredReply } from "./reply-store.js";
+export { asRun, localReplyStore, remoteReplyStore, withReplyStore, type ReplyStore, type StoredReply } from "./reply-store.js";
 export { buildCallEvent, runHook } from "./hooks.js";
 export type {
   CallerBehaviour,

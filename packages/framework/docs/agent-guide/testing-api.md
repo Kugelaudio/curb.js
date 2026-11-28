@@ -13,6 +13,7 @@ exports `curb test` and `curb review` use, for a test of your own in any test ru
 | 1 | [`inParallel`](#inparallel) | Many at once, slowing down on a rate limit |
 | 1 | [`report`](#report), [`passRate`](#passrate) | Results for the terminal, Markdown, CI and JSON, and the exit code |
 | 1 | [`projectHost`](#projecthost) | What all of them run on |
+| 1 | [`withReplyStore`](#reply-store), [`localReplyStore`](#reply-store), [`remoteReplyStore`](#reply-store), [`asRun`](#reply-store) | Replies the model gave before, so an unchanged test calls no model |
 | 2 | [`simulatedCaller`](#simulatedcaller), [`scriptedCaller`](#scriptedcaller), [`personas`](#personas) | Callers |
 | 2 | [`callerFromCall`](#callerfromcall), [`replayCall`](#replaycall) | A real call as a test |
 | 2 | [`callersFor`](#callersfor) | Callers for an agent that has had no calls yet |
@@ -621,36 +622,71 @@ Builds a valid event from a type and the fields you care about. The rest is a pl
 It throws on what no real call produces, such as `goals` on a `call.ended` event or a `transcript` on
 a call whose `content` is `not_stored`.
 
+## Reply store
+
+```ts
+withReplyStore(host: TestHost, stores: ReplyStore[]): TestHost
+localReplyStore(options?: { dir? }): ReplyStore
+remoteReplyStore(options?: { url?, token? }): ReplyStore
+asRun<T>(run: number, play: () => T): T
+```
+
+```ts
+import { asRun, localReplyStore, projectHost, remoteReplyStore, startCall, withReplyStore } from "curb/testing";
+
+const host = withReplyStore(projectHost(), [localReplyStore(), remoteReplyStore()]);
+const call = await asRun(0, () => startCall({ host }));
+await call.say("I was charged twice for my last order.");
+```
+
+`curb test` runs every scenario on such a host, so a second run with nothing changed calls no
+model. `withReplyStore(host, stores)` answers each model request of the agent, the simulated
+caller and the judge from the first store that holds its reply, and asks the model only on a miss;
+a hit from a later store is copied to the earlier ones. A reply is stored under the sha256 of the
+request's canonical JSON: the role (`agent`, `caller` or `judge`), the model and its settings, the
+system prompt, the messages, the tools and the run. Two identical requests at once make one model
+call.
+
+- **The first miss makes the rest of the call live.** Once one request of a call is new, every later
+  request of that call goes to the model, since its replies would only match by chance. A call
+  is everything played inside one `asRun`, or one `startCall` or caller outside of it.
+- **`asRun(run, play)`** plays `play` as sample `run` (0, 1, 2, ...) of a scenario with several
+  runs, so each sample keeps replies of its own instead of all of them replaying the first.
+- **Errors and cut-off replies are never stored**, nor a reply stopped at the model's output
+  limit.
+- **The clock is fixed.** On a host with a reply store the agent sees the scenario's or
+  `startCall`'s `now`, else `CURB_TEST_NOW`, else 2026-06-03T15:00:00Z, so the date line of its
+  system prompt does not change the request every minute. On a host without one it sees the real
+  clock unless `now` is given.
+
+`localReplyStore({ dir })` keeps each reply as an unchanging gzip file `<dir>/v1/<aa>/<key>.json.gz`
+outside the checkout; `dir` defaults to `CURB_REPLY_STORE_DIR`, else
+`$XDG_CACHE_HOME/curb/replies`, else `~/.cache/curb/replies`. A damaged file counts as a miss.
+`remoteReplyStore({ url, token })` reads and writes a server that speaks the
+[reply store protocol](./reply-store.md), from `CURB_REPLY_STORE_URL` and `CURB_REPLY_STORE_TOKEN`
+when not given; `curb test` adds it when `CURB_REPLY_STORE_URL` is set. A store that fails never
+fails a test: the host goes on with the other stores, else the model, and prints one note.
+
+A `ReplyStore` is `{ get(key), put(key, reply) }` of `StoredReply` records, so a store of your own is
+two functions.
+
 ## Coming next: skill tests and the reply store
 
 These are declared in `curb/testing` so their types can be used, and throw until a later version
 implements them.
 
 - `scenario` and `startCall` take `start: { skills, info }` (skills opened and call info set
-  before turn 1), `spoken: false` (turns as typed text), `hermetic: true` (a tool call without a
-  fake is an error) and `now` (the date and time the agent sees).
+  before turn 1), `spoken: false` (turns as typed text) and `hermetic: true` (a tool call without a
+  fake is an error).
 - `fake(tool, result)` makes one entry of a list of `fakes`. `called`, `notCalled` and
   `calledInOrder` take a tool's value as well as its name, and `expect` gets `opened(skill)` and
   `notOpened(skill?)`.
-
-### Reply store
-
-```ts
-import { localReplyStore, projectHost, remoteReplyStore, withReplyStore } from "curb/testing";
-
-const host = withReplyStore(projectHost(), [localReplyStore(), remoteReplyStore()]);
-```
-
-`withReplyStore(host, stores)` answers each model request from the first store that holds its
-reply and asks the model only on a miss. `localReplyStore({ dir? })` keeps replies as files outside
-the checkout; `remoteReplyStore({ url?, token? })` uses a server that speaks the
-[reply store protocol](./reply-store.md). A `ReplyStore` is `{ get(key), put(key, reply) }` of
-`StoredReply` records.
 
 ## Version history
 
 | Version | Changes |
 |---|---|
+| v1.30.0 | `withReplyStore`, `localReplyStore`, `remoteReplyStore` and `asRun` work, and `curb test` keeps replies in a local store; `now` on `scenario` and `startCall` sets the agent's clock |
 | v1.30.0 | Declared: `start`, `spoken`, `hermetic` and `now` on `scenario` and `startCall`, `fake`, `opened`, `notOpened`, tool values in `called`, `notCalled` and `calledInOrder`, and `withReplyStore`, `localReplyStore`, `remoteReplyStore`, `ReplyStore` and `StoredReply` |
 | v1.27.0 | `affectedScenarios` added. `judge` does not count `claimed_without_tool` when the tool it names ran and succeeded in the turn of the claim or before (`judge.promptVersion` 4). `simulatedCaller` ends the call once its goal is done, also when asked whether there is anything else (`simulatedCaller.promptVersion` 4) |
 | v1.25.0 | `loadCalls` reads a Calls export's tool result given as `{ message, data }` beside the tool call's `ok`, and a line's length from `durationSeconds` |

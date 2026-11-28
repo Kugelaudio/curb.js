@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ScenarioResult } from "./scenarios/run.js";
 import { createTestProject } from "./test-project.js";
@@ -56,6 +57,8 @@ async function chatEndpoint(refuse: (request: number) => number | null) {
 const HELLO = `import { scenario } from "curb/testing";
 export default scenario({ turns: ["Hi"], expect: ({ said }) => [said("hello there")] });
 `;
+/** HELLO with other words: a request of its own, which the reply store does not share with HELLO's. */
+const HELLO_AGAIN = HELLO.replace('["Hi"]', '["Hello"]');
 
 describe("curb test on the project's own host", () => {
   const projects: string[] = [];
@@ -73,7 +76,9 @@ describe("curb test on the project's own host", () => {
     const root = createTestProject(files);
     projects.push(root);
     const out: string[] = [];
-    const code = await testCommand(args, root, { out: (text) => void out.push(text), env: {} });
+    // A store of its own: every run here asks the endpoint.
+    const env = { CURB_REPLY_STORE_DIR: join(root, ".replies") };
+    const code = await testCommand(args, root, { out: (text) => void out.push(text), env });
     const everything = `${out.join("")}\n${logged.mock.calls.map((call) => call.map(String).join(" ")).join("\n")}`;
     return { code, printed: out.join(""), everything };
   }
@@ -82,7 +87,7 @@ describe("curb test on the project's own host", () => {
     // Both scenarios start at once, and the provider refuses the two requests of that burst.
     const endpoint = await chatEndpoint((request) => (request <= 2 ? 429 : null));
     try {
-      const { code, printed } = await run(["--concurrency", "2", "--json"], { "src/agent/a.scenario.ts": HELLO, "src/agent/b.scenario.ts": HELLO }, endpoint);
+      const { code, printed } = await run(["--concurrency", "2", "--json"], { "src/agent/a.scenario.ts": HELLO, "src/agent/b.scenario.ts": HELLO_AGAIN }, endpoint);
 
       expect(code).toBe(0);
       const report = JSON.parse(printed) as TestReport;
@@ -106,6 +111,36 @@ describe("curb test on the project's own host", () => {
         judge: null,
         totalTokens: 420,
       });
+    } finally {
+      await endpoint.close();
+    }
+  }, 30_000);
+
+  it("shows the agent a scenario's now, else the fixed test date, and asks nothing again on a second run", async () => {
+    const endpoint = await chatEndpoint(() => null);
+    try {
+      const files = {
+        "src/agent/a.scenario.ts": HELLO.replace('turns: ["Hi"]', 'turns: ["Hi"], now: "2026-10-30T15:00:00Z"'),
+        "src/agent/b.scenario.ts": HELLO_AGAIN,
+      };
+      vi.stubEnv("KUGELAUDIO_API_KEY", "ka_test_0123456789");
+      vi.stubEnv("KUGELAUDIO_API_BASE", endpoint.origin);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const root = createTestProject(files);
+      projects.push(root);
+      const once = () => testCommand(["--json"], root, { out: () => {}, env: { CURB_REPLY_STORE_DIR: join(root, ".replies") } });
+
+      expect(await once()).toBe(0);
+      const dates = (turn: string) =>
+        endpoint.bodies
+          .filter((body) => body.stream && JSON.stringify(body.messages).includes(`"${turn}"`))
+          .map((body) => /Today is ([^.(]+)/.exec(JSON.stringify(body.messages))?.[1]?.trim());
+      expect(new Set(dates("Hi"))).toEqual(new Set(["Friday, October 30, 2026, 15:00"]));
+      expect(new Set(dates("Hello"))).toEqual(new Set(["Wednesday, June 3, 2026, 15:00"]));
+      const asked = endpoint.bodies.length;
+
+      expect(await once()).toBe(0);
+      expect(endpoint.bodies).toHaveLength(asked);
     } finally {
       await endpoint.close();
     }
