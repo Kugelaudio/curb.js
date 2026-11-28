@@ -621,10 +621,37 @@ Builds a valid event from a type and the fields you care about. The rest is a pl
 It throws on what no real call produces, such as `goals` on a `call.ended` event or a `transcript` on
 a call whose `content` is `not_stored`.
 
+## Coming next: skill tests and the reply store
+
+These are declared in `curb/testing` so their types can be used, and throw until a later version
+implements them.
+
+- `scenario` and `startCall` take `start: { skills, info }` (skills opened and call info set
+  before turn 1), `spoken: false` (turns as typed text), `hermetic: true` (a tool call without a
+  fake is an error) and `now` (the date and time the agent sees).
+- `fake(tool, result)` makes one entry of a list of `fakes`. `called`, `notCalled` and
+  `calledInOrder` take a tool's value as well as its name, and `expect` gets `opened(skill)` and
+  `notOpened(skill?)`.
+
+### Reply store
+
+```ts
+import { localReplyStore, projectHost, remoteReplyStore, withReplyStore } from "curb/testing";
+
+const host = withReplyStore(projectHost(), [localReplyStore(), remoteReplyStore()]);
+```
+
+`withReplyStore(host, stores)` answers each model request from the first store that holds its
+reply and asks the model only on a miss. `localReplyStore({ dir? })` keeps replies as files outside
+the checkout; `remoteReplyStore({ url?, token? })` uses a server that speaks the
+[reply store protocol](./reply-store.md). A `ReplyStore` is `{ get(key), put(key, reply) }` of
+`StoredReply` records.
+
 ## Version history
 
 | Version | Changes |
 |---|---|
+| v1.30.0 | Declared: `start`, `spoken`, `hermetic` and `now` on `scenario` and `startCall`, `fake`, `opened`, `notOpened`, tool values in `called`, `notCalled` and `calledInOrder`, and `withReplyStore`, `localReplyStore`, `remoteReplyStore`, `ReplyStore` and `StoredReply` |
 | v1.27.0 | `affectedScenarios` added. `judge` does not count `claimed_without_tool` when the tool it names ran and succeeded in the turn of the claim or before (`judge.promptVersion` 4). `simulatedCaller` ends the call once its goal is done, also when asked whether there is anything else (`simulatedCaller.promptVersion` 4) |
 | v1.25.0 | `loadCalls` reads a Calls export's tool result given as `{ message, data }` beside the tool call's `ok`, and a line's length from `durationSeconds` |
 | v1.25.0 | `callersFor` added, and `Call.systemPrompt`. `groupFindings` takes a played simulated call's caller as its draft's caller, with its `behaviours` |
