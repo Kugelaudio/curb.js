@@ -168,9 +168,9 @@ type InputToolProps =
  * tool can live next to the code that backs it instead of inline in the tree.
  */
 export function defineTool(config: ToolActionProps): ToolActionProps;
-export function defineTool<TSchema extends ZodObjectSchema>(
-  config: ToolPropsWithSchema<TSchema> & ToolConfirmProps<z.infer<TSchema>>,
-): ToolPropsWithSchema<TSchema> & ToolConfirmProps<z.infer<TSchema>>;
+export function defineTool<TSchema extends ZodObjectSchema, TResult extends ToolResult = ToolResult>(
+  config: ToolPropsWithSchema<TSchema, TResult> & ToolConfirmProps<z.infer<TSchema>>,
+): ToolPropsWithSchema<TSchema, TResult> & ToolConfirmProps<z.infer<TSchema>>;
 export function defineTool(
   config: ToolPropsWithFields & ToolConfirmProps<Record<string, unknown>>,
 ): ToolPropsWithFields & ToolConfirmProps<Record<string, unknown>>;

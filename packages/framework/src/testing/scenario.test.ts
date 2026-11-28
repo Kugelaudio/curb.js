@@ -74,9 +74,11 @@ describe("scenario()", () => {
         "fakes.end_call: end_call is the framework's own tool, not one of the agent's, and cannot be faked.",
       ].join(" "),
     );
-    expect(() => scenario({ turns: ["Hi"], fakes: [] } as unknown as ScenarioDefinition)).toThrow(
-      'fakes must be an object of tool name to the result its calls get, e.g. { create_claim: { ok: true, message: "Claim created." } }.',
+    expect(() => scenario({ turns: ["Hi"], fakes: "book" } as unknown as ScenarioDefinition)).toThrow(
+      'fakes must be a list of fake(tool, result), or an object of tool name to the result its calls get, e.g. { create_claim: { ok: true, message: "Claim created." } }.',
     );
+    // An empty list of fake(tool, result) fakes nothing, as an empty object does.
+    expect(() => scenario({ turns: ["Hi"], fakes: [] })).not.toThrow();
   });
 
   it("takes the page info a call starts with, held to the limits a page's info has everywhere", () => {

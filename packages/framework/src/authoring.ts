@@ -25,6 +25,7 @@ export const AUTHORING_DIAGNOSTIC_CODES = {
   conversationStoreSqlite: "AGENT_CONVERSATION_STORE_SQLITE",
   hookNotAFunction: "AGENT_HOOK_NOT_A_FUNCTION",
   hookNotDeclared: "AGENT_HOOK_NOT_DECLARED",
+  skillInfoMissing: "SKILL_INFO_MISSING",
 } as const;
 
 export type AuthoringDiagnosticCode =
