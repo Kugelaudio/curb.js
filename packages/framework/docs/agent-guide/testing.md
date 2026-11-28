@@ -354,6 +354,47 @@ caller: Ja, passt so. Wie lautet meine Schadennummer?
   [confirmation no] "Ja, passt so. Wie lautet meine Schadennummer?": create_claim did not run
 ```
 
+### Starting inside a skill
+
+A test of one skill does not need to talk its way there. `start` opens skills
+before the caller's first line, the way a host does it: it sets the call info
+(as `set_info`), opens each skill in order (as `read_skill`), and then the turns
+begin. The model starts inside the last skill, with its instructions and its
+tools offered on turn 1, and no `read_skill` call is in the transcript.
+
+```ts
+// src/agent/billing/refund/refund.scenario.ts
+import { scenario } from "curb/testing";
+import * as Billing from "../skill.js";
+import * as Refund from "./skill.js";
+
+export default scenario({
+  start: {
+    skills: [Billing, Refund],           // opened in this order before turn 1
+    info: { "order.id": "A-1042" },      // call info, set before the skills open
+  },
+  spoken: false,                         // typed text, no spoken-reply rules
+  turns: ["Please refund order A-1042."],
+  fakes: { issue_refund: { ok: true, data: { refunded: 49 } } },
+  expect: ({ called, opened, notOpened }) => [called("issue_refund"), opened(Refund), notOpened()],
+});
+```
+
+A skill is its module, imported from its `skill.tsx`, or its route path
+(`"/billing/refund"`). The module is the one the agent loads, so a renamed
+folder is a type error rather than a silent miss; the path is the form that
+stays stable when you move the file. A skill that is not one of the agent's
+fails the run before turn 1 and names the skills there are. The agent's opening
+(its greeting or fixed line) plays inside the started skill.
+
+`spoken` says how the turns reach the agent. `true`, the default, plays them as
+spoken turns of a call, with the spoken-reply rules. `false` plays them as typed
+text: the same as a message a page sends with `user_text` to `curb server` or
+`curb dev` while no call is live. Use it for an agent that is typed to, and for
+skill tests where the voice rules only add words.
+
+Without `start`, a scenario starts at the agent level as before.
+
 ### What a text test does not cover
 
 `curb test` runs the agent in text, also when it is a voice agent. It tests what
@@ -514,6 +555,10 @@ The conversation stops at the first turn that reports an error.
 - `calledInOrder(...calls)`: these tools ran in this order; other calls may
   come between them. An entry is a tool's name, or `[name, input]`.
 - `notCalled(tool)`: the tool never ran.
+- `opened(skill)`: the call had the skill open at some point, by `start.skills`
+  or because the agent read it. A skill is its module or its route path.
+- `notOpened(skill?)`: the agent never opened the skill; without one, it opened
+  no skill beyond those of `start.skills`.
 - `said(text)` or `said(/pattern/)`: an agent reply contains the text (ignoring
   case) or matches the pattern.
 - `endedCall()`: the agent hung up itself.
