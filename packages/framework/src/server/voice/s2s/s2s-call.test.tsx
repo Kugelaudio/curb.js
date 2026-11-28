@@ -3,11 +3,13 @@ import { trace } from "@opentelemetry/api";
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import { WebSocketServer } from "ws";
 import { z } from "zod";
 import { AgentSession } from "../../../agent-session.js";
 import { Agent, Instruction, Skill, Skills, SystemPrompt, Tool } from "../../../components.js";
 import type { CallReporter } from "../../../hosted/call-reporter.js";
-import { openai, type S2sDescriptor } from "../../../providers.js";
+import { openai, type S2sDescriptor, type TtsDescriptor } from "../../../providers.js";
 import { agentAppElement, type AgentRoute } from "../../../routing.js";
 import { AgentSiteRuntime } from "../../../runtime.js";
 import { startFakeLiveModel } from "../../../test-fixtures/fake-live-model.js";
@@ -89,9 +91,9 @@ const PROCEDURE = "First ask for the policy number, then verify it, then offer a
 const routes: AgentRoute[] = [
   { path: "/report-claim", Component: ReportClaim, meta: { title: "Report a claim", description: "Reporting damage." } },
 ];
-function App({ s2s }: { s2s: S2sDescriptor }) {
+function App({ s2s, tts }: { s2s: S2sDescriptor; tts?: TtsDescriptor }) {
   return (
-    <Agent s2s={s2s}>
+    <Agent s2s={s2s} {...(tts ? { tts } : {})}>
       <SystemPrompt>You answer the phone at an insurer.</SystemPrompt>
       <Instruction>{PROCEDURE}</Instruction>
       <Skills>
@@ -124,7 +126,29 @@ type CallOptions = {
   startFails?: boolean;
   /** The agent's own track and TTS voice, for the line a failed call ends on. */
   agentTrack?: ReturnType<typeof agentTrack>;
+  /** The agent's TTS, `<Agent tts>`. */
+  tts?: TtsDescriptor;
 };
+
+/** A KugelAudio TTS socket (`/ws/tts/multi`): each line it is given comes back as 100 ms of audio. */
+async function startFakeKugelTts() {
+  const texts: string[] = [];
+  const keys: Array<string | null> = [];
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  server.on("connection", (socket, request) => {
+    keys.push(new URL(request.url ?? "/", "http://fake").searchParams.get("api_key"));
+    socket.on("message", (data) => {
+      const frame = JSON.parse(String(data)) as { context_id?: string; text?: string; close_context?: boolean; immediate?: boolean };
+      if (frame.text) texts.push(frame.text);
+      if (!frame.close_context || frame.immediate) return;
+      socket.send(JSON.stringify({ context_id: frame.context_id, audio: Buffer.alloc(4800).toString("base64") }));
+      socket.send(JSON.stringify({ context_id: frame.context_id, context_closed: true }));
+    });
+  });
+  const { port } = server.address() as { port: number };
+  return { origin: `http://127.0.0.1:${port}`, said: () => texts.join("").trim(), keys, close: () => new Promise((resolve) => server.close(resolve)) };
+}
 
 /** The agent's own audio track and a TTS voice that says each line as one 48 kHz frame
  * (`voice: false`: the agent's TTS is built from its settings, as a host without one builds it). */
@@ -171,7 +195,7 @@ function fakeRecord() {
 const SPEECH = Buffer.from(new Int16Array(1600).fill(4000).buffer);
 
 async function callOn(s2s: S2sDescriptor, options: CallOptions, started: () => boolean) {
-  const Site = () => <App s2s={s2s} />;
+  const Site = () => <App s2s={s2s} tts={options.tts} />;
   const runtime = new AgentSiteRuntime(({ path, loadedPaths }) => agentAppElement(Site, { path, loadedPaths, routes }), {
     maxLoadedSkills: 2,
   });
@@ -611,11 +635,55 @@ describe("a call on <Agent s2s> whose model cannot take it", { timeout: 12_000 }
     expect(track.said).toEqual([fallbackReplies("en").refused]);
   });
 
-  it("without a key for the agent's TTS, ends the call as before", async () => {
+  it("a model that refuses the handshake on a key the agent's TTS shares: KugelAudio's voice says it", async () => {
+    const model = await startFakeLiveModel({ refuses: 401 });
+    const kugel = await startFakeKugelTts();
+    // OpenAI's TTS, refusing the shared key as the model did: it must not be the voice asked first.
+    let openaiTts = 0;
+    const openaiServer = createServer((_, res) => {
+      openaiTts += 1;
+      res.writeHead(401, { "content-type": "application/json" }).end('{"error":{"message":"Incorrect API key provided"}}');
+    });
+    await new Promise<void>((resolve) => openaiServer.listen(0, "127.0.0.1", resolve));
+    vi.stubEnv("OPENAI_BASE_URL", `http://127.0.0.1:${(openaiServer.address() as { port: number }).port}/v1`);
+    open.push(
+      async () => void (await model.close()),
+      async () => void (await kugel.close()),
+      async () => {
+        vi.unstubAllEnvs();
+        await new Promise((resolve) => openaiServer.close(resolve));
+      },
+    );
     const track = agentTrack({ voice: false });
-    const { closed } = await failedStart({ env: { OPENAI_API_KEY: "test-key" }, agentTrack: track });
+    const { closed, record } = await callOn(
+      openai.live({ baseURL: model.baseURL, voice: "marin", language: "de" }),
+      {
+        // openai.tts() reads the very key the model refused.
+        tts: openai.tts(),
+        env: { OPENAI_API_KEY: "sk-shared", KUGELAUDIO_API_KEY: "kugel-key", KUGELAUDIO_API_BASE: kugel.origin },
+        agentTrack: track,
+      },
+      () => model.refused.length > 0,
+    );
+    await until(() => closed.mock.calls.length > 0, "the call closed", 10_000);
+
+    const line = fallbackReplies("de").refused;
+    expect(model.refused[0]).toBe("Bearer sk-shared");
+    expect(kugel.said()).toBe(line);
+    expect(kugel.keys).toEqual(["kugel-key"]);
+    expect(openaiTts).toBe(0);
+    expect(track.published).toHaveBeenCalledOnce();
+    expect(track.sink.captureFrame).toHaveBeenCalled();
+    expect(track.sink.waitForPlayout).toHaveBeenCalledOnce();
+    expect(record.turns).toContainEqual({ speaker: "agent", text: line, final: true });
+  });
+
+  it("without a key for any TTS, ends the call as before and keeps no line nobody heard", async () => {
+    const track = agentTrack({ voice: false });
+    const { closed, record } = await failedStart({ env: { OPENAI_API_KEY: "test-key" }, agentTrack: track });
     await until(() => closed.mock.calls.length > 0, "the call closed");
     expect(track.published).not.toHaveBeenCalled();
+    expect(record.turns.filter((turn) => turn.speaker === "agent")).toEqual([]);
   });
 
   it("a call that ends well says nothing more", async () => {

@@ -134,8 +134,28 @@ describe("createLocalVoiceCall", () => {
     expect(left).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses a phone line's transfer track, which a local call cannot have", async () => {
-    await expect(createLocalVoiceCall().room.publishTransferTrack()).rejects.toThrow("no phone line");
+  it("plays the agent's own track on the page, at the page's rate, until the page says it played", async () => {
+    captureErrors();
+    const call = createLocalVoiceCall("local-track");
+    const page = new FakePage();
+    call.attach(page as unknown as WebSocket);
+    const track = await call.room.publishTransferTrack();
+
+    // 100 ms of the line at the 48 kHz a TTS voice is resampled to for the track.
+    for (let i = 0; i < 5; i += 1) await track.captureFrame(new AudioFrame(new Int16Array(960).fill(1000), 48_000, 1, 960));
+    let played = false;
+    const playout = track.waitForPlayout().then(() => (played = true));
+    await vi.waitFor(() => expect(page.sent.at(-1)).toEqual({ type: "audio_flush" }));
+    const pcm = page.sent.filter((message): message is Buffer => Buffer.isBuffer(message));
+    const samples = pcm.reduce((total, chunk) => total + chunk.byteLength / 2, 0);
+    expect(samples).toBeGreaterThan(LOCAL_VOICE_OUTPUT_SAMPLE_RATE * 0.09);
+    expect(samples).toBeLessThanOrEqual(LOCAL_VOICE_OUTPUT_SAMPLE_RATE * 0.1);
+    expect(played).toBe(false);
+
+    page.say({ type: "playout_done", playedMs: 100 });
+    await playout;
+    await call.room.disconnect();
+    await expect(call.room.publishTransferTrack()).rejects.toThrow("has ended");
   });
 
   it("logs a malformed frame from the page instead of ending the call", () => {

@@ -8,7 +8,7 @@
  * every model.
  */
 
-import { voice, type tts } from "@livekit/agents";
+import { voice } from "@livekit/agents";
 import type { S2sDescriptor } from "../../../providers.js";
 import type { AgentSiteRuntime } from "../../../runtime.js";
 import { fallbackReplies } from "../../../llm/localized.js";
@@ -19,17 +19,15 @@ import { ConversationClips } from "../livekit-host/clip-store.js";
 import type { VoiceAgentStartOptions } from "../livekit-host/host.js";
 import { voiceSessionOptions } from "../livekit-host/pipeline.js";
 import { createSilenceFollowup, silenceFollowupDelayMs } from "../livekit-host/silence-followup.js";
-import { synthesizedFrames } from "../livekit-host/transfer-audio.js";
 import { callerSide } from "../livekit-host/transfer-handoff.js";
 import { createEndCallHangup } from "../end-call.js";
-import { buildVoiceTts } from "../providers.js";
 import { callTraceOf } from "../../../call-trace.js";
 import type { AgentSessionBundle } from "../../connection.js";
 import type { VoiceSessionHandle } from "../orchestration.js";
 import { createBackOffice } from "./back-office.js";
 import { createS2sCallRecord } from "./call-record.js";
 import { voiceInstructions } from "./instructions.js";
-import { sayUnavailableLine } from "./unavailable-line.js";
+import { fallbackVoices, sayUnavailableLine } from "./unavailable-line.js";
 import { s2sVoice, type S2sVoice } from "./voices.js";
 
 /** How long a goodbye may take to start and play before the call ends anyway. */
@@ -130,20 +128,15 @@ export async function startS2sCall(options: VoiceAgentStartOptions): Promise<Voi
 
   /** The model could not take the call or keep it: the caller is told before it ends. */
   let failed = false;
-  /** What a cascaded turn the provider refused ends on, in the agent's TTS voice (`unavailable-line.ts`). */
+  /** What a cascaded turn the provider refused ends on, in a voice that does not hang on what
+   * failed (`unavailable-line.ts`). Kept in the record only once the caller has heard it. */
   const tellCaller = async () => {
     const settings = bundle.runtime.settings;
-    const line = fallbackReplies(settings.language()).refused;
+    const language = settings.language();
+    const line = fallbackReplies(language).refused;
+    const voices = fallbackVoices({ s2s: descriptor, descriptor: settings.current().tts, language, env, given: options.providers?.tts });
     const log = (message: string) => logError("voice", `${roomName}: ${message}`);
-    let engine: tts.TTS;
-    try {
-      engine = options.providers?.tts ?? (await buildVoiceTts({ descriptor: settings.current().tts, env }));
-    } catch (error) {
-      return log(`no voice to tell the caller the call cannot go on: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    record.agentSaid(line);
-    await sayUnavailableLine({ line, publish: () => room.publishTransferTrack(), synthesize: (text) => synthesizedFrames(engine, text), log });
-    if (engine !== options.providers?.tts) await engine.close().catch(() => {});
+    if (await sayUnavailableLine({ line, voices, publish: () => room.publishTransferTrack(), log })) record.agentSaid(line);
   };
 
   let closing: Promise<void> | null = null;
